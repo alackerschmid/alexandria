@@ -4,15 +4,23 @@
     <div class="px-6 pt-14 pb-6 border-b border-charcoal-border">
       <div class="flex justify-between items-start">
         <div>
-          <p class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3">Library</p>
-          <h1 class="font-heading text-5xl font-bold text-text-primary leading-[1.05]">
-            Your<br>Books.
+          <p
+            class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+          >
+            Library
+          </p>
+          <h1
+            class="font-heading text-5xl font-bold text-text-primary leading-[1.05]"
+          >
+            Your<br />Books.
           </h1>
         </div>
         <div class="flex flex-col items-end gap-3 pt-1">
           <div class="flex gap-1">
             <v-btn
-              :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+              :icon="
+                themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'
+              "
               variant="text"
               color="primary"
               size="small"
@@ -26,9 +34,15 @@
               @click="authStore.logout()"
             />
           </div>
-          <span v-if="!loading && books.length > 0" class="text-[10px] text-text-secondary tracking-widest uppercase">
-            {{ displayedBooks.length }}<template v-if="displayedBooks.length !== books.length">/{{ books.length }}</template>
-            {{ displayedBooks.length === 1 ? 'title' : 'titles' }}
+          <span
+            v-if="!loading && books.length > 0"
+            class="text-[10px] text-text-secondary tracking-widest uppercase"
+          >
+            {{ displayedBooks.length
+            }}<template v-if="displayedBooks.length !== books.length"
+              >/{{ books.length }}</template
+            >
+            {{ displayedBooks.length === 1 ? "title" : "titles" }}
           </span>
         </div>
       </div>
@@ -38,7 +52,11 @@
     <div class="px-6 pt-5 pb-4 border-b border-charcoal-border space-y-4">
       <!-- Search -->
       <div class="border-b border-charcoal-border pb-2 flex items-center gap-2">
-        <v-icon icon="mdi-magnify" size="16" class="text-text-secondary shrink-0" />
+        <v-icon
+          icon="mdi-magnify"
+          size="16"
+          class="text-text-secondary shrink-0"
+        />
         <input
           v-model="search"
           type="search"
@@ -74,7 +92,11 @@
             v-for="tab in STATUS_TABS"
             :key="tab.value"
             class="text-[10px] tracking-[0.15em] uppercase transition-colors"
-            :class="filterStatus === tab.value ? 'text-text-primary border-b border-text-primary pb-0.5' : 'text-text-secondary/50'"
+            :class="
+              filterStatus === tab.value
+                ? 'text-text-primary border-b border-text-primary pb-0.5'
+                : 'text-text-secondary/50'
+            "
             @click="filterStatus = tab.value"
           >
             {{ tab.label }}
@@ -92,19 +114,29 @@
     <div
       v-if="error"
       class="mx-6 mt-6 pl-4 py-2 border-l-2 text-sm"
-      style="border-color: rgb(var(--v-theme-error)); color: rgb(var(--v-theme-error))"
-    >{{ error }}</div>
+      style="
+        border-color: rgb(var(--v-theme-error));
+        color: rgb(var(--v-theme-error));
+      "
+    >
+      {{ error }}
+    </div>
 
     <!-- Empty state -->
     <div v-if="!loading && books.length === 0" class="px-6 pt-16 pb-8">
-      <p class="font-heading text-3xl font-bold text-text-primary mb-3">Nothing here yet.</p>
+      <p class="font-heading text-3xl font-bold text-text-primary mb-3">
+        Nothing here yet.
+      </p>
       <p class="text-sm text-text-secondary leading-relaxed">
         Tap the button below to scan your first barcode.
       </p>
     </div>
 
     <!-- No results for current filter -->
-    <div v-else-if="!loading && books.length > 0 && displayedBooks.length === 0" class="px-6 pt-16 pb-8">
+    <div
+      v-else-if="!loading && books.length > 0 && displayedBooks.length === 0"
+      class="px-6 pt-16 pb-8"
+    >
       <p class="text-sm text-text-secondary">No books match this filter.</p>
     </div>
 
@@ -130,14 +162,18 @@
 
         <!-- Info -->
         <div class="flex-1 min-w-0 mt-0.5">
-          <div class="font-heading text-base font-bold text-text-primary leading-snug line-clamp-2 mb-1">
+          <div
+            class="font-heading text-base font-bold text-text-primary leading-snug line-clamp-2 mb-1"
+          >
             {{ book.title || book.isbn }}
           </div>
           <div class="text-xs text-text-secondary mb-2">
             {{ book.author || "Unknown Author" }}
           </div>
           <div class="flex items-center gap-3">
-            <div class="text-[10px] text-text-secondary/50 font-mono tracking-wide">
+            <div
+              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+            >
               {{ book.isbn }}
             </div>
             <!-- Status button -->
@@ -170,9 +206,16 @@
           :class="{ 'opacity-50 pointer-events-none': loadingMore }"
           @click="loadMore"
         >
-          {{ loadingMore ? '—' : 'Load more' }}
+          {{ loadingMore ? "—" : "Load more" }}
         </button>
       </div>
+    </div>
+
+    <!-- Footer -->
+    <div
+      class="px-6 pt-4 pb-28 text-[10px] text-text-secondary/30 font-mono tracking-wide uppercase"
+    >
+      last update {{ commitHash }}
     </div>
 
     <!-- Scan FAB -->
@@ -188,15 +231,15 @@
 
     <!-- Delete confirmation dialog -->
     <v-dialog v-model="deleteDialog" max-width="360">
-      <v-card
-        rounded="0"
-        :color="themeStore.isDark ? '#1c1b19' : '#ffffff'"
-      >
-        <v-card-title class="font-heading text-xl pt-6 px-6 font-bold text-text-primary">
+      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
+        <v-card-title
+          class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
+        >
           Remove book?
         </v-card-title>
         <v-card-text class="px-6 text-sm text-text-secondary">
-          "{{ bookToDelete?.title || bookToDelete?.isbn }}" will be removed from your library.
+          "{{ bookToDelete?.title || bookToDelete?.isbn }}" will be removed from
+          your library.
         </v-card-text>
         <v-card-actions class="px-4 pb-4 gap-2">
           <v-spacer />
@@ -224,9 +267,19 @@
     </v-dialog>
 
     <!-- Error snackbar -->
-    <v-snackbar v-model="errorToast" :timeout="4000" color="#111110" rounded="0">
+    <v-snackbar
+      v-model="errorToast"
+      :timeout="4000"
+      color="#111110"
+      rounded="0"
+    >
       <div class="flex items-center gap-3 py-0.5">
-        <v-icon icon="mdi-alert-circle-outline" color="error" size="16" class="shrink-0" />
+        <v-icon
+          icon="mdi-alert-circle-outline"
+          color="error"
+          size="16"
+          class="shrink-0"
+        />
         <span class="text-xs text-white tracking-wide">{{ errorMessage }}</span>
       </div>
     </v-snackbar>
@@ -244,7 +297,12 @@ const themeStore = useThemeStore();
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type ReadStatus = "unread" | "reading" | "read";
-type SortOption = "date_desc" | "date_asc" | "title_asc" | "title_desc" | "author_asc";
+type SortOption =
+  | "date_desc"
+  | "date_asc"
+  | "title_asc"
+  | "title_desc"
+  | "author_asc";
 type StatusFilter = "all" | ReadStatus;
 
 interface Book {
@@ -259,10 +317,25 @@ interface Book {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const STATUS_CONFIG: Record<ReadStatus, { label: string; icon: string; class: string }> = {
-  unread: { label: "Unread", icon: "mdi-circle-outline", class: "text-text-secondary/40 hover:text-text-secondary" },
-  reading: { label: "Reading", icon: "mdi-book-open-outline", class: "text-orange-neon" },
-  read: { label: "Read", icon: "mdi-check-circle-outline", class: "text-[#22c55e]" },
+const STATUS_CONFIG: Record<
+  ReadStatus,
+  { label: string; icon: string; class: string }
+> = {
+  unread: {
+    label: "Unread",
+    icon: "mdi-circle-outline",
+    class: "text-text-secondary/40 hover:text-text-secondary",
+  },
+  reading: {
+    label: "Reading",
+    icon: "mdi-book-open-outline",
+    class: "text-orange-neon",
+  },
+  read: {
+    label: "Read",
+    icon: "mdi-check-circle-outline",
+    class: "text-[#22c55e]",
+  },
 };
 
 const STATUS_TABS: { label: string; value: StatusFilter }[] = [
@@ -291,6 +364,7 @@ const errorToast = ref(false);
 const errorMessage = ref("");
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
+const commitHash = __COMMIT_HASH__;
 const PAGE_SIZE = 200;
 
 // ── Computed ──────────────────────────────────────────────────────────────────
@@ -308,7 +382,7 @@ const displayedBooks = computed(() => {
       (b) =>
         b.title?.toLowerCase().includes(q) ||
         b.author?.toLowerCase().includes(q) ||
-        b.isbn.includes(q)
+        b.isbn.includes(q),
     );
   }
 
@@ -334,7 +408,7 @@ const fetchBooks = async (offset = 0) => {
   try {
     const res = await fetch(
       `${API_BASE}/api/scans?limit=${PAGE_SIZE}&offset=${offset}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } }
+      { headers: { Authorization: `Bearer ${authStore.token}` } },
     );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch books");

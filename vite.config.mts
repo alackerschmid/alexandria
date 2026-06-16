@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process'
 import { fileURLToPath, URL } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import Vue from '@vitejs/plugin-vue'
@@ -34,7 +35,12 @@ export default defineConfig({
       },
     }),
   ],
-  define: { 'process.env': {} },
+  define: {
+    'process.env': {},
+    __COMMIT_HASH__: JSON.stringify(
+      (() => { try { return execSync('git rev-parse --short HEAD').toString().trim() } catch { return 'dev' } })()
+    ),
+  },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('src', import.meta.url)),

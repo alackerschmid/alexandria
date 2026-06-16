@@ -218,6 +218,25 @@ const detectedBook = ref<BookPreview | null>(null);
 const flash = ref(false);
 const sessionCount = ref(0);
 
+// ISBNs already handled this session — prevents accidental re-scans while
+// the camera is still pointed at the same barcode after saving.
+const sessionScanned = new Set<string>();
+
+// ISBNs already saved in the library — populated on mount, kept in sync on save.
+const libraryIsbns = new Set<string>();
+
+async function loadLibraryIsbns() {
+  try {
+    const res = await fetch(`${API_BASE}/api/scans?limit=500`, {
+      headers: { Authorization: `Bearer ${authStore.token}` },
+    });
+    if (res.ok) {
+      const data: { isbn: string }[] = await res.json();
+      data.forEach((b) => libraryIsbns.add(b.isbn));
+    }
+  } catch {}
+}
+
 // ── Manual ISBN entry ─────────────────────────────────────────────────────────
 
 const showManualInput = ref(false);
@@ -290,6 +309,19 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
 const onBarcodeDetected = async (isbn: string) => {
   if (scanState.value !== "scanning") return;
 
+  // Already handled this session — ignore silently so the camera can keep running.
+  if (sessionScanned.has(isbn)) return;
+
+  // Already in the library — notify and suppress without showing the preview card.
+  if (libraryIsbns.has(isbn)) {
+    flash.value = true;
+    navigator.vibrate?.(30);
+    setTimeout(() => (flash.value = false), 200);
+    sessionScanned.add(isbn);
+    showToast("Already in your library", "warning");
+    return;
+  }
+
   scanState.value = "detecting";
   flash.value = true;
   navigator.vibrate?.(50);
@@ -337,7 +369,7 @@ function enqueue(book: QueuedBook) {
   }
 }
 
-async function postScan(book: QueuedBook) {
+async function postScan(book: QueuedBook): Promise<"saved" | "duplicate"> {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: "POST",
     headers: {
@@ -351,8 +383,9 @@ async function postScan(book: QueuedBook) {
       cover_url: book.coverUrl ?? null,
     }),
   });
-  if (res.status === 409) return;
+  if (res.status === 409) return "duplicate";
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
+  return "saved";
 }
 
 async function drainQueue() {
@@ -414,12 +447,19 @@ const saveBook = async () => {
   };
 
   try {
-    await postScan(queued);
-    sessionCount.value++;
-    showToast("Saved!");
+    const result = await postScan(queued);
+    sessionScanned.add(queued.isbn);
+    libraryIsbns.add(queued.isbn);
+    if (result === "duplicate") {
+      showToast("Already in your library", "warning");
+    } else {
+      sessionCount.value++;
+      showToast("Saved!");
+    }
   } catch {
     if (!navigator.onLine) {
       enqueue(queued);
+      sessionScanned.add(queued.isbn);
       sessionCount.value++;
       showToast("Will sync later", "warning");
     } else {
@@ -498,6 +538,7 @@ const startScanner = () => {
 onMounted(() => {
   migrateV1Queue();
   drainQueue();
+  loadLibraryIsbns();
   window.addEventListener("online", drainQueue);
   startScanner();
 });
