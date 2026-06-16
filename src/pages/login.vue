@@ -2,7 +2,10 @@
   <div class="min-h-screen bg-charcoal flex flex-col px-8">
     <!-- Wordmark + theme toggle -->
     <div class="pt-14 flex justify-between items-center">
-      <span class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold">Bookscan</span>
+      <span
+        class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold"
+        >The Library of Alexandria</span
+      >
       <v-btn
         :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
         variant="text"
@@ -13,24 +16,41 @@
     </div>
 
     <!-- Form -->
-    <form class="flex-1 flex flex-col justify-center pb-20" @submit.prevent="submit">
-      <h1 class="font-heading text-5xl font-bold text-text-primary leading-[1.1] mb-3">
+    <form
+      class="flex-1 flex flex-col justify-center pb-20"
+      @submit.prevent="submit"
+    >
+      <h1
+        class="font-heading text-5xl font-bold text-text-primary leading-[1.1] mb-3"
+      >
         <template v-if="isLogin">Sign in.</template>
-        <template v-else>Create<br>account.</template>
+        <template v-else>Create<br />account.</template>
       </h1>
       <p class="text-text-secondary text-sm mb-12">
-        {{ isLogin ? 'Welcome back to your library.' : 'Start cataloguing your collection.' }}
+        {{
+          isLogin
+            ? "Welcome back to your library."
+            : "Start cataloguing your collection."
+        }}
       </p>
 
       <div
         v-if="error"
         class="mb-8 pl-4 py-1 border-l-2 text-sm"
-        style="border-color: rgb(var(--v-theme-error)); color: rgb(var(--v-theme-error))"
-      >{{ error }}</div>
+        style="
+          border-color: rgb(var(--v-theme-error));
+          color: rgb(var(--v-theme-error));
+        "
+      >
+        {{ error }}
+      </div>
 
       <!-- Email -->
       <div class="border-b border-charcoal-border mb-7 pb-2">
-        <label class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">Email</label>
+        <label
+          class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+          >Email</label
+        >
         <input
           v-model="email"
           type="email"
@@ -43,7 +63,10 @@
 
       <!-- Password -->
       <div class="border-b border-charcoal-border mb-12 pb-2">
-        <label class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">Password</label>
+        <label
+          class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+          >Password</label
+        >
         <input
           v-model="password"
           type="password"
@@ -60,7 +83,7 @@
         :disabled="loading"
         class="w-full bg-text-primary text-charcoal py-4 text-xs font-bold tracking-[0.25em] uppercase mb-5 hover:opacity-80 transition-opacity disabled:opacity-40"
       >
-        {{ loading ? '—' : (isLogin ? 'Sign in' : 'Create account') }}
+        {{ loading ? "—" : isLogin ? "Sign in" : "Create account" }}
       </button>
 
       <!-- Toggle -->
@@ -70,7 +93,7 @@
         class="text-xs text-text-secondary tracking-wide underline underline-offset-4 hover:text-text-primary transition-colors disabled:opacity-40"
         @click="toggleMode"
       >
-        {{ isLogin ? 'Need an account?' : 'Already have an account?' }}
+        {{ isLogin ? "Need an account?" : "Already have an account?" }}
       </button>
     </form>
     <AppFooter />

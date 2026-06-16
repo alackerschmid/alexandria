@@ -1,5 +1,6 @@
 {
   "name": "Alexandria",
+  "description": "Rebuild the library of Alexandria, one book at a time.",
   "start_url": "/",
   "short_name": "LoA",
   "icons": [
