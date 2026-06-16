@@ -5,8 +5,8 @@
 
     <!-- Flash overlay: brief orange pulse on detection -->
     <div
-      class="absolute inset-0 bg-orange-neon pointer-events-none z-20 transition-opacity duration-200"
-      :class="flash ? 'opacity-30' : 'opacity-0'"
+      class="absolute inset-0 bg-orange-neon pointer-events-none z-20 transition-opacity duration-150"
+      :class="flash ? 'opacity-60' : 'opacity-0'"
     />
 
     <!-- Header -->
@@ -27,35 +27,91 @@
       />
     </div>
 
-    <!-- Scanning frame (visible while scanning / looking up) -->
+    <!-- Scanning frame + detecting status -->
     <div
       v-if="scanState === 'scanning' || scanState === 'detecting'"
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
       <div class="relative" style="width: 280px; height: 140px">
-        <div class="absolute inset-0 border border-orange-neon/25"></div>
-        <div class="absolute top-0 left-0 w-7 h-7 border-t-2 border-l-2 border-orange-neon" />
-        <div class="absolute top-0 right-0 w-7 h-7 border-t-2 border-r-2 border-orange-neon" />
-        <div class="absolute bottom-0 left-0 w-7 h-7 border-b-2 border-l-2 border-orange-neon" />
-        <div class="absolute bottom-0 right-0 w-7 h-7 border-b-2 border-r-2 border-orange-neon" />
+        <!-- Inner box tint: brightens on detection -->
+        <div
+          class="absolute inset-0 transition-colors duration-150"
+          :class="scanState === 'detecting' ? 'border border-orange-neon/60' : 'border border-orange-neon/25'"
+        />
+        <!-- Corners: thicker + brighter when detecting -->
+        <div
+          class="absolute top-0 left-0 w-7 h-7 border-l border-t transition-all duration-150"
+          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
+        />
+        <div
+          class="absolute top-0 right-0 w-7 h-7 border-r border-t transition-all duration-150"
+          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
+        />
+        <div
+          class="absolute bottom-0 left-0 w-7 h-7 border-l border-b transition-all duration-150"
+          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
+        />
+        <div
+          class="absolute bottom-0 right-0 w-7 h-7 border-r border-b transition-all duration-150"
+          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
+        />
+
+        <!-- "Looking up" pill — anchored below the frame, only while detecting -->
+        <Transition name="fade">
+          <div
+            v-if="scanState === 'detecting'"
+            class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none"
+            style="background: rgba(17,17,16,0.88); border: 1px solid rgba(255,102,0,0.55)"
+          >
+            <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
+            <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">Looking up…</span>
+          </div>
+        </Transition>
       </div>
     </div>
 
-    <!-- Guide text -->
-    <div class="absolute bottom-12 left-0 right-0 text-center z-20">
-      <span
-        v-if="scanState === 'scanning'"
-        class="text-white/60 text-[10px] tracking-[0.25em] uppercase"
-      >
+    <!-- Guide text + manual ISBN toggle (scanning only) -->
+    <div
+      v-if="scanState === 'scanning'"
+      class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center gap-3"
+    >
+      <span class="text-white/60 text-[10px] tracking-[0.25em] uppercase">
         Align barcode within frame
       </span>
-      <span
-        v-else-if="scanState === 'detecting'"
-        class="text-white/80 text-[10px] tracking-[0.25em] uppercase"
+
+      <!-- Manual entry toggle -->
+      <button
+        class="text-white/25 text-[10px] tracking-[0.2em] uppercase hover:text-white/50 transition-colors"
+        @click="showManualInput = !showManualInput"
       >
-        Looking up...
-      </span>
+        {{ showManualInput ? 'Cancel' : 'Enter barcode manually' }}
+      </button>
     </div>
+
+    <!-- Manual ISBN input overlay -->
+    <Transition name="slide-up">
+      <div
+        v-if="showManualInput && scanState === 'scanning'"
+        class="absolute bottom-24 left-6 right-6 z-30 flex border border-white/20"
+        style="background: rgba(0,0,0,0.9)"
+      >
+        <input
+          ref="manualInputRef"
+          v-model="manualIsbn"
+          type="text"
+          inputmode="numeric"
+          placeholder="ISBN-10 or ISBN-13"
+          class="flex-1 bg-transparent text-white px-4 py-3 text-sm outline-none placeholder:text-white/30"
+          @keydown.enter="submitManualIsbn"
+        />
+        <button
+          class="px-5 text-orange-neon text-[10px] font-bold tracking-[0.25em] uppercase"
+          @click="submitManualIsbn"
+        >
+          Go
+        </button>
+      </div>
+    </Transition>
 
     <!-- Preview card — slides up from bottom over the live camera -->
     <Transition name="slide-up">
@@ -64,6 +120,14 @@
         class="absolute bottom-0 left-0 right-0 z-40 px-6 pt-6 pb-10"
         style="background: #111110"
       >
+        <!-- Not found notice -->
+        <p
+          v-if="detectedBook.notFound"
+          class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
+        >
+          No metadata found — ISBN only will be saved
+        </p>
+
         <!-- Book info -->
         <div class="flex gap-4 mb-6">
           <img
@@ -80,10 +144,19 @@
           </div>
 
           <div class="flex-1 min-w-0 pt-1">
-            <p class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1">
+            <p
+              v-if="detectedBook.notFound"
+              class="text-base text-white/40 italic leading-snug mb-1"
+            >
+              Unknown book
+            </p>
+            <p
+              v-else
+              class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
+            >
               {{ detectedBook.title }}
             </p>
-            <p class="text-xs text-white/60">
+            <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
               {{ detectedBook.author
               }}<span v-if="detectedBook.year"> · {{ detectedBook.year }}</span>
             </p>
@@ -97,7 +170,7 @@
           :disabled="scanState === 'saving'"
           @click="saveBook"
         >
-          {{ scanState === 'saving' ? '—' : 'Save Book' }}
+          {{ scanState === 'saving' ? '—' : (detectedBook.notFound ? 'Save ISBN' : 'Save Book') }}
         </button>
         <button
           class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
@@ -142,12 +215,29 @@ interface BookPreview {
   author: string;
   year?: string;
   coverUrl?: string;
+  notFound?: boolean;
 }
 
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
 const flash = ref(false);
 const sessionCount = ref(0);
+
+// ── Manual ISBN entry ─────────────────────────────────────────────────────────
+
+const showManualInput = ref(false);
+const manualIsbn = ref("");
+
+const submitManualIsbn = () => {
+  const isbn = manualIsbn.value.replace(/[^0-9Xx]/g, "");
+  if (isbn.length !== 10 && isbn.length !== 13) {
+    showToast("Enter a valid 10 or 13-digit ISBN", "error");
+    return;
+  }
+  manualIsbn.value = "";
+  showManualInput.value = false;
+  onBarcodeDetected(isbn.toUpperCase());
+};
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
@@ -166,7 +256,7 @@ const showToast = (message: string, color = "success") => {
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
     const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`,
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`
     );
     const data = await res.json();
     const info = data.items?.[0]?.volumeInfo;
@@ -183,7 +273,7 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
 
   try {
     const res = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`,
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
     );
     const data = await res.json();
     const book = data[`ISBN:${isbn}`];
@@ -211,48 +301,73 @@ const onBarcodeDetected = async (isbn: string) => {
   setTimeout(() => (flash.value = false), 200);
 
   const book = await lookupBook(isbn);
-  if (!book) {
-    showToast("Book not found", "error");
-    scanState.value = "scanning";
-    return;
-  }
-
-  detectedBook.value = book;
+  detectedBook.value = book ?? { isbn, title: "", author: "", notFound: true };
   scanState.value = "preview";
 };
 
 // ── Offline queue ─────────────────────────────────────────────────────────────
 
-const QUEUE_KEY = "bookscan_queue";
+interface QueuedBook {
+  isbn: string;
+  title?: string;
+  author?: string;
+  coverUrl?: string;
+}
 
-function enqueue(isbn: string) {
-  const q: string[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
-  if (!q.includes(isbn)) {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify([...q, isbn]));
+const QUEUE_KEY = "bookscan_queue_v2";
+
+function migrateV1Queue() {
+  const OLD_KEY = "bookscan_queue";
+  const old = localStorage.getItem(OLD_KEY);
+  if (!old) return;
+  try {
+    const oldItems: string[] = JSON.parse(old);
+    const newItems: QueuedBook[] = oldItems.map((isbn) => ({ isbn }));
+    const existing: QueuedBook[] = JSON.parse(
+      localStorage.getItem(QUEUE_KEY) ?? "[]"
+    );
+    const merged = [
+      ...existing,
+      ...newItems.filter((b) => !existing.some((e) => e.isbn === b.isbn)),
+    ];
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(merged));
+    localStorage.removeItem(OLD_KEY);
+  } catch {}
+}
+
+function enqueue(book: QueuedBook) {
+  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  if (!q.some((b) => b.isbn === book.isbn)) {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify([...q, book]));
   }
 }
 
-async function postScan(isbn: string) {
+async function postScan(book: QueuedBook) {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${authStore.token}`,
     },
-    body: JSON.stringify({ isbn }),
+    body: JSON.stringify({
+      isbn: book.isbn,
+      title: book.title ?? null,
+      author: book.author ?? null,
+      cover_url: book.coverUrl ?? null,
+    }),
   });
-  if (res.status === 409) return; // duplicate — silently ok
+  if (res.status === 409) return;
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
 }
 
 async function drainQueue() {
-  const q: string[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
   if (!q.length) return;
-  const remaining: string[] = [];
+  const remaining: QueuedBook[] = [];
   let authExpired = false;
-  for (const isbn of q) {
+  for (const book of q) {
     if (authExpired) {
-      remaining.push(isbn);
+      remaining.push(book);
       continue;
     }
     try {
@@ -262,20 +377,28 @@ async function drainQueue() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authStore.token}`,
         },
-        body: JSON.stringify({ isbn }),
+        body: JSON.stringify({
+          isbn: book.isbn,
+          title: book.title ?? null,
+          author: book.author ?? null,
+          cover_url: book.coverUrl ?? null,
+        }),
       });
       if (res.status === 401) {
         authExpired = true;
-        remaining.push(isbn);
+        remaining.push(book);
       } else if (res.status !== 409 && !res.ok) {
-        remaining.push(isbn);
+        remaining.push(book);
       }
     } catch {
-      remaining.push(isbn);
+      remaining.push(book);
     }
   }
   if (authExpired) {
-    showToast("Session expired — sign in again to sync pending books", "warning");
+    showToast(
+      "Session expired — sign in again to sync pending books",
+      "warning"
+    );
   }
   remaining.length
     ? localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining))
@@ -287,15 +410,21 @@ async function drainQueue() {
 const saveBook = async () => {
   if (!detectedBook.value) return;
   scanState.value = "saving";
-  const isbn = detectedBook.value.isbn;
+
+  const queued: QueuedBook = {
+    isbn: detectedBook.value.isbn,
+    title: detectedBook.value.notFound ? undefined : detectedBook.value.title,
+    author: detectedBook.value.notFound ? undefined : detectedBook.value.author,
+    coverUrl: detectedBook.value.coverUrl,
+  };
 
   try {
-    await postScan(isbn);
+    await postScan(queued);
     sessionCount.value++;
     showToast("Saved!");
   } catch {
     if (!navigator.onLine) {
-      enqueue(isbn);
+      enqueue(queued);
       sessionCount.value++;
       showToast("Will sync later", "warning");
     } else {
@@ -318,7 +447,8 @@ const scanAgain = () => {
 
 let html5QrCode: Html5Qrcode | null = null;
 
-onMounted(() => {
+onMounted(async () => {
+  migrateV1Queue();
   drainQueue();
   window.addEventListener("online", drainQueue);
 
@@ -333,7 +463,7 @@ onMounted(() => {
         disableFlip: false,
       },
       onBarcodeDetected,
-      () => {},
+      () => {}
     )
     .catch((err) => {
       showToast("Failed to access camera", "error");
@@ -375,5 +505,14 @@ onBeforeUnmount(() => {
 .slide-up-enter-from,
 .slide-up-leave-to {
   transform: translateY(100%);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

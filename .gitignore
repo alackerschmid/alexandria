@@ -4,3 +4,4 @@ dist
 .env.production
 .dev.vars
 worker/.dev.vars
+.wrangler

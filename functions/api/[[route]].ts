@@ -23,7 +23,7 @@ app.use('/api/*', async (c, next) => {
   return cors({
     origin,
     allowHeaders: ['Content-Type', 'Authorization'],
-    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     exposeHeaders: ['Content-Type'],
   })(c, next)
 })
@@ -114,24 +114,50 @@ app.use('/api/scans/*', async (c, next) => {
 
 // ── Scans ─────────────────────────────────────────────────────────────────────
 
+const SORT_CLAUSES: Record<string, string> = {
+  date_desc: 'created_at DESC',
+  date_asc: 'created_at ASC',
+  title_asc: "COALESCE(title, isbn) ASC COLLATE NOCASE",
+  title_desc: "COALESCE(title, isbn) DESC COLLATE NOCASE",
+  author_asc: "COALESCE(author, '') ASC COLLATE NOCASE",
+  author_desc: "COALESCE(author, '') DESC COLLATE NOCASE",
+}
+
+const VALID_STATUSES = ['unread', 'reading', 'read'] as const
+
 app.get('/api/scans', async (c) => {
+  const userId = c.get('userId')
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '200'), 500)
+  const offset = parseInt(c.req.query('offset') ?? '0')
+  const orderClause = SORT_CLAUSES[c.req.query('sort') ?? ''] ?? SORT_CLAUSES.date_desc
+
   const { results } = await c.env.DB
-    .prepare('SELECT * FROM scans WHERE user_id = ? ORDER BY created_at DESC')
-    .bind(c.get('userId'))
+    .prepare(
+      `SELECT id, isbn, title, author, cover_url, status, created_at
+       FROM scans WHERE user_id = ?
+       ORDER BY ${orderClause}
+       LIMIT ? OFFSET ?`
+    )
+    .bind(userId, limit, offset)
     .all()
+
   return c.json(results)
 })
 
 app.post('/api/scans', async (c) => {
-  const { isbn } = await c.req.json()
+  const { isbn, title, author, cover_url } = await c.req.json()
+  if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
+
   const userId = c.get('userId')
   const db = c.env.DB
 
   let result
   try {
     result = await db
-      .prepare('INSERT INTO scans (user_id, isbn) VALUES (?, ?)')
-      .bind(userId, isbn)
+      .prepare(
+        'INSERT INTO scans (user_id, isbn, title, author, cover_url) VALUES (?, ?, ?, ?, ?)'
+      )
+      .bind(userId, isbn, title ?? null, author ?? null, cover_url ?? null)
       .run()
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {
@@ -140,45 +166,49 @@ app.post('/api/scans', async (c) => {
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
-  const scanId = result.meta.last_row_id
-
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        const res = await fetch(
-          `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`,
-        )
-        const data: any = await res.json()
-        const book = data[`ISBN:${isbn}`]
-        if (book) {
-          await db
-            .prepare('UPDATE scans SET title = ?, author = ?, cover_url = ? WHERE id = ?')
-            .bind(
-              book.title ?? null,
-              book.authors?.[0]?.name ?? null,
-              book.cover?.medium ?? book.cover?.small ?? null,
-              scanId,
-            )
-            .run()
-        }
-      } catch (e) {
-        console.error('OpenLibrary enrichment failed', e)
-      }
-    })(),
+  return c.json(
+    {
+      id: result.meta.last_row_id,
+      isbn,
+      title: title ?? null,
+      author: author ?? null,
+      cover_url: cover_url ?? null,
+      status: 'unread',
+      created_at: new Date().toISOString(),
+    },
+    201
   )
+})
 
-  return c.json({ message: 'Scan saved', isbn }, 201)
+app.patch('/api/scans/:id', async (c) => {
+  const { status } = await c.req.json()
+  if (!VALID_STATUSES.includes(status)) {
+    return c.json({ error: 'status must be one of: unread, reading, read' }, 400)
+  }
+
+  const result = await c.env.DB
+    .prepare('UPDATE scans SET status = ? WHERE id = ? AND user_id = ?')
+    .bind(status, c.req.param('id'), c.get('userId'))
+    .run()
+
+  if (!result.meta.changes) {
+    return c.json({ error: 'Book not found' }, 404)
+  }
+
+  return c.json({ id: Number(c.req.param('id')), status })
 })
 
 app.delete('/api/scans/:id', async (c) => {
-  const { success } = await c.env.DB
+  const result = await c.env.DB
     .prepare('DELETE FROM scans WHERE id = ? AND user_id = ?')
     .bind(c.req.param('id'), c.get('userId'))
     .run()
 
-  return success
-    ? c.json({ message: 'Scan deleted' })
-    : c.json({ error: 'Failed to delete scan' }, 500)
+  if (!result.meta.changes) {
+    return c.json({ error: 'Book not found' }, 404)
+  }
+
+  return c.json({ message: 'Scan deleted' })
 })
 
 export const onRequest = handle(app)
