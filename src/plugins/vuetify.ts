@@ -11,19 +11,40 @@ import 'vuetify/styles'
 
 export default createVuetify({
   theme: {
-    defaultTheme: 'dark',
+    defaultTheme: localStorage.getItem('theme') === 'dark' ? 'editorial-dark' : 'editorial',
     themes: {
-      dark: {
+      editorial: {
+        dark: false,
+        colors: {
+          background: '#fafaf8',
+          surface: '#ffffff',
+          primary: '#ff6600',
+          'on-primary': '#ffffff',
+          'on-background': '#0f0f0f',
+          'on-surface': '#0f0f0f',
+          'text-secondary': '#7a736e',
+          border: '#e2ddd8',
+          error: '#c0392b',
+          warning: '#d97706',
+          success: '#276749',
+          info: '#1d4ed8',
+        },
+      },
+      'editorial-dark': {
         dark: true,
         colors: {
-          background: '#1a1a1a',
-          surface: '#262626',
+          background: '#111110',
+          surface: '#1c1b19',
           primary: '#ff6600',
-          'on-primary': '#1a1a1a',
-          'on-background': '#f5f5f5',
-          'on-surface': '#f5f5f5',
-          'text-secondary': '#a0a0a0',
-          border: '#333333',
+          'on-primary': '#ffffff',
+          'on-background': '#f0ede8',
+          'on-surface': '#f0ede8',
+          'text-secondary': '#8a8078',
+          border: '#2e2b28',
+          error: '#e05252',
+          warning: '#e8a838',
+          success: '#4caf80',
+          info: '#5b8def',
         },
       },
     },

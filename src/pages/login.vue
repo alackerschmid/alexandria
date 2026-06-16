@@ -1,69 +1,80 @@
 <template>
-  <div class="h-screen bg-charcoal flex items-center justify-center px-6">
-    <v-form class="w-full max-w-xs" @submit.prevent="submit">
-      <div class="mb-10 text-center">
-        <span class="text-orange-neon text-xs font-semibold tracking-widest uppercase">Bookscan</span>
-      </div>
+  <div class="min-h-screen bg-charcoal flex flex-col px-8">
+    <!-- Wordmark + theme toggle -->
+    <div class="pt-14 flex justify-between items-center">
+      <span class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold">Bookscan</span>
+      <v-btn
+        :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+        variant="text"
+        color="primary"
+        size="small"
+        @click="themeStore.toggle()"
+      />
+    </div>
 
-      <h1 class="text-2xl font-semibold text-text-primary mb-8 leading-tight">
-        {{ isLogin ? "Sign in" : "Create account" }}
+    <!-- Form -->
+    <form class="flex-1 flex flex-col justify-center pb-20" @submit.prevent="submit">
+      <h1 class="font-heading text-5xl font-bold text-text-primary leading-[1.1] mb-3">
+        <template v-if="isLogin">Sign in.</template>
+        <template v-else>Create<br>account.</template>
       </h1>
+      <p class="text-text-secondary text-sm mb-12">
+        {{ isLogin ? 'Welcome back to your library.' : 'Start cataloguing your collection.' }}
+      </p>
 
       <v-alert
         v-if="error"
         type="error"
         variant="tonal"
-        rounded="sm"
-        class="mb-6"
-      >
-        {{ error }}
-      </v-alert>
+        rounded="0"
+        class="mb-8 text-sm"
+      >{{ error }}</v-alert>
 
-      <v-text-field
-        v-model="email"
-        label="Email"
-        type="email"
-        class="mb-3"
-        bg-color="charcoal-light"
-        rounded="sm"
-        :disabled="loading"
-        required
-      />
+      <!-- Email -->
+      <div class="border-b border-charcoal-border mb-7 pb-2">
+        <label class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">Email</label>
+        <input
+          v-model="email"
+          type="email"
+          autocomplete="email"
+          :disabled="loading"
+          class="w-full bg-transparent text-text-primary text-base outline-none placeholder:text-charcoal-border disabled:opacity-50"
+          placeholder="you@example.com"
+        />
+      </div>
 
-      <v-text-field
-        v-model="password"
-        label="Password"
-        type="password"
-        class="mb-8"
-        bg-color="charcoal-light"
-        rounded="sm"
-        :disabled="loading"
-        required
-      />
+      <!-- Password -->
+      <div class="border-b border-charcoal-border mb-12 pb-2">
+        <label class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">Password</label>
+        <input
+          v-model="password"
+          type="password"
+          :autocomplete="isLogin ? 'current-password' : 'new-password'"
+          :disabled="loading"
+          class="w-full bg-transparent text-text-primary text-base outline-none placeholder:text-charcoal-border disabled:opacity-50"
+          placeholder="••••••••"
+        />
+      </div>
 
-      <v-btn
-        color="primary"
-        size="large"
-        rounded="sm"
-        class="w-full mb-3"
+      <!-- Submit -->
+      <button
         type="submit"
-        :loading="loading"
-      >
-        {{ isLogin ? "Sign in" : "Sign up" }}
-      </v-btn>
-
-      <v-btn
-        variant="text"
-        color="primary"
-        class="w-full"
-        type="button"
-        size="small"
         :disabled="loading"
+        class="w-full bg-text-primary text-charcoal py-4 text-xs font-bold tracking-[0.25em] uppercase mb-5 hover:opacity-80 transition-opacity disabled:opacity-40"
+      >
+        {{ loading ? '—' : (isLogin ? 'Sign in' : 'Create account') }}
+      </button>
+
+      <!-- Toggle -->
+      <button
+        type="button"
+        :disabled="loading"
+        class="text-xs text-text-secondary tracking-wide underline underline-offset-4 hover:text-text-primary transition-colors disabled:opacity-40"
         @click="toggleMode"
       >
-        {{ isLogin ? "Need an account?" : "Already have an account?" }}
-      </v-btn>
-    </v-form>
+        {{ isLogin ? 'Need an account?' : 'Already have an account?' }}
+      </button>
+    </form>
   </div>
 </template>
 
@@ -71,9 +82,11 @@
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useThemeStore } from "@/stores/theme";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const themeStore = useThemeStore();
 
 const isLogin = ref(true);
 const email = ref("");
@@ -110,7 +123,6 @@ const submit = async () => {
     }
 
     if (!isLogin.value) {
-      // If register success, automatically login
       const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
