@@ -169,24 +169,7 @@
     </Transition>
 
     <!-- Toast -->
-    <v-snackbar
-      v-model="toast"
-      :timeout="3000"
-      location="bottom"
-      color="#111110"
-      rounded="0"
-      class="mb-16"
-    >
-      <div class="flex items-center gap-3 py-0.5">
-        <v-icon
-          :icon="toastColor === 'error' ? 'mdi-alert-circle-outline' : toastColor === 'warning' ? 'mdi-alert-outline' : 'mdi-check-circle-outline'"
-          :color="toastColor === 'error' ? 'error' : toastColor === 'warning' ? 'warning' : 'primary'"
-          size="16"
-          class="shrink-0"
-        />
-        <span class="text-xs text-white tracking-wide">{{ toastMessage }}</span>
-      </div>
-    </v-snackbar>
+    <AppToast v-model="toast" :message="toastMessage" :type="toastType" class="mb-16" />
   </div>
 </template>
 
@@ -195,6 +178,7 @@ import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import Quagga from "@ericblade/quagga2";
+import AppToast, { type ToastType } from "@/components/AppToast.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -257,11 +241,11 @@ const submitManualIsbn = () => {
 
 const toast = ref(false);
 const toastMessage = ref("");
-const toastColor = ref("success");
+const toastType = ref<ToastType>("success");
 
-const showToast = (message: string, color = "success") => {
+const showToast = (message: string, type: ToastType = "success") => {
   toastMessage.value = message;
-  toastColor.value = color;
+  toastType.value = type;
   toast.value = true;
 };
 

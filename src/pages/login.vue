@@ -73,6 +73,7 @@
         {{ isLogin ? 'Need an account?' : 'Already have an account?' }}
       </button>
     </form>
+    <AppFooter />
   </div>
 </template>
 
@@ -81,6 +82,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
+import AppFooter from "@/components/AppFooter.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();

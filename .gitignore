@@ -5,3 +5,4 @@ dist
 .dev.vars
 worker/.dev.vars
 .wrangler
+look-at-the-current-soft-crescent.md

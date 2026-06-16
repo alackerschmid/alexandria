@@ -212,11 +212,7 @@
     </div>
 
     <!-- Footer -->
-    <div
-      class="px-6 pt-4 pb-28 text-[10px] text-text-secondary/30 font-mono tracking-wide uppercase"
-    >
-      last update {{ commitHash }}
-    </div>
+    <AppFooter />
 
     <!-- Scan FAB -->
     <v-btn
@@ -267,22 +263,7 @@
     </v-dialog>
 
     <!-- Error snackbar -->
-    <v-snackbar
-      v-model="errorToast"
-      :timeout="4000"
-      color="#111110"
-      rounded="0"
-    >
-      <div class="flex items-center gap-3 py-0.5">
-        <v-icon
-          icon="mdi-alert-circle-outline"
-          color="error"
-          size="16"
-          class="shrink-0"
-        />
-        <span class="text-xs text-white tracking-wide">{{ errorMessage }}</span>
-      </div>
-    </v-snackbar>
+    <AppToast v-model="errorToast" :message="errorMessage" type="error" :timeout="4000" />
   </div>
 </template>
 
@@ -290,6 +271,8 @@
 import { ref, computed, onMounted } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
+import AppToast from "@/components/AppToast.vue";
+import AppFooter from "@/components/AppFooter.vue";
 
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
@@ -364,7 +347,6 @@ const errorToast = ref(false);
 const errorMessage = ref("");
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
-const commitHash = __COMMIT_HASH__;
 const PAGE_SIZE = 200;
 
 // ── Computed ──────────────────────────────────────────────────────────────────
