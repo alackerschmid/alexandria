@@ -12,19 +12,20 @@
     <!-- Header -->
     <div class="absolute top-0 left-0 right-0 z-30 px-5 py-5 flex justify-between items-center">
       <span
-        class="text-[10px] tracking-[0.25em] uppercase transition-colors"
-        :class="sessionCount > 0 ? 'text-orange-neon cursor-pointer' : 'text-white/50'"
-        @click="sessionCount > 0 && router.push('/')"
-      >
-        {{ sessionCount > 0 ? `${sessionCount} saved` : authStore.email }}
-      </span>
-      <v-btn
-        icon="mdi-close"
-        variant="text"
-        color="white"
-        size="small"
+        v-if="sessionCount > 0"
+        class="text-orange-neon text-[10px] tracking-[0.25em] uppercase cursor-pointer"
         @click="router.push('/')"
-      />
+      >
+        {{ sessionCount }} saved
+      </span>
+      <span v-else />
+      <button
+        class="w-11 h-11 flex items-center justify-center rounded-full transition-colors"
+        style="background: rgba(255,255,255,0.15); backdrop-filter: blur(4px)"
+        @click="router.push('/')"
+      >
+        <v-icon icon="mdi-close" color="white" size="20" />
+      </button>
     </div>
 
     <!-- Scanning frame + detecting status -->
@@ -32,31 +33,24 @@
       v-if="scanState === 'scanning' || scanState === 'detecting'"
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
-      <div class="relative" style="width: 280px; height: 140px">
-        <!-- Inner box tint: brightens on detection -->
+      <div class="relative" style="width: 320px; height: 128px">
+        <!-- Corner marks only — no inner fill -->
+        <div class="absolute top-0 left-0 w-10 h-10 border-l border-t transition-all duration-200"
+             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
+        <div class="absolute top-0 right-0 w-10 h-10 border-r border-t transition-all duration-200"
+             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
+        <div class="absolute bottom-0 left-0 w-10 h-10 border-l border-b transition-all duration-200"
+             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
+        <div class="absolute bottom-0 right-0 w-10 h-10 border-r border-b transition-all duration-200"
+             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
+
+        <!-- Horizontal scan line (visible while idle) -->
         <div
-          class="absolute inset-0 transition-colors duration-150"
-          :class="scanState === 'detecting' ? 'border border-orange-neon/60' : 'border border-orange-neon/25'"
-        />
-        <!-- Corners: thicker + brighter when detecting -->
-        <div
-          class="absolute top-0 left-0 w-7 h-7 border-l border-t transition-all duration-150"
-          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
-        />
-        <div
-          class="absolute top-0 right-0 w-7 h-7 border-r border-t transition-all duration-150"
-          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
-        />
-        <div
-          class="absolute bottom-0 left-0 w-7 h-7 border-l border-b transition-all duration-150"
-          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
-        />
-        <div
-          class="absolute bottom-0 right-0 w-7 h-7 border-r border-b transition-all duration-150"
-          :class="scanState === 'detecting' ? 'border-white border-[3px]' : 'border-orange-neon border-2'"
+          v-if="scanState === 'scanning'"
+          class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-px bg-orange-neon/50 scan-line"
         />
 
-        <!-- "Looking up" pill — anchored below the frame, only while detecting -->
+        <!-- "Looking up" pill — anchored below the frame -->
         <Transition name="fade">
           <div
             v-if="scanState === 'detecting'"
@@ -70,22 +64,14 @@
       </div>
     </div>
 
-    <!-- Guide text + manual ISBN toggle (scanning only) -->
+    <!-- Guide text (scanning only) -->
     <div
       v-if="scanState === 'scanning'"
-      class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center gap-3"
+      class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center"
     >
-      <span class="text-white/60 text-[10px] tracking-[0.25em] uppercase">
-        Align barcode within frame
+      <span class="text-white/40 text-[10px] tracking-[0.25em] uppercase">
+        Point at a barcode
       </span>
-
-      <!-- Manual entry toggle -->
-      <button
-        class="text-white/25 text-[10px] tracking-[0.2em] uppercase hover:text-white/50 transition-colors"
-        @click="showManualInput = !showManualInput"
-      >
-        {{ showManualInput ? 'Cancel' : 'Enter barcode manually' }}
-      </button>
     </div>
 
     <!-- Manual ISBN input overlay -->
@@ -553,5 +539,13 @@ canvas.drawingBuffer {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+@keyframes scan {
+  0%, 100% { opacity: 0.5; transform: translateY(-12px); }
+  50% { opacity: 0.15; transform: translateY(12px); }
+}
+.scan-line {
+  animation: scan 2s ease-in-out infinite;
 }
 </style>
