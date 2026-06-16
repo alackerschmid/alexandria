@@ -10,10 +10,12 @@
     />
 
     <!-- Header -->
-    <div class="absolute top-0 left-0 right-0 z-30 px-5 py-5 flex justify-between items-center">
+    <div
+      class="absolute top-0 left-0 right-0 z-30 px-5 py-5 flex justify-between items-center"
+    >
       <span
         v-if="sessionCount > 0"
-        class="text-orange-neon text-[10px] tracking-[0.25em] uppercase cursor-pointer"
+        class="text-orange-neon text-[12px] tracking-[0.25em] uppercase cursor-pointer"
         @click="router.push('/')"
       >
         {{ sessionCount }} saved
@@ -21,7 +23,10 @@
       <span v-else />
       <button
         class="w-11 h-11 flex items-center justify-center rounded-full transition-colors"
-        style="background: rgba(255,255,255,0.15); backdrop-filter: blur(4px)"
+        style="
+          background: rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(4px);
+        "
         @click="router.push('/')"
       >
         <v-icon icon="mdi-close" color="white" size="20" />
@@ -35,19 +40,35 @@
     >
       <div class="relative" style="width: 320px; height: 128px">
         <!-- Corner marks only — no inner fill -->
-        <div class="absolute top-0 left-0 w-10 h-10 border-l border-t transition-all duration-200"
-             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
-        <div class="absolute top-0 right-0 w-10 h-10 border-r border-t transition-all duration-200"
-             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
-        <div class="absolute bottom-0 left-0 w-10 h-10 border-l border-b transition-all duration-200"
-             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
-        <div class="absolute bottom-0 right-0 w-10 h-10 border-r border-b transition-all duration-200"
-             :class="scanState === 'detecting' ? 'border-white border-2' : 'border-white/40'" />
+        <div
+          class="absolute top-0 left-0 w-10 h-10 border-l-2 border-t-2 transition-all duration-200"
+          :class="
+            scanState === 'detecting' ? 'border-white' : 'border-white/40'
+          "
+        />
+        <div
+          class="absolute top-0 right-0 w-10 h-10 border-r-2 border-t-2 transition-all duration-200"
+          :class="
+            scanState === 'detecting' ? 'border-white' : 'border-white/40'
+          "
+        />
+        <div
+          class="absolute bottom-0 left-0 w-10 h-10 border-l-2 border-b-2 transition-all duration-200"
+          :class="
+            scanState === 'detecting' ? 'border-white' : 'border-white/40'
+          "
+        />
+        <div
+          class="absolute bottom-0 right-0 w-10 h-10 border-r-2 border-b-2 transition-all duration-200"
+          :class="
+            scanState === 'detecting' ? 'border-white' : 'border-white/40'
+          "
+        />
 
         <!-- Horizontal scan line (visible while idle) -->
         <div
           v-if="scanState === 'scanning'"
-          class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-px bg-orange-neon/50 scan-line"
+          class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
         />
 
         <!-- "Looking up" pill — anchored below the frame -->
@@ -55,10 +76,18 @@
           <div
             v-if="scanState === 'detecting'"
             class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none"
-            style="background: rgba(17,17,16,0.88); border: 1px solid rgba(255,102,0,0.55)"
+            style="
+              background: rgba(17, 17, 16, 0.88);
+              border: 1px solid rgba(255, 102, 0, 0.55);
+            "
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
-            <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">Looking up…</span>
+            <span
+              class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
+            />
+            <span
+              class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+              >Looking up…</span
+            >
           </div>
         </Transition>
       </div>
@@ -79,7 +108,7 @@
       <div
         v-if="showManualInput && scanState === 'scanning'"
         class="absolute bottom-24 left-6 right-6 z-30 flex border border-white/20"
-        style="background: rgba(0,0,0,0.9)"
+        style="background: rgba(0, 0, 0, 0.9)"
       >
         <input
           ref="manualInputRef"
@@ -102,7 +131,9 @@
     <!-- Preview card — slides up from bottom over the live camera -->
     <Transition name="slide-up">
       <div
-        v-if="(scanState === 'preview' || scanState === 'saving') && detectedBook"
+        v-if="
+          (scanState === 'preview' || scanState === 'saving') && detectedBook
+        "
         class="absolute bottom-0 left-0 right-0 z-40 px-6 pt-6 pb-10"
         style="background: #111110"
       >
@@ -146,7 +177,9 @@
               {{ detectedBook.author
               }}<span v-if="detectedBook.year"> · {{ detectedBook.year }}</span>
             </p>
-            <p class="text-[10px] text-white/30 font-mono mt-1">{{ detectedBook.isbn }}</p>
+            <p class="text-[10px] text-white/30 font-mono mt-1">
+              {{ detectedBook.isbn }}
+            </p>
           </div>
         </div>
 
@@ -156,7 +189,13 @@
           :disabled="scanState === 'saving'"
           @click="saveBook"
         >
-          {{ scanState === 'saving' ? '—' : (detectedBook.notFound ? 'Save ISBN' : 'Save Book') }}
+          {{
+            scanState === "saving"
+              ? "—"
+              : detectedBook.notFound
+                ? "Save ISBN"
+                : "Save Book"
+          }}
         </button>
         <button
           class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
@@ -169,7 +208,12 @@
     </Transition>
 
     <!-- Toast -->
-    <AppToast v-model="toast" :message="toastMessage" :type="toastType" class="mb-16" />
+    <AppToast
+      v-model="toast"
+      :message="toastMessage"
+      :type="toastType"
+      class="mb-16"
+    />
   </div>
 </template>
 
@@ -254,7 +298,7 @@ const showToast = (message: string, type: ToastType = "success") => {
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
     const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`,
     );
     const data = await res.json();
     const info = data.items?.[0]?.volumeInfo;
@@ -271,7 +315,7 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
 
   try {
     const res = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
+      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`,
     );
     const data = await res.json();
     const book = data[`ISBN:${isbn}`];
@@ -335,7 +379,7 @@ function migrateV1Queue() {
     const oldItems: string[] = JSON.parse(old);
     const newItems: QueuedBook[] = oldItems.map((isbn) => ({ isbn }));
     const existing: QueuedBook[] = JSON.parse(
-      localStorage.getItem(QUEUE_KEY) ?? "[]"
+      localStorage.getItem(QUEUE_KEY) ?? "[]",
     );
     const merged = [
       ...existing,
@@ -409,7 +453,7 @@ async function drainQueue() {
   if (authExpired) {
     showToast(
       "Session expired — sign in again to sync pending books",
-      "warning"
+      "warning",
     );
   }
   remaining.length
@@ -479,7 +523,10 @@ const onQuaggaDetected = (result: { codeResult: { code: string | null } }) => {
   detectionBuffer.push(code);
   if (detectionBuffer.length > REQUIRED_HITS) detectionBuffer.shift();
 
-  if (detectionBuffer.length === REQUIRED_HITS && detectionBuffer.every((c) => c === code)) {
+  if (
+    detectionBuffer.length === REQUIRED_HITS &&
+    detectionBuffer.every((c) => c === code)
+  ) {
     detectionBuffer.length = 0;
     onBarcodeDetected(code);
   }
@@ -513,7 +560,7 @@ const startScanner = () => {
       }
       Quagga.start();
       scannerStarted = true;
-    }
+    },
   );
 
   Quagga.onDetected(onQuaggaDetected);
@@ -567,8 +614,15 @@ canvas.drawingBuffer {
 }
 
 @keyframes scan {
-  0%, 100% { opacity: 0.5; transform: translateY(-12px); }
-  50% { opacity: 0.15; transform: translateY(12px); }
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: translateY(-12px);
+  }
+  50% {
+    opacity: 0.15;
+    transform: translateY(12px);
+  }
 }
 .scan-line {
   animation: scan 2s ease-in-out infinite;
