@@ -1,7 +1,7 @@
 <template>
   <div class="h-screen bg-black relative overflow-hidden">
     <!-- Camera (always running) -->
-    <div id="qr-reader" class="w-full h-full"></div>
+    <div ref="scannerContainer" class="scanner-viewport w-full h-full"></div>
 
     <!-- Flash overlay: brief orange pulse on detection -->
     <div
@@ -187,10 +187,19 @@
       v-model="toast"
       :timeout="3000"
       location="bottom"
-      :color="toastColor"
+      color="#111110"
+      rounded="0"
       class="mb-16"
     >
-      {{ toastMessage }}
+      <div class="flex items-center gap-3 py-0.5">
+        <v-icon
+          :icon="toastColor === 'error' ? 'mdi-alert-circle-outline' : toastColor === 'warning' ? 'mdi-alert-outline' : 'mdi-check-circle-outline'"
+          :color="toastColor === 'error' ? 'error' : toastColor === 'warning' ? 'warning' : 'primary'"
+          size="16"
+          class="shrink-0"
+        />
+        <span class="text-xs text-white tracking-wide">{{ toastMessage }}</span>
+      </div>
     </v-snackbar>
   </div>
 </template>
@@ -199,7 +208,7 @@
 import { ref, onMounted, onBeforeUnmount } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import { Html5Qrcode } from "html5-qrcode";
+import Quagga from "@ericblade/quagga2";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -445,55 +454,86 @@ const scanAgain = () => {
 
 // ── Camera lifecycle ──────────────────────────────────────────────────────────
 
-let html5QrCode: Html5Qrcode | null = null;
+const scannerContainer = ref<HTMLDivElement | null>(null);
+let scannerStarted = false;
 
-onMounted(async () => {
+// Require 2 consecutive reads of the same code before firing — filters noise
+// without adding perceptible delay at typical camera frame rates.
+const detectionBuffer: string[] = [];
+const REQUIRED_HITS = 2;
+
+const onQuaggaDetected = (result: { codeResult: { code: string | null } }) => {
+  const code = result.codeResult.code;
+  if (!code) return;
+
+  detectionBuffer.push(code);
+  if (detectionBuffer.length > REQUIRED_HITS) detectionBuffer.shift();
+
+  if (detectionBuffer.length === REQUIRED_HITS && detectionBuffer.every((c) => c === code)) {
+    detectionBuffer.length = 0;
+    onBarcodeDetected(code);
+  }
+};
+
+const startScanner = () => {
+  if (!scannerContainer.value) return;
+
+  Quagga.init(
+    {
+      inputStream: {
+        type: "LiveStream",
+        target: scannerContainer.value,
+        constraints: {
+          facingMode: "environment",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      },
+      locator: { patchSize: "medium", halfSample: true },
+      // numOfWorkers: 0 avoids Vite/worker-blob compatibility issues
+      numOfWorkers: 0,
+      decoder: { readers: ["ean_reader", "ean_8_reader"] },
+      locate: true,
+    },
+    (err: unknown) => {
+      if (err) {
+        showToast("Failed to access camera", "error");
+        console.error(err);
+        return;
+      }
+      Quagga.start();
+      scannerStarted = true;
+    }
+  );
+
+  Quagga.onDetected(onQuaggaDetected);
+};
+
+onMounted(() => {
   migrateV1Queue();
   drainQueue();
   window.addEventListener("online", drainQueue);
-
-  html5QrCode = new Html5Qrcode("qr-reader");
-  html5QrCode
-    .start(
-      { facingMode: "environment" },
-      {
-        fps: 30,
-        aspectRatio: 1.0,
-        disableFlip: false,
-      },
-      onBarcodeDetected,
-      () => {}
-    )
-    .catch((err) => {
-      showToast("Failed to access camera", "error");
-      console.error(err);
-    });
+  startScanner();
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("online", drainQueue);
-  if (html5QrCode?.isScanning) {
-    html5QrCode
-      .stop()
-      .then(() => html5QrCode?.clear())
-      .catch(console.error);
-  }
+  Quagga.offDetected(onQuaggaDetected);
+  if (scannerStarted) Quagga.stop();
 });
 </script>
 
 <style>
-#qr-reader {
-  border: none !important;
-  width: 100% !important;
-  height: 100vh !important;
-}
-#qr-reader img,
-#qr-reader video {
+/* Quagga2 inserts <video> and a debug <canvas> into .scanner-viewport */
+.scanner-viewport video {
   object-fit: cover !important;
   width: 100% !important;
   height: 100% !important;
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
 }
-#qr-reader__scan_region {
+canvas.drawingBuffer {
   display: none !important;
 }
 

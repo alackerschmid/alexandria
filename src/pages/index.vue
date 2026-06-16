@@ -89,13 +89,11 @@
     </div>
 
     <!-- Error -->
-    <v-alert
+    <div
       v-if="error"
-      type="error"
-      variant="tonal"
-      rounded="0"
-      class="mx-6 mt-6"
-    >{{ error }}</v-alert>
+      class="mx-6 mt-6 pl-4 py-2 border-l-2 text-sm"
+      style="border-color: rgb(var(--v-theme-error)); color: rgb(var(--v-theme-error))"
+    >{{ error }}</div>
 
     <!-- Empty state -->
     <div v-if="!loading && books.length === 0" class="px-6 pt-16 pb-8">
@@ -226,8 +224,11 @@
     </v-dialog>
 
     <!-- Error snackbar -->
-    <v-snackbar v-model="errorToast" color="error" :timeout="4000">
-      {{ errorMessage }}
+    <v-snackbar v-model="errorToast" :timeout="4000" color="#111110" rounded="0">
+      <div class="flex items-center gap-3 py-0.5">
+        <v-icon icon="mdi-alert-circle-outline" color="error" size="16" class="shrink-0" />
+        <span class="text-xs text-white tracking-wide">{{ errorMessage }}</span>
+      </div>
     </v-snackbar>
   </div>
 </template>

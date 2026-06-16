@@ -22,13 +22,11 @@
         {{ isLogin ? 'Welcome back to your library.' : 'Start cataloguing your collection.' }}
       </p>
 
-      <v-alert
+      <div
         v-if="error"
-        type="error"
-        variant="tonal"
-        rounded="0"
-        class="mb-8 text-sm"
-      >{{ error }}</v-alert>
+        class="mb-8 pl-4 py-1 border-l-2 text-sm"
+        style="border-color: rgb(var(--v-theme-error)); color: rgb(var(--v-theme-error))"
+      >{{ error }}</div>
 
       <!-- Email -->
       <div class="border-b border-charcoal-border mb-7 pb-2">
