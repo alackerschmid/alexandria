@@ -14,7 +14,13 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings, Variables: Variables }>()
 
-app.use('/api/*', cors())
+app.use('/api/*', cors({
+  origin: '*',
+  allowHeaders: ['Content-Type', 'Authorization'],
+  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  exposeHeaders: ['Content-Type'],
+}))
+
 
 app.post('/api/auth/register', async (c) => {
   const { email, password } = await c.req.json()

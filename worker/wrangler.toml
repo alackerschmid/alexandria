@@ -10,3 +10,7 @@ migrations_dir = "migrations"
 
 [vars]
 JWT_SECRET = "super-secret-local-key"
+
+[observability.logs]
+enabled = true
+invocation_logs = true
