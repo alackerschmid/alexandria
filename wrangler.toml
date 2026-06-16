@@ -1,0 +1,7 @@
+name = "bookscan"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bookscan"
+database_id = "5aa2cac9-de03-4ac0-a3b0-f51c9fe1c272"

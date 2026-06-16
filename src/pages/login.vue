@@ -122,19 +122,7 @@ const submit = async () => {
       throw new Error(data.error || "Authentication failed");
     }
 
-    if (!isLogin.value) {
-      const loginRes = await fetch(`${API_BASE}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.value, password: password.value }),
-      });
-      const loginData = await loginRes.json();
-      if (!loginRes.ok)
-        throw new Error(loginData.error || "Login failed after registration");
-      authStore.setAuth(loginData.token, loginData.email);
-    } else {
-      authStore.setAuth(data.token, data.email);
-    }
+    authStore.setAuth(data.token, data.email);
 
     router.push({ name: "home" });
   } catch (err: any) {

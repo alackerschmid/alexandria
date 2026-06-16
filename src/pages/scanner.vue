@@ -249,12 +249,33 @@ async function drainQueue() {
   const q: string[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
   if (!q.length) return;
   const remaining: string[] = [];
+  let authExpired = false;
   for (const isbn of q) {
+    if (authExpired) {
+      remaining.push(isbn);
+      continue;
+    }
     try {
-      await postScan(isbn);
+      const res = await fetch(`${API_BASE}/api/scans`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authStore.token}`,
+        },
+        body: JSON.stringify({ isbn }),
+      });
+      if (res.status === 401) {
+        authExpired = true;
+        remaining.push(isbn);
+      } else if (res.status !== 409 && !res.ok) {
+        remaining.push(isbn);
+      }
     } catch {
       remaining.push(isbn);
     }
+  }
+  if (authExpired) {
+    showToast("Session expired — sign in again to sync pending books", "warning");
   }
   remaining.length
     ? localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining))

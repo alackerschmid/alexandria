@@ -8,9 +8,6 @@ database_name = "bookscan"
 database_id = "5aa2cac9-de03-4ac0-a3b0-f51c9fe1c272"
 migrations_dir = "migrations"
 
-[vars]
-JWT_SECRET = "super-secret-local-key"
-
 [observability.logs]
 enabled = true
 invocation_logs = true

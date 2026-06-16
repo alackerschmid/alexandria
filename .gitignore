@@ -2,3 +2,5 @@ node_modules
 worker/.wrangler
 dist
 .env.production
+.dev.vars
+worker/.dev.vars
