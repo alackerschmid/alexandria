@@ -20,3 +20,4 @@ CREATE TABLE scans (
 );
 
 CREATE INDEX idx_scans_user_id ON scans(user_id);
+CREATE UNIQUE INDEX idx_scans_user_isbn ON scans(user_id, isbn);

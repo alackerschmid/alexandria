@@ -2,9 +2,10 @@
   <div class="h-screen bg-charcoal relative overflow-hidden">
     <!-- Header -->
     <div
-      class="absolute top-0 left-0 right-0 bg-charcoal-light border-b border-charcoal-border px-4 py-3 z-10 flex justify-between items-center"
+      class="absolute top-0 left-0 right-0 px-4 py-3 z-10 flex justify-between items-center"
+      style="background: linear-gradient(to bottom, rgba(26,26,26,0.85) 0%, transparent 100%)"
     >
-      <span class="text-text-secondary text-sm">{{ authStore.email }}</span>
+      <span class="text-text-secondary text-xs tracking-wide">{{ authStore.email }}</span>
       <v-btn
         icon="mdi-close"
         variant="text"
@@ -17,35 +18,26 @@
     <!-- Camera Target -->
     <div id="qr-reader" class="w-full h-full object-cover"></div>
 
-    <!-- Scanning frame (Tailwind + inline styles for positioning) -->
+    <!-- Scanning frame — corners only -->
     <div
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
-      <div
-        class="border-4 border-orange-neon"
-        style="width: 300px; height: 150px"
-      >
-        <!-- Corners -->
-        <div
-          class="absolute -top-2 -left-2 w-6 h-6 border-t-4 border-l-4 border-orange-neon"
-        />
-        <div
-          class="absolute -top-2 -right-2 w-6 h-6 border-t-4 border-r-4 border-orange-neon"
-        />
-        <div
-          class="absolute -bottom-2 -left-2 w-6 h-6 border-b-4 border-l-4 border-orange-neon"
-        />
-        <div
-          class="absolute -bottom-2 -right-2 w-6 h-6 border-b-4 border-r-4 border-orange-neon"
-        />
+      <div class="relative" style="width: 300px; height: 150px">
+        <div class="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-orange-neon" />
+        <div class="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-orange-neon" />
+        <div class="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-orange-neon" />
+        <div class="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-orange-neon" />
       </div>
     </div>
 
     <!-- Guide text -->
     <div
-      class="absolute bottom-24 left-0 right-0 text-center text-text-primary text-sm z-20"
+      class="absolute bottom-24 left-0 right-0 flex justify-center z-20"
     >
-      {{ isScanning ? "Processing..." : "Align barcode in frame" }}
+      <span class="text-text-primary text-xs tracking-wide px-4 py-1.5 rounded-full"
+            style="background: rgba(26,26,26,0.7)">
+        {{ isScanning ? "Processing…" : "Align barcode in frame" }}
+      </span>
     </div>
 
     <!-- Feedback toast -->
@@ -84,7 +76,7 @@ const showToast = (message: string, color: string = "success") => {
 };
 
 const onScanSuccess = async (decodedText: string) => {
-  if (isScanning.value) return; // Prevent multiple scans
+  if (isScanning.value) return;
   isScanning.value = true;
 
   try {
@@ -98,13 +90,20 @@ const onScanSuccess = async (decodedText: string) => {
     });
 
     const data = await res.json();
+
+    if (res.status === 409) {
+      showToast("Already in your list", "warning");
+      isScanning.value = false;
+      return;
+    }
+
     if (!res.ok) throw new Error(data.error || "Failed to save scan");
 
-    showToast(`Saved: ${data.title || decodedText}`);
-    // Optionally wait a bit before allowing another scan
+    showToast("Saved!");
+    // Brief cooldown so the camera doesn't immediately re-scan the same barcode
     setTimeout(() => {
       isScanning.value = false;
-    }, 2000);
+    }, 1500);
   } catch (err: any) {
     showToast(err.message, "error");
     isScanning.value = false;

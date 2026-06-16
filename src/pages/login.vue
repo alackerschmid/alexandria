@@ -1,15 +1,20 @@
 <template>
-  <div class="h-screen bg-charcoal flex items-center justify-center px-4">
-    <v-form class="w-full max-w-sm" @submit.prevent="submit">
-      <h1 class="text-3xl font-bold text-text-primary mb-6">
-        {{ isLogin ? "Login" : "Sign Up" }}
+  <div class="h-screen bg-charcoal flex items-center justify-center px-6">
+    <v-form class="w-full max-w-xs" @submit.prevent="submit">
+      <div class="mb-10 text-center">
+        <span class="text-orange-neon text-xs font-semibold tracking-widest uppercase">Bookscan</span>
+      </div>
+
+      <h1 class="text-2xl font-semibold text-text-primary mb-8 leading-tight">
+        {{ isLogin ? "Sign in" : "Create account" }}
       </h1>
 
       <v-alert
         v-if="error"
         type="error"
         variant="tonal"
-        class="mb-4 rounded-none"
+        rounded="sm"
+        class="mb-6"
       >
         {{ error }}
       </v-alert>
@@ -18,8 +23,9 @@
         v-model="email"
         label="Email"
         type="email"
-        class="mb-4"
+        class="mb-3"
         bg-color="charcoal-light"
+        rounded="sm"
         :disabled="loading"
         required
       />
@@ -28,8 +34,9 @@
         v-model="password"
         label="Password"
         type="password"
-        class="mb-6"
+        class="mb-8"
         bg-color="charcoal-light"
+        rounded="sm"
         :disabled="loading"
         required
       />
@@ -37,11 +44,12 @@
       <v-btn
         color="primary"
         size="large"
-        class="w-full rounded-none mb-4"
+        rounded="sm"
+        class="w-full mb-3"
         type="submit"
         :loading="loading"
       >
-        {{ isLogin ? "LOGIN" : "SIGN UP" }}
+        {{ isLogin ? "Sign in" : "Sign up" }}
       </v-btn>
 
       <v-btn
@@ -49,6 +57,7 @@
         color="primary"
         class="w-full"
         type="button"
+        size="small"
         :disabled="loading"
         @click="toggleMode"
       >

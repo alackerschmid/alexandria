@@ -105,38 +105,43 @@ app.post('/api/scans', async (c) => {
   const { isbn } = await c.req.json()
   const db = c.env.DB
 
-  // Fetch metadata from OpenLibrary
-  let title = 'Unknown Title'
-  let author = 'Unknown Author'
-  let cover_url = ''
-
+  let result
   try {
-    const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`)
-    const data: any = await res.json()
-    const book = data[`ISBN:${isbn}`]
-    if (book) {
-      title = book.title || title
-      if (book.authors && book.authors.length > 0) {
-        author = book.authors[0].name
-      }
-      if (book.cover) {
-        cover_url = book.cover.medium || book.cover.small || book.cover.large || ''
-      }
+    result = await db.prepare(
+      'INSERT INTO scans (user_id, isbn) VALUES (?, ?)'
+    )
+      .bind(userId, isbn)
+      .run()
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE constraint failed')) {
+      return c.json({ error: 'Already in your list' }, 409)
     }
-  } catch (e) {
-    console.error('Failed to fetch from OpenLibrary', e)
+    return c.json({ error: 'Failed to save scan' }, 500)
   }
-  
-  const { success } = await db.prepare(
-    'INSERT INTO scans (user_id, isbn, title, author, cover_url) VALUES (?, ?, ?, ?, ?)'
+
+  const scanId = result.meta.last_row_id
+
+  c.executionCtx.waitUntil(
+    (async () => {
+      try {
+        const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`)
+        const data: any = await res.json()
+        const book = data[`ISBN:${isbn}`]
+        if (book) {
+          const title = book.title || null
+          const author = book.authors?.[0]?.name || null
+          const cover_url = book.cover?.medium || book.cover?.small || book.cover?.large || null
+          await db.prepare('UPDATE scans SET title = ?, author = ?, cover_url = ? WHERE id = ?')
+            .bind(title, author, cover_url, scanId)
+            .run()
+        }
+      } catch (e) {
+        console.error('Failed to fetch from OpenLibrary', e)
+      }
+    })()
   )
-    .bind(userId, isbn, title, author, cover_url)
-    .run()
-    
-  if (success) {
-    return c.json({ message: 'Scan saved', isbn, title, author, cover_url }, 201)
-  }
-  return c.json({ error: 'Failed to save scan' }, 500)
+
+  return c.json({ message: 'Scan saved', isbn }, 201)
 })
 
 app.delete('/api/scans/:id', async (c) => {

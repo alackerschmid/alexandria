@@ -1,93 +1,91 @@
 <template>
-  <div class="bg-charcoal min-h-screen px-4 py-6">
-    <div class="flex justify-between items-center mb-6">
-      <h1 class="text-3xl font-bold text-text-primary">Your Books</h1>
+  <div class="bg-charcoal min-h-screen px-4 pt-8 pb-24">
+    <div class="flex justify-between items-center mb-8 px-1">
+      <div>
+        <p class="text-xs text-text-secondary tracking-widest uppercase mb-1">Library</p>
+        <h1 class="text-2xl font-semibold text-text-primary leading-tight">Your Books</h1>
+      </div>
       <v-btn
         icon="mdi-logout"
         variant="text"
         color="primary"
+        size="small"
         @click="authStore.logout()"
       />
     </div>
 
-    <!-- Error/Loading states -->
     <v-progress-circular
       v-if="loading"
       indeterminate
       color="primary"
-      class="mx-auto block mt-10"
-    ></v-progress-circular>
+      class="mx-auto block mt-16"
+    />
+
     <v-alert
       v-if="error"
       type="error"
       variant="tonal"
-      class="mb-4 rounded-none"
-      >{{ error }}</v-alert
-    >
+      rounded="sm"
+      class="mb-6"
+    >{{ error }}</v-alert>
 
     <div
       v-if="!loading && books.length === 0"
-      class="text-center text-text-secondary mt-10"
+      class="text-center mt-24 px-8"
     >
-      <p>No books scanned yet.</p>
-      <p class="mt-2 text-sm">
-        Tap the camera icon to start scanning barcodes.
+      <p class="text-text-primary font-medium mb-2">No books yet</p>
+      <p class="text-sm text-text-secondary leading-relaxed">
+        Tap the camera button below to scan your first barcode.
       </p>
     </div>
 
-    <v-list
-      v-if="books.length > 0"
-      bg-color="charcoal"
-      class="divide-y divide-charcoal-border rounded-none"
-    >
-      <v-list-item v-for="book in books" :key="book.id" class="py-3">
-        <div class="flex justify-between w-full items-start">
-          <div class="flex gap-4 flex-1">
-            <img
-              v-if="book.cover_url"
-              :src="book.cover_url"
-              class="w-12 h-16 object-cover bg-charcoal-light border border-charcoal-border"
-            />
-            <div
-              v-else
-              class="w-12 h-16 bg-charcoal-light border border-charcoal-border flex items-center justify-center"
-            >
-              <span
-                class="text-xs text-text-secondary text-center leading-tight"
-                >No Cover</span
-              >
-            </div>
-
-            <div class="flex-1 mt-1">
-              <div
-                class="font-semibold text-text-primary leading-tight line-clamp-2"
-              >
-                {{ book.title || "Unknown Title" }}
-              </div>
-              <div class="text-xs text-text-secondary mt-1">
-                {{ book.author || "Unknown Author" }} • {{ book.isbn }}
-              </div>
-            </div>
-          </div>
-          <v-btn
-            icon="mdi-delete"
-            variant="text"
-            color="primary"
-            size="small"
-            class="self-center ml-2"
-            @click="deleteBook(book.id)"
-          />
+    <div v-if="books.length > 0" class="space-y-2">
+      <div
+        v-for="book in books"
+        :key="book.id"
+        class="bg-charcoal-light border border-charcoal-border rounded-md p-3 flex items-start gap-3"
+      >
+        <img
+          v-if="book.cover_url"
+          :src="book.cover_url"
+          class="w-10 h-14 object-cover rounded flex-shrink-0"
+        />
+        <div
+          v-else
+          class="w-10 h-14 rounded bg-charcoal border border-charcoal-border flex items-center justify-center flex-shrink-0"
+        >
+          <v-icon icon="mdi-book-outline" size="18" color="text-secondary" />
         </div>
-      </v-list-item>
-    </v-list>
 
-    <!-- Floating action button to scan again -->
+        <div class="flex-1 min-w-0 mt-0.5">
+          <div class="font-medium text-text-primary leading-snug line-clamp-2 text-sm">
+            {{ book.title || "Unknown Title" }}
+          </div>
+          <div class="text-xs text-text-secondary mt-1">
+            {{ book.author || "Unknown Author" }}
+          </div>
+          <div class="text-xs text-text-secondary mt-0.5 font-mono">
+            {{ book.isbn }}
+          </div>
+        </div>
+
+        <v-btn
+          icon="mdi-delete-outline"
+          variant="text"
+          color="primary"
+          size="x-small"
+          class="flex-shrink-0 mt-0.5"
+          @click="deleteBook(book.id)"
+        />
+      </div>
+    </div>
+
     <v-btn
-      fab
       color="primary"
       size="x-large"
       icon="mdi-camera"
-      class="fixed bottom-8 right-8 z-50 rounded-full elevation-4"
+      class="fixed bottom-8 right-6 z-50 rounded-full"
+      elevation="0"
       @click="$router.push('/scanner')"
     />
   </div>
