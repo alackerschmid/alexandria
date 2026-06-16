@@ -176,6 +176,11 @@
             >
               {{ book.isbn }}
             </div>
+            <div
+              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+            >
+              {{ book.created_at }}
+            </div>
             <!-- Status button -->
             <button
               class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
@@ -263,7 +268,12 @@
     </v-dialog>
 
     <!-- Error snackbar -->
-    <AppToast v-model="errorToast" :message="errorMessage" type="error" :timeout="4000" />
+    <AppToast
+      v-model="errorToast"
+      :message="errorMessage"
+      type="error"
+      :timeout="4000"
+    />
   </div>
 </template>
 
