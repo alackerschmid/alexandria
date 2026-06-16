@@ -457,8 +457,7 @@ onMounted(async () => {
     .start(
       { facingMode: "environment" },
       {
-        fps: 10,
-        qrbox: { width: 280, height: 140 },
+        fps: 30,
         aspectRatio: 1.0,
         disableFlip: false,
       },
