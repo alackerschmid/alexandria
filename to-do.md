@@ -2,12 +2,13 @@
 
 ## PRIORITY 1 — done
 
-- [x] fix toast styling (proper setting of colors, positioning of elements in the toast) → `AppToast.vue`
+- fix toast styling (proper setting of colors, positioning of elements in the toast)
 - [x] when the camera cannot be accessed, the user should instead be shown the manual isbn import → dedicated full-screen manual-entry screen in `scanner.vue`
 - [x] format footer / header properly at the top / bottom of the page, make them into reusable components → `AppHeader.vue` / `AppFooter.vue`
 
 ## PRIORITY 2
 
+- add pagination to index view and show # before each status
 - implement proper redirecting / dialogueing between account creation, login window & login
 - write a comprehensive readme as introductory page for github
 - [x] expand desktop view:
