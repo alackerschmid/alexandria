@@ -6,6 +6,8 @@ import { SignJWT, jwtVerify } from 'jose'
 type Bindings = {
   DB: D1Database
   JWT_SECRET: string
+  CORS_ORIGIN?: string
+  GOOGLE_BOOKS_API_KEY: string
 }
 
 type Variables = {
@@ -14,70 +16,91 @@ type Variables = {
 
 const app = new Hono<{ Bindings: Bindings, Variables: Variables }>()
 
-app.use('/api/*', cors({
-  origin: '*',
-  allowHeaders: ['Content-Type', 'Authorization'],
-  allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  exposeHeaders: ['Content-Type'],
-}))
+app.use('/api/*', async (c, next) => {
+  const origin = c.env.CORS_ORIGIN ?? '*'
+  return cors({
+    origin,
+    allowHeaders: ['Content-Type', 'Authorization'],
+    allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    exposeHeaders: ['Content-Type'],
+  })(c, next)
+})
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 app.post('/api/auth/register', async (c) => {
   const { email, password } = await c.req.json()
+
+  if (!email || !EMAIL_RE.test(email)) {
+    return c.json({ error: 'A valid email address is required' }, 400)
+  }
+  if (!password || password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400)
+  }
+
   const db = c.env.DB
-  
   const hash = bcrypt.hashSync(password, 10)
+
   try {
-    const { success } = await db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
+    await db
+      .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
       .bind(email, hash)
       .run()
-
-    if (success) {
-      return c.json({ message: 'User created successfully' }, 201)
-    }
-    return c.json({ error: 'Failed to create user' }, 500)
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {
-      return c.json({ error: 'Email already exists' }, 409)
+      return c.json({ error: 'An account with that email already exists' }, 409)
     }
-    return c.json({ error: e.message }, 500)
+    return c.json({ error: 'Failed to create account' }, 500)
   }
+
+  const user = await db
+    .prepare('SELECT id FROM users WHERE email = ?')
+    .bind(email)
+    .first<{ id: number }>()
+
+  const token = await signToken(user!.id, c.env.JWT_SECRET)
+  return c.json({ token, email }, 201)
 })
 
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json()
+
+  if (!email || !password) {
+    return c.json({ error: 'Email and password are required' }, 400)
+  }
+
   const db = c.env.DB
-  
-  const user = await db.prepare('SELECT id, password_hash FROM users WHERE email = ?')
+  const user = await db
+    .prepare('SELECT id, password_hash FROM users WHERE email = ?')
     .bind(email)
     .first<{ id: number, password_hash: string }>()
-    
-  if (!user) {
-    return c.json({ error: 'Invalid credentials' }, 401)
+
+  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    return c.json({ error: 'Invalid email or password' }, 401)
   }
-  
-  const valid = bcrypt.compareSync(password, user.password_hash)
-  if (!valid) {
-    return c.json({ error: 'Invalid credentials' }, 401)
-  }
-  
-  const secret = new TextEncoder().encode(c.env.JWT_SECRET)
-  const token = await new SignJWT({ userId: user.id })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(secret)
-    
+
+  const token = await signToken(user.id, c.env.JWT_SECRET)
   return c.json({ token, email })
 })
 
-// Auth middleware
-app.use('/api/scans/*', async (c, next) => {
+async function signToken(userId: number, secret: string): Promise<string> {
+  return new SignJWT({ userId })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setIssuedAt()
+    .setExpirationTime('7d')
+    .sign(new TextEncoder().encode(secret))
+}
+
+// ── Auth middleware ─────────────────────────────────────────────────────────
+
+const authMiddleware = async (c: any, next: any) => {
   const authHeader = c.req.header('Authorization')
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
-  
+
   const token = authHeader.split(' ')[1]
   try {
     const secret = new TextEncoder().encode(c.env.JWT_SECRET)
@@ -85,32 +108,81 @@ app.use('/api/scans/*', async (c, next) => {
     c.set('userId', payload.userId as number)
     await next()
   } catch (e) {
-    return c.json({ error: 'Invalid token' }, 401)
+    return c.json({ error: 'Invalid or expired token' }, 401)
+  }
+}
+
+app.use('/api/scans/*', authMiddleware)
+app.use('/api/books/*', authMiddleware)
+
+// ── Books ─────────────────────────────────────────────────────────────────────
+
+// Book metadata lookup — proxies Google Books with the server-side API key
+app.get('/api/books/lookup', async (c) => {
+  const isbn = c.req.query('isbn')
+  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+
+  if (!c.env.GOOGLE_BOOKS_API_KEY) {
+    return c.json({ error: 'Google Books API not configured' }, 500)
+  }
+
+  try {
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${c.env.GOOGLE_BOOKS_API_KEY}`
+    )
+    const data = await res.json()
+    return c.json(data)
+  } catch (e) {
+    return c.json({ error: 'Failed to lookup book' }, 500)
   }
 })
 
+// ── Scans ─────────────────────────────────────────────────────────────────────
+
+const SORT_CLAUSES: Record<string, string> = {
+  date_desc: 'created_at DESC',
+  date_asc: 'created_at ASC',
+  title_asc: 'COALESCE(title, isbn) ASC COLLATE NOCASE',
+  title_desc: 'COALESCE(title, isbn) DESC COLLATE NOCASE',
+  author_asc: "COALESCE(author, '') ASC COLLATE NOCASE",
+  author_desc: "COALESCE(author, '') DESC COLLATE NOCASE",
+}
+
+const VALID_STATUSES = ['unread', 'reading', 'read'] as const
+
 app.get('/api/scans', async (c) => {
   const userId = c.get('userId')
-  const db = c.env.DB
-  
-  const { results } = await db.prepare('SELECT * FROM scans WHERE user_id = ? ORDER BY created_at DESC')
-    .bind(userId)
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '200'), 500)
+  const offset = parseInt(c.req.query('offset') ?? '0')
+  const orderClause = SORT_CLAUSES[c.req.query('sort') ?? ''] ?? SORT_CLAUSES.date_desc
+
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT id, isbn, title, author, cover_url, status, created_at, language, publish_date, number_of_pages_median
+       FROM scans WHERE user_id = ?
+       ORDER BY ${orderClause}
+       LIMIT ? OFFSET ?`
+    )
+    .bind(userId, limit, offset)
     .all()
-    
+
   return c.json(results)
 })
 
 app.post('/api/scans', async (c) => {
+  const { isbn, title, author, cover_url, language, publish_date, number_of_pages_median } = await c.req.json()
+  if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
+
   const userId = c.get('userId')
-  const { isbn } = await c.req.json()
   const db = c.env.DB
 
   let result
   try {
-    result = await db.prepare(
-      'INSERT INTO scans (user_id, isbn) VALUES (?, ?)'
-    )
-      .bind(userId, isbn)
+    result = await db
+      .prepare(
+        'INSERT INTO scans (user_id, isbn, title, author, cover_url, language, publish_date, number_of_pages_median) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      )
+      .bind(userId, isbn, title ?? null, author ?? null, cover_url ?? null, language ?? null, publish_date ?? null, number_of_pages_median ?? null)
       .run()
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {
@@ -119,44 +191,52 @@ app.post('/api/scans', async (c) => {
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
-  const scanId = result.meta.last_row_id
-
-  c.executionCtx.waitUntil(
-    (async () => {
-      try {
-        const res = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`)
-        const data: any = await res.json()
-        const book = data[`ISBN:${isbn}`]
-        if (book) {
-          const title = book.title || null
-          const author = book.authors?.[0]?.name || null
-          const cover_url = book.cover?.medium || book.cover?.small || book.cover?.large || null
-          await db.prepare('UPDATE scans SET title = ?, author = ?, cover_url = ? WHERE id = ?')
-            .bind(title, author, cover_url, scanId)
-            .run()
-        }
-      } catch (e) {
-        console.error('Failed to fetch from OpenLibrary', e)
-      }
-    })()
+  return c.json(
+    {
+      id: result.meta.last_row_id,
+      isbn,
+      title: title ?? null,
+      author: author ?? null,
+      cover_url: cover_url ?? null,
+      status: 'unread',
+      created_at: new Date().toISOString(),
+      language: language ?? null,
+      publish_date: publish_date ?? null,
+      number_of_pages_median: number_of_pages_median ?? null,
+    },
+    201
   )
+})
 
-  return c.json({ message: 'Scan saved', isbn }, 201)
+app.patch('/api/scans/:id', async (c) => {
+  const { status } = await c.req.json()
+  if (!VALID_STATUSES.includes(status)) {
+    return c.json({ error: 'status must be one of: unread, reading, read' }, 400)
+  }
+
+  const result = await c.env.DB
+    .prepare('UPDATE scans SET status = ? WHERE id = ? AND user_id = ?')
+    .bind(status, c.req.param('id'), c.get('userId'))
+    .run()
+
+  if (!result.meta.changes) {
+    return c.json({ error: 'Book not found' }, 404)
+  }
+
+  return c.json({ id: Number(c.req.param('id')), status })
 })
 
 app.delete('/api/scans/:id', async (c) => {
-  const userId = c.get('userId')
-  const id = c.req.param('id')
-  const db = c.env.DB
-  
-  const { success } = await db.prepare('DELETE FROM scans WHERE id = ? AND user_id = ?')
-    .bind(id, userId)
+  const result = await c.env.DB
+    .prepare('DELETE FROM scans WHERE id = ? AND user_id = ?')
+    .bind(c.req.param('id'), c.get('userId'))
     .run()
-    
-  if (success) {
-    return c.json({ message: 'Scan deleted' })
+
+  if (!result.meta.changes) {
+    return c.json({ error: 'Book not found' }, 404)
   }
-  return c.json({ error: 'Failed to delete scan' }, 500)
+
+  return c.json({ message: 'Scan deleted' })
 })
 
 export default app

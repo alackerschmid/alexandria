@@ -1,11 +1,6 @@
 <template>
   <div class="min-h-screen bg-charcoal flex flex-col px-8">
-    <div class="pt-14">
-      <span
-        class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold"
-        >The Library of Alexandria</span
-      >
-    </div>
+    <AppHeader />
     <div class="flex-1 flex flex-col justify-center pb-20">
       <p
         class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
@@ -29,3 +24,7 @@
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+import AppHeader from "@/components/AppHeader.vue";
+</script>

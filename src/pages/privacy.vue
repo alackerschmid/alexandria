@@ -1,14 +1,7 @@
 <template>
   <div class="min-h-screen bg-charcoal flex flex-col px-8">
     <!-- Header -->
-    <div class="pt-14 flex justify-between items-center mb-16">
-      <router-link
-        to="/"
-        class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold"
-      >
-        The Library of Alexandria
-      </router-link>
-    </div>
+    <AppHeader class="mb-16" />
 
     <!-- Content -->
     <div class="flex-1 pb-20 max-w-prose space-y-10">
@@ -75,9 +68,9 @@
         <p class="text-sm text-text-secondary leading-relaxed">
           Questions?
           <a
-            href="mailto:a_lackerschmid@icloud.com"
+            href="mailto:alex@lackerschmid.website"
             class="text-text-primary underline underline-offset-4 hover:opacity-70 transition-opacity"
-            >a_lackerschmid@icloud.com</a
+            >alex@lackerschmid.website</a
           >
         </p>
       </section>
@@ -89,4 +82,5 @@
 
 <script setup lang="ts">
 import AppFooter from "@/components/AppFooter.vue";
+import AppHeader from "@/components/AppHeader.vue";
 </script>

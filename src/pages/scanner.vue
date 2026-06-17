@@ -33,9 +33,77 @@
       </button>
     </div>
 
+    <!-- Camera inaccessible: charcoal backdrop so nothing shows through -->
+    <div v-if="cameraFailed" class="absolute inset-0 z-0 bg-charcoal" />
+
+    <!-- Camera inaccessible: dedicated manual-entry screen -->
+    <Transition name="fade">
+      <div
+        v-if="
+          cameraFailed &&
+          (scanState === 'scanning' || scanState === 'detecting')
+        "
+        class="absolute inset-0 z-25 bg-charcoal flex flex-col px-8"
+      >
+        <form
+          class="flex-1 flex flex-col justify-center pb-24"
+          @submit.prevent="submitManualIsbn"
+        >
+          <p
+            class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+          >
+            Manual entry
+          </p>
+          <h1
+            class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
+          >
+            Enter<br />ISBN.
+          </h1>
+          <div class="flex items-start gap-2.5 mb-12">
+            <v-icon
+              icon="mdi-camera-off-outline"
+              size="15"
+              class="text-text-secondary/70 mt-0.5 shrink-0"
+            />
+            <p class="text-sm text-text-secondary leading-relaxed">
+              The camera isn't available. Type the 10- or 13-digit number
+              printed beneath the barcode.
+            </p>
+          </div>
+
+          <div class="border-b border-charcoal-border mb-12 pb-2">
+            <label
+              class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+            >
+              ISBN
+            </label>
+            <input
+              ref="manualEntryInput"
+              v-model="manualIsbn"
+              type="text"
+              inputmode="numeric"
+              :disabled="scanState === 'detecting'"
+              placeholder="978…"
+              class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
+            />
+          </div>
+
+          <button
+            type="submit"
+            :disabled="scanState === 'detecting'"
+            class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
+          >
+            {{ scanState === "detecting" ? "Looking up…" : "Look up book" }}
+          </button>
+        </form>
+      </div>
+    </Transition>
+
     <!-- Scanning frame + detecting status -->
     <div
-      v-if="scanState === 'scanning' || scanState === 'detecting'"
+      v-if="
+        !cameraFailed && (scanState === 'scanning' || scanState === 'detecting')
+      "
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
       <div class="relative" style="width: 320px; height: 128px">
@@ -93,20 +161,20 @@
       </div>
     </div>
 
-    <!-- Guide text (scanning only) -->
+    <!-- Guide text (scanning only, camera working) -->
     <div
-      v-if="scanState === 'scanning'"
+      v-if="scanState === 'scanning' && !cameraFailed"
       class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center"
     >
-      <span class="text-white/40 text-[10px] tracking-[0.25em] uppercase">
+      <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
         Point at a barcode
       </span>
     </div>
 
-    <!-- Manual ISBN input overlay -->
+    <!-- Quick manual ISBN bar (camera working — optional shortcut) -->
     <Transition name="slide-up">
       <div
-        v-if="showManualInput && scanState === 'scanning'"
+        v-if="showManualInput && !cameraFailed && scanState === 'scanning'"
         class="absolute bottom-24 left-6 right-6 z-30 flex border border-white/20"
         style="background: rgba(0, 0, 0, 0.9)"
       >
@@ -218,7 +286,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from "vue";
+import { ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import Quagga from "@ericblade/quagga2";
@@ -239,6 +307,9 @@ interface BookPreview {
   year?: string;
   coverUrl?: string;
   notFound?: boolean;
+  language?: string;
+  publishDate?: string;
+  noOfPages?: number;
 }
 
 const scanState = ref<ScanState>("scanning");
@@ -267,8 +338,20 @@ async function loadLibraryIsbns() {
 
 // ── Manual ISBN entry ─────────────────────────────────────────────────────────
 
-const showManualInput = ref(false);
+const showManualInput = ref(true);
 const manualIsbn = ref("");
+const cameraFailed = ref(false);
+const manualEntryInput = ref<HTMLInputElement | null>(null);
+
+const focusManualEntry = () => {
+  nextTick(() => manualEntryInput.value?.focus());
+};
+
+// When the camera is unavailable, keep the manual-entry field focused each time
+// we return to the scanning state (e.g. after saving or dismissing a preview).
+watch(scanState, (state) => {
+  if (state === "scanning" && cameraFailed.value) focusManualEntry();
+});
 
 const submitManualIsbn = () => {
   const isbn = manualIsbn.value.replace(/[^0-9Xx]/g, "");
@@ -277,7 +360,7 @@ const submitManualIsbn = () => {
     return;
   }
   manualIsbn.value = "";
-  showManualInput.value = false;
+  if (!cameraFailed.value) showManualInput.value = false;
   onBarcodeDetected(isbn.toUpperCase());
 };
 
@@ -297,19 +380,24 @@ const showToast = (message: string, type: ToastType = "success") => {
 
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}`,
-    );
-    const data = await res.json();
-    const info = data.items?.[0]?.volumeInfo;
-    if (info) {
-      return {
-        isbn,
-        title: info.title,
-        author: info.authors?.[0] ?? "Unknown Author",
-        year: info.publishedDate?.slice(0, 4),
-        coverUrl: info.imageLinks?.thumbnail?.replace("http:", "https:"),
-      };
+    const res = await fetch(`${API_BASE}/api/books/lookup?isbn=${isbn}`, {
+      headers: { Authorization: `Bearer ${authStore.token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const info = data.items?.[0]?.volumeInfo;
+      if (info) {
+        return {
+          isbn,
+          title: info.title,
+          author: info.authors?.[0] ?? "Unknown Author",
+          year: info.publishedDate?.slice(0, 4),
+          coverUrl: info.imageLinks?.thumbnail?.replace("http:", "https:"),
+          language: info.language,
+          publishDate: info.publishedDate,
+          noOfPages: info.pageCount,
+        };
+      }
     }
   } catch {}
 
@@ -319,12 +407,16 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
     );
     const data = await res.json();
     const book = data[`ISBN:${isbn}`];
+    console.log("OpenLibrary lookup result:", book);
     if (book) {
       return {
         isbn,
         title: book.title,
         author: book.authors?.[0]?.name ?? "Unknown Author",
         coverUrl: book.cover?.medium,
+        language: book.language,
+        publishDate: book.publish_date,
+        noOfPages: book.number_of_pages,
       };
     }
   } catch {}
@@ -367,6 +459,9 @@ interface QueuedBook {
   title?: string;
   author?: string;
   coverUrl?: string;
+  language?: string;
+  publishDate?: string;
+  noOfPages?: number;
 }
 
 const QUEUE_KEY = "bookscan_queue_v2";
@@ -409,6 +504,9 @@ async function postScan(book: QueuedBook): Promise<"saved" | "duplicate"> {
       title: book.title ?? null,
       author: book.author ?? null,
       cover_url: book.coverUrl ?? null,
+      language: book.language ?? null,
+      publish_date: book.publishDate ?? null,
+      number_of_pages_median: book.noOfPages ?? null,
     }),
   });
   if (res.status === 409) return "duplicate";
@@ -438,6 +536,9 @@ async function drainQueue() {
           title: book.title ?? null,
           author: book.author ?? null,
           cover_url: book.coverUrl ?? null,
+          language: book.language ?? null,
+          publish_date: book.publishDate ?? null,
+          number_of_pages_median: book.noOfPages ?? null,
         }),
       });
       if (res.status === 401) {
@@ -472,8 +573,17 @@ const saveBook = async () => {
     title: detectedBook.value.notFound ? undefined : detectedBook.value.title,
     author: detectedBook.value.notFound ? undefined : detectedBook.value.author,
     coverUrl: detectedBook.value.coverUrl,
+    language: detectedBook.value.notFound
+      ? undefined
+      : detectedBook.value.language,
+    publishDate: detectedBook.value.notFound
+      ? undefined
+      : detectedBook.value.publishDate,
+    noOfPages: detectedBook.value.notFound
+      ? undefined
+      : detectedBook.value.noOfPages,
   };
-
+  console.log("Saving book:", queued);
   try {
     const result = await postScan(queued);
     sessionScanned.add(queued.isbn);
@@ -554,8 +664,9 @@ const startScanner = () => {
     },
     (err: unknown) => {
       if (err) {
-        showToast("Failed to access camera", "error");
+        cameraFailed.value = true;
         console.error(err);
+        focusManualEntry();
         return;
       }
       Quagga.start();

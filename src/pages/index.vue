@@ -174,12 +174,31 @@
             <div
               class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
             >
-              {{ book.isbn }}
+              ISBN {{ book.isbn }}
             </div>
             <div
               class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
             >
-              {{ book.created_at }}
+              ADDED ON {{ book.created_at }}
+            </div>
+            <!-- <div
+              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+            >
+              {{ book.language }}
+            </div>
+            <div
+              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+            >
+              {{ book.publish_date }}
+            </div> -->
+            <div
+              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+            >
+              {{
+                book.number_of_pages_median
+                  ? `${book.number_of_pages_median} pages`
+                  : ""
+              }}
             </div>
             <!-- Status button -->
             <button
@@ -306,6 +325,9 @@ interface Book {
   cover_url: string | null;
   status: ReadStatus;
   created_at: string;
+  language?: string | null;
+  publish_date?: string | null;
+  number_of_pages_median?: number | null;
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
