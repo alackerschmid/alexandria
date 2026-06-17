@@ -3,13 +3,17 @@
     :model-value="modelValue"
     :timeout="timeout"
     :location="location"
-    color="#111110"
+    color="transparent"
+    variant="flat"
+    :elevation="0"
     rounded="0"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div class="flex items-center gap-3 py-0.5">
+    <div
+      class="flex items-center gap-3 px-4 py-3 bg-charcoal-light border border-charcoal-border"
+    >
       <v-icon :icon="ICON[type]" :color="type" size="16" class="shrink-0" />
-      <span class="text-xs text-white tracking-wide">{{ message }}</span>
+      <span class="text-xs text-text-primary tracking-wide">{{ message }}</span>
     </div>
   </v-snackbar>
 </template>

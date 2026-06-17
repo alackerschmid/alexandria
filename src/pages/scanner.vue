@@ -13,7 +13,7 @@
 
     <!-- Header -->
     <div
-      class="absolute top-0 left-0 right-0 z-30 px-5 pt-10 pb-5 flex justify-between items-center"
+      class="absolute top-0 left-0 right-0 z-30 px-5 pt-7 pb-5 flex justify-between items-center"
     >
       <span
         v-if="sessionCount > 0"
@@ -193,31 +193,6 @@
       </div>
     </div>
 
-    <!-- Quick manual ISBN bar (camera working — optional shortcut) -->
-    <Transition name="slide-up">
-      <div
-        v-if="showManualInput && !manualMode && scanState === 'scanning'"
-        class="absolute bottom-8 left-6 right-6 z-30 flex border border-white/20"
-        style="background: rgba(0, 0, 0, 0.9)"
-      >
-        <input
-          ref="manualInputRef"
-          v-model="manualIsbn"
-          type="text"
-          inputmode="numeric"
-          placeholder="ISBN-10 or ISBN-13"
-          class="flex-1 bg-transparent text-white px-4 py-3 text-sm outline-none placeholder:text-white/30"
-          @keydown.enter="submitManualIsbn"
-        />
-        <button
-          class="px-5 text-orange-neon text-[10px] font-bold tracking-[0.25em] uppercase"
-          @click="submitManualIsbn"
-        >
-          Go
-        </button>
-      </div>
-    </Transition>
-
     <!-- Preview card — bottom sheet on mobile, centered card on desktop -->
     <Transition name="slide-up">
       <div
@@ -375,7 +350,6 @@ async function loadLibraryIsbns() {
 
 // ── Manual ISBN entry ─────────────────────────────────────────────────────────
 
-const showManualInput = ref(true);
 const manualIsbn = ref("");
 const cameraFailed = ref(false);
 // Desktop opts into the camera explicitly; mobile starts it automatically.
@@ -405,7 +379,6 @@ const submitManualIsbn = () => {
     return;
   }
   manualIsbn.value = "";
-  if (!manualMode.value) showManualInput.value = false;
   onBarcodeDetected(isbn.toUpperCase());
 };
 
