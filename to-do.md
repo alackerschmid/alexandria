@@ -22,6 +22,7 @@
 - add detail page for books
 - work around / add check for google books api rate limit
 - automatic re query for incomplete data (ie covers)
+- implement i18n
 
 ## FUTURE
 

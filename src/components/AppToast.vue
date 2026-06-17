@@ -2,7 +2,7 @@
   <v-snackbar
     :model-value="modelValue"
     :timeout="timeout"
-    location="bottom"
+    :location="location"
     color="#111110"
     rounded="0"
     @update:model-value="$emit('update:modelValue', $event)"
@@ -23,8 +23,9 @@ withDefaults(
     message: string;
     type?: ToastType;
     timeout?: number;
+    location?: "top" | "bottom" | "center";
   }>(),
-  { type: "success", timeout: 3000 }
+  { type: "success", timeout: 3000, location: "bottom" }
 );
 
 defineEmits<{ "update:modelValue": [value: boolean] }>();

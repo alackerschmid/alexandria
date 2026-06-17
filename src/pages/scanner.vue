@@ -1,5 +1,7 @@
 <template>
-  <div class="h-screen bg-black relative overflow-hidden touch-none select-none">
+  <div
+    class="h-screen bg-black relative overflow-hidden touch-none select-none"
+  >
     <!-- Camera (always running) -->
     <div ref="scannerContainer" class="scanner-viewport w-full h-full"></div>
 
@@ -11,7 +13,7 @@
 
     <!-- Header -->
     <div
-      class="absolute top-0 left-0 right-0 z-30 px-5 py-5 flex justify-between items-center"
+      class="absolute top-0 left-0 right-0 z-30 px-5 pt-10 pb-5 flex justify-between items-center"
     >
       <span
         v-if="sessionCount > 0"
@@ -124,7 +126,7 @@
         style="
           width: 320px;
           height: 128px;
-          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
         "
       >
         <!-- Corner marks only — no inner fill -->
@@ -159,6 +161,16 @@
           class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
         />
 
+        <!-- Guide text — anchored below the frame -->
+        <div
+          v-if="scanState === 'scanning'"
+          class="absolute top-full left-1/2 -translate-x-1/2 mt-6 whitespace-nowrap pointer-events-none"
+        >
+          <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
+            Point at a barcode
+          </span>
+        </div>
+
         <!-- "Looking up" pill — anchored below the frame -->
         <Transition name="fade">
           <div
@@ -181,21 +193,11 @@
       </div>
     </div>
 
-    <!-- Guide text (scanning only, camera working) -->
-    <div
-      v-if="scanState === 'scanning' && !manualMode"
-      class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center"
-    >
-      <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
-        Point at a barcode
-      </span>
-    </div>
-
     <!-- Quick manual ISBN bar (camera working — optional shortcut) -->
     <Transition name="slide-up">
       <div
         v-if="showManualInput && !manualMode && scanState === 'scanning'"
-        class="absolute bottom-24 left-6 right-6 z-30 flex border border-white/20"
+        class="absolute bottom-8 left-6 right-6 z-30 flex border border-white/20"
         style="background: rgba(0, 0, 0, 0.9)"
       >
         <input
@@ -224,78 +226,80 @@
         "
         class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
       >
-       <div
-         class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
-         style="background: #111110"
-       >
-        <!-- Not found notice -->
-        <p
-          v-if="detectedBook.notFound"
-          class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
+        <div
+          class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+          style="background: #111110"
         >
-          No metadata found — ISBN only will be saved
-        </p>
-
-        <!-- Book info -->
-        <div class="flex gap-4 mb-6">
-          <img
-            v-if="detectedBook.coverUrl"
-            :src="detectedBook.coverUrl"
-            class="w-14 h-20 object-cover shrink-0"
-          />
-          <div
-            v-else
-            class="w-14 h-20 flex items-center justify-center shrink-0"
-            style="background: #1c1b19; border: 1px solid #2e2b28"
+          <!-- Not found notice -->
+          <p
+            v-if="detectedBook.notFound"
+            class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
           >
-            <v-icon icon="mdi-book-outline" size="24" color="grey" />
-          </div>
+            No metadata found — ISBN only will be saved
+          </p>
 
-          <div class="flex-1 min-w-0 pt-1">
-            <p
-              v-if="detectedBook.notFound"
-              class="text-base text-white/40 italic leading-snug mb-1"
-            >
-              Unknown book
-            </p>
-            <p
+          <!-- Book info -->
+          <div class="flex gap-4 mb-6">
+            <img
+              v-if="detectedBook.coverUrl"
+              :src="detectedBook.coverUrl"
+              class="w-14 h-20 object-cover shrink-0"
+            />
+            <div
               v-else
-              class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
+              class="w-14 h-20 flex items-center justify-center shrink-0"
+              style="background: #1c1b19; border: 1px solid #2e2b28"
             >
-              {{ detectedBook.title }}
-            </p>
-            <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
-              {{ detectedBook.author
-              }}<span v-if="detectedBook.year"> · {{ detectedBook.year }}</span>
-            </p>
-            <p class="text-[10px] text-white/30 font-mono mt-1">
-              {{ detectedBook.isbn }}
-            </p>
-          </div>
-        </div>
+              <v-icon icon="mdi-book-outline" size="24" color="grey" />
+            </div>
 
-        <!-- Actions -->
-        <button
-          class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
-          :disabled="scanState === 'saving'"
-          @click="saveBook"
-        >
-          {{
-            scanState === "saving"
-              ? "—"
-              : detectedBook.notFound
-                ? "Save ISBN"
-                : "Save Book"
-          }}
-        </button>
-        <button
-          class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
-          :disabled="scanState === 'saving'"
-          @click="scanAgain"
-        >
-          Scan Again
-        </button>
-       </div>
+            <div class="flex-1 min-w-0 pt-1">
+              <p
+                v-if="detectedBook.notFound"
+                class="text-base text-white/40 italic leading-snug mb-1"
+              >
+                Unknown book
+              </p>
+              <p
+                v-else
+                class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
+              >
+                {{ detectedBook.title }}
+              </p>
+              <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
+                {{ detectedBook.author
+                }}<span v-if="detectedBook.year">
+                  · {{ detectedBook.year }}</span
+                >
+              </p>
+              <p class="text-[10px] text-white/30 font-mono mt-1">
+                {{ detectedBook.isbn }}
+              </p>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <button
+            class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
+            :disabled="scanState === 'saving'"
+            @click="saveBook"
+          >
+            {{
+              scanState === "saving"
+                ? "—"
+                : detectedBook.notFound
+                  ? "Save ISBN"
+                  : "Save Book"
+            }}
+          </button>
+          <button
+            class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
+            :disabled="scanState === 'saving'"
+            @click="scanAgain"
+          >
+            Discard and scan again
+          </button>
+        </div>
       </div>
     </Transition>
 
@@ -304,7 +308,7 @@
       v-model="toast"
       :message="toastMessage"
       :type="toastType"
-      class="mb-16"
+      location="center"
     />
   </div>
 </template>
