@@ -33,26 +33,25 @@
       </button>
     </div>
 
-    <!-- Camera inaccessible: charcoal backdrop so nothing shows through -->
-    <div v-if="cameraFailed" class="absolute inset-0 z-0 bg-charcoal" />
+    <!-- Manual mode: charcoal backdrop so nothing shows through -->
+    <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
 
-    <!-- Camera inaccessible: dedicated manual-entry screen -->
+    <!-- Manual-entry screen (camera unavailable, or desktop default) -->
     <Transition name="fade">
       <div
         v-if="
-          cameraFailed &&
-          (scanState === 'scanning' || scanState === 'detecting')
+          manualMode && (scanState === 'scanning' || scanState === 'detecting')
         "
         class="absolute inset-0 z-25 bg-charcoal flex flex-col px-8"
       >
         <form
-          class="flex-1 flex flex-col justify-center pb-24"
+          class="flex-1 flex flex-col justify-center pb-24 w-full max-w-md mx-auto"
           @submit.prevent="submitManualIsbn"
         >
           <p
             class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
           >
-            Manual entry
+            {{ cameraFailed ? "Manual entry" : "Add a book" }}
           </p>
           <h1
             class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
@@ -61,13 +60,16 @@
           </h1>
           <div class="flex items-start gap-2.5 mb-12">
             <v-icon
-              icon="mdi-camera-off-outline"
+              :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
               size="15"
               class="text-text-secondary/70 mt-0.5 shrink-0"
             />
             <p class="text-sm text-text-secondary leading-relaxed">
-              The camera isn't available. Type the 10- or 13-digit number
-              printed beneath the barcode.
+              {{
+                cameraFailed
+                  ? "The camera isn't available. Type the 10- or 13-digit number printed beneath the barcode."
+                  : "Type the 10- or 13-digit number printed beneath the barcode."
+              }}
             </p>
           </div>
 
@@ -95,6 +97,17 @@
           >
             {{ scanState === "detecting" ? "Looking up…" : "Look up book" }}
           </button>
+
+          <!-- Desktop: optional webcam fallback -->
+          <button
+            v-if="mdAndUp && !cameraFailed"
+            type="button"
+            class="mt-6 self-center flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+            @click="useCamera"
+          >
+            <v-icon icon="mdi-camera-outline" size="14" />
+            Use camera instead
+          </button>
         </form>
       </div>
     </Transition>
@@ -102,7 +115,7 @@
     <!-- Scanning frame + detecting status -->
     <div
       v-if="
-        !cameraFailed && (scanState === 'scanning' || scanState === 'detecting')
+        !manualMode && (scanState === 'scanning' || scanState === 'detecting')
       "
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
@@ -163,7 +176,7 @@
 
     <!-- Guide text (scanning only, camera working) -->
     <div
-      v-if="scanState === 'scanning' && !cameraFailed"
+      v-if="scanState === 'scanning' && !manualMode"
       class="absolute bottom-0 left-0 right-0 z-20 pb-10 flex flex-col items-center"
     >
       <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
@@ -174,7 +187,7 @@
     <!-- Quick manual ISBN bar (camera working — optional shortcut) -->
     <Transition name="slide-up">
       <div
-        v-if="showManualInput && !cameraFailed && scanState === 'scanning'"
+        v-if="showManualInput && !manualMode && scanState === 'scanning'"
         class="absolute bottom-24 left-6 right-6 z-30 flex border border-white/20"
         style="background: rgba(0, 0, 0, 0.9)"
       >
@@ -196,15 +209,18 @@
       </div>
     </Transition>
 
-    <!-- Preview card — slides up from bottom over the live camera -->
+    <!-- Preview card — bottom sheet on mobile, centered card on desktop -->
     <Transition name="slide-up">
       <div
         v-if="
           (scanState === 'preview' || scanState === 'saving') && detectedBook
         "
-        class="absolute bottom-0 left-0 right-0 z-40 px-6 pt-6 pb-10"
-        style="background: #111110"
+        class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
       >
+       <div
+         class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+         style="background: #111110"
+       >
         <!-- Not found notice -->
         <p
           v-if="detectedBook.notFound"
@@ -272,6 +288,7 @@
         >
           Scan Again
         </button>
+       </div>
       </div>
     </Transition>
 
@@ -286,14 +303,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, nextTick, watch } from "vue";
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  nextTick,
+  watch,
+} from "vue";
 import { useRouter } from "vue-router";
+import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const { mdAndUp } = useDisplay();
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // ── State machine ─────────────────────────────────────────────────────────────
@@ -341,16 +367,24 @@ async function loadLibraryIsbns() {
 const showManualInput = ref(true);
 const manualIsbn = ref("");
 const cameraFailed = ref(false);
+// Desktop opts into the camera explicitly; mobile starts it automatically.
+const cameraActive = ref(false);
 const manualEntryInput = ref<HTMLInputElement | null>(null);
+
+// The manual-entry screen is the primary view when the camera failed, or on
+// desktop until the user explicitly chooses to use a webcam.
+const manualMode = computed(
+  () => cameraFailed.value || (mdAndUp.value && !cameraActive.value),
+);
 
 const focusManualEntry = () => {
   nextTick(() => manualEntryInput.value?.focus());
 };
 
-// When the camera is unavailable, keep the manual-entry field focused each time
-// we return to the scanning state (e.g. after saving or dismissing a preview).
+// Keep the manual-entry field focused each time we return to the scanning state
+// (e.g. after saving or dismissing a preview) while in manual mode.
 watch(scanState, (state) => {
-  if (state === "scanning" && cameraFailed.value) focusManualEntry();
+  if (state === "scanning" && manualMode.value) focusManualEntry();
 });
 
 const submitManualIsbn = () => {
@@ -360,8 +394,14 @@ const submitManualIsbn = () => {
     return;
   }
   manualIsbn.value = "";
-  if (!cameraFailed.value) showManualInput.value = false;
+  if (!manualMode.value) showManualInput.value = false;
   onBarcodeDetected(isbn.toUpperCase());
+};
+
+// Desktop: start the webcam on demand from the manual-entry screen.
+const useCamera = () => {
+  cameraActive.value = true;
+  nextTick(startScanner);
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -682,7 +722,12 @@ onMounted(() => {
   drainQueue();
   loadLibraryIsbns();
   window.addEventListener("online", drainQueue);
-  startScanner();
+  // Desktop defaults to manual entry; the camera is opt-in there.
+  if (manualMode.value) {
+    focusManualEntry();
+  } else {
+    startScanner();
+  }
 });
 
 onBeforeUnmount(() => {

@@ -13,7 +13,7 @@
 
     <!-- Form -->
     <form
-      class="flex-1 flex flex-col justify-center pb-20"
+      class="flex-1 flex flex-col justify-center pb-20 w-full max-w-sm mx-auto"
       @submit.prevent="submit"
     >
       <h1

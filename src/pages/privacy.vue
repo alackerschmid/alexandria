@@ -23,9 +23,9 @@
           Data collected
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          The Library of Alexandria stores your email address and the books you
-          scan: ISBN, title, author, cover image URL, and reading status. No
-          other personal data is collected.
+          Provided you sign up for an account, we store your email address and
+          the books you scan: ISBN, title, author, cover image URL, and reading
+          status. No other personal data is collected.
         </p>
       </section>
 
@@ -34,8 +34,8 @@
           Storage
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Data is stored in Cloudflare D1 (SQLite), hosted across Cloudflare's
-          global network. Your password is never stored — only a bcrypt hash.
+          Your data is stored in Cloudflare D1, hosted across Cloudflare's
+          global network. Passwords are never stored in plaintext.
         </p>
       </section>
 
@@ -45,8 +45,8 @@
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
           Book metadata (title, author, cover) is fetched from Google Books API
-          and OpenLibrary using only the scanned ISBN. No account information is
-          sent to these services.
+          and OpenLibrary using the provided ISBN. No other identifying
+          information is sent to these services.
         </p>
       </section>
 
@@ -66,7 +66,6 @@
           Contact
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Questions?
           <a
             href="mailto:alex@lackerschmid.website"
             class="text-text-primary underline underline-offset-4 hover:opacity-70 transition-opacity"

@@ -9,7 +9,7 @@
 ## PRIORITY 2
 
 - implement proper redirecting / dialogueing between account creation, login window & login
-- write a comprehensive readme for github
+- write a comprehensive readme as introductory page for github
 - expand desktop view:
   - modify camera button palcement / UI if not on mobile
   - modify login UI for desktop
@@ -25,6 +25,7 @@
 
 ## FUTURE
 
+- export all design elements as npm package
 - add export button & functionality that exports all books as .csv
 - modify database structure to create unique isbn table and use m:n relationship between users / books for faster lookup
 - bulk editing / import

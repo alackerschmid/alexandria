@@ -1,249 +1,206 @@
 <template>
-  <div class="bg-charcoal min-h-screen">
-    <!-- Header -->
-    <div class="px-6 pt-14 pb-6 border-b border-charcoal-border">
-      <div class="flex justify-between items-start">
-        <div>
-          <p
-            class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
-          >
-            Library
-          </p>
-          <h1
-            class="font-heading text-5xl font-bold text-text-primary leading-[1.05]"
-          >
-            Your<br />Books.
-          </h1>
-        </div>
-        <div class="flex flex-col items-end gap-3 pt-1">
-          <div class="flex gap-1">
-            <v-btn
-              :icon="
-                themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'
-              "
-              variant="text"
-              color="primary"
-              size="small"
-              @click="themeStore.toggle()"
-            />
-            <v-btn
-              icon="mdi-logout"
-              variant="text"
-              color="primary"
-              size="small"
-              @click="authStore.logout()"
-            />
-          </div>
-          <span
-            v-if="!loading && books.length > 0"
-            class="text-[10px] text-text-secondary tracking-widest uppercase"
-          >
-            {{ displayedBooks.length
-            }}<template v-if="displayedBooks.length !== books.length"
-              >/{{ books.length }}</template
+  <div class="bg-charcoal min-h-screen flex flex-col items-center">
+    <div class="w-full max-w-300 flex-1 flex flex-col">
+      <!-- Header -->
+      <div class="px-6 md:px-10 pt-14 pb-6 border-b border-charcoal-border">
+        <div class="flex justify-between items-start">
+          <div>
+            <p
+              class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
             >
-            {{ displayedBooks.length === 1 ? "title" : "titles" }}
-          </span>
+              Library
+            </p>
+            <h1
+              class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]"
+            >
+              Your<br class="md:hidden" /><span class="hidden md:inline"
+                >&nbsp;</span
+              >Books.
+            </h1>
+          </div>
+          <div class="flex flex-col items-end gap-3 pt-1">
+            <div class="flex items-center gap-1">
+              <v-btn
+                class="hidden md:inline-flex mr-1"
+                color="primary"
+                rounded="0"
+                elevation="0"
+                size="small"
+                prepend-icon="mdi-camera"
+                @click="$router.push('/scanner')"
+              >
+              </v-btn>
+              <v-btn
+                :icon="
+                  themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'
+                "
+                variant="text"
+                color="primary"
+                size="small"
+                @click="themeStore.toggle()"
+              />
+              <v-btn
+                icon="mdi-logout"
+                variant="text"
+                color="primary"
+                size="small"
+                @click="authStore.logout()"
+              />
+            </div>
+            <span
+              v-if="!loading && books.length > 0"
+              class="text-[10px] text-text-secondary tracking-widest uppercase"
+            >
+              {{ displayedBooks.length
+              }}<template v-if="displayedBooks.length !== books.length"
+                >/{{ books.length }}</template
+              >
+              {{ displayedBooks.length === 1 ? "title" : "titles" }}
+            </span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Search + controls -->
-    <div class="px-6 pt-5 pb-4 border-b border-charcoal-border space-y-4">
-      <!-- Search -->
-      <div class="border-b border-charcoal-border pb-2 flex items-center gap-2">
-        <v-icon
-          icon="mdi-magnify"
-          size="16"
-          class="text-text-secondary shrink-0"
-        />
-        <input
-          v-model="search"
-          type="search"
-          placeholder="Search titles, authors, ISBNs…"
-          class="flex-1 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-secondary/50"
-        />
-        <button
-          v-if="search"
-          class="text-text-secondary hover:text-text-primary transition-colors"
-          @click="search = ''"
+      <!-- Search + controls -->
+      <div
+        class="px-6 md:px-10 pt-5 pb-4 border-b border-charcoal-border space-y-4"
+      >
+        <!-- Search -->
+        <div
+          class="border-b border-charcoal-border pb-2 flex items-center gap-2"
         >
-          <v-icon icon="mdi-close" size="14" />
-        </button>
-      </div>
-
-      <!-- Sort + Status filter row -->
-      <div class="flex items-center justify-between gap-4">
-        <!-- Sort -->
-        <select
-          v-model="sortBy"
-          class="bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
-        >
-          <option value="date_desc">Newest first</option>
-          <option value="date_asc">Oldest first</option>
-          <option value="title_asc">Title A–Z</option>
-          <option value="title_desc">Title Z–A</option>
-          <option value="author_asc">Author A–Z</option>
-        </select>
-
-        <!-- Status filter tabs -->
-        <div class="flex gap-4">
+          <v-icon
+            icon="mdi-magnify"
+            size="16"
+            class="text-text-secondary shrink-0"
+          />
+          <input
+            v-model="search"
+            type="search"
+            placeholder="Search titles, authors, ISBNs…"
+            class="flex-1 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-secondary/50"
+          />
           <button
-            v-for="tab in STATUS_TABS"
-            :key="tab.value"
-            class="text-[10px] tracking-[0.15em] uppercase transition-colors"
-            :class="
-              filterStatus === tab.value
-                ? 'text-text-primary border-b border-text-primary pb-0.5'
-                : 'text-text-secondary/50'
-            "
-            @click="filterStatus = tab.value"
+            v-if="search"
+            class="text-text-secondary hover:text-text-primary transition-colors"
+            @click="search = ''"
           >
-            {{ tab.label }}
+            <v-icon icon="mdi-close" size="14" />
           </button>
         </div>
-      </div>
-    </div>
 
-    <!-- Loading -->
-    <div v-if="loading" class="flex justify-center mt-20">
-      <v-progress-circular indeterminate color="primary" size="24" width="2" />
-    </div>
-
-    <!-- Error -->
-    <div
-      v-if="error"
-      class="mx-6 mt-6 pl-4 py-2 border-l-2 text-sm"
-      style="
-        border-color: rgb(var(--v-theme-error));
-        color: rgb(var(--v-theme-error));
-      "
-    >
-      {{ error }}
-    </div>
-
-    <!-- Empty state -->
-    <div v-if="!loading && books.length === 0" class="px-6 pt-16 pb-8">
-      <p class="font-heading text-3xl font-bold text-text-primary mb-3">
-        Nothing here yet.
-      </p>
-      <p class="text-sm text-text-secondary leading-relaxed">
-        Tap the button below to scan your first barcode.
-      </p>
-    </div>
-
-    <!-- No results for current filter -->
-    <div
-      v-else-if="!loading && books.length > 0 && displayedBooks.length === 0"
-      class="px-6 pt-16 pb-8"
-    >
-      <p class="text-sm text-text-secondary">No books match this filter.</p>
-    </div>
-
-    <!-- Book list -->
-    <div v-if="displayedBooks.length > 0" class="pb-28">
-      <div
-        v-for="book in displayedBooks"
-        :key="book.id"
-        class="flex items-start gap-4 px-6 py-5 border-b border-charcoal-border"
-      >
-        <!-- Cover -->
-        <img
-          v-if="book.cover_url"
-          :src="book.cover_url"
-          class="w-12 h-18 object-cover shrink-0"
-        />
-        <div
-          v-else
-          class="w-12 h-18 bg-charcoal border border-charcoal-border flex items-center justify-center shrink-0"
-        >
-          <v-icon icon="mdi-book-outline" size="18" color="primary" />
-        </div>
-
-        <!-- Info -->
-        <div class="flex-1 min-w-0 mt-0.5">
-          <div
-            class="font-heading text-base font-bold text-text-primary leading-snug line-clamp-2 mb-1"
+        <!-- Sort + Status filter row -->
+        <div class="flex items-center justify-between gap-4">
+          <!-- Sort -->
+          <select
+            v-model="sortBy"
+            class="w-44 bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
           >
-            {{ book.title || book.isbn }}
-          </div>
-          <div class="text-xs text-text-secondary mb-2">
-            {{ book.author || "Unknown Author" }}
-          </div>
-          <div class="flex items-center gap-3">
-            <div
-              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
-            >
-              ISBN {{ book.isbn }}
-            </div>
-            <div
-              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
-            >
-              ADDED ON {{ book.created_at }}
-            </div>
-            <!-- <div
-              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
-            >
-              {{ book.language }}
-            </div>
-            <div
-              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
-            >
-              {{ book.publish_date }}
-            </div> -->
-            <div
-              class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
-            >
-              {{
-                book.number_of_pages_median
-                  ? `${book.number_of_pages_median} pages`
-                  : ""
-              }}
-            </div>
-            <!-- Status button -->
+            <option value="date_desc">Newest first</option>
+            <option value="date_asc">Oldest first</option>
+            <option value="title_asc">Title A–Z</option>
+            <option value="title_desc">Title Z–A</option>
+            <option value="author_asc">Author A–Z</option>
+          </select>
+
+          <!-- Status filter tabs -->
+          <div class="flex gap-4">
             <button
-              class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
-              :class="STATUS_CONFIG[book.status].class"
-              @click="cycleStatus(book)"
+              v-for="tab in STATUS_TABS"
+              :key="tab.value"
+              class="text-[10px] tracking-[0.15em] uppercase transition-colors"
+              :class="
+                filterStatus === tab.value
+                  ? 'text-text-primary border-b border-text-primary pb-0.5'
+                  : 'text-text-secondary/50'
+              "
+              @click="filterStatus = tab.value"
             >
-              <v-icon :icon="STATUS_CONFIG[book.status].icon" size="10" />
-              {{ STATUS_CONFIG[book.status].label }}
+              {{ tab.label }}
             </button>
           </div>
         </div>
+      </div>
 
-        <!-- Delete -->
-        <v-btn
-          icon="mdi-delete-outline"
-          variant="text"
+      <!-- Loading -->
+      <div v-if="loading" class="flex justify-center mt-20">
+        <v-progress-circular
+          indeterminate
           color="primary"
-          size="x-small"
-          class="shrink-0 mt-0.5"
-          @click="openDeleteDialog(book)"
+          size="24"
+          width="2"
         />
       </div>
 
-      <!-- Load more -->
-      <div v-if="hasMore" class="flex justify-center py-8">
-        <button
-          class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
-          :class="{ 'opacity-50 pointer-events-none': loadingMore }"
-          @click="loadMore"
-        >
-          {{ loadingMore ? "—" : "Load more" }}
-        </button>
+      <!-- Error -->
+      <div
+        v-if="error"
+        class="mx-6 mt-6 pl-4 py-2 border-l-2 text-sm"
+        style="
+          border-color: rgb(var(--v-theme-error));
+          color: rgb(var(--v-theme-error));
+        "
+      >
+        {{ error }}
       </div>
+
+      <!-- Empty state -->
+      <div
+        v-if="!loading && books.length === 0"
+        class="px-6 md:px-10 pt-16 pb-8"
+      >
+        <p class="font-heading text-3xl font-bold text-text-primary mb-3">
+          Nothing here yet.
+        </p>
+        <p class="text-sm text-text-secondary leading-relaxed">
+          Tap the button below to scan your first barcode.
+        </p>
+      </div>
+
+      <!-- No results for current filter -->
+      <div
+        v-else-if="!loading && books.length > 0 && displayedBooks.length === 0"
+        class="px-6 md:px-10 pt-16 pb-8"
+      >
+        <p class="text-sm text-text-secondary">No books match this filter.</p>
+      </div>
+
+      <!-- Book list -->
+      <div v-if="displayedBooks.length > 0" class="pb-28">
+        <div
+          class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10"
+        >
+          <BookCard
+            v-for="book in displayedBooks"
+            :key="book.id"
+            :book="book"
+            @cycle-status="cycleStatus(book)"
+            @delete="openDeleteDialog(book)"
+          />
+        </div>
+
+        <!-- Load more -->
+        <div v-if="hasMore" class="flex justify-center py-8">
+          <button
+            class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
+            :class="{ 'opacity-50 pointer-events-none': loadingMore }"
+            @click="loadMore"
+          >
+            {{ loadingMore ? "—" : "Load more" }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <AppFooter class="mt-auto" />
     </div>
 
-    <!-- Footer -->
-    <AppFooter />
-
-    <!-- Scan FAB -->
+    <!-- Scan FAB (mobile only) -->
     <v-btn
       color="primary"
       size="x-large"
       icon="mdi-camera"
-      class="fixed bottom-8 right-6 z-50"
+      class="fixed bottom-8 right-6 z-50 md:hidden"
       elevation="0"
       rounded="0"
       @click="$router.push('/scanner')"
@@ -302,13 +259,16 @@ import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
+import BookCard, {
+  type Book,
+  type ReadStatus,
+} from "@/components/BookCard.vue";
 
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type ReadStatus = "unread" | "reading" | "read";
 type SortOption =
   | "date_desc"
   | "date_asc"
@@ -317,41 +277,7 @@ type SortOption =
   | "author_asc";
 type StatusFilter = "all" | ReadStatus;
 
-interface Book {
-  id: number;
-  isbn: string;
-  title: string | null;
-  author: string | null;
-  cover_url: string | null;
-  status: ReadStatus;
-  created_at: string;
-  language?: string | null;
-  publish_date?: string | null;
-  number_of_pages_median?: number | null;
-}
-
 // ── Config ────────────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<
-  ReadStatus,
-  { label: string; icon: string; class: string }
-> = {
-  unread: {
-    label: "Unread",
-    icon: "mdi-circle-outline",
-    class: "text-text-secondary/40 hover:text-text-secondary",
-  },
-  reading: {
-    label: "Reading",
-    icon: "mdi-book-open-outline",
-    class: "text-orange-neon",
-  },
-  read: {
-    label: "Read",
-    icon: "mdi-check-circle-outline",
-    class: "text-[#22c55e]",
-  },
-};
 
 const STATUS_TABS: { label: string; value: StatusFilter }[] = [
   { label: "All", value: "all" },
