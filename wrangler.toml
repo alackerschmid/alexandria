@@ -1,2 +1,7 @@
 name = "bookscan"
 pages_build_output_dir = "dist"
+
+# Build-time env var for the Vite build (frontend → worker API base).
+# Exposed to `npm run build`; Vite picks up VITE_-prefixed vars.
+[vars]
+VITE_API_URL = "https://bookscan-worker.a-lackerschmid.workers.dev"

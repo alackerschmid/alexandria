@@ -10,10 +10,10 @@
 
 - implement proper redirecting / dialogueing between account creation, login window & login
 - write a comprehensive readme as introductory page for github
-- expand desktop view:
-  - modify camera button palcement / UI if not on mobile
-  - modify login UI for desktop
-  - modify book UI for desktop (tiles)
+- [x] expand desktop view:
+  - [x] modify camera button palcement / UI if not on mobile
+  - [x] modify login UI for desktop
+  - [x] modify book UI for desktop (tiles)
 
 ## PRIORITY 3
 
