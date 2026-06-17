@@ -1,5 +1,5 @@
 <template>
-  <div class="h-screen bg-black relative overflow-hidden">
+  <div class="h-screen bg-black relative overflow-hidden touch-none select-none">
     <!-- Camera (always running) -->
     <div ref="scannerContainer" class="scanner-viewport w-full h-full"></div>
 
@@ -119,7 +119,14 @@
       "
       class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
     >
-      <div class="relative" style="width: 320px; height: 128px">
+      <div
+        class="relative"
+        style="
+          width: 320px;
+          height: 128px;
+          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+        "
+      >
         <!-- Corner marks only — no inner fill -->
         <div
           class="absolute top-0 left-0 w-10 h-10 border-l-2 border-t-2 transition-all duration-200"
