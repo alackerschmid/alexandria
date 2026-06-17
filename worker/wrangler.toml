@@ -11,6 +11,3 @@ migrations_dir = "migrations"
 [observability.logs]
 enabled = true
 invocation_logs = true
-
-[vars]
-CORS_ORIGIN = "https://bookscan.pages.dev"
