@@ -131,33 +131,78 @@ type BookRow = {
   fetched_at: string
 }
 
-// Fetch from Google Books and normalise into a BookRow-shaped object (without id/fetched_at).
-async function fetchFromGoogleBooks(isbn: string, apiKey: string) {
+type BookMetadata = {
+  title: string | null
+  author: string | null
+  cover_url: string | null
+  language: string | null
+  publish_date: string | null
+  number_of_pages_median: number | null
+  description: string | null
+  publisher: string | null
+}
+
+async function fetchFromGoogleBooks(isbn: string, apiKey: string): Promise<BookMetadata | null> {
   const res = await fetch(
     `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${apiKey}`
   )
   const data: any = await res.json()
   const info = data.items?.[0]?.volumeInfo
+  if (!info) return null
   return {
-    title: info?.title ?? null,
-    author: info?.authors?.join(', ') ?? null,
-    cover_url: info?.imageLinks?.thumbnail?.replace('http://', 'https://') ?? null,
-    language: info?.language ?? null,
-    publish_date: info?.publishedDate ?? null,
-    number_of_pages_median: info?.pageCount ?? null,
-    description: info?.description ?? null,
-    publisher: info?.publisher ?? null,
+    title: info.title ?? null,
+    author: info.authors?.join(', ') ?? null,
+    cover_url: info.imageLinks?.thumbnail?.replace('http://', 'https://') ?? null,
+    language: info.language ?? null,
+    publish_date: info.publishedDate ?? null,
+    number_of_pages_median: info.pageCount ?? null,
+    description: info.description ?? null,
+    publisher: info.publisher ?? null,
   }
 }
 
-// Book metadata lookup — checks DB cache first, falls back to Google Books API.
+async function fetchFromOpenLibrary(isbn: string): Promise<BookMetadata | null> {
+  const res = await fetch(
+    `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
+  )
+  const data: any = await res.json()
+  const book = data[`ISBN:${isbn}`]
+  if (!book) return null
+  return {
+    title: book.title ?? null,
+    author: book.authors?.[0]?.name ?? null,
+    cover_url: book.cover?.large ?? book.cover?.medium ?? null,
+    language: null,
+    publish_date: book.publish_date ?? null,
+    number_of_pages_median: book.number_of_pages ?? null,
+    description: typeof book.description === 'string'
+      ? book.description
+      : book.description?.value ?? null,
+    publisher: book.publishers?.[0]?.name ?? null,
+  }
+}
+
+// Tries Google Books first, then OpenLibrary. Returns null if neither has the book.
+async function fetchBookMetadata(isbn: string, googleApiKey?: string): Promise<BookMetadata | null> {
+  if (googleApiKey) {
+    try {
+      const result = await fetchFromGoogleBooks(isbn, googleApiKey)
+      if (result) return result
+    } catch {}
+  }
+  try {
+    return await fetchFromOpenLibrary(isbn)
+  } catch {}
+  return null
+}
+
+// Book metadata lookup — checks DB cache first, then Google Books, then OpenLibrary.
 app.get('/api/books/lookup', async (c) => {
   const isbn = c.req.query('isbn')
   if (!isbn) return c.json({ error: 'ISBN required' }, 400)
 
   const db = c.env.DB
 
-  // Return cached book if we have it.
   const cached = await db
     .prepare('SELECT * FROM books WHERE isbn = ?')
     .bind(isbn)
@@ -165,16 +210,8 @@ app.get('/api/books/lookup', async (c) => {
 
   if (cached) return c.json(cached)
 
-  if (!c.env.GOOGLE_BOOKS_API_KEY) {
-    return c.json({ error: 'Google Books API not configured' }, 500)
-  }
-
-  let bookData: ReturnType<typeof fetchFromGoogleBooks> extends Promise<infer T> ? T : never
-  try {
-    bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY)
-  } catch {
-    return c.json({ error: 'Failed to lookup book' }, 500)
-  }
+  const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  if (!bookData) return c.json({ error: 'Book not found' }, 404)
 
   await db
     .prepare(
@@ -192,21 +229,13 @@ app.get('/api/books/lookup', async (c) => {
   return c.json(book)
 })
 
-// Refresh book metadata — re-fetches from Google Books but only fills NULL fields.
+// Refresh book metadata — tries Google Books then OpenLibrary, fills NULL fields only.
 app.post('/api/books/refresh', async (c) => {
   const isbn = c.req.query('isbn')
   if (!isbn) return c.json({ error: 'ISBN required' }, 400)
 
-  if (!c.env.GOOGLE_BOOKS_API_KEY) {
-    return c.json({ error: 'Google Books API not configured' }, 500)
-  }
-
-  let bookData
-  try {
-    bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY)
-  } catch {
-    return c.json({ error: 'Failed to lookup book' }, 500)
-  }
+  const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  if (!bookData) return c.json({ error: 'Book not found in any source' }, 404)
 
   await c.env.DB
     .prepare(`
@@ -287,13 +316,9 @@ app.post('/api/scans', async (c) => {
 
   if (!book) {
     // Book wasn't looked up beforehand (e.g. drained from offline queue) — fetch and cache now.
-    let bookData = { title: null, author: null, cover_url: null, language: null, publish_date: null, number_of_pages_median: null, description: null, publisher: null } as {
-      title: string | null, author: string | null, cover_url: string | null,
-      language: string | null, publish_date: string | null, number_of_pages_median: number | null,
-      description: string | null, publisher: string | null
-    }
-    if (c.env.GOOGLE_BOOKS_API_KEY) {
-      try { bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY) } catch {}
+    const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY) ?? {
+      title: null, author: null, cover_url: null, language: null,
+      publish_date: null, number_of_pages_median: null, description: null, publisher: null,
     }
     await db
       .prepare('INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
