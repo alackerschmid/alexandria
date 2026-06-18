@@ -117,8 +117,83 @@ app.use('/api/books/*', authMiddleware)
 
 // ── Books ─────────────────────────────────────────────────────────────────────
 
-// Book metadata lookup — proxies Google Books with the server-side API key
+type BookRow = {
+  id: number
+  isbn: string
+  title: string | null
+  author: string | null
+  cover_url: string | null
+  language: string | null
+  publish_date: string | null
+  number_of_pages_median: number | null
+  description: string | null
+  publisher: string | null
+  fetched_at: string
+}
+
+// Fetch from Google Books and normalise into a BookRow-shaped object (without id/fetched_at).
+async function fetchFromGoogleBooks(isbn: string, apiKey: string) {
+  const res = await fetch(
+    `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${apiKey}`
+  )
+  const data: any = await res.json()
+  const info = data.items?.[0]?.volumeInfo
+  return {
+    title: info?.title ?? null,
+    author: info?.authors?.join(', ') ?? null,
+    cover_url: info?.imageLinks?.thumbnail?.replace('http://', 'https://') ?? null,
+    language: info?.language ?? null,
+    publish_date: info?.publishedDate ?? null,
+    number_of_pages_median: info?.pageCount ?? null,
+    description: info?.description ?? null,
+    publisher: info?.publisher ?? null,
+  }
+}
+
+// Book metadata lookup — checks DB cache first, falls back to Google Books API.
 app.get('/api/books/lookup', async (c) => {
+  const isbn = c.req.query('isbn')
+  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+
+  const db = c.env.DB
+
+  // Return cached book if we have it.
+  const cached = await db
+    .prepare('SELECT * FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<BookRow>()
+
+  if (cached) return c.json(cached)
+
+  if (!c.env.GOOGLE_BOOKS_API_KEY) {
+    return c.json({ error: 'Google Books API not configured' }, 500)
+  }
+
+  let bookData: ReturnType<typeof fetchFromGoogleBooks> extends Promise<infer T> ? T : never
+  try {
+    bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  } catch {
+    return c.json({ error: 'Failed to lookup book' }, 500)
+  }
+
+  await db
+    .prepare(
+      'INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(isbn, bookData.title, bookData.author, bookData.cover_url, bookData.language, bookData.publish_date, bookData.number_of_pages_median, bookData.description, bookData.publisher)
+    .run()
+
+  const book = await db
+    .prepare('SELECT * FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<BookRow>()
+
+  if (!book) return c.json({ error: 'Book not found' }, 404)
+  return c.json(book)
+})
+
+// Refresh book metadata — re-fetches from Google Books but only fills NULL fields.
+app.post('/api/books/refresh', async (c) => {
   const isbn = c.req.query('isbn')
   if (!isbn) return c.json({ error: 'ISBN required' }, 400)
 
@@ -126,27 +201,60 @@ app.get('/api/books/lookup', async (c) => {
     return c.json({ error: 'Google Books API not configured' }, 500)
   }
 
+  let bookData
   try {
-    const res = await fetch(
-      `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${c.env.GOOGLE_BOOKS_API_KEY}`
-    )
-    const data = await res.json()
-    return c.json(data)
-  } catch (e) {
+    bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  } catch {
     return c.json({ error: 'Failed to lookup book' }, 500)
   }
+
+  await c.env.DB
+    .prepare(`
+      UPDATE books SET
+        title = COALESCE(title, ?),
+        author = COALESCE(author, ?),
+        cover_url = COALESCE(cover_url, ?),
+        language = COALESCE(language, ?),
+        publish_date = COALESCE(publish_date, ?),
+        number_of_pages_median = COALESCE(number_of_pages_median, ?),
+        description = COALESCE(description, ?),
+        publisher = COALESCE(publisher, ?)
+      WHERE isbn = ?
+    `)
+    .bind(
+      bookData.title, bookData.author, bookData.cover_url, bookData.language,
+      bookData.publish_date, bookData.number_of_pages_median,
+      bookData.description, bookData.publisher,
+      isbn
+    )
+    .run()
+
+  const book = await c.env.DB
+    .prepare('SELECT * FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<BookRow>()
+
+  if (!book) return c.json({ error: 'Book not found' }, 404)
+  return c.json(book)
 })
 
 // ── Scans ─────────────────────────────────────────────────────────────────────
 
 const SORT_CLAUSES: Record<string, string> = {
-  date_desc: 'created_at DESC',
-  date_asc: 'created_at ASC',
-  title_asc: 'COALESCE(title, isbn) ASC COLLATE NOCASE',
-  title_desc: 'COALESCE(title, isbn) DESC COLLATE NOCASE',
-  author_asc: "COALESCE(author, '') ASC COLLATE NOCASE",
-  author_desc: "COALESCE(author, '') DESC COLLATE NOCASE",
+  date_desc: 's.created_at DESC',
+  date_asc: 's.created_at ASC',
+  title_asc: 'COALESCE(b.title, b.isbn) ASC COLLATE NOCASE',
+  title_desc: 'COALESCE(b.title, b.isbn) DESC COLLATE NOCASE',
+  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE",
+  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE",
 }
+
+const SCAN_SELECT = `
+  SELECT s.id, s.status, s.created_at,
+         b.isbn, b.title, b.author, b.cover_url, b.language, b.publish_date, b.number_of_pages_median,
+         b.description, b.publisher
+  FROM scans s
+  JOIN books b ON s.book_id = b.id`
 
 const VALID_STATUSES = ['unread', 'reading', 'read'] as const
 
@@ -157,12 +265,7 @@ app.get('/api/scans', async (c) => {
   const orderClause = SORT_CLAUSES[c.req.query('sort') ?? ''] ?? SORT_CLAUSES.date_desc
 
   const { results } = await c.env.DB
-    .prepare(
-      `SELECT id, isbn, title, author, cover_url, status, created_at, language, publish_date, number_of_pages_median
-       FROM scans WHERE user_id = ?
-       ORDER BY ${orderClause}
-       LIMIT ? OFFSET ?`
-    )
+    .prepare(`${SCAN_SELECT} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
     .bind(userId, limit, offset)
     .all()
 
@@ -170,19 +273,42 @@ app.get('/api/scans', async (c) => {
 })
 
 app.post('/api/scans', async (c) => {
-  const { isbn, title, author, cover_url, language, publish_date, number_of_pages_median } = await c.req.json()
+  const { isbn } = await c.req.json()
   if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
 
   const userId = c.get('userId')
   const db = c.env.DB
 
+  // Ensure book exists in the books table (may have been cached by /api/books/lookup already).
+  let book = await db
+    .prepare('SELECT id FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<{ id: number }>()
+
+  if (!book) {
+    // Book wasn't looked up beforehand (e.g. drained from offline queue) — fetch and cache now.
+    let bookData = { title: null, author: null, cover_url: null, language: null, publish_date: null, number_of_pages_median: null, description: null, publisher: null } as {
+      title: string | null, author: string | null, cover_url: string | null,
+      language: string | null, publish_date: string | null, number_of_pages_median: number | null,
+      description: string | null, publisher: string | null
+    }
+    if (c.env.GOOGLE_BOOKS_API_KEY) {
+      try { bookData = await fetchFromGoogleBooks(isbn, c.env.GOOGLE_BOOKS_API_KEY) } catch {}
+    }
+    await db
+      .prepare('INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(isbn, bookData.title, bookData.author, bookData.cover_url, bookData.language, bookData.publish_date, bookData.number_of_pages_median, bookData.description, bookData.publisher)
+      .run()
+    book = await db.prepare('SELECT id FROM books WHERE isbn = ?').bind(isbn).first<{ id: number }>()
+  }
+
+  if (!book) return c.json({ error: 'Failed to resolve book entry' }, 500)
+
   let result
   try {
     result = await db
-      .prepare(
-        'INSERT INTO scans (user_id, isbn, title, author, cover_url, language, publish_date, number_of_pages_median) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      )
-      .bind(userId, isbn, title ?? null, author ?? null, cover_url ?? null, language ?? null, publish_date ?? null, number_of_pages_median ?? null)
+      .prepare('INSERT INTO scans (user_id, book_id) VALUES (?, ?)')
+      .bind(userId, book.id)
       .run()
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {
@@ -191,21 +317,12 @@ app.post('/api/scans', async (c) => {
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
-  return c.json(
-    {
-      id: result.meta.last_row_id,
-      isbn,
-      title: title ?? null,
-      author: author ?? null,
-      cover_url: cover_url ?? null,
-      status: 'unread',
-      created_at: new Date().toISOString(),
-      language: language ?? null,
-      publish_date: publish_date ?? null,
-      number_of_pages_median: number_of_pages_median ?? null,
-    },
-    201
-  )
+  const saved = await db
+    .prepare(`${SCAN_SELECT} WHERE s.id = ?`)
+    .bind(result.meta.last_row_id)
+    .first()
+
+  return c.json(saved, 201)
 })
 
 app.patch('/api/scans/:id', async (c) => {

@@ -1,6 +1,7 @@
 <template>
   <article
-    class="flex flex-col px-6 md:px-0 pt-5 pb-2 border-b border-charcoal-border"
+    class="flex flex-col px-6 md:px-0 pt-5 pb-2 border-b border-charcoal-border cursor-pointer"
+    @click="$emit('select')"
   >
     <!-- Cover + title / author / status -->
     <div class="flex flex-row items-start gap-4">
@@ -30,7 +31,7 @@
         <button
           class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
           :class="STATUS_CONFIG[book.status].class"
-          @click="$emit('cycle-status')"
+          @click.stop="$emit('cycle-status')"
         >
           <v-icon :icon="STATUS_CONFIG[book.status].icon" size="10" />
           {{ STATUS_CONFIG[book.status].label }}
@@ -44,7 +45,7 @@
         color="primary"
         size="x-small"
         class="shrink-0 mt-0.5"
-        @click="$emit('delete')"
+        @click.stop="$emit('delete')"
       />
     </div>
 
@@ -77,10 +78,12 @@ export interface Book {
   language?: string | null;
   publish_date?: string | null;
   number_of_pages_median?: number | null;
+  description?: string | null;
+  publisher?: string | null;
 }
 
 defineProps<{ book: Book }>();
-defineEmits<{ "cycle-status": []; delete: [] }>();
+defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
 const STATUS_CONFIG: Record<
   ReadStatus,

@@ -176,6 +176,7 @@
             :book="book"
             @cycle-status="cycleStatus(book)"
             @delete="openDeleteDialog(book)"
+            @select="openDetail(book)"
           />
         </div>
 
@@ -204,6 +205,16 @@
       elevation="0"
       rounded="0"
       @click="$router.push('/scanner')"
+    />
+
+    <!-- Book detail dialog -->
+    <BookDetail
+      v-if="selectedBook"
+      v-model="detailDialog"
+      :book="selectedBook"
+      @cycle-status="cycleStatus(selectedBook!)"
+      @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
+      @refreshed="(updated) => Object.assign(selectedBook!, updated)"
     />
 
     <!-- Delete confirmation dialog -->
@@ -263,6 +274,7 @@ import BookCard, {
   type Book,
   type ReadStatus,
 } from "@/components/BookCard.vue";
+import BookDetail from "@/components/BookDetail.vue";
 
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
@@ -300,6 +312,9 @@ const filterStatus = ref<StatusFilter>("all");
 const deleteDialog = ref(false);
 const bookToDelete = ref<Book | null>(null);
 const deleting = ref(false);
+
+const detailDialog = ref(false);
+const selectedBook = ref<Book | null>(null);
 
 const errorToast = ref(false);
 const errorMessage = ref("");
@@ -401,6 +416,11 @@ const cycleStatus = async (book: Book) => {
 };
 
 // ── Delete ────────────────────────────────────────────────────────────────────
+
+const openDetail = (book: Book) => {
+  selectedBook.value = book;
+  detailDialog.value = true;
+};
 
 const openDeleteDialog = (book: Book) => {
   bookToDelete.value = book;

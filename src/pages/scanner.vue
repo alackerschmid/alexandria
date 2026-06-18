@@ -319,9 +319,6 @@ interface BookPreview {
   year?: string;
   coverUrl?: string;
   notFound?: boolean;
-  language?: string;
-  publishDate?: string;
-  noOfPages?: number;
 }
 
 const scanState = ref<ScanState>("scanning");
@@ -335,6 +332,10 @@ const sessionScanned = new Set<string>();
 
 // ISBNs already saved in the library — populated on mount, kept in sync on save.
 const libraryIsbns = new Set<string>();
+
+// Short-lived cooldown for "already in library" notifications — clears after
+// the toast dismisses so the user can trigger it again on a fresh attempt.
+const libraryNotifiedCooldown = new Set<string>();
 
 async function loadLibraryIsbns() {
   try {
@@ -400,7 +401,7 @@ const showToast = (message: string, type: ToastType = "success") => {
   toast.value = true;
 };
 
-// ── Book lookup (Google Books → OpenLibrary fallback) ─────────────────────────
+// ── Book lookup ───────────────────────────────────────────────────────────────
 
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
@@ -408,43 +409,16 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
       headers: { Authorization: `Bearer ${authStore.token}` },
     });
     if (res.ok) {
-      const data = await res.json();
-      const info = data.items?.[0]?.volumeInfo;
-      if (info) {
-        return {
-          isbn,
-          title: info.title,
-          author: info.authors?.[0] ?? "Unknown Author",
-          year: info.publishedDate?.slice(0, 4),
-          coverUrl: info.imageLinks?.thumbnail?.replace("http:", "https:"),
-          language: info.language,
-          publishDate: info.publishedDate,
-          noOfPages: info.pageCount,
-        };
-      }
-    }
-  } catch {}
-
-  try {
-    const res = await fetch(
-      `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`,
-    );
-    const data = await res.json();
-    const book = data[`ISBN:${isbn}`];
-    console.log("OpenLibrary lookup result:", book);
-    if (book) {
+      const book = await res.json();
       return {
-        isbn,
-        title: book.title,
-        author: book.authors?.[0]?.name ?? "Unknown Author",
-        coverUrl: book.cover?.medium,
-        language: book.language,
-        publishDate: book.publish_date,
-        noOfPages: book.number_of_pages,
+        isbn: book.isbn,
+        title: book.title ?? "",
+        author: book.author ?? "Unknown Author",
+        year: book.publish_date?.slice(0, 4),
+        coverUrl: book.cover_url ?? undefined,
       };
     }
   } catch {}
-
   return null;
 }
 
@@ -458,10 +432,12 @@ const onBarcodeDetected = async (isbn: string) => {
 
   // Already in the library — notify and suppress without showing the preview card.
   if (libraryIsbns.has(isbn)) {
+    if (libraryNotifiedCooldown.has(isbn)) return;
     flash.value = true;
     navigator.vibrate?.(30);
     setTimeout(() => (flash.value = false), 200);
-    sessionScanned.add(isbn);
+    libraryNotifiedCooldown.add(isbn);
+    setTimeout(() => libraryNotifiedCooldown.delete(isbn), 4000);
     showToast("Already in your library", "warning");
     return;
   }
@@ -480,34 +456,9 @@ const onBarcodeDetected = async (isbn: string) => {
 
 interface QueuedBook {
   isbn: string;
-  title?: string;
-  author?: string;
-  coverUrl?: string;
-  language?: string;
-  publishDate?: string;
-  noOfPages?: number;
 }
 
-const QUEUE_KEY = "bookscan_queue_v2";
-
-function migrateV1Queue() {
-  const OLD_KEY = "bookscan_queue";
-  const old = localStorage.getItem(OLD_KEY);
-  if (!old) return;
-  try {
-    const oldItems: string[] = JSON.parse(old);
-    const newItems: QueuedBook[] = oldItems.map((isbn) => ({ isbn }));
-    const existing: QueuedBook[] = JSON.parse(
-      localStorage.getItem(QUEUE_KEY) ?? "[]",
-    );
-    const merged = [
-      ...existing,
-      ...newItems.filter((b) => !existing.some((e) => e.isbn === b.isbn)),
-    ];
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(merged));
-    localStorage.removeItem(OLD_KEY);
-  } catch {}
-}
+const QUEUE_KEY = "bookscan_queue_v3";
 
 function enqueue(book: QueuedBook) {
   const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
@@ -523,15 +474,7 @@ async function postScan(book: QueuedBook): Promise<"saved" | "duplicate"> {
       "Content-Type": "application/json",
       Authorization: `Bearer ${authStore.token}`,
     },
-    body: JSON.stringify({
-      isbn: book.isbn,
-      title: book.title ?? null,
-      author: book.author ?? null,
-      cover_url: book.coverUrl ?? null,
-      language: book.language ?? null,
-      publish_date: book.publishDate ?? null,
-      number_of_pages_median: book.noOfPages ?? null,
-    }),
+    body: JSON.stringify({ isbn: book.isbn }),
   });
   if (res.status === 409) return "duplicate";
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
@@ -555,15 +498,7 @@ async function drainQueue() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${authStore.token}`,
         },
-        body: JSON.stringify({
-          isbn: book.isbn,
-          title: book.title ?? null,
-          author: book.author ?? null,
-          cover_url: book.coverUrl ?? null,
-          language: book.language ?? null,
-          publish_date: book.publishDate ?? null,
-          number_of_pages_median: book.noOfPages ?? null,
-        }),
+        body: JSON.stringify({ isbn: book.isbn }),
       });
       if (res.status === 401) {
         authExpired = true;
@@ -592,22 +527,7 @@ const saveBook = async () => {
   if (!detectedBook.value) return;
   scanState.value = "saving";
 
-  const queued: QueuedBook = {
-    isbn: detectedBook.value.isbn,
-    title: detectedBook.value.notFound ? undefined : detectedBook.value.title,
-    author: detectedBook.value.notFound ? undefined : detectedBook.value.author,
-    coverUrl: detectedBook.value.coverUrl,
-    language: detectedBook.value.notFound
-      ? undefined
-      : detectedBook.value.language,
-    publishDate: detectedBook.value.notFound
-      ? undefined
-      : detectedBook.value.publishDate,
-    noOfPages: detectedBook.value.notFound
-      ? undefined
-      : detectedBook.value.noOfPages,
-  };
-  console.log("Saving book:", queued);
+  const queued: QueuedBook = { isbn: detectedBook.value.isbn };
   try {
     const result = await postScan(queued);
     sessionScanned.add(queued.isbn);
@@ -702,7 +622,6 @@ const startScanner = () => {
 };
 
 onMounted(() => {
-  migrateV1Queue();
   drainQueue();
   loadLibraryIsbns();
   window.addEventListener("online", drainQueue);

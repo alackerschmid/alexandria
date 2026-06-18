@@ -15,12 +15,17 @@
   - [x] modify camera button palcement / UI if not on mobile
   - [x] modify login UI for desktop
   - [x] modify book UI for desktop (tiles)
+- [x] add detail page for books
+  - description
+  - publisher
+  - published_date
+  - language
+  - page count
 
 ## PRIORITY 3
 
 - cross-reference / fill missing or wrong data through double API call
 - improve book cover loading speed on page initialization
-- add detail page for books
 - work around / add check for google books api rate limit
 - automatic re query for incomplete data (ie covers)
 - implement i18n
@@ -29,6 +34,6 @@
 
 - export all design elements as npm package
 - add export button & functionality that exports all books as .csv
-- modify database structure to create unique isbn table and use m:n relationship between users / books for faster lookup
+- [x] modify database structure to create unique isbn table and use m:n relationship between users / books for faster lookup
 - bulk editing / import
 - incorporate CV page
