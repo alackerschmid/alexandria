@@ -32,9 +32,33 @@
       >
         {{ isLogin ? $t('auth.sign_in_heading') : $t('auth.register_heading') }}
       </h1>
-      <p class="text-text-secondary text-sm mb-12">
+      <p class="text-text-secondary text-sm mb-8">
         {{ isLogin ? $t('auth.sign_in_subtitle') : $t('auth.register_subtitle') }}
       </p>
+
+      <!-- Mode toggle pills -->
+      <div class="flex gap-2 mb-10">
+        <button
+          type="button"
+          class="flex-1 py-2 px-4 text-[10px] tracking-[0.2em] uppercase border transition-colors"
+          :class="isLogin
+            ? 'border-text-primary text-text-primary'
+            : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'"
+          @click="setMode(true)"
+        >
+          {{ $t('auth.sign_in') }}
+        </button>
+        <button
+          type="button"
+          class="flex-1 py-2 px-4 text-[10px] tracking-[0.2em] uppercase border transition-colors"
+          :class="!isLogin
+            ? 'border-text-primary text-text-primary'
+            : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'"
+          @click="setMode(false)"
+        >
+          {{ $t('auth.create_account') }}
+        </button>
+      </div>
 
       <div
         v-if="error"
@@ -64,7 +88,7 @@
       </div>
 
       <!-- Password -->
-      <div class="border-b border-charcoal-border mb-12 pb-2">
+      <div class="border-b border-charcoal-border mb-10 pb-2">
         <label
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
           >{{ $t('auth.password') }}</label
@@ -88,15 +112,17 @@
         {{ loading ? '—' : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
       </button>
 
-      <!-- Toggle -->
-      <button
-        type="button"
-        :disabled="loading"
-        class="text-xs text-text-secondary tracking-wide underline underline-offset-4 hover:text-text-primary transition-colors disabled:opacity-40"
-        @click="toggleMode"
-      >
-        {{ isLogin ? $t('auth.need_account') : $t('auth.have_account') }}
-      </button>
+      <!-- Continue as guest -->
+      <div class="text-center">
+        <button
+          type="button"
+          :disabled="loading"
+          class="text-xs text-text-secondary/50 tracking-wide hover:text-text-secondary transition-colors disabled:opacity-40"
+          @click="$router.push('/')"
+        >
+          {{ $t('auth.continue_as_guest') }} →
+        </button>
+      </div>
     </form>
     <AppFooter />
   </div>
@@ -104,29 +130,32 @@
 
 <script setup lang="ts">
 import { ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
+import { useGuestStore } from "@/stores/guest";
 import AppFooter from "@/components/AppFooter.vue";
 import AppHeader from "@/components/AppHeader.vue";
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
+const guestStore = useGuestStore();
 
-const isLogin = ref(true);
+const isLogin = ref(route.query.mode !== "register");
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
-const toggleMode = () => {
-  isLogin.value = !isLogin.value;
+function setMode(login: boolean) {
+  isLogin.value = login;
   error.value = "";
-};
+}
 
 const submit = async () => {
   if (!email.value || !password.value) return;
@@ -152,7 +181,12 @@ const submit = async () => {
 
     authStore.setAuth(data.token, data.email);
 
-    router.push({ name: "home" });
+    // Sync any guest scans to the new/existing account
+    if (guestStore.scans.length > 0) {
+      await guestStore.syncToAccount(data.token);
+    }
+
+    router.push({ name: "library" });
   } catch (err: any) {
     error.value = err.message;
   } finally {

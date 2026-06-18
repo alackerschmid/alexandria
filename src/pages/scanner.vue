@@ -15,10 +15,20 @@
     <div
       class="absolute top-0 left-0 right-0 z-30 px-5 pt-7 pb-5 flex justify-between items-center"
     >
+      <!-- Guest: show remaining scans pill -->
       <span
-        v-if="sessionCount > 0"
+        v-if="isGuest"
+        class="text-[12px] tracking-[0.2em] uppercase px-3 py-1 rounded-full"
+        style="background: rgba(255,255,255,0.12); backdrop-filter: blur(4px)"
+        :class="guestStore.isAtLimit ? 'text-red-400' : 'text-white/70'"
+      >
+        {{ t('guest.scans_remaining', { n: guestStore.remaining }, guestStore.remaining) }}
+      </span>
+      <!-- Authenticated: show session count -->
+      <span
+        v-else-if="sessionCount > 0"
         class="text-orange-neon text-[12px] tracking-[0.25em] uppercase cursor-pointer"
-        @click="router.push('/')"
+        @click="router.push('/library')"
       >
         {{ $t('scanner.saved_count', { n: sessionCount }) }}
       </span>
@@ -249,27 +259,47 @@
             </div>
           </div>
 
-          <!-- Actions -->
-          <button
-            class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
-            :disabled="scanState === 'saving'"
-            @click="saveBook"
-          >
-            {{
-              scanState === 'saving'
-                ? '—'
-                : detectedBook.notFound
-                  ? $t('scanner.save_isbn')
-                  : $t('scanner.save_book')
-            }}
-          </button>
-          <button
-            class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
-            :disabled="scanState === 'saving'"
-            @click="scanAgain"
-          >
-            {{ $t('scanner.discard') }}
-          </button>
+          <!-- Guest limit reached: prompt to create account -->
+          <template v-if="isGuest && guestStore.isAtLimit">
+            <p class="text-sm font-bold text-white mb-1">{{ $t('guest.limit_heading') }}</p>
+            <p class="text-xs text-white/50 mb-6">{{ $t('guest.limit_body') }}</p>
+            <button
+              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3"
+              @click="router.push('/login?mode=register')"
+            >
+              {{ $t('guest.register') }}
+            </button>
+            <button
+              class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
+              @click="scanAgain"
+            >
+              {{ $t('guest.sign_in') }}
+            </button>
+          </template>
+
+          <!-- Normal save actions -->
+          <template v-else>
+            <button
+              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
+              :disabled="scanState === 'saving'"
+              @click="saveBook"
+            >
+              {{
+                scanState === 'saving'
+                  ? '—'
+                  : detectedBook.notFound
+                    ? $t('scanner.save_isbn')
+                    : $t('scanner.save_book')
+              }}
+            </button>
+            <button
+              class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
+              :disabled="scanState === 'saving'"
+              @click="scanAgain"
+            >
+              {{ $t('scanner.discard') }}
+            </button>
+          </template>
         </div>
       </div>
     </Transition>
@@ -297,13 +327,17 @@ import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
+import { useGuestStore } from "@/stores/guest";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
 
 const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
+const guestStore = useGuestStore();
 const { mdAndUp } = useDisplay();
+
+const isGuest = computed(() => !authStore.isAuthenticated);
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 // ── State machine ─────────────────────────────────────────────────────────────
@@ -336,6 +370,10 @@ const libraryIsbns = new Set<string>();
 const libraryNotifiedCooldown = new Set<string>();
 
 async function loadLibraryIsbns() {
+  if (isGuest.value) {
+    guestStore.scans.forEach((b) => libraryIsbns.add(b.isbn));
+    return;
+  }
   try {
     const res = await fetch(`${API_BASE}/api/scans?limit=500`, {
       headers: { Authorization: `Bearer ${authStore.token}` },
@@ -403,11 +441,16 @@ const showToast = (message: string, type: ToastType = "success") => {
 
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/books/lookup?isbn=${isbn}`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
+    const endpoint = isGuest.value
+      ? `${API_BASE}/api/books/guest-lookup?isbn=${isbn}`
+      : `${API_BASE}/api/books/lookup?isbn=${isbn}`;
+    const headers: Record<string, string> = isGuest.value
+      ? {}
+      : { Authorization: `Bearer ${authStore.token}` };
+    const res = await fetch(endpoint, { headers });
     if (res.ok) {
       const book = await res.json();
+      if (book.notFound) return null;
       return {
         isbn: book.isbn,
         title: book.title ?? "",
@@ -520,8 +563,33 @@ async function drainQueue() {
 
 const saveBook = async () => {
   if (!detectedBook.value) return;
-  scanState.value = "saving";
 
+  // Guest path
+  if (isGuest.value) {
+    if (guestStore.isAtLimit) return;
+    const book = detectedBook.value;
+    const result = guestStore.addScan({
+      isbn: book.isbn,
+      title: book.title || null,
+      author: book.author || null,
+      cover_url: book.coverUrl ?? null,
+      publish_date: book.year ? `${book.year}` : null,
+    });
+    if (result === "duplicate") {
+      showToast(t("scanner.toast_already_in_library"), "warning");
+    } else if (result === "ok") {
+      sessionScanned.add(book.isbn);
+      libraryIsbns.add(book.isbn);
+      sessionCount.value++;
+      showToast(t("scanner.toast_guest_saved"), "warning");
+    }
+    detectedBook.value = null;
+    scanState.value = "scanning";
+    return;
+  }
+
+  // Authenticated path
+  scanState.value = "saving";
   const queued: QueuedBook = { isbn: detectedBook.value.isbn };
   try {
     const result = await postScan(queued);

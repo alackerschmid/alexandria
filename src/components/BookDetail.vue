@@ -40,6 +40,7 @@
         </div>
         <div class="flex items-center gap-1 shrink-0">
           <button
+            v-if="!guest"
             class="text-text-secondary/50 hover:text-text-secondary transition-colors disabled:opacity-30"
             :disabled="refreshing"
             @click="refresh"
@@ -163,6 +164,7 @@ import type { Book } from "./BookCard.vue";
 const props = defineProps<{
   modelValue: boolean;
   book: Book;
+  guest?: boolean;
 }>();
 
 const emit = defineEmits<{

@@ -47,24 +47,68 @@
                 @click="themeStore.toggle()"
               />
               <v-btn
+                v-if="authStore.isAuthenticated"
                 icon="mdi-logout"
                 variant="text"
                 color="primary"
                 size="small"
                 @click="authStore.logout()"
               />
+              <v-btn
+                v-else
+                variant="text"
+                color="primary"
+                size="small"
+                class="text-[10px] tracking-widest font-mono"
+                @click="$router.push('/login')"
+              >
+                {{ $t('auth.sign_in') }}
+              </v-btn>
             </div>
             <span
-              v-if="!loading && books.length > 0"
+              v-if="!loading && allBooks.length > 0"
               class="text-[10px] text-text-secondary tracking-widest uppercase"
             >
               {{ displayedBooks.length
-              }}<template v-if="displayedBooks.length !== books.length"
-                >/{{ books.length }}</template
+              }}<template v-if="displayedBooks.length !== allBooks.length"
+                >/{{ allBooks.length }}</template
               >
               {{ displayedBooks.length === 1 ? $t('library.title_singular') : $t('library.title_plural') }}
             </span>
           </div>
+        </div>
+      </div>
+
+      <!-- Guest banner -->
+      <div
+        v-if="isGuest"
+        class="px-6 md:px-10 py-4 border-b border-charcoal-border flex flex-wrap items-center justify-between gap-3"
+      >
+        <div class="text-xs text-text-secondary leading-relaxed">
+          <span>{{ $t('guest.banner', { used: guestStore.scans.length, max: 3 }) }}</span>
+          <span class="block text-text-secondary/60 mt-0.5">{{ $t('guest.create_account') }}</span>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <v-btn
+            variant="text"
+            size="small"
+            color="primary"
+            class="text-[10px] tracking-[0.15em] uppercase px-4"
+            @click="$router.push('/login')"
+          >
+            {{ $t('guest.sign_in') }}
+          </v-btn>
+          <v-btn
+            variant="flat"
+            size="small"
+            color="primary"
+            rounded="0"
+            elevation="0"
+            class="text-[10px] tracking-[0.15em] uppercase px-4"
+            @click="$router.push('/login?mode=register')"
+          >
+            {{ $t('guest.register') }}
+          </v-btn>
         </div>
       </div>
 
@@ -153,7 +197,7 @@
 
       <!-- Empty state -->
       <div
-        v-if="!loading && books.length === 0"
+        v-if="!loading && allBooks.length === 0"
         class="px-6 md:px-10 pt-16 pb-8"
       >
         <p class="font-heading text-3xl font-bold text-text-primary mb-3">
@@ -166,7 +210,7 @@
 
       <!-- No results for current filter -->
       <div
-        v-else-if="!loading && books.length > 0 && displayedBooks.length === 0"
+        v-else-if="!loading && allBooks.length > 0 && displayedBooks.length === 0"
         class="px-6 md:px-10 pt-16 pb-8"
       >
         <p class="text-sm text-text-secondary">{{ $t('library.no_results') }}</p>
@@ -187,7 +231,7 @@
           />
         </div>
 
-        <!-- Load more -->
+        <!-- Load more (authenticated only — guest scans are all local) -->
         <div v-if="hasMore" class="flex justify-center py-8">
           <button
             class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
@@ -203,22 +247,22 @@
       <AppFooter class="mt-auto" />
     </div>
 
-    <!-- Scan FAB (mobile only) -->
-    <v-btn
-      color="primary"
-      size="x-large"
-      icon="mdi-camera"
-      class="fixed bottom-8 right-6 z-50 md:hidden"
-      elevation="0"
-      rounded="0"
+    <!-- Scan pill (mobile only) -->
+    <button
+      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 md:hidden flex items-center justify-center gap-2 rounded-full py-4 text-[10px] font-bold tracking-[0.25em] uppercase text-white"
+      style="background: rgb(var(--v-theme-primary)); min-width: 58vw; box-shadow: 0 4px 28px rgba(255, 102, 0, 0.3);"
       @click="$router.push('/scanner')"
-    />
+    >
+      <v-icon icon="mdi-camera" size="15" color="white" />
+      {{ $t('landing.start_scanning') }}
+    </button>
 
     <!-- Book detail dialog -->
     <BookDetail
       v-if="selectedBook"
       v-model="detailDialog"
       :book="selectedBook"
+      :guest="isGuest"
       @cycle-status="cycleStatus(selectedBook!)"
       @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
       @refreshed="(updated) => Object.assign(selectedBook!, updated)"
@@ -276,6 +320,7 @@ import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
+import { useGuestStore } from "@/stores/guest";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookCard, {
@@ -288,6 +333,9 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
+const guestStore = useGuestStore();
+
+const isGuest = computed(() => !authStore.isAuthenticated);
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -310,8 +358,8 @@ const STATUS_TABS = computed(() => [
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const books = ref<Book[]>([]);
-const loading = ref(true);
+const serverBooks = ref<Book[]>([]);
+const loading = ref(false);
 const loadingMore = ref(false);
 const hasMore = ref(false);
 const error = ref("");
@@ -334,8 +382,13 @@ const PAGE_SIZE = 200;
 
 // ── Computed ──────────────────────────────────────────────────────────────────
 
+// Source of truth switches between guest localStorage and server data
+const allBooks = computed<Book[]>(() =>
+  isGuest.value ? guestStore.scans : serverBooks.value
+);
+
 const displayedBooks = computed(() => {
-  let list = books.value;
+  let list = allBooks.value;
 
   if (filterStatus.value !== "all") {
     list = list.filter((b) => b.status === filterStatus.value);
@@ -368,13 +421,13 @@ const displayedBooks = computed(() => {
 });
 
 const statusCounts = computed<Record<StatusFilter, number>>(() => ({
-  all: books.value.length,
-  unread: books.value.filter((b) => b.status === "unread").length,
-  reading: books.value.filter((b) => b.status === "reading").length,
-  read: books.value.filter((b) => b.status === "read").length,
+  all: allBooks.value.length,
+  unread: allBooks.value.filter((b) => b.status === "unread").length,
+  reading: allBooks.value.filter((b) => b.status === "reading").length,
+  read: allBooks.value.filter((b) => b.status === "read").length,
 }));
 
-// ── Data fetching ─────────────────────────────────────────────────────────────
+// ── Data fetching (authenticated only) ───────────────────────────────────────
 
 const fetchBooks = async (offset = 0) => {
   try {
@@ -386,9 +439,9 @@ const fetchBooks = async (offset = 0) => {
     if (!res.ok) throw new Error(data.error || "Failed to fetch books");
 
     if (offset === 0) {
-      books.value = data;
+      serverBooks.value = data;
     } else {
-      books.value = [...books.value, ...data];
+      serverBooks.value = [...serverBooks.value, ...data];
     }
     hasMore.value = data.length === PAGE_SIZE;
   } catch (err: any) {
@@ -398,7 +451,7 @@ const fetchBooks = async (offset = 0) => {
 
 const loadMore = async () => {
   loadingMore.value = true;
-  await fetchBooks(books.value.length);
+  await fetchBooks(serverBooks.value.length);
   loadingMore.value = false;
 };
 
@@ -411,6 +464,11 @@ const NEXT_STATUS: Record<ReadStatus, ReadStatus> = {
 };
 
 const cycleStatus = async (book: Book) => {
+  if (isGuest.value) {
+    guestStore.cycleStatus(book.isbn);
+    return;
+  }
+
   const newStatus = NEXT_STATUS[book.status];
   const prev = book.status;
   book.status = newStatus;
@@ -447,8 +505,15 @@ const openDeleteDialog = (book: Book) => {
 const confirmDelete = async () => {
   const book = bookToDelete.value;
   if (!book) return;
-  deleting.value = true;
 
+  if (isGuest.value) {
+    guestStore.removeScan(book.isbn);
+    deleteDialog.value = false;
+    bookToDelete.value = null;
+    return;
+  }
+
+  deleting.value = true;
   try {
     const res = await fetch(`${API_BASE}/api/scans/${book.id}`, {
       method: "DELETE",
@@ -456,7 +521,7 @@ const confirmDelete = async () => {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || t("library.error_delete"));
-    books.value = books.value.filter((b) => b.id !== book.id);
+    serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
     deleteDialog.value = false;
   } catch (err: any) {
     errorMessage.value = err.message;
@@ -470,7 +535,10 @@ const confirmDelete = async () => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
-  await fetchBooks();
-  loading.value = false;
+  if (authStore.isAuthenticated) {
+    loading.value = true;
+    await fetchBooks();
+    loading.value = false;
+  }
 });
 </script>

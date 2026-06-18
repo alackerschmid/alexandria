@@ -6,6 +6,7 @@
 
 // Composables
 import { createRouter, createWebHistory } from 'vue-router'
+import Landing from '@/pages/landing.vue'
 import Index from '@/pages/index.vue'
 import Login from '@/pages/login.vue'
 import Scanner from '@/pages/scanner.vue'
@@ -17,14 +18,17 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
+      component: Landing,
+    },
+    {
+      path: '/library',
+      name: 'library',
       component: Index,
-      meta: { requiresAuth: true }
     },
     {
       path: '/scanner',
       name: 'scanner',
       component: Scanner,
-      meta: { requiresAuth: true }
     },
     {
       path: '/login',
@@ -44,12 +48,11 @@ const router = createRouter({
   ],
 })
 
-router.beforeEach((to, from) => {
+router.beforeEach((to) => {
   const authStore = useAuthStore()
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    return { name: 'login' }
-  } else if (to.name === 'login' && authStore.isAuthenticated) {
-    return { name: 'home' }
+  if (authStore.isAuthenticated) {
+    if (to.name === 'home')  return { name: 'library' }
+    if (to.name === 'login') return { name: 'library' }
   }
 })
 

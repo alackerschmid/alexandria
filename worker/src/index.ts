@@ -113,6 +113,37 @@ const authMiddleware = async (c: any, next: any) => {
 }
 
 app.use('/api/scans/*', authMiddleware)
+
+// Public guest lookup — no auth. Registered before authMiddleware so it is not gated.
+app.get('/api/books/guest-lookup', async (c) => {
+  const isbn = c.req.query('isbn')
+  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+
+  const db = c.env.DB
+  const cached = await db
+    .prepare('SELECT * FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<BookRow>()
+  if (cached) return c.json(cached)
+
+  const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  if (!bookData) return c.json({ notFound: true }, 404)
+
+  await db
+    .prepare(
+      'INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )
+    .bind(isbn, bookData.title, bookData.author, bookData.cover_url, bookData.language, bookData.publish_date, bookData.number_of_pages_median, bookData.description, bookData.publisher)
+    .run()
+
+  const book = await db
+    .prepare('SELECT * FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<BookRow>()
+
+  return c.json(book ?? { notFound: true })
+})
+
 app.use('/api/books/*', authMiddleware)
 
 // ── Books ─────────────────────────────────────────────────────────────────────
