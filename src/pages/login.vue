@@ -1,14 +1,25 @@
 <template>
   <div class="min-h-screen bg-charcoal flex flex-col px-8">
-    <!-- Wordmark + theme toggle -->
+    <!-- Wordmark + controls -->
     <AppHeader>
-      <v-btn
-        :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-        variant="text"
-        color="primary"
-        size="small"
-        @click="themeStore.toggle()"
-      />
+      <div class="flex items-center gap-1">
+        <v-btn
+          variant="text"
+          color="primary"
+          size="small"
+          class="text-[10px] tracking-widest font-mono"
+          @click="localeStore.toggle()"
+        >
+          {{ localeStore.locale === 'en' ? 'DE' : 'EN' }}
+        </v-btn>
+        <v-btn
+          :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
+          variant="text"
+          color="primary"
+          size="small"
+          @click="themeStore.toggle()"
+        />
+      </div>
     </AppHeader>
 
     <!-- Form -->
@@ -19,15 +30,10 @@
       <h1
         class="font-heading text-5xl font-bold text-text-primary leading-[1.1] mb-3"
       >
-        <template v-if="isLogin">Sign in.</template>
-        <template v-else>Create<br />account.</template>
+        {{ isLogin ? $t('auth.sign_in_heading') : $t('auth.register_heading') }}
       </h1>
       <p class="text-text-secondary text-sm mb-12">
-        {{
-          isLogin
-            ? "Welcome back to your library."
-            : "Start cataloguing your collection."
-        }}
+        {{ isLogin ? $t('auth.sign_in_subtitle') : $t('auth.register_subtitle') }}
       </p>
 
       <div
@@ -45,7 +51,7 @@
       <div class="border-b border-charcoal-border mb-7 pb-2">
         <label
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
-          >Email</label
+          >{{ $t('auth.email') }}</label
         >
         <input
           v-model="email"
@@ -61,7 +67,7 @@
       <div class="border-b border-charcoal-border mb-12 pb-2">
         <label
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
-          >Password</label
+          >{{ $t('auth.password') }}</label
         >
         <input
           v-model="password"
@@ -79,7 +85,7 @@
         :disabled="loading"
         class="w-full bg-text-primary text-charcoal py-4 text-xs font-bold tracking-[0.25em] uppercase mb-5 hover:opacity-80 transition-opacity disabled:opacity-40"
       >
-        {{ loading ? "—" : isLogin ? "Sign in" : "Create account" }}
+        {{ loading ? '—' : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
       </button>
 
       <!-- Toggle -->
@@ -89,7 +95,7 @@
         class="text-xs text-text-secondary tracking-wide underline underline-offset-4 hover:text-text-primary transition-colors disabled:opacity-40"
         @click="toggleMode"
       >
-        {{ isLogin ? "Need an account?" : "Already have an account?" }}
+        {{ isLogin ? $t('auth.need_account') : $t('auth.have_account') }}
       </button>
     </form>
     <AppFooter />
@@ -101,12 +107,14 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
+import { useLocaleStore } from "@/stores/locale";
 import AppFooter from "@/components/AppFooter.vue";
 import AppHeader from "@/components/AppHeader.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
+const localeStore = useLocaleStore();
 
 const isLogin = ref(true);
 const email = ref("");

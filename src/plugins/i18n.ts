@@ -1,21 +1,10 @@
 import { createI18n } from 'vue-i18n'
-
-const messages = {
-  en: {
-    message: {
-      hello: 'hello world',
-    },
-  },
-  ja: {
-    message: {
-      hello: 'こんにちは、世界',
-    },
-  },
-}
+import en from '../locales/en.json'
+import de from '../locales/de.json'
 
 export default createI18n({
   legacy: false,
-  locale: 'en',
+  locale: (localStorage.getItem('locale') as 'en' | 'de') ?? 'en',
   fallbackLocale: 'en',
-  messages,
+  messages: { en, de },
 })

@@ -8,14 +8,12 @@
             <p
               class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
             >
-              Library
+              {{ $t('library.section') }}
             </p>
             <h1
               class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]"
             >
-              Your<br class="md:hidden" /><span class="hidden md:inline"
-                >&nbsp;</span
-              >Books.
+              {{ $t('library.heading_word1') }}<br class="md:hidden" /><span class="hidden md:inline">&nbsp;</span>{{ $t('library.heading_word2') }}
             </h1>
           </div>
           <div class="flex flex-col items-end gap-3 pt-1">
@@ -29,6 +27,15 @@
                 prepend-icon="mdi-camera"
                 @click="$router.push('/scanner')"
               >
+              </v-btn>
+              <v-btn
+                variant="text"
+                color="primary"
+                size="small"
+                class="text-[10px] tracking-widest font-mono"
+                @click="localeStore.toggle()"
+              >
+                {{ localeStore.locale === 'en' ? 'DE' : 'EN' }}
               </v-btn>
               <v-btn
                 :icon="
@@ -55,7 +62,7 @@
               }}<template v-if="displayedBooks.length !== books.length"
                 >/{{ books.length }}</template
               >
-              {{ displayedBooks.length === 1 ? "title" : "titles" }}
+              {{ displayedBooks.length === 1 ? $t('library.title_singular') : $t('library.title_plural') }}
             </span>
           </div>
         </div>
@@ -77,7 +84,7 @@
           <input
             v-model="search"
             type="search"
-            placeholder="Search titles, authors, ISBNs…"
+            :placeholder="$t('library.search_placeholder')"
             class="flex-1 bg-transparent text-text-primary text-sm outline-none placeholder:text-text-secondary/50"
           />
           <button
@@ -96,11 +103,11 @@
             v-model="sortBy"
             class="w-44 bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
           >
-            <option value="date_desc">Newest first</option>
-            <option value="date_asc">Oldest first</option>
-            <option value="title_asc">Title A–Z</option>
-            <option value="title_desc">Title Z–A</option>
-            <option value="author_asc">Author A–Z</option>
+            <option value="date_desc">{{ $t('library.sort_date_desc') }}</option>
+            <option value="date_asc">{{ $t('library.sort_date_asc') }}</option>
+            <option value="title_asc">{{ $t('library.sort_title_asc') }}</option>
+            <option value="title_desc">{{ $t('library.sort_title_desc') }}</option>
+            <option value="author_asc">{{ $t('library.sort_author_asc') }}</option>
           </select>
 
           <!-- Status filter tabs -->
@@ -116,7 +123,7 @@
               "
               @click="filterStatus = tab.value"
             >
-              {{ tab.label }}
+              {{ tab.label }} <span class="font-mono">({{ statusCounts[tab.value] }})</span>
             </button>
           </div>
         </div>
@@ -150,10 +157,10 @@
         class="px-6 md:px-10 pt-16 pb-8"
       >
         <p class="font-heading text-3xl font-bold text-text-primary mb-3">
-          Nothing here yet.
+          {{ $t('library.empty_heading') }}
         </p>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Tap the button below to scan your first barcode.
+          {{ $t('library.empty_body') }}
         </p>
       </div>
 
@@ -162,7 +169,7 @@
         v-else-if="!loading && books.length > 0 && displayedBooks.length === 0"
         class="px-6 md:px-10 pt-16 pb-8"
       >
-        <p class="text-sm text-text-secondary">No books match this filter.</p>
+        <p class="text-sm text-text-secondary">{{ $t('library.no_results') }}</p>
       </div>
 
       <!-- Book list -->
@@ -187,7 +194,7 @@
             :class="{ 'opacity-50 pointer-events-none': loadingMore }"
             @click="loadMore"
           >
-            {{ loadingMore ? "—" : "Load more" }}
+            {{ loadingMore ? '—' : $t('library.load_more') }}
           </button>
         </div>
       </div>
@@ -223,11 +230,10 @@
         <v-card-title
           class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
         >
-          Remove book?
+          {{ $t('library.remove_heading') }}
         </v-card-title>
         <v-card-text class="px-6 text-sm text-text-secondary">
-          "{{ bookToDelete?.title || bookToDelete?.isbn }}" will be removed from
-          your library.
+          {{ $t('library.remove_body', { title: bookToDelete?.title || bookToDelete?.isbn }) }}
         </v-card-text>
         <v-card-actions class="px-4 pb-4 gap-2">
           <v-spacer />
@@ -237,7 +243,7 @@
             class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
             @click="deleteDialog = false"
           >
-            Cancel
+            {{ $t('library.cancel') }}
           </v-btn>
           <v-btn
             variant="flat"
@@ -248,7 +254,7 @@
             :loading="deleting"
             @click="confirmDelete"
           >
-            Remove
+            {{ $t('library.remove') }}
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -266,8 +272,10 @@
 
 <script lang="ts" setup>
 import { ref, computed, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
+import { useLocaleStore } from "@/stores/locale";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookCard, {
@@ -276,8 +284,10 @@ import BookCard, {
 } from "@/components/BookCard.vue";
 import BookDetail from "@/components/BookDetail.vue";
 
+const { t } = useI18n();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
+const localeStore = useLocaleStore();
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -291,12 +301,12 @@ type StatusFilter = "all" | ReadStatus;
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const STATUS_TABS: { label: string; value: StatusFilter }[] = [
-  { label: "All", value: "all" },
-  { label: "Unread", value: "unread" },
-  { label: "Reading", value: "reading" },
-  { label: "Read", value: "read" },
-];
+const STATUS_TABS = computed(() => [
+  { label: t("library.filter_all"), value: "all" as StatusFilter },
+  { label: t("library.filter_unread"), value: "unread" as StatusFilter },
+  { label: t("library.filter_reading"), value: "reading" as StatusFilter },
+  { label: t("library.filter_read"), value: "read" as StatusFilter },
+]);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -357,6 +367,13 @@ const displayedBooks = computed(() => {
   });
 });
 
+const statusCounts = computed<Record<StatusFilter, number>>(() => ({
+  all: books.value.length,
+  unread: books.value.filter((b) => b.status === "unread").length,
+  reading: books.value.filter((b) => b.status === "reading").length,
+  read: books.value.filter((b) => b.status === "read").length,
+}));
+
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
 const fetchBooks = async (offset = 0) => {
@@ -410,7 +427,7 @@ const cycleStatus = async (book: Book) => {
     if (!res.ok) throw new Error();
   } catch {
     book.status = prev;
-    errorMessage.value = "Failed to update status";
+    errorMessage.value = t("library.error_update_status");
     errorToast.value = true;
   }
 };
@@ -438,7 +455,7 @@ const confirmDelete = async () => {
       headers: { Authorization: `Bearer ${authStore.token}` },
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to delete book");
+    if (!res.ok) throw new Error(data.error || t("library.error_delete"));
     books.value = books.value.filter((b) => b.id !== book.id);
     deleteDialog.value = false;
   } catch (err: any) {

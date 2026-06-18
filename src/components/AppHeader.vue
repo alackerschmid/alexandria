@@ -4,7 +4,7 @@
       to="/"
       class="text-orange-neon text-[10px] tracking-[0.35em] uppercase font-bold"
     >
-      The Library of Alexandria
+      {{ $t('app_name') }}
     </router-link>
     <slot />
   </div>

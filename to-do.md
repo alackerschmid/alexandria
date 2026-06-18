@@ -24,7 +24,7 @@
 
 ## PRIORITY 3
 
-- cross-reference / fill missing or wrong data through double API call
+- [x] cross-reference / fill missing or wrong data through double API call
 - improve book cover loading speed on page initialization
 - work around / add check for google books api rate limit
 - automatic re query for incomplete data (ie covers)

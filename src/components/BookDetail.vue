@@ -27,7 +27,7 @@
             {{ book.title || book.isbn }}
           </div>
           <div class="text-sm text-text-secondary mb-3">
-            {{ book.author || "Unknown Author" }}
+            {{ book.author || $t('book.unknown_author') }}
           </div>
           <button
             class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
@@ -64,14 +64,14 @@
         >
           <p
             class="text-xs text-text-secondary leading-relaxed transition-all"
-            :class="descriptionExpanded ? '' : 'line-clamp-2'"
+            :class="descriptionExpanded ? '' : 'line-clamp-3'"
           >
             {{ book.description }}
           </p>
           <span
             class="text-[10px] text-text-secondary/50 tracking-[0.15em] uppercase mt-2 inline-block"
           >
-            {{ descriptionExpanded ? "Show less" : "Show more" }}
+            {{ descriptionExpanded ? $t('detail.show_less') : $t('detail.show_more') }}
           </span>
         </div>
 
@@ -82,7 +82,7 @@
             <div
               class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1"
             >
-              Publisher
+              {{ $t('detail.publisher') }}
             </div>
             <div class="text-xs text-text-primary">{{ book.publisher }}</div>
           </div>
@@ -90,7 +90,7 @@
             <div
               class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1"
             >
-              Language
+              {{ $t('detail.language') }}
             </div>
             <div class="text-xs text-text-primary uppercase">
               {{ book.language }}
@@ -100,7 +100,7 @@
             <div
               class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1"
             >
-              Published
+              {{ $t('detail.published') }}
             </div>
             <div class="text-xs text-text-primary">{{ book.publish_date }}</div>
           </div>
@@ -108,7 +108,7 @@
             <div
               class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1"
             >
-              Pages
+              {{ $t('detail.pages') }}
             </div>
             <div class="text-xs text-text-primary">
               {{ book.number_of_pages_median }}
@@ -118,7 +118,7 @@
             <div
               class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1"
             >
-              ISBN
+              {{ $t('detail.isbn') }}
             </div>
             <div class="text-xs text-text-primary font-mono">
               {{ book.isbn }}
@@ -137,7 +137,7 @@
           class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
           @click="$emit('update:modelValue', false)"
         >
-          Close
+          {{ $t('detail.close') }}
         </v-btn>
         <v-btn
           variant="text"
@@ -147,7 +147,7 @@
           prepend-icon="mdi-delete-outline"
           @click="$emit('delete')"
         >
-          Remove
+          {{ $t('detail.remove') }}
         </v-btn>
       </div>
     </div>
@@ -155,9 +155,10 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
+import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
-import type { Book, ReadStatus } from "./BookCard.vue";
+import type { Book } from "./BookCard.vue";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -170,6 +171,8 @@ const emit = defineEmits<{
   delete: [];
   refreshed: [updated: Partial<Book>];
 }>();
+
+const { t } = useI18n();
 
 const descriptionExpanded = ref(false);
 const refreshing = ref(false);
@@ -194,24 +197,21 @@ const refresh = async () => {
   }
 };
 
-const STATUS_CONFIG: Record<
-  ReadStatus,
-  { label: string; icon: string; class: string }
-> = {
+const STATUS_CONFIG = computed(() => ({
   unread: {
-    label: "Unread",
+    label: t("book.unread"),
     icon: "mdi-circle-outline",
     class: "text-text-secondary/40 hover:text-text-secondary",
   },
   reading: {
-    label: "Reading",
+    label: t("book.reading"),
     icon: "mdi-book-open-outline",
     class: "text-orange-neon",
   },
   read: {
-    label: "Read",
+    label: t("book.read"),
     icon: "mdi-check-circle-outline",
     class: "text-[#22c55e]",
   },
-};
+}));
 </script>

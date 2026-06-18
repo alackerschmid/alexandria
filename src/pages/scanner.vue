@@ -20,7 +20,7 @@
         class="text-orange-neon text-[12px] tracking-[0.25em] uppercase cursor-pointer"
         @click="router.push('/')"
       >
-        {{ sessionCount }} saved
+        {{ $t('scanner.saved_count', { n: sessionCount }) }}
       </span>
       <span v-else />
       <button
@@ -53,12 +53,12 @@
           <p
             class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
           >
-            {{ cameraFailed ? "Manual entry" : "Add a book" }}
+            {{ cameraFailed ? $t('scanner.manual_label') : $t('scanner.add_label') }}
           </p>
           <h1
             class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
           >
-            Enter<br />ISBN.
+            {{ $t('scanner.isbn_heading') }}
           </h1>
           <div class="flex items-start gap-2.5 mb-12">
             <v-icon
@@ -67,11 +67,7 @@
               class="text-text-secondary/70 mt-0.5 shrink-0"
             />
             <p class="text-sm text-text-secondary leading-relaxed">
-              {{
-                cameraFailed
-                  ? "The camera isn't available. Type the 10- or 13-digit number printed beneath the barcode."
-                  : "Type the 10- or 13-digit number printed beneath the barcode."
-              }}
+              {{ cameraFailed ? $t('scanner.camera_unavailable') : $t('scanner.barcode_hint') }}
             </p>
           </div>
 
@@ -79,8 +75,8 @@
             <label
               class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
             >
-              ISBN
-            </label>
+              {{ $t('scanner.isbn_label') }}
+</label>
             <input
               ref="manualEntryInput"
               v-model="manualIsbn"
@@ -97,7 +93,7 @@
             :disabled="scanState === 'detecting'"
             class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
           >
-            {{ scanState === "detecting" ? "Looking up…" : "Look up book" }}
+            {{ scanState === 'detecting' ? $t('scanner.looking_up') : $t('scanner.look_up') }}
           </button>
 
           <!-- Desktop: optional webcam fallback -->
@@ -108,7 +104,7 @@
             @click="useCamera"
           >
             <v-icon icon="mdi-camera-outline" size="14" />
-            Use camera instead
+            {{ $t('scanner.use_camera') }}
           </button>
         </form>
       </div>
@@ -167,7 +163,7 @@
           class="absolute top-full left-1/2 -translate-x-1/2 mt-6 whitespace-nowrap pointer-events-none"
         >
           <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
-            Point at a barcode
+            {{ $t('scanner.point_at_barcode') }}
           </span>
         </div>
 
@@ -186,7 +182,7 @@
             />
             <span
               class="text-white text-xs font-bold tracking-[0.2em] uppercase"
-              >Looking up…</span
+              >{{ $t('scanner.looking_up') }}</span
             >
           </div>
         </Transition>
@@ -210,7 +206,7 @@
             v-if="detectedBook.notFound"
             class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
           >
-            No metadata found — ISBN only will be saved
+            {{ $t('scanner.no_metadata') }}
           </p>
 
           <!-- Book info -->
@@ -233,7 +229,7 @@
                 v-if="detectedBook.notFound"
                 class="text-base text-white/40 italic leading-snug mb-1"
               >
-                Unknown book
+                {{ $t('scanner.unknown_book') }}
               </p>
               <p
                 v-else
@@ -260,11 +256,11 @@
             @click="saveBook"
           >
             {{
-              scanState === "saving"
-                ? "—"
+              scanState === 'saving'
+                ? '—'
                 : detectedBook.notFound
-                  ? "Save ISBN"
-                  : "Save Book"
+                  ? $t('scanner.save_isbn')
+                  : $t('scanner.save_book')
             }}
           </button>
           <button
@@ -272,7 +268,7 @@
             :disabled="scanState === 'saving'"
             @click="scanAgain"
           >
-            Discard and scan again
+            {{ $t('scanner.discard') }}
           </button>
         </div>
       </div>
@@ -297,12 +293,14 @@ import {
   nextTick,
   watch,
 } from "vue";
+import { useI18n } from "vue-i18n";
 import { useRouter } from "vue-router";
 import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
 
+const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const { mdAndUp } = useDisplay();
@@ -376,7 +374,7 @@ watch(scanState, (state) => {
 const submitManualIsbn = () => {
   const isbn = manualIsbn.value.replace(/[^0-9Xx]/g, "");
   if (isbn.length !== 10 && isbn.length !== 13) {
-    showToast("Enter a valid 10 or 13-digit ISBN", "error");
+    showToast(t("scanner.toast_invalid_isbn"), "error");
     return;
   }
   manualIsbn.value = "";
@@ -413,7 +411,7 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
       return {
         isbn: book.isbn,
         title: book.title ?? "",
-        author: book.author ?? "Unknown Author",
+        author: book.author ?? t("book.unknown_author"),
         year: book.publish_date?.slice(0, 4),
         coverUrl: book.cover_url ?? undefined,
       };
@@ -438,7 +436,7 @@ const onBarcodeDetected = async (isbn: string) => {
     setTimeout(() => (flash.value = false), 200);
     libraryNotifiedCooldown.add(isbn);
     setTimeout(() => libraryNotifiedCooldown.delete(isbn), 4000);
-    showToast("Already in your library", "warning");
+    showToast(t("scanner.toast_already_in_library"), "warning");
     return;
   }
 
@@ -511,10 +509,7 @@ async function drainQueue() {
     }
   }
   if (authExpired) {
-    showToast(
-      "Session expired — sign in again to sync pending books",
-      "warning",
-    );
+    showToast(t("scanner.toast_session_expired"), "warning");
   }
   remaining.length
     ? localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining))
@@ -533,19 +528,19 @@ const saveBook = async () => {
     sessionScanned.add(queued.isbn);
     libraryIsbns.add(queued.isbn);
     if (result === "duplicate") {
-      showToast("Already in your library", "warning");
+      showToast(t("scanner.toast_already_in_library"), "warning");
     } else {
       sessionCount.value++;
-      showToast("Saved!");
+      showToast(t("scanner.toast_saved"));
     }
   } catch {
     if (!navigator.onLine) {
       enqueue(queued);
       sessionScanned.add(queued.isbn);
       sessionCount.value++;
-      showToast("Will sync later", "warning");
+      showToast(t("scanner.toast_will_sync"), "warning");
     } else {
-      showToast("Failed to save", "error");
+      showToast(t("scanner.toast_failed"), "error");
       scanState.value = "preview";
       return;
     }

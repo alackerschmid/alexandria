@@ -26,7 +26,7 @@
           {{ book.title || book.isbn }}
         </div>
         <div class="text-xs text-text-secondary mb-2">
-          {{ book.author || "Unknown Author" }}
+          {{ book.author || $t("book.unknown_author") }}
         </div>
         <button
           class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
@@ -51,20 +51,16 @@
 
     <!-- Added on (below cover + info, left aligned) -->
     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-      <div class="text-[10px] text-text-secondary/50 font-mono tracking-wide">
-        ADDED ON {{ book.created_at }}
-      </div>
       <div
-        v-if="book.number_of_pages_median"
-        class="text-[10px] text-text-secondary/50 font-mono tracking-wide"
+        class="text-[10px] text-text-secondary/50 font-mono tracking-wide uppercase"
       >
-        {{ book.number_of_pages_median }} pages
+        {{ $t("book.added_on_at", { date: formatDatePart(book.created_at, locale as string), time: formatTimePart(book.created_at, locale as string) }) }}
       </div>
     </div>
   </article>
 </template>
 
-<script lang="ts" setup>
+<script lang="ts">
 export type ReadStatus = "unread" | "reading" | "read";
 
 export interface Book {
@@ -82,27 +78,46 @@ export interface Book {
   publisher?: string | null;
 }
 
+</script>
+
+<script lang="ts" setup>
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+
 defineProps<{ book: Book }>();
 defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
-const STATUS_CONFIG: Record<
-  ReadStatus,
-  { label: string; icon: string; class: string }
-> = {
+const { t, locale } = useI18n();
+
+const BCP47: Record<string, string> = { de: "de-DE", en: "en-GB" };
+
+function formatDatePart(isoString: string, loc: string): string {
+  return new Date(isoString.replace(" ", "T")).toLocaleDateString(BCP47[loc] ?? "en-GB", {
+    year: "numeric", month: "short", day: "numeric",
+  });
+}
+
+function formatTimePart(isoString: string, loc: string): string {
+  return new Date(isoString.replace(" ", "T")).toLocaleTimeString(BCP47[loc] ?? "en-GB", {
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+const STATUS_CONFIG = computed(() => ({
   unread: {
-    label: "Unread",
+    label: t("book.unread"),
     icon: "mdi-circle-outline",
     class: "text-text-secondary/40 hover:text-text-secondary",
   },
   reading: {
-    label: "Reading",
+    label: t("book.reading"),
     icon: "mdi-book-open-outline",
     class: "text-orange-neon",
   },
   read: {
-    label: "Read",
+    label: t("book.read"),
     icon: "mdi-check-circle-outline",
     class: "text-[#22c55e]",
   },
-};
+}));
 </script>
