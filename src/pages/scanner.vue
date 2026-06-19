@@ -1,316 +1,306 @@
 <template>
-  <div
-    class="h-screen bg-black relative overflow-hidden touch-none select-none"
-  >
-    <!-- Camera (always running) -->
-    <div ref="scannerContainer" class="scanner-viewport w-full h-full"></div>
+  <div class="flex flex-col h-screen bg-black overflow-hidden">
+    <!-- App Header -->
+    <AppHeader />
 
-    <!-- Flash overlay: brief orange pulse on detection -->
-    <div
-      class="absolute inset-0 bg-orange-neon pointer-events-none z-20 transition-opacity duration-150"
-      :class="flash ? 'opacity-60' : 'opacity-0'"
-    />
-
-    <!-- Header -->
-    <div
-      class="absolute top-0 left-0 right-0 z-30 px-5 pt-7 pb-5 flex justify-between items-center"
-    >
-      <!-- Guest: show remaining scans pill -->
-      <span
-        v-if="isGuest"
-        class="text-[12px] tracking-[0.2em] uppercase px-3 py-1 rounded-full"
-        style="background: rgba(255,255,255,0.12); backdrop-filter: blur(4px)"
-        :class="guestStore.isAtLimit ? 'text-red-400' : 'text-white/70'"
-      >
-        {{ t('guest.scans_remaining', { n: guestStore.remaining }, guestStore.remaining) }}
-      </span>
-      <!-- Authenticated: show session count -->
-      <span
-        v-else-if="sessionCount > 0"
-        class="text-orange-neon text-[12px] tracking-[0.25em] uppercase cursor-pointer"
-        @click="router.push('/library')"
-      >
-        {{ $t('scanner.saved_count', { n: sessionCount }) }}
-      </span>
-      <span v-else />
-      <button
-        class="w-11 h-11 flex items-center justify-center rounded-full transition-colors"
-        style="
-          background: rgba(255, 255, 255, 0.15);
-          backdrop-filter: blur(4px);
-        "
-        @click="router.push('/')"
-      >
-        <v-icon icon="mdi-close" color="white" size="20" />
-      </button>
-    </div>
-
-    <!-- Manual mode: charcoal backdrop so nothing shows through -->
-    <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
-
-    <!-- Manual-entry screen (camera unavailable, or desktop default) -->
-    <Transition name="fade">
+    <!-- Camera / scanner area -->
+    <div class="flex-1 relative overflow-hidden touch-none select-none">
+      <!-- Camera (always running) -->
       <div
-        v-if="
-          manualMode && (scanState === 'scanning' || scanState === 'detecting')
-        "
-        class="absolute inset-0 z-25 bg-charcoal flex flex-col px-8"
-      >
-        <form
-          class="flex-1 flex flex-col justify-center pb-24 w-full max-w-md mx-auto"
-          @submit.prevent="submitManualIsbn"
-        >
-          <p
-            class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
-          >
-            {{ cameraFailed ? $t('scanner.manual_label') : $t('scanner.add_label') }}
-          </p>
-          <h1
-            class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
-          >
-            {{ $t('scanner.isbn_heading') }}
-          </h1>
-          <div class="flex items-start gap-2.5 mb-12">
-            <v-icon
-              :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
-              size="15"
-              class="text-text-secondary/70 mt-0.5 shrink-0"
-            />
-            <p class="text-sm text-text-secondary leading-relaxed">
-              {{ cameraFailed ? $t('scanner.camera_unavailable') : $t('scanner.barcode_hint') }}
-            </p>
-          </div>
+        ref="scannerContainer"
+        class="scanner-viewport absolute inset-0"
+      ></div>
 
-          <div class="border-b border-charcoal-border mb-12 pb-2">
-            <label
-              class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
-            >
-              {{ $t('scanner.isbn_label') }}
-</label>
-            <input
-              ref="manualEntryInput"
-              v-model="manualIsbn"
-              type="text"
-              inputmode="numeric"
-              :disabled="scanState === 'detecting'"
-              placeholder="978…"
-              class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
-            />
-          </div>
-
-          <button
-            type="submit"
-            :disabled="scanState === 'detecting'"
-            class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
-          >
-            {{ scanState === 'detecting' ? $t('scanner.looking_up') : $t('scanner.look_up') }}
-          </button>
-
-          <!-- Desktop: optional webcam fallback -->
-          <button
-            v-if="mdAndUp && !cameraFailed"
-            type="button"
-            class="mt-6 self-center flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-            @click="useCamera"
-          >
-            <v-icon icon="mdi-camera-outline" size="14" />
-            {{ $t('scanner.use_camera') }}
-          </button>
-        </form>
-      </div>
-    </Transition>
-
-    <!-- Scanning frame + detecting status -->
-    <div
-      v-if="
-        !manualMode && (scanState === 'scanning' || scanState === 'detecting')
-      "
-      class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
-    >
+      <!-- Flash overlay: brief orange pulse on detection -->
       <div
-        class="relative"
-        style="
-          width: 320px;
-          height: 128px;
-          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
-        "
-      >
-        <!-- Corner marks only — no inner fill -->
-        <div
-          class="absolute top-0 left-0 w-10 h-10 border-l-2 border-t-2 transition-all duration-200"
-          :class="
-            scanState === 'detecting' ? 'border-white' : 'border-white/40'
-          "
-        />
-        <div
-          class="absolute top-0 right-0 w-10 h-10 border-r-2 border-t-2 transition-all duration-200"
-          :class="
-            scanState === 'detecting' ? 'border-white' : 'border-white/40'
-          "
-        />
-        <div
-          class="absolute bottom-0 left-0 w-10 h-10 border-l-2 border-b-2 transition-all duration-200"
-          :class="
-            scanState === 'detecting' ? 'border-white' : 'border-white/40'
-          "
-        />
-        <div
-          class="absolute bottom-0 right-0 w-10 h-10 border-r-2 border-b-2 transition-all duration-200"
-          :class="
-            scanState === 'detecting' ? 'border-white' : 'border-white/40'
-          "
-        />
+        class="absolute inset-0 bg-orange-neon pointer-events-none z-20 transition-opacity duration-150"
+        :class="flash ? 'opacity-60' : 'opacity-0'"
+      />
 
-        <!-- Horizontal scan line (visible while idle) -->
-        <div
-          v-if="scanState === 'scanning'"
-          class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
-        />
+      <!-- Manual mode: charcoal backdrop so nothing shows through -->
+      <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
 
-        <!-- Guide text — anchored below the frame -->
+      <!-- Manual-entry screen (camera unavailable, or desktop default) -->
+      <Transition name="fade">
         <div
-          v-if="scanState === 'scanning'"
-          class="absolute top-full left-1/2 -translate-x-1/2 mt-6 whitespace-nowrap pointer-events-none"
+          v-if="
+            manualMode &&
+            (scanState === 'scanning' || scanState === 'detecting')
+          "
+          class="absolute inset-0 z-25 bg-charcoal flex flex-col px-8"
         >
-          <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
-            {{ $t('scanner.point_at_barcode') }}
-          </span>
-        </div>
-
-        <!-- "Looking up" pill — anchored below the frame -->
-        <Transition name="fade">
-          <div
-            v-if="scanState === 'detecting'"
-            class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none"
-            style="
-              background: rgba(17, 17, 16, 0.88);
-              border: 1px solid rgba(255, 102, 0, 0.55);
-            "
+          <form
+            class="flex-1 flex flex-col justify-center pb-24 w-full max-w-md mx-auto"
+            @submit.prevent="submitManualIsbn"
           >
-            <span
-              class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
-            />
-            <span
-              class="text-white text-xs font-bold tracking-[0.2em] uppercase"
-              >{{ $t('scanner.looking_up') }}</span
-            >
-          </div>
-        </Transition>
-      </div>
-    </div>
-
-    <!-- Preview card — bottom sheet on mobile, centered card on desktop -->
-    <Transition name="slide-up">
-      <div
-        v-if="
-          (scanState === 'preview' || scanState === 'saving') && detectedBook
-        "
-        class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
-      >
-        <div
-          class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
-          style="background: #111110"
-        >
-          <!-- Not found notice -->
-          <p
-            v-if="detectedBook.notFound"
-            class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
-          >
-            {{ $t('scanner.no_metadata') }}
-          </p>
-
-          <!-- Book info -->
-          <div class="flex gap-4 mb-6">
-            <img
-              v-if="detectedBook.coverUrl"
-              :src="detectedBook.coverUrl"
-              class="w-14 h-20 object-cover shrink-0"
-            />
-            <div
-              v-else
-              class="w-14 h-20 flex items-center justify-center shrink-0"
-              style="background: #1c1b19; border: 1px solid #2e2b28"
-            >
-              <v-icon icon="mdi-book-outline" size="24" color="grey" />
-            </div>
-
-            <div class="flex-1 min-w-0 pt-1">
-              <p
-                v-if="detectedBook.notFound"
-                class="text-base text-white/40 italic leading-snug mb-1"
-              >
-                {{ $t('scanner.unknown_book') }}
-              </p>
-              <p
-                v-else
-                class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
-              >
-                {{ detectedBook.title }}
-              </p>
-              <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
-                {{ detectedBook.author
-                }}<span v-if="detectedBook.year">
-                  · {{ detectedBook.year }}</span
-                >
-              </p>
-              <p class="text-[10px] text-white/30 font-mono mt-1">
-                {{ detectedBook.isbn }}
-              </p>
-            </div>
-          </div>
-
-          <!-- Guest limit reached: prompt to create account -->
-          <template v-if="isGuest && guestStore.isAtLimit">
-            <p class="text-sm font-bold text-white mb-1">{{ $t('guest.limit_heading') }}</p>
-            <p class="text-xs text-white/50 mb-6">{{ $t('guest.limit_body') }}</p>
-            <button
-              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3"
-              @click="router.push('/login?mode=register')"
-            >
-              {{ $t('guest.register') }}
-            </button>
-            <button
-              class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
-              @click="scanAgain"
-            >
-              {{ $t('guest.sign_in') }}
-            </button>
-          </template>
-
-          <!-- Normal save actions -->
-          <template v-else>
-            <button
-              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
-              :disabled="scanState === 'saving'"
-              @click="saveBook"
+            <p
+              class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
             >
               {{
-                scanState === 'saving'
-                  ? '—'
-                  : detectedBook.notFound
-                    ? $t('scanner.save_isbn')
-                    : $t('scanner.save_book')
+                cameraFailed
+                  ? $t("scanner.manual_label")
+                  : $t("scanner.add_label")
+              }}
+            </p>
+            <h1
+              class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
+            >
+              {{ $t("scanner.isbn_heading") }}
+            </h1>
+            <div class="flex items-start gap-2.5 mb-12">
+              <v-icon
+                :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
+                size="15"
+                class="text-text-secondary/70 mt-0.5 shrink-0"
+              />
+              <p class="text-sm text-text-secondary leading-relaxed">
+                {{
+                  cameraFailed
+                    ? $t("scanner.camera_unavailable")
+                    : $t("scanner.barcode_hint")
+                }}
+              </p>
+            </div>
+
+            <div class="border-b border-charcoal-border mb-12 pb-2">
+              <label
+                class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+              >
+                {{ $t("scanner.isbn_label") }}
+              </label>
+              <input
+                ref="manualEntryInput"
+                v-model="manualIsbn"
+                type="text"
+                inputmode="numeric"
+                :disabled="scanState === 'detecting'"
+                placeholder="978…"
+                class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
+              />
+            </div>
+
+            <button
+              type="submit"
+              :disabled="scanState === 'detecting'"
+              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
+            >
+              {{
+                scanState === "detecting"
+                  ? $t("scanner.looking_up")
+                  : $t("scanner.look_up")
               }}
             </button>
+
+            <!-- Desktop: optional webcam fallback -->
             <button
-              class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
-              :disabled="scanState === 'saving'"
-              @click="scanAgain"
+              v-if="mdAndUp && !cameraFailed"
+              type="button"
+              class="mt-6 self-center flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+              @click="useCamera"
             >
-              {{ $t('scanner.discard') }}
+              <v-icon icon="mdi-camera-outline" size="14" />
+              {{ $t("scanner.use_camera") }}
             </button>
-          </template>
+          </form>
+        </div>
+      </Transition>
+
+      <!-- Scanning frame + detecting status -->
+      <div
+        v-if="
+          !manualMode && (scanState === 'scanning' || scanState === 'detecting')
+        "
+        class="absolute inset-0 flex items-center justify-center pointer-events-none z-20"
+      >
+        <div
+          class="relative"
+          style="
+            width: 320px;
+            height: 128px;
+            box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+          "
+        >
+          <!-- Corner marks only — no inner fill -->
+          <div
+            class="absolute top-0 left-0 w-10 h-10 border-l-2 border-t-2 transition-all duration-200"
+            :class="
+              scanState === 'detecting' ? 'border-white' : 'border-white/40'
+            "
+          />
+          <div
+            class="absolute top-0 right-0 w-10 h-10 border-r-2 border-t-2 transition-all duration-200"
+            :class="
+              scanState === 'detecting' ? 'border-white' : 'border-white/40'
+            "
+          />
+          <div
+            class="absolute bottom-0 left-0 w-10 h-10 border-l-2 border-b-2 transition-all duration-200"
+            :class="
+              scanState === 'detecting' ? 'border-white' : 'border-white/40'
+            "
+          />
+          <div
+            class="absolute bottom-0 right-0 w-10 h-10 border-r-2 border-b-2 transition-all duration-200"
+            :class="
+              scanState === 'detecting' ? 'border-white' : 'border-white/40'
+            "
+          />
+
+          <!-- Horizontal scan line (visible while idle) -->
+          <div
+            v-if="scanState === 'scanning'"
+            class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
+          />
+
+          <!-- Guide text — anchored below the frame -->
+          <div
+            v-if="scanState === 'scanning'"
+            class="absolute top-full left-1/2 -translate-x-1/2 mt-6 whitespace-nowrap pointer-events-none"
+          >
+            <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
+              {{ $t("scanner.point_at_barcode") }}
+            </span>
+          </div>
+
+          <!-- "Looking up" pill — anchored below the frame -->
+          <Transition name="fade">
+            <div
+              v-if="scanState === 'detecting'"
+              class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none"
+              style="
+                background: rgba(17, 17, 16, 0.88);
+                border: 1px solid rgba(255, 102, 0, 0.55);
+              "
+            >
+              <span
+                class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
+              />
+              <span
+                class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+                >{{ $t("scanner.looking_up") }}</span
+              >
+            </div>
+          </Transition>
         </div>
       </div>
-    </Transition>
 
-    <!-- Toast -->
-    <AppToast
-      v-model="toast"
-      :message="toastMessage"
-      :type="toastType"
-      location="center"
-    />
+      <!-- Preview card — bottom sheet on mobile, centered card on desktop -->
+      <Transition name="slide-up">
+        <div
+          v-if="
+            (scanState === 'preview' || scanState === 'saving') && detectedBook
+          "
+          class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
+        >
+          <div
+            class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+            style="background: #111110"
+          >
+            <!-- Not found notice -->
+            <p
+              v-if="detectedBook.notFound"
+              class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
+            >
+              {{ $t("scanner.no_metadata") }}
+            </p>
+
+            <!-- Book info -->
+            <div class="flex gap-4 mb-6">
+              <img
+                v-if="detectedBook.coverUrl"
+                :src="detectedBook.coverUrl"
+                class="w-14 h-20 object-cover shrink-0"
+              />
+              <div
+                v-else
+                class="w-14 h-20 flex items-center justify-center shrink-0"
+                style="background: #1c1b19; border: 1px solid #2e2b28"
+              >
+                <v-icon icon="mdi-book-outline" size="24" color="grey" />
+              </div>
+
+              <div class="flex-1 min-w-0 pt-1">
+                <p
+                  v-if="detectedBook.notFound"
+                  class="text-base text-white/40 italic leading-snug mb-1"
+                >
+                  {{ $t("scanner.unknown_book") }}
+                </p>
+                <p
+                  v-else
+                  class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
+                >
+                  {{ detectedBook.title }}
+                </p>
+                <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
+                  {{ detectedBook.author
+                  }}<span v-if="detectedBook.year">
+                    · {{ detectedBook.year }}</span
+                  >
+                </p>
+                <p class="text-[10px] text-white/30 font-mono mt-1">
+                  {{ detectedBook.isbn }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Guest limit reached: prompt to create account -->
+            <template v-if="isGuest && guestStore.isAtLimit">
+              <p class="text-sm font-bold text-white mb-1">
+                {{ $t("guest.limit_heading") }}
+              </p>
+              <p class="text-xs text-white/50 mb-6">
+                {{ $t("guest.limit_body") }}
+              </p>
+              <button
+                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3"
+                @click="router.push('/login?mode=register')"
+              >
+                {{ $t("guest.register") }}
+              </button>
+              <button
+                class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
+                @click="scanAgain"
+              >
+                {{ $t("guest.sign_in") }}
+              </button>
+            </template>
+
+            <!-- Normal save actions -->
+            <template v-else>
+              <button
+                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
+                :disabled="scanState === 'saving'"
+                @click="saveBook"
+              >
+                {{
+                  scanState === "saving"
+                    ? "—"
+                    : detectedBook.notFound
+                      ? $t("scanner.save_isbn")
+                      : $t("scanner.save_book")
+                }}
+              </button>
+              <button
+                class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
+                :disabled="scanState === 'saving'"
+                @click="scanAgain"
+              >
+                {{ $t("scanner.discard") }}
+              </button>
+            </template>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- Toast -->
+      <AppToast
+        v-model="toast"
+        :message="toastMessage"
+        :type="toastType"
+        location="bottom"
+      />
+    </div>
   </div>
 </template>
 
@@ -330,6 +320,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
+import AppHeader from "@/components/AppHeader.vue";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -339,6 +330,11 @@ const { mdAndUp } = useDisplay();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
 const API_BASE = import.meta.env.VITE_API_URL || "";
+
+// ── Debug toggles ─────────────────────────────────────────────────────────────
+// Set to false to keep the camera UI even when Quagga fails (useful for testing
+// the camera overlay on desktop without triggering manual-entry fallback).
+const FALLBACK_TO_MANUAL_ON_CAMERA_FAIL = false;
 
 // ── State machine ─────────────────────────────────────────────────────────────
 
@@ -671,9 +667,11 @@ const startScanner = () => {
     },
     (err: unknown) => {
       if (err) {
-        cameraFailed.value = true;
         console.error(err);
-        focusManualEntry();
+        if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
+          cameraFailed.value = true;
+          focusManualEntry();
+        }
         return;
       }
       Quagga.start();

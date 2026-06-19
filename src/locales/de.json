@@ -47,6 +47,8 @@
     "nav_library": "Bibliothek",
     "nav_scan": "Scannen",
     "sign_out": "Abmelden",
+    "theme_light": "Helles Design",
+    "theme_dark": "Dunkles Design",
     "firstname_dialog_eyebrow": "Willkommen",
     "firstname_dialog_heading": "Wie heißt du?",
     "firstname_dialog_body": "Wir verwenden deinen Namen in deiner Bibliothek.",
@@ -133,10 +135,15 @@
     "published": "Erschienen",
     "pages": "Seiten",
     "isbn": "ISBN",
+    "description": "Beschreibung",
+    "cover_url": "Cover-URL",
     "show_more": "Mehr anzeigen",
     "show_less": "Weniger anzeigen",
     "close": "Schließen",
-    "remove": "Entfernen"
+    "remove": "Entfernen",
+    "edit_save": "Änderungen speichern",
+    "edit_cancel": "Abbrechen",
+    "edit_error": "Änderungen konnten nicht gespeichert werden"
   },
   "scanner": {
     "saved_count": "{n} gespeichert",

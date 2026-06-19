@@ -311,6 +311,45 @@ app.post('/api/books/refresh', async (c) => {
   return c.json(book)
 })
 
+// ── Book overrides ────────────────────────────────────────────────────────────
+
+const OVERRIDE_FIELDS = ['title', 'author', 'cover_url', 'language', 'publish_date', 'number_of_pages_median', 'description', 'publisher'] as const
+type OverrideField = typeof OVERRIDE_FIELDS[number]
+
+app.patch('/api/books/override', async (c) => {
+  const userId = c.get('userId')
+  const { isbn, changes } = await c.req.json<{ isbn: string; changes: Partial<Record<OverrideField, string | number | null>> }>()
+
+  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+
+  const validFields = Object.keys(changes ?? {}).filter(f => (OVERRIDE_FIELDS as readonly string[]).includes(f)) as OverrideField[]
+  if (!validFields.length) return c.json({ ok: true })
+
+  const book = await c.env.DB
+    .prepare('SELECT id FROM books WHERE isbn = ?')
+    .bind(isbn)
+    .first<{ id: number }>()
+  if (!book) return c.json({ error: 'Book not found' }, 404)
+
+  const values = validFields.map(f => changes[f] ?? null)
+  const cols = validFields.join(', ')
+  const placeholders = validFields.map(() => '?').join(', ')
+  const setClauses = validFields.map(f => `${f} = excluded.${f}`).join(', ')
+
+  await c.env.DB
+    .prepare(`
+      INSERT INTO book_overrides (user_id, book_id, ${cols})
+      VALUES (?, ?, ${placeholders})
+      ON CONFLICT(user_id, book_id) DO UPDATE SET
+        ${setClauses},
+        updated_at = datetime('now')
+    `)
+    .bind(userId, book.id, ...values)
+    .run()
+
+  return c.json({ ok: true })
+})
+
 // ── Scans ─────────────────────────────────────────────────────────────────────
 
 const SORT_CLAUSES: Record<string, string> = {
@@ -324,10 +363,26 @@ const SORT_CLAUSES: Record<string, string> = {
 
 const SCAN_SELECT = `
   SELECT s.id, s.status, s.created_at,
-         b.isbn, b.title, b.author, b.cover_url, b.language, b.publish_date, b.number_of_pages_median,
-         b.description, b.publisher
+         b.isbn,
+         COALESCE(o.title, b.title)                          AS title,
+         COALESCE(o.author, b.author)                        AS author,
+         COALESCE(o.cover_url, b.cover_url)                  AS cover_url,
+         COALESCE(o.language, b.language)                    AS language,
+         COALESCE(o.publish_date, b.publish_date)            AS publish_date,
+         COALESCE(o.number_of_pages_median, b.number_of_pages_median) AS number_of_pages_median,
+         COALESCE(o.description, b.description)              AS description,
+         COALESCE(o.publisher, b.publisher)                  AS publisher,
+         (o.title IS NOT NULL)                               AS title_overridden,
+         (o.author IS NOT NULL)                              AS author_overridden,
+         (o.cover_url IS NOT NULL)                           AS cover_url_overridden,
+         (o.language IS NOT NULL)                            AS language_overridden,
+         (o.publish_date IS NOT NULL)                        AS publish_date_overridden,
+         (o.number_of_pages_median IS NOT NULL)              AS pages_overridden,
+         (o.description IS NOT NULL)                         AS description_overridden,
+         (o.publisher IS NOT NULL)                           AS publisher_overridden
   FROM scans s
-  JOIN books b ON s.book_id = b.id`
+  JOIN books b ON s.book_id = b.id
+  LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id`
 
 const VALID_STATUSES = ['unread', 'reading', 'read'] as const
 
@@ -413,14 +468,20 @@ app.patch('/api/scans/:id', async (c) => {
 })
 
 app.delete('/api/scans/:id', async (c) => {
-  const result = await c.env.DB
-    .prepare('DELETE FROM scans WHERE id = ? AND user_id = ?')
-    .bind(c.req.param('id'), c.get('userId'))
-    .run()
+  const userId = c.get('userId')
+  const scanId = c.req.param('id')
 
-  if (!result.meta.changes) {
-    return c.json({ error: 'Book not found' }, 404)
-  }
+  const scan = await c.env.DB
+    .prepare('SELECT book_id FROM scans WHERE id = ? AND user_id = ?')
+    .bind(scanId, userId)
+    .first<{ book_id: number }>()
+
+  if (!scan) return c.json({ error: 'Book not found' }, 404)
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?').bind(userId, scan.book_id),
+    c.env.DB.prepare('DELETE FROM scans WHERE id = ? AND user_id = ?').bind(scanId, userId),
+  ])
 
   return c.json({ message: 'Scan deleted' })
 })

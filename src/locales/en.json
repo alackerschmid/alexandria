@@ -47,6 +47,8 @@
     "nav_library": "Library",
     "nav_scan": "Scan",
     "sign_out": "Sign out",
+    "theme_light": "Light mode",
+    "theme_dark": "Dark mode",
     "firstname_dialog_eyebrow": "Welcome",
     "firstname_dialog_heading": "What's your name?",
     "firstname_dialog_body": "We'll use it to personalise your library.",
@@ -133,10 +135,15 @@
     "published": "Published",
     "pages": "Pages",
     "isbn": "ISBN",
+    "description": "Description",
+    "cover_url": "Cover URL",
     "show_more": "Show more",
     "show_less": "Show less",
     "close": "Close",
-    "remove": "Remove"
+    "remove": "Remove",
+    "edit_save": "Save changes",
+    "edit_cancel": "Cancel",
+    "edit_error": "Failed to save changes"
   },
   "scanner": {
     "saved_count": "{n} saved",

@@ -23,45 +23,42 @@
         </router-link>
       </nav>
       <div class="flex items-center gap-1">
-        <v-btn
-          variant="text"
-          color="primary"
-          size="small"
-          class="text-[10px] tracking-widest font-mono"
-          @click="localeStore.toggle()"
-        >
-          {{ localeStore.locale === 'en' ? 'DE' : 'EN' }}
-        </v-btn>
-        <v-btn
-          :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
-          variant="text"
-          color="primary"
-          size="small"
-          @click="themeStore.toggle()"
-        />
         <v-menu location="bottom end" :offset="8">
           <template #activator="{ props: menuProps }">
             <button
               v-bind="menuProps"
-              class="ml-1 w-8 h-8 rounded-full border border-charcoal-border bg-charcoal-light flex items-center justify-center font-mono text-[11px] text-text-primary hover:opacity-70 transition-opacity"
+              class="w-8 h-8 rounded-full border border-charcoal-border bg-charcoal-light flex items-center justify-center font-mono text-[11px] text-text-primary hover:opacity-70 transition-opacity"
             >
               {{ userInitial }}
             </button>
           </template>
-          <v-list
-            density="compact"
-            rounded="0"
-            :bg-color="themeStore.isDark ? '#1c1b19' : '#f5f2ed'"
-            min-width="160"
+          <div
+            class="py-1 border border-charcoal-border"
+            :style="{ background: themeStore.isDark ? '#1c1b19' : '#f5f2ed', minWidth: '180px' }"
           >
-            <v-list-item
-              prepend-icon="mdi-logout"
-              class="text-[11px] tracking-widest uppercase"
+            <button
+              class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+              @click="themeStore.toggle()"
+            >
+              <v-icon :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'" size="14" class="text-text-secondary shrink-0" />
+              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark') }}</span>
+            </button>
+            <button
+              class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+              @click="localeStore.toggle()"
+            >
+              <v-icon icon="mdi-translate" size="14" class="text-text-secondary shrink-0" />
+              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ localeStore.locale === 'en' ? 'Deutsch' : 'English' }}</span>
+            </button>
+            <div class="border-t border-charcoal-border my-1" />
+            <button
+              class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="authStore.logout()"
             >
-              {{ $t('home.sign_out') }}
-            </v-list-item>
-          </v-list>
+              <v-icon icon="mdi-logout" size="14" class="text-text-secondary shrink-0" />
+              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('home.sign_out') }}</span>
+            </button>
+          </div>
         </v-menu>
       </div>
     </div>

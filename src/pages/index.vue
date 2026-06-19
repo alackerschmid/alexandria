@@ -187,7 +187,7 @@
       <div v-if="displayedBooks.length > 0 && viewMode === 'list'" class="pb-28">
         <div class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10">
           <BookCard
-            v-for="book in displayedBooks"
+            v-for="book in paginatedBooks"
             :key="book.id"
             :book="book"
             @cycle-status="cycleStatus(book)"
@@ -196,8 +196,46 @@
           />
         </div>
 
-        <!-- Load more -->
-        <div v-if="hasMore" class="flex justify-center py-8">
+        <!-- Pagination -->
+        <div class="flex items-center justify-between px-6 md:px-10 py-4 border-t border-charcoal-border mt-2">
+          <!-- Page size -->
+          <div class="flex items-center gap-2">
+            <select
+              v-model="pageSize"
+              class="bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
+            >
+              <option :value="10">10</option>
+              <option :value="25">25</option>
+              <option :value="50">50</option>
+              <option :value="100">100</option>
+            </select>
+            <span class="text-[10px] text-text-secondary/50 tracking-[0.15em] uppercase">/ {{ $t('library.title_plural') }}</span>
+          </div>
+
+          <!-- Page nav -->
+          <div class="flex items-center gap-3">
+            <button
+              class="text-text-secondary transition-colors"
+              :class="currentPage === 1 ? 'opacity-25 pointer-events-none' : 'hover:text-text-primary'"
+              @click="currentPage--"
+            >
+              <v-icon icon="mdi-chevron-left" size="18" />
+            </button>
+            <span class="font-mono text-[10px] text-text-secondary tabular-nums">
+              {{ currentPage }} / {{ totalPages }}
+            </span>
+            <button
+              class="text-text-secondary transition-colors"
+              :class="currentPage === totalPages ? 'opacity-25 pointer-events-none' : 'hover:text-text-primary'"
+              @click="currentPage++"
+            >
+              <v-icon icon="mdi-chevron-right" size="18" />
+            </button>
+          </div>
+        </div>
+
+        <!-- Load more from server if needed -->
+        <div v-if="hasMore && currentPage === totalPages" class="flex justify-center pb-6">
           <button
             class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
             :class="{ 'opacity-50 pointer-events-none': loadingMore }"
@@ -322,7 +360,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
@@ -373,6 +411,8 @@ const search = ref("");
 const sortBy = ref<SortOption>("date_desc");
 const filterStatus = ref<StatusFilter>("all");
 const viewMode = ref<"list" | "tile">("list");
+const pageSize = ref(10);
+const currentPage = ref(1);
 
 const deleteDialog = ref(false);
 const bookToDelete = ref<Book | null>(null);
@@ -433,6 +473,17 @@ const statusCounts = computed<Record<StatusFilter, number>>(() => ({
   reading: allBooks.value.filter((b) => b.status === "reading").length,
   read: allBooks.value.filter((b) => b.status === "read").length,
 }));
+
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(displayedBooks.value.length / pageSize.value))
+);
+
+const paginatedBooks = computed(() => {
+  const start = (currentPage.value - 1) * pageSize.value;
+  return displayedBooks.value.slice(start, start + pageSize.value);
+});
+
+watch([displayedBooks, pageSize], () => { currentPage.value = 1; });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
