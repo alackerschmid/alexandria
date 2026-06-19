@@ -7,6 +7,7 @@
 // Composables
 import { createRouter, createWebHistory } from 'vue-router'
 import Landing from '@/pages/landing.vue'
+import Home from '@/pages/home.vue'
 import Index from '@/pages/index.vue'
 import Login from '@/pages/login.vue'
 import Scanner from '@/pages/scanner.vue'
@@ -19,6 +20,11 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: Landing,
+    },
+    {
+      path: '/home',
+      name: 'dashboard',
+      component: Home,
     },
     {
       path: '/library',
@@ -51,8 +57,11 @@ const router = createRouter({
 router.beforeEach((to) => {
   const authStore = useAuthStore()
   if (authStore.isAuthenticated) {
-    if (to.name === 'home')  return { name: 'library' }
-    if (to.name === 'login') return { name: 'library' }
+    if (to.name === 'home')  return { name: 'dashboard' }
+    if (to.name === 'login') return { name: 'dashboard' }
+  }
+  if (!authStore.isAuthenticated && to.name === 'dashboard') {
+    return { name: 'home' }
   }
 })
 

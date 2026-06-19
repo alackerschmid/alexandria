@@ -118,7 +118,7 @@
           type="button"
           :disabled="loading"
           class="text-xs text-text-secondary/50 tracking-wide hover:text-text-secondary transition-colors disabled:opacity-40"
-          @click="$router.push('/')"
+          @click="$router.push('/scanner')"
         >
           {{ $t('auth.continue_as_guest') }} →
         </button>
@@ -179,14 +179,14 @@ const submit = async () => {
       throw new Error(data.error || "Authentication failed");
     }
 
-    authStore.setAuth(data.token, data.email);
+    authStore.setAuth(data.token, data.email, data.firstname ?? null);
 
     // Sync any guest scans to the new/existing account
     if (guestStore.scans.length > 0) {
       await guestStore.syncToAccount(data.token);
     }
 
-    router.push({ name: "library" });
+    router.push({ name: "dashboard" });
   } catch (err: any) {
     error.value = err.message;
   } finally {

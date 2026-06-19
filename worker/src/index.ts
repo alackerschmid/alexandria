@@ -61,7 +61,7 @@ app.post('/api/auth/register', async (c) => {
     .first<{ id: number }>()
 
   const token = await signToken(user!.id, c.env.JWT_SECRET)
-  return c.json({ token, email }, 201)
+  return c.json({ token, email, firstname: null }, 201)
 })
 
 app.post('/api/auth/login', async (c) => {
@@ -73,16 +73,16 @@ app.post('/api/auth/login', async (c) => {
 
   const db = c.env.DB
   const user = await db
-    .prepare('SELECT id, password_hash FROM users WHERE email = ?')
+    .prepare('SELECT id, password_hash, firstname FROM users WHERE email = ?')
     .bind(email)
-    .first<{ id: number, password_hash: string }>()
+    .first<{ id: number, password_hash: string, firstname: string | null }>()
 
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return c.json({ error: 'Invalid email or password' }, 401)
   }
 
   const token = await signToken(user.id, c.env.JWT_SECRET)
-  return c.json({ token, email })
+  return c.json({ token, email, firstname: user.firstname ?? null })
 })
 
 async function signToken(userId: number, secret: string): Promise<string> {
@@ -111,6 +111,19 @@ const authMiddleware = async (c: any, next: any) => {
     return c.json({ error: 'Invalid or expired token' }, 401)
   }
 }
+
+app.patch('/api/auth/me', authMiddleware, async (c) => {
+  const { firstname } = await c.req.json()
+  const trimmed = typeof firstname === 'string' ? firstname.trim() : ''
+  if (!trimmed) return c.json({ error: 'A valid first name is required' }, 400)
+
+  await c.env.DB
+    .prepare('UPDATE users SET firstname = ? WHERE id = ?')
+    .bind(trimmed, c.get('userId'))
+    .run()
+
+  return c.json({ firstname: trimmed })
+})
 
 app.use('/api/scans/*', authMiddleware)
 

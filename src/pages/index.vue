@@ -1,81 +1,28 @@
 <template>
-  <div class="bg-charcoal min-h-screen flex flex-col items-center">
-    <div class="w-full max-w-300 flex-1 flex flex-col">
-      <!-- Header -->
-      <div class="px-6 md:px-10 pt-14 pb-6 border-b border-charcoal-border">
-        <div class="flex justify-between items-start">
+  <div class="bg-charcoal min-h-screen flex flex-col">
+    <AppHeader />
+    <div class="w-full max-w-300 mx-auto flex-1 flex flex-col">
+      <!-- Page title -->
+      <div class="px-6 md:px-10 pt-10 pb-6 border-b border-charcoal-border">
+        <div class="flex justify-between items-end">
           <div>
-            <p
-              class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
-            >
+            <p class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3">
               {{ $t('library.section') }}
             </p>
-            <h1
-              class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]"
-            >
+            <h1 class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]">
               {{ $t('library.heading_word1') }}<br class="md:hidden" /><span class="hidden md:inline">&nbsp;</span>{{ $t('library.heading_word2') }}
             </h1>
           </div>
-          <div class="flex flex-col items-end gap-3 pt-1">
-            <div class="flex items-center gap-1">
-              <v-btn
-                class="hidden md:inline-flex mr-1"
-                color="primary"
-                rounded="0"
-                elevation="0"
-                size="small"
-                prepend-icon="mdi-camera"
-                @click="$router.push('/scanner')"
-              >
-              </v-btn>
-              <v-btn
-                variant="text"
-                color="primary"
-                size="small"
-                class="text-[10px] tracking-widest font-mono"
-                @click="localeStore.toggle()"
-              >
-                {{ localeStore.locale === 'en' ? 'DE' : 'EN' }}
-              </v-btn>
-              <v-btn
-                :icon="
-                  themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'
-                "
-                variant="text"
-                color="primary"
-                size="small"
-                @click="themeStore.toggle()"
-              />
-              <v-btn
-                v-if="authStore.isAuthenticated"
-                icon="mdi-logout"
-                variant="text"
-                color="primary"
-                size="small"
-                @click="authStore.logout()"
-              />
-              <v-btn
-                v-else
-                variant="text"
-                color="primary"
-                size="small"
-                class="text-[10px] tracking-widest font-mono"
-                @click="$router.push('/login')"
-              >
-                {{ $t('auth.sign_in') }}
-              </v-btn>
-            </div>
-            <span
-              v-if="!loading && allBooks.length > 0"
-              class="text-[10px] text-text-secondary tracking-widest uppercase"
+          <span
+            v-if="!loading && allBooks.length > 0"
+            class="text-[10px] text-text-secondary tracking-widest uppercase pb-1"
+          >
+            {{ displayedBooks.length
+            }}<template v-if="displayedBooks.length !== allBooks.length"
+              >/{{ allBooks.length }}</template
             >
-              {{ displayedBooks.length
-              }}<template v-if="displayedBooks.length !== allBooks.length"
-                >/{{ allBooks.length }}</template
-              >
-              {{ displayedBooks.length === 1 ? $t('library.title_singular') : $t('library.title_plural') }}
-            </span>
-          </div>
+            {{ displayedBooks.length === 1 ? $t('library.title_singular') : $t('library.title_plural') }}
+          </span>
         </div>
       </div>
 
@@ -319,8 +266,8 @@ import { ref, computed, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
-import { useLocaleStore } from "@/stores/locale";
 import { useGuestStore } from "@/stores/guest";
+import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookCard, {
@@ -332,7 +279,6 @@ import BookDetail from "@/components/BookDetail.vue";
 const { t } = useI18n();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
-const localeStore = useLocaleStore();
 const guestStore = useGuestStore();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
