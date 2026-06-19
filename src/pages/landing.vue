@@ -57,8 +57,9 @@
         <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
           <!-- Scanner widget -->
           <div
-            class="relative flex items-center justify-center w-full md:w-[300px] bg-charcoal-light border border-charcoal-border shrink-0"
+            class="relative flex items-center justify-center w-full md:w-[300px] bg-charcoal-light border border-charcoal-border shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
             style="height: 110px"
+            @click="$router.push('/scanner')"
           >
             <!-- Barcode -->
             <div
@@ -110,6 +111,26 @@
               {{ $t("marketing.cta_secondary") }} →
             </button>
           </div>
+        </div>
+
+        <!-- Mobile-only CTA band (sits between scanner and library preview) -->
+        <div
+          class="md:hidden -mx-6 px-6 py-6 flex flex-col gap-4"
+          style="background: rgb(var(--v-theme-primary))"
+        >
+          <h2
+            class="font-heading font-black text-[1.3rem] leading-[1.05]"
+            style="color: #111110"
+          >
+            {{ $t("marketing.band_heading") }}
+          </h2>
+          <button
+            class="self-start text-xs font-bold tracking-[0.2em] uppercase py-4 px-8 hover:opacity-80 transition-opacity"
+            style="background: #111110; color: #f0ede8"
+            @click="$router.push('/scanner')"
+          >
+            {{ $t("marketing.cta_primary") }}
+          </button>
         </div>
       </div>
 
@@ -181,9 +202,9 @@
       </div>
     </div>
 
-    <!-- ── CTA band ─────────────────────────────────────────────────────────── -->
+    <!-- ── CTA band (desktop only) ───────────────────────────────────────────── -->
     <div
-      class="shrink-0 px-6 md:px-16 py-6 md:py-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 md:gap-12"
+      class="hidden md:flex shrink-0 px-6 md:px-16 py-6 md:py-8 flex-col md:flex-row md:items-center md:justify-between gap-4 md:gap-12"
       style="background: rgb(var(--v-theme-primary))"
     >
       <h2

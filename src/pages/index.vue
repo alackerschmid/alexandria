@@ -87,7 +87,7 @@
           </button>
         </div>
 
-        <!-- Sort + Status filter row -->
+        <!-- Sort + Status filter + View toggle row -->
         <div class="flex items-center justify-between gap-4">
           <!-- Sort -->
           <select
@@ -101,21 +101,41 @@
             <option value="author_asc">{{ $t('library.sort_author_asc') }}</option>
           </select>
 
-          <!-- Status filter tabs -->
-          <div class="flex gap-4">
-            <button
-              v-for="tab in STATUS_TABS"
-              :key="tab.value"
-              class="text-[10px] tracking-[0.15em] uppercase transition-colors"
-              :class="
-                filterStatus === tab.value
-                  ? 'text-text-primary border-b border-text-primary pb-0.5'
-                  : 'text-text-secondary/50'
-              "
-              @click="filterStatus = tab.value"
-            >
-              {{ tab.label }} <span class="font-mono">({{ statusCounts[tab.value] }})</span>
-            </button>
+          <div class="flex items-center gap-4">
+            <!-- Status filter tabs -->
+            <div class="flex gap-4">
+              <button
+                v-for="tab in STATUS_TABS"
+                :key="tab.value"
+                class="text-[10px] tracking-[0.15em] uppercase transition-colors"
+                :class="
+                  filterStatus === tab.value
+                    ? 'text-text-primary border-b border-text-primary pb-0.5'
+                    : 'text-text-secondary/50'
+                "
+                @click="filterStatus = tab.value"
+              >
+                {{ tab.label }} <span class="font-mono">({{ statusCounts[tab.value] }})</span>
+              </button>
+            </div>
+
+            <!-- View toggle -->
+            <div class="flex items-center gap-1 shrink-0 border-l border-charcoal-border pl-4">
+              <button
+                class="transition-colors"
+                :class="viewMode === 'list' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+                @click="viewMode = 'list'"
+              >
+                <v-icon icon="mdi-view-list" size="18" />
+              </button>
+              <button
+                class="transition-colors"
+                :class="viewMode === 'tile' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+                @click="viewMode = 'tile'"
+              >
+                <v-icon icon="mdi-view-grid" size="18" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -163,11 +183,9 @@
         <p class="text-sm text-text-secondary">{{ $t('library.no_results') }}</p>
       </div>
 
-      <!-- Book list -->
-      <div v-if="displayedBooks.length > 0" class="pb-28">
-        <div
-          class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10"
-        >
+      <!-- List view -->
+      <div v-if="displayedBooks.length > 0 && viewMode === 'list'" class="pb-28">
+        <div class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10">
           <BookCard
             v-for="book in displayedBooks"
             :key="book.id"
@@ -178,7 +196,49 @@
           />
         </div>
 
-        <!-- Load more (authenticated only — guest scans are all local) -->
+        <!-- Load more -->
+        <div v-if="hasMore" class="flex justify-center py-8">
+          <button
+            class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
+            :class="{ 'opacity-50 pointer-events-none': loadingMore }"
+            @click="loadMore"
+          >
+            {{ loadingMore ? '—' : $t('library.load_more') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Tile view -->
+      <div v-else-if="displayedBooks.length > 0 && viewMode === 'tile'" class="px-6 md:px-10 pt-5 pb-28">
+        <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 xl:grid-cols-8 gap-3 md:gap-4">
+          <div
+            v-for="book in displayedBooks"
+            :key="book.id"
+            class="cursor-pointer group"
+            @click="openDetail(book)"
+          >
+            <div class="relative aspect-2/3 bg-charcoal-light border border-charcoal-border overflow-hidden mb-1.5">
+              <img
+                v-if="book.cover_url"
+                :src="book.cover_url"
+                :alt="book.title || book.isbn"
+                class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
+              />
+              <div v-else class="absolute inset-0 flex items-center justify-center">
+                <v-icon icon="mdi-book-outline" size="20" color="primary" />
+              </div>
+              <div
+                class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
+                :style="{ background: statusDotColor(book.status) }"
+              />
+            </div>
+            <p class="text-[10px] font-heading font-bold text-text-primary leading-snug line-clamp-2">
+              {{ book.title || book.isbn }}
+            </p>
+          </div>
+        </div>
+
+        <!-- Load more -->
         <div v-if="hasMore" class="flex justify-center py-8">
           <button
             class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
@@ -312,6 +372,7 @@ const error = ref("");
 const search = ref("");
 const sortBy = ref<SortOption>("date_desc");
 const filterStatus = ref<StatusFilter>("all");
+const viewMode = ref<"list" | "tile">("list");
 
 const deleteDialog = ref(false);
 const bookToDelete = ref<Book | null>(null);
@@ -372,6 +433,14 @@ const statusCounts = computed<Record<StatusFilter, number>>(() => ({
   reading: allBooks.value.filter((b) => b.status === "reading").length,
   read: allBooks.value.filter((b) => b.status === "read").length,
 }));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function statusDotColor(s: ReadStatus): string {
+  if (s === "reading") return "rgb(var(--v-theme-primary))";
+  if (s === "read") return "rgb(var(--v-theme-success))";
+  return "rgba(138,128,120,0.35)";
+}
 
 // ── Data fetching (authenticated only) ───────────────────────────────────────
 
