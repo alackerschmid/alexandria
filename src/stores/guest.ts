@@ -30,12 +30,12 @@ export const useGuestStore = defineStore('guest', () => {
   const remaining = computed(() => Math.max(0, MAX_GUEST_SCANS - scans.value.length))
   const isAtLimit = computed(() => scans.value.length >= MAX_GUEST_SCANS)
 
-  function addScan(book: Omit<Book, 'id' | 'status' | 'created_at'>): 'ok' | 'duplicate' | 'limit_reached' {
+  function addScan(book: Omit<Book, 'id' | 'status' | 'created_at'>, status: ReadStatus = 'unread'): 'ok' | 'duplicate' | 'limit_reached' {
     if (isAtLimit.value) return 'limit_reached'
     if (scans.value.some(s => s.isbn === book.isbn)) return 'duplicate'
     // Negative IDs distinguish guest scans from real DB rows
     const id = -Date.now()
-    scans.value.unshift({ ...book, id, status: 'unread', created_at: new Date().toISOString() })
+    scans.value.unshift({ ...book, id, status, created_at: new Date().toISOString() })
     persist()
     return 'ok'
   }

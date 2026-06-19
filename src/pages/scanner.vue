@@ -1,8 +1,5 @@
 <template>
   <div class="flex flex-col h-screen bg-black overflow-hidden">
-    <!-- App Header -->
-    <AppHeader />
-
     <!-- Camera / scanner area -->
     <div class="flex-1 relative overflow-hidden touch-none select-none">
       <!-- Camera (always running) -->
@@ -20,92 +17,218 @@
       <!-- Manual mode: charcoal backdrop so nothing shows through -->
       <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
 
-      <!-- Manual-entry screen (camera unavailable, or desktop default) -->
+      <!-- ── Top nav bar ──────────────────────────────────────────────────────── -->
+      <div
+        class="absolute top-0 inset-x-0 z-30 flex justify-between items-center px-4 md:px-6 py-3.5"
+        :class="manualMode ? 'bg-charcoal border-b border-charcoal-border' : ''"
+        :style="manualMode ? '' : 'background: linear-gradient(180deg, rgba(0,0,0,.6), transparent)'"
+      >
+        <!-- Back to library -->
+        <button
+          class="flex items-center gap-3 hover:opacity-80 transition-opacity"
+          @click="router.push('/library')"
+        >
+          <span
+            class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            :class="manualMode
+              ? 'bg-charcoal-light border border-charcoal-border text-text-primary'
+              : 'border border-white/15 text-white'"
+            :style="manualMode ? '' : 'background: rgba(20,19,16,.7)'"
+          >
+            <v-icon icon="mdi-arrow-left" size="18" />
+          </span>
+          <span
+            class="text-[10px] tracking-[0.22em] uppercase"
+            :class="manualMode ? 'text-text-secondary' : 'text-white/55'"
+          >
+            {{ $t("scanner.back_library") }}
+          </span>
+        </button>
+
+        <!-- Session counter pill -->
+        <button
+          v-if="sessionBooks.length"
+          class="flex items-center gap-2.5 px-3.5 py-2 hover:opacity-90 transition-opacity"
+          style="background: rgba(20, 19, 16, 0.7); border: 1px solid rgba(255, 102, 0, 0.45)"
+          @click="showReview = true"
+        >
+          <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
+          <span class="text-white text-[11px] font-bold tracking-[0.14em] uppercase">
+            {{ $t("scanner.saved_count", { n: sessionBooks.length }) }}
+          </span>
+        </button>
+      </div>
+
+      <!-- ── Manual-entry screen (camera unavailable, or desktop default) ──────── -->
       <Transition name="fade">
         <div
           v-if="
             manualMode &&
             (scanState === 'scanning' || scanState === 'detecting')
           "
-          class="absolute inset-0 z-25 bg-charcoal flex flex-col px-8"
+          class="absolute inset-0 z-25 bg-charcoal flex flex-col md:flex-row"
         >
-          <form
-            class="flex-1 flex flex-col justify-center pb-24 w-full max-w-md mx-auto"
-            @submit.prevent="submitManualIsbn"
+          <!-- Entry form -->
+          <div
+            class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-charcoal-border"
           >
-            <p
-              class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+            <form
+              class="w-full max-w-md mx-auto md:mx-0 pb-12"
+              @submit.prevent="submitManualIsbn"
             >
-              {{
-                cameraFailed
-                  ? $t("scanner.manual_label")
-                  : $t("scanner.add_label")
-              }}
-            </p>
-            <h1
-              class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
-            >
-              {{ $t("scanner.isbn_heading") }}
-            </h1>
-            <div class="flex items-start gap-2.5 mb-12">
-              <v-icon
-                :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
-                size="15"
-                class="text-text-secondary/70 mt-0.5 shrink-0"
-              />
-              <p class="text-sm text-text-secondary leading-relaxed">
+              <p
+                class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+              >
                 {{
                   cameraFailed
-                    ? $t("scanner.camera_unavailable")
-                    : $t("scanner.barcode_hint")
+                    ? $t("scanner.manual_label")
+                    : $t("scanner.add_label")
                 }}
               </p>
-            </div>
-
-            <div class="border-b border-charcoal-border mb-12 pb-2">
-              <label
-                class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+              <h1
+                class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
               >
-                {{ $t("scanner.isbn_label") }}
-              </label>
-              <input
-                ref="manualEntryInput"
-                v-model="manualIsbn"
-                type="text"
-                inputmode="numeric"
+                {{ $t("scanner.isbn_heading") }}
+              </h1>
+              <div class="flex items-start gap-2.5 mb-12">
+                <v-icon
+                  :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
+                  size="15"
+                  class="text-text-secondary/70 mt-0.5 shrink-0"
+                />
+                <p class="text-sm text-text-secondary leading-relaxed">
+                  {{
+                    cameraFailed
+                      ? $t("scanner.camera_unavailable")
+                      : $t("scanner.barcode_hint")
+                  }}
+                </p>
+              </div>
+
+              <div class="border-b border-charcoal-border mb-12 pb-2">
+                <label
+                  class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+                >
+                  {{ $t("scanner.isbn_label") }}
+                </label>
+                <input
+                  ref="manualEntryInput"
+                  v-model="manualIsbn"
+                  type="text"
+                  inputmode="numeric"
+                  :disabled="scanState === 'detecting'"
+                  placeholder="978…"
+                  class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                />
+              </div>
+
+              <button
+                type="submit"
                 :disabled="scanState === 'detecting'"
-                placeholder="978…"
-                class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
-              />
+                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
+              >
+                {{
+                  scanState === "detecting"
+                    ? $t("scanner.looking_up")
+                    : $t("scanner.look_up")
+                }}
+              </button>
+
+              <!-- Desktop: optional webcam fallback -->
+              <button
+                v-if="mdAndUp && !cameraFailed"
+                type="button"
+                class="mt-6 self-center flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+                @click="useCamera"
+              >
+                <v-icon icon="mdi-camera-outline" size="14" />
+                {{ $t("scanner.use_camera") }}
+              </button>
+            </form>
+          </div>
+
+          <!-- Desktop: live session list -->
+          <div
+            v-if="mdAndUp"
+            class="w-105 shrink-0 flex flex-col px-10 pt-24 pb-8"
+          >
+            <div class="flex justify-between items-baseline mb-1">
+              <span
+                class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
+              >
+                {{ $t("scanner.added_session") }}
+              </span>
+              <span class="font-mono text-[11px] text-orange-neon">
+                {{ sessionBooks.length }}
+              </span>
+            </div>
+
+            <div class="flex-1 min-h-0 overflow-y-auto">
+              <p
+                v-if="!sessionBooks.length"
+                class="text-xs text-text-secondary/60 mt-6"
+              >
+                {{ $t("scanner.point_at_barcode") }}
+              </p>
+              <div
+                v-for="b in sessionBooks"
+                :key="b.isbn"
+                class="flex gap-3.5 items-start py-4 border-b border-charcoal-border"
+              >
+                <div
+                  class="w-9 h-14 shrink-0 relative overflow-hidden"
+                  style="background: #232220; border: 1px solid #2e2b28"
+                >
+                  <img
+                    v-if="b.coverUrl"
+                    :src="b.coverUrl"
+                    class="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div
+                    v-else
+                    class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                  />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p
+                    class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                  >
+                    {{ b.title }}
+                  </p>
+                  <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                    {{ b.author }}
+                  </p>
+                  <span
+                    class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase mt-2"
+                    :style="{ color: STATUS_COLORS[b.status] }"
+                  >
+                    <span
+                      class="w-1.5 h-1.5 rounded-full"
+                      :style="{ background: STATUS_COLORS[b.status] }"
+                    />
+                    {{ statusLabels[b.status] }}
+                  </span>
+                </div>
+                <span
+                  class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
+                >
+                  {{ sessionTime(b.addedAt) }}
+                </span>
+              </div>
             </div>
 
             <button
-              type="submit"
-              :disabled="scanState === 'detecting'"
-              class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
+              v-if="sessionBooks.length"
+              class="shrink-0 mt-4 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+              @click="router.push('/library')"
             >
-              {{
-                scanState === "detecting"
-                  ? $t("scanner.looking_up")
-                  : $t("scanner.look_up")
-              }}
+              {{ $t("scanner.done_library") }}
             </button>
-
-            <!-- Desktop: optional webcam fallback -->
-            <button
-              v-if="mdAndUp && !cameraFailed"
-              type="button"
-              class="mt-6 self-center flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-              @click="useCamera"
-            >
-              <v-icon icon="mdi-camera-outline" size="14" />
-              {{ $t("scanner.use_camera") }}
-            </button>
-          </form>
+          </div>
         </div>
       </Transition>
 
-      <!-- Scanning frame + detecting status -->
+      <!-- ── Scanning frame + detecting status ────────────────────────────────── -->
       <div
         v-if="
           !manualMode && (scanState === 'scanning' || scanState === 'detecting')
@@ -184,7 +307,67 @@
         </div>
       </div>
 
-      <!-- Preview card — bottom sheet on mobile, centered card on desktop -->
+      <!-- ── Session shelf peek (mobile camera view) ──────────────────────────── -->
+      <Transition name="fade">
+        <div
+          v-if="
+            !manualMode &&
+            !mdAndUp &&
+            scanState === 'scanning' &&
+            sessionBooks.length
+          "
+          class="absolute inset-x-0 bottom-0 z-20 px-4 pt-12 pb-4 pointer-events-none"
+          style="background: linear-gradient(180deg, rgba(17, 17, 16, 0) 0%, #111110 28%)"
+        >
+          <div class="flex justify-between items-center mb-3">
+            <span class="text-[10px] text-white/50 tracking-[0.26em] uppercase">
+              {{ $t("scanner.scanned_session") }}
+            </span>
+            <button
+              class="flex items-center gap-1.5 text-orange-neon text-[10px] tracking-[0.18em] uppercase pointer-events-auto"
+              @click="showReview = true"
+            >
+              {{ $t("scanner.review") }}
+              <v-icon icon="mdi-chevron-up" size="14" />
+            </button>
+          </div>
+          <div class="flex gap-2.5">
+            <div
+              v-for="b in sessionBooks.slice(0, 3)"
+              :key="b.isbn"
+              class="flex gap-2.5 items-center flex-1 min-w-0"
+              style="background: #1c1b19; border: 1px solid #2e2b28; padding: 9px 11px"
+            >
+              <div
+                class="w-6 h-8.5 shrink-0 relative overflow-hidden"
+                style="background: #232220; border: 1px solid #2e2b28"
+              >
+                <img
+                  v-if="b.coverUrl"
+                  :src="b.coverUrl"
+                  class="absolute inset-0 w-full h-full object-cover"
+                />
+                <div
+                  v-else
+                  class="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-neon"
+                />
+              </div>
+              <div class="min-w-0">
+                <p
+                  class="font-heading font-bold text-[11px] text-white leading-tight truncate"
+                >
+                  {{ b.title }}
+                </p>
+                <p class="text-[9px] text-white/50 mt-0.5 truncate">
+                  {{ b.author }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ── Detected-book sheet ──────────────────────────────────────────────── -->
       <Transition name="slide-up">
         <div
           v-if="
@@ -193,52 +376,79 @@
           class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
         >
           <div
-            class="px-6 pt-6 pb-10 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+            class="px-6 pt-6 pb-8 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
             style="background: #111110"
           >
-            <!-- Not found notice -->
-            <p
-              v-if="detectedBook.notFound"
-              class="text-[10px] text-white/40 tracking-[0.2em] uppercase mb-4"
-            >
-              {{ $t("scanner.no_metadata") }}
-            </p>
+            <!-- Drag handle (mobile) -->
+            <div
+              class="md:hidden w-9 h-1 rounded-sm mx-auto mb-5"
+              style="background: #2e2b28"
+            />
+
+            <!-- Match indicator -->
+            <div class="flex items-center gap-2 mb-4">
+              <span
+                class="w-1.5 h-1.5 rounded-full shrink-0"
+                :style="{ background: detectedBook.notFound ? '#8a8078' : '#22c55e' }"
+              />
+              <span
+                class="text-[10px] tracking-[0.24em] uppercase font-medium"
+                :style="{ color: detectedBook.notFound ? '#8a8078' : '#22c55e' }"
+              >
+                {{ detectedBook.notFound ? $t("scanner.no_match") : $t("scanner.match_found") }}
+              </span>
+            </div>
 
             <!-- Book info -->
             <div class="flex gap-4 mb-6">
               <img
                 v-if="detectedBook.coverUrl"
                 :src="detectedBook.coverUrl"
-                class="w-14 h-20 object-cover shrink-0"
+                class="w-20 h-30 object-cover shrink-0"
               />
               <div
                 v-else
-                class="w-14 h-20 flex items-center justify-center shrink-0"
+                class="w-20 h-30 flex items-center justify-center shrink-0"
                 style="background: #1c1b19; border: 1px solid #2e2b28"
               >
-                <v-icon icon="mdi-book-outline" size="24" color="grey" />
+                <v-icon icon="mdi-book-outline" size="28" color="grey" />
               </div>
 
-              <div class="flex-1 min-w-0 pt-1">
+              <div class="flex-1 min-w-0">
                 <p
                   v-if="detectedBook.notFound"
-                  class="text-base text-white/40 italic leading-snug mb-1"
+                  class="text-lg text-white/40 italic leading-snug mb-1"
                 >
                   {{ $t("scanner.unknown_book") }}
                 </p>
                 <p
                   v-else
-                  class="font-heading text-lg font-bold text-white leading-snug line-clamp-3 mb-1"
+                  class="font-heading text-xl font-black text-white leading-tight line-clamp-3 mb-2"
                 >
                   {{ detectedBook.title }}
                 </p>
-                <p v-if="!detectedBook.notFound" class="text-xs text-white/60">
-                  {{ detectedBook.author
-                  }}<span v-if="detectedBook.year">
-                    · {{ detectedBook.year }}</span
-                  >
+                <p v-if="!detectedBook.notFound" class="text-[13px] text-white/65">
+                  {{ detectedBook.author }}
                 </p>
-                <p class="text-[10px] text-white/30 font-mono mt-1">
+
+                <!-- Metadata chips -->
+                <div
+                  v-if="detectedMeta.length"
+                  class="flex flex-wrap gap-1.5 mt-4"
+                >
+                  <span
+                    v-for="(chip, i) in detectedMeta"
+                    :key="i"
+                    class="font-mono text-[10px] text-white/55 px-2 py-1"
+                    style="border: 1px solid #2e2b28"
+                  >
+                    {{ chip }}
+                  </span>
+                </div>
+                <p
+                  v-else
+                  class="text-[10px] text-white/30 font-mono mt-3"
+                >
                   {{ detectedBook.isbn }}
                 </p>
               </div>
@@ -268,6 +478,33 @@
 
             <!-- Normal save actions -->
             <template v-else>
+              <!-- Status picker -->
+              <p
+                class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+              >
+                {{ $t("scanner.shelve_as") }}
+              </p>
+              <div class="flex gap-2 mb-6">
+                <button
+                  v-for="s in STATUS_ORDER"
+                  :key="s"
+                  type="button"
+                  class="flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] tracking-[0.14em] uppercase transition-colors"
+                  :style="
+                    selectedStatus === s
+                      ? `border: 1px solid ${STATUS_COLORS[s]}; background: ${STATUS_TINT[s]}; color: #f0ede8`
+                      : 'border: 1px solid #2e2b28; color: #8a8078'
+                  "
+                  @click="selectedStatus = s"
+                >
+                  <span
+                    class="w-1.5 h-1.5 rounded-full"
+                    :style="{ background: STATUS_COLORS[s] }"
+                  />
+                  {{ statusLabels[s] }}
+                </button>
+              </div>
+
               <button
                 class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
                 :disabled="scanState === 'saving'"
@@ -289,6 +526,114 @@
                 {{ $t("scanner.discard") }}
               </button>
             </template>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- ── Session review (full-screen) ─────────────────────────────────────── -->
+      <Transition name="slide-up">
+        <div
+          v-if="showReview"
+          class="absolute inset-0 z-50 bg-charcoal flex flex-col"
+        >
+          <!-- Top bar -->
+          <div
+            class="shrink-0 flex justify-between items-center px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+          >
+            <div class="flex items-center gap-3 min-w-0">
+              <button
+                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                @click="showReview = false"
+              >
+                <v-icon icon="mdi-chevron-down" size="20" />
+              </button>
+              <div class="min-w-0">
+                <p
+                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
+                >
+                  {{ $t("scanner.this_session") }}
+                </p>
+                <p
+                  class="font-heading font-black text-lg text-text-primary leading-tight"
+                >
+                  {{ $t("scanner.session_count", { n: sessionBooks.length }, sessionBooks.length) }}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- List -->
+          <div class="flex-1 min-h-0 overflow-y-auto px-4 md:px-6">
+            <div
+              v-for="b in sessionBooks"
+              :key="b.isbn"
+              class="flex gap-4 items-start py-5 border-b border-charcoal-border"
+            >
+              <div
+                class="w-12 h-18 shrink-0 relative overflow-hidden"
+                style="background: #232220; border: 1px solid #2e2b28"
+              >
+                <img
+                  v-if="b.coverUrl"
+                  :src="b.coverUrl"
+                  class="absolute inset-0 w-full h-full object-cover"
+                />
+                <div
+                  v-else
+                  class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                />
+              </div>
+              <div class="flex-1 min-w-0">
+                <p
+                  class="font-heading font-bold text-base text-text-primary leading-snug"
+                >
+                  {{ b.title }}
+                </p>
+                <p class="text-xs text-text-secondary mt-1">
+                  {{ b.author }}
+                </p>
+                <div class="flex items-center gap-3 mt-2.5">
+                  <span
+                    class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
+                    :style="{ color: STATUS_COLORS[b.status] }"
+                  >
+                    <span
+                      class="w-1.5 h-1.5 rounded-full"
+                      :style="{ background: STATUS_COLORS[b.status] }"
+                    />
+                    {{ statusLabels[b.status] }}
+                  </span>
+                  <span
+                    class="font-mono text-[9px] text-text-secondary/55 tracking-wide"
+                  >
+                    {{ b.isbn }}
+                  </span>
+                </div>
+              </div>
+              <span
+                class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-1"
+              >
+                {{ sessionTime(b.addedAt) }}
+              </span>
+            </div>
+          </div>
+
+          <!-- Footer actions -->
+          <div
+            class="shrink-0 px-4 md:px-6 py-4 border-t border-charcoal-border flex gap-3"
+          >
+            <button
+              class="w-36 shrink-0 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+              @click="showReview = false"
+            >
+              {{ $t("scanner.scan_more") }}
+            </button>
+            <button
+              class="flex-1 bg-orange-neon text-black text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-90 transition-opacity"
+              @click="router.push('/library')"
+            >
+              {{ $t("scanner.done_library") }}
+            </button>
           </div>
         </div>
       </Transition>
@@ -318,9 +663,9 @@ import { useRouter } from "vue-router";
 import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
+import type { ReadStatus } from "@/components/BookCard.vue";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
-import AppHeader from "@/components/AppHeader.vue";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -336,6 +681,24 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // the camera overlay on desktop without triggering manual-entry fallback).
 const FALLBACK_TO_MANUAL_ON_CAMERA_FAIL = false;
 
+// ── Status presentation ─────────────────────────────────────────────────────────
+const STATUS_ORDER: ReadStatus[] = ["unread", "reading", "read"];
+const STATUS_COLORS: Record<ReadStatus, string> = {
+  unread: "#8a8078",
+  reading: "#ff6600",
+  read: "#22c55e",
+};
+const STATUS_TINT: Record<ReadStatus, string> = {
+  unread: "rgba(138,128,120,0.12)",
+  reading: "rgba(255,102,0,0.10)",
+  read: "rgba(34,197,94,0.10)",
+};
+const statusLabels = computed<Record<ReadStatus, string>>(() => ({
+  unread: t("book.unread"),
+  reading: t("book.reading"),
+  read: t("book.read"),
+}));
+
 // ── State machine ─────────────────────────────────────────────────────────────
 
 type ScanState = "scanning" | "detecting" | "preview" | "saving";
@@ -345,14 +708,62 @@ interface BookPreview {
   title: string;
   author: string;
   year?: string;
+  pages?: number;
+  language?: string;
+  publisher?: string;
   coverUrl?: string;
   notFound?: boolean;
 }
 
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
+const selectedStatus = ref<ReadStatus>("unread");
 const flash = ref(false);
-const sessionCount = ref(0);
+
+// Metadata chips for the detected-book sheet (year · pages · language · publisher).
+const detectedMeta = computed<string[]>(() => {
+  const b = detectedBook.value;
+  if (!b || b.notFound) return [];
+  const chips: string[] = [];
+  if (b.year) chips.push(b.year);
+  if (b.pages) chips.push(t("book.pages", { n: b.pages }));
+  if (b.language) chips.push(b.language.toUpperCase());
+  if (b.publisher) chips.push(b.publisher);
+  return chips;
+});
+
+// ── Session shelf ──────────────────────────────────────────────────────────────
+// Books added during this scanning session — drives the counter pill, the camera
+// shelf peek, the desktop list and the full-screen review.
+
+interface SessionBook {
+  isbn: string;
+  title: string;
+  author: string;
+  status: ReadStatus;
+  coverUrl?: string;
+  addedAt: number;
+}
+
+const sessionBooks = ref<SessionBook[]>([]);
+const showReview = ref(false);
+
+function recordSession(book: BookPreview, status: ReadStatus) {
+  sessionBooks.value.unshift({
+    isbn: book.isbn,
+    title: book.title || book.isbn,
+    author: book.author || t("book.unknown_author"),
+    status,
+    coverUrl: book.coverUrl,
+    addedAt: Date.now(),
+  });
+}
+
+function sessionTime(ts: number): string {
+  const mins = Math.floor((Date.now() - ts) / 60_000);
+  if (mins < 1) return t("scanner.time_now");
+  return t("scanner.time_min_ago", { n: mins });
+}
 
 // ISBNs already handled this session — prevents accidental re-scans while
 // the camera is still pointed at the same barcode after saving.
@@ -406,7 +817,7 @@ watch(scanState, (state) => {
 });
 
 const submitManualIsbn = () => {
-  const isbn = manualIsbn.value.replace(/[^0-9Xx]/g, "");
+  const isbn = manualIsbn.value.replace(/[^0-9x]/gi, "");
   if (isbn.length !== 10 && isbn.length !== 13) {
     showToast(t("scanner.toast_invalid_isbn"), "error");
     return;
@@ -452,6 +863,9 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
         title: book.title ?? "",
         author: book.author ?? t("book.unknown_author"),
         year: book.publish_date?.slice(0, 4),
+        pages: book.number_of_pages_median ?? undefined,
+        language: book.language ?? undefined,
+        publisher: book.publisher ?? undefined,
         coverUrl: book.cover_url ?? undefined,
       };
     }
@@ -486,6 +900,7 @@ const onBarcodeDetected = async (isbn: string) => {
 
   const book = await lookupBook(isbn);
   detectedBook.value = book ?? { isbn, title: "", author: "", notFound: true };
+  selectedStatus.value = "unread";
   scanState.value = "preview";
 };
 
@@ -493,6 +908,7 @@ const onBarcodeDetected = async (isbn: string) => {
 
 interface QueuedBook {
   isbn: string;
+  status?: ReadStatus;
 }
 
 const QUEUE_KEY = "bookscan_queue_v3";
@@ -504,7 +920,22 @@ function enqueue(book: QueuedBook) {
   }
 }
 
-async function postScan(book: QueuedBook): Promise<"saved" | "duplicate"> {
+async function patchStatus(id: number, status: ReadStatus) {
+  try {
+    await fetch(`${API_BASE}/api/scans/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authStore.token}`,
+      },
+      body: JSON.stringify({ status }),
+    });
+  } catch {}
+}
+
+async function postScan(
+  book: QueuedBook,
+): Promise<{ result: "saved" | "duplicate"; id?: number }> {
   const res = await fetch(`${API_BASE}/api/scans`, {
     method: "POST",
     headers: {
@@ -513,9 +944,10 @@ async function postScan(book: QueuedBook): Promise<"saved" | "duplicate"> {
     },
     body: JSON.stringify({ isbn: book.isbn }),
   });
-  if (res.status === 409) return "duplicate";
+  if (res.status === 409) return { result: "duplicate" };
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
-  return "saved";
+  const saved = await res.json();
+  return { result: "saved", id: saved?.id };
 }
 
 async function drainQueue() {
@@ -542,6 +974,11 @@ async function drainQueue() {
         remaining.push(book);
       } else if (res.status !== 409 && !res.ok) {
         remaining.push(book);
+      } else if (res.ok && book.status && book.status !== "unread") {
+        try {
+          const saved = await res.json();
+          if (saved?.id) await patchStatus(saved.id, book.status);
+        } catch {}
       }
     } catch {
       remaining.push(book);
@@ -559,24 +996,28 @@ async function drainQueue() {
 
 const saveBook = async () => {
   if (!detectedBook.value) return;
+  const book = detectedBook.value;
+  const status = selectedStatus.value;
 
   // Guest path
   if (isGuest.value) {
     if (guestStore.isAtLimit) return;
-    const book = detectedBook.value;
-    const result = guestStore.addScan({
-      isbn: book.isbn,
-      title: book.title || null,
-      author: book.author || null,
-      cover_url: book.coverUrl ?? null,
-      publish_date: book.year ? `${book.year}` : null,
-    });
+    const result = guestStore.addScan(
+      {
+        isbn: book.isbn,
+        title: book.title || null,
+        author: book.author || null,
+        cover_url: book.coverUrl ?? null,
+        publish_date: book.year ? `${book.year}` : null,
+      },
+      status,
+    );
     if (result === "duplicate") {
       showToast(t("scanner.toast_already_in_library"), "warning");
     } else if (result === "ok") {
       sessionScanned.add(book.isbn);
       libraryIsbns.add(book.isbn);
-      sessionCount.value++;
+      recordSession(book, status);
       showToast(t("scanner.toast_guest_saved"), "warning");
     }
     detectedBook.value = null;
@@ -586,22 +1027,23 @@ const saveBook = async () => {
 
   // Authenticated path
   scanState.value = "saving";
-  const queued: QueuedBook = { isbn: detectedBook.value.isbn };
+  const queued: QueuedBook = { isbn: book.isbn, status };
   try {
-    const result = await postScan(queued);
-    sessionScanned.add(queued.isbn);
-    libraryIsbns.add(queued.isbn);
+    const { result, id } = await postScan(queued);
+    sessionScanned.add(book.isbn);
+    libraryIsbns.add(book.isbn);
     if (result === "duplicate") {
       showToast(t("scanner.toast_already_in_library"), "warning");
     } else {
-      sessionCount.value++;
+      if (status !== "unread" && id) await patchStatus(id, status);
+      recordSession(book, status);
       showToast(t("scanner.toast_saved"));
     }
   } catch {
     if (!navigator.onLine) {
       enqueue(queued);
-      sessionScanned.add(queued.isbn);
-      sessionCount.value++;
+      sessionScanned.add(book.isbn);
+      recordSession(book, status);
       showToast(t("scanner.toast_will_sync"), "warning");
     } else {
       showToast(t("scanner.toast_failed"), "error");
@@ -616,6 +1058,7 @@ const saveBook = async () => {
 
 const scanAgain = () => {
   detectedBook.value = null;
+  selectedStatus.value = "unread";
   scanState.value = "scanning";
 };
 

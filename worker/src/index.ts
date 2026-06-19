@@ -28,7 +28,7 @@ app.use('/api/*', async (c, next) => {
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/
 
 app.post('/api/auth/register', async (c) => {
   const { email, password } = await c.req.json()

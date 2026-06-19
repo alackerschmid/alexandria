@@ -169,6 +169,19 @@
     "toast_will_sync": "Wird später synchronisiert",
     "toast_failed": "Speichern fehlgeschlagen",
     "toast_session_expired": "Sitzung abgelaufen — melde dich erneut an, um ausstehende Bücher zu synchronisieren",
-    "toast_invalid_isbn": "Gib eine gültige 10- oder 13-stellige ISBN ein"
+    "toast_invalid_isbn": "Gib eine gültige 10- oder 13-stellige ISBN ein",
+    "back_library": "Bibliothek",
+    "match_found": "Treffer gefunden",
+    "no_match": "Kein Treffer",
+    "shelve_as": "Einordnen als",
+    "scanned_session": "In dieser Sitzung gescannt",
+    "added_session": "In dieser Sitzung hinzugefügt",
+    "review": "Ansehen",
+    "this_session": "Diese Sitzung",
+    "session_count": "{n} Buch hinzugefügt | {n} Bücher hinzugefügt",
+    "scan_more": "Weiter scannen",
+    "done_library": "Fertig — zur Bibliothek",
+    "time_now": "Gerade eben",
+    "time_min_ago": "vor {n} Min."
   }
 }
