@@ -791,7 +791,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 const FALLBACK_TO_MANUAL_ON_CAMERA_FAIL = false;
 
 // ── Status presentation ─────────────────────────────────────────────────────────
-const STATUS_ORDER: ReadStatus[] = ["read", "unread", "reading"];
+const STATUS_ORDER: ReadStatus[] = ["unread", "reading", "read"];
 const STATUS_COLORS: Record<ReadStatus, string> = {
   unread: "#8a8078",
   reading: "#ff6600",
@@ -828,7 +828,7 @@ interface BookPreview {
 
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
-const selectedStatus = ref<ReadStatus>("unread");
+const selectedStatus = ref<ReadStatus>("read");
 const flash = ref(false);
 
 // Metadata chips for the detected-book sheet (year · pages · language · publisher).
