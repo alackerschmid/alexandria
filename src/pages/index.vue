@@ -6,23 +6,17 @@
       <div class="px-6 md:px-10 pt-10 pb-6 border-b border-charcoal-border">
         <div class="flex justify-between items-end">
           <div>
-            <p class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3">
-              {{ $t('library.section') }}
+            <p
+              class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+            >
+              {{ $t("library.section") }}
             </p>
-            <h1 class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]">
-              {{ $t('library.heading_word1') }}<br class="md:hidden" /><span class="hidden md:inline">&nbsp;</span>{{ $t('library.heading_word2') }}
+            <h1
+              class="font-heading text-5xl md:text-6xl font-bold text-text-primary leading-[1.05]"
+            >
+              {{ $t("library.heading") }}
             </h1>
           </div>
-          <span
-            v-if="!loading && allBooks.length > 0"
-            class="text-[10px] text-text-secondary tracking-widest uppercase pb-1"
-          >
-            {{ displayedBooks.length
-            }}<template v-if="displayedBooks.length !== allBooks.length"
-              >/{{ allBooks.length }}</template
-            >
-            {{ displayedBooks.length === 1 ? $t('library.title_singular') : $t('library.title_plural') }}
-          </span>
         </div>
       </div>
 
@@ -32,8 +26,12 @@
         class="px-6 md:px-10 py-4 border-b border-charcoal-border flex flex-wrap items-center justify-between gap-3"
       >
         <div class="text-xs text-text-secondary leading-relaxed">
-          <span>{{ $t('guest.banner', { used: guestStore.scans.length, max: 3 }) }}</span>
-          <span class="block text-text-secondary/60 mt-0.5">{{ $t('guest.create_account') }}</span>
+          <span>{{
+            $t("guest.banner", { used: guestStore.scans.length, max: 3 })
+          }}</span>
+          <span class="block text-text-secondary/60 mt-0.5">{{
+            $t("guest.create_account")
+          }}</span>
         </div>
         <div class="flex gap-2 shrink-0">
           <v-btn
@@ -43,7 +41,7 @@
             class="text-[10px] tracking-[0.15em] uppercase px-4"
             @click="$router.push('/login')"
           >
-            {{ $t('guest.sign_in') }}
+            {{ $t("guest.sign_in") }}
           </v-btn>
           <v-btn
             variant="flat"
@@ -54,7 +52,7 @@
             class="text-[10px] tracking-[0.15em] uppercase px-4"
             @click="$router.push('/login?mode=register')"
           >
-            {{ $t('guest.register') }}
+            {{ $t("guest.register") }}
           </v-btn>
         </div>
       </div>
@@ -88,54 +86,71 @@
         </div>
 
         <!-- Sort + Status filter + View toggle row -->
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
           <!-- Sort -->
           <select
             v-model="sortBy"
-            class="w-44 bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
+            class="order-2 md:order-1 w-44 bg-transparent text-[10px] text-text-secondary tracking-[0.15em] uppercase outline-none cursor-pointer border-b border-charcoal-border pb-0.5"
           >
-            <option value="date_desc">{{ $t('library.sort_date_desc') }}</option>
-            <option value="date_asc">{{ $t('library.sort_date_asc') }}</option>
-            <option value="title_asc">{{ $t('library.sort_title_asc') }}</option>
-            <option value="title_desc">{{ $t('library.sort_title_desc') }}</option>
-            <option value="author_asc">{{ $t('library.sort_author_asc') }}</option>
+            <option value="date_desc">
+              {{ $t("library.sort_date_desc") }}
+            </option>
+            <option value="date_asc">{{ $t("library.sort_date_asc") }}</option>
+            <option value="title_asc">
+              {{ $t("library.sort_title_asc") }}
+            </option>
+            <option value="title_desc">
+              {{ $t("library.sort_title_desc") }}
+            </option>
+            <option value="author_asc">
+              {{ $t("library.sort_author_asc") }}
+            </option>
           </select>
 
-          <div class="flex items-center gap-4">
-            <!-- Status filter tabs -->
-            <div class="flex gap-4">
-              <button
-                v-for="tab in STATUS_TABS"
-                :key="tab.value"
-                class="text-[10px] tracking-[0.15em] uppercase transition-colors"
-                :class="
-                  filterStatus === tab.value
-                    ? 'text-text-primary border-b border-text-primary pb-0.5'
-                    : 'text-text-secondary/50'
-                "
-                @click="filterStatus = tab.value"
-              >
-                {{ tab.label }} <span class="font-mono">({{ statusCounts[tab.value] }})</span>
-              </button>
-            </div>
+          <!-- Status filter tabs -->
+          <div class="order-1 md:order-2 w-full md:w-auto md:ml-auto flex gap-4">
+            <button
+              v-for="tab in STATUS_TABS"
+              :key="tab.value"
+              class="text-[10px] tracking-[0.15em] uppercase transition-colors"
+              :class="
+                filterStatus === tab.value
+                  ? 'text-text-primary border-b border-text-primary pb-0.5'
+                  : 'text-text-secondary/50'
+              "
+              @click="filterStatus = tab.value"
+            >
+              {{ tab.label }}
+              <span class="font-mono">({{ statusCounts[tab.value] }})</span>
+            </button>
+          </div>
 
-            <!-- View toggle -->
-            <div class="flex items-center gap-1 shrink-0 border-l border-charcoal-border pl-4">
-              <button
-                class="transition-colors"
-                :class="viewMode === 'list' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
-                @click="viewMode = 'list'"
-              >
-                <v-icon icon="mdi-view-list" size="18" />
-              </button>
-              <button
-                class="transition-colors"
-                :class="viewMode === 'tile' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
-                @click="viewMode = 'tile'"
-              >
-                <v-icon icon="mdi-view-grid" size="18" />
-              </button>
-            </div>
+          <!-- View toggle -->
+          <div
+            class="order-3 ml-auto md:ml-0 flex items-center gap-1 shrink-0 border-l border-charcoal-border pl-4"
+          >
+            <button
+              class="transition-colors"
+              :class="
+                viewMode === 'list'
+                  ? 'text-text-primary'
+                  : 'text-text-secondary/40 hover:text-text-secondary'
+              "
+              @click="viewMode = 'list'"
+            >
+              <v-icon icon="mdi-view-list" size="18" />
+            </button>
+            <button
+              class="transition-colors"
+              :class="
+                viewMode === 'tile'
+                  ? 'text-text-primary'
+                  : 'text-text-secondary/40 hover:text-text-secondary'
+              "
+              @click="viewMode = 'tile'"
+            >
+              <v-icon icon="mdi-view-grid" size="18" />
+            </button>
           </div>
         </div>
       </div>
@@ -168,23 +183,30 @@
         class="px-6 md:px-10 pt-16 pb-8"
       >
         <p class="font-heading text-3xl font-bold text-text-primary mb-3">
-          {{ $t('library.empty_heading') }}
+          {{ $t("library.empty_heading") }}
         </p>
         <p class="text-sm text-text-secondary leading-relaxed">
-          {{ $t('library.empty_body') }}
+          {{ $t("library.empty_body") }}
         </p>
       </div>
 
       <!-- No results for current filter -->
       <div
-        v-else-if="!loading && allBooks.length > 0 && displayedBooks.length === 0"
+        v-else-if="
+          !loading && allBooks.length > 0 && displayedBooks.length === 0
+        "
         class="px-6 md:px-10 pt-16 pb-8"
       >
-        <p class="text-sm text-text-secondary">{{ $t('library.no_results') }}</p>
+        <p class="text-sm text-text-secondary">
+          {{ $t("library.no_results") }}
+        </p>
       </div>
 
       <!-- List view -->
-      <div v-if="displayedBooks.length > 0 && viewMode === 'list'" class="pb-28">
+      <div
+        v-if="displayedBooks.length > 0 && viewMode === 'list'"
+        class="pb-28"
+      >
         <div class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10">
           <BookCard
             v-for="book in paginatedBooks"
@@ -197,7 +219,9 @@
         </div>
 
         <!-- Pagination -->
-        <div class="flex items-center justify-between px-6 md:px-10 py-4 border-t border-charcoal-border mt-2">
+        <div
+          class="flex items-center justify-between px-6 md:px-10 py-4 border-t border-charcoal-border mt-2"
+        >
           <!-- Page size -->
           <div class="flex items-center gap-2">
             <select
@@ -209,24 +233,37 @@
               <option :value="50">50</option>
               <option :value="100">100</option>
             </select>
-            <span class="text-[10px] text-text-secondary/50 tracking-[0.15em] uppercase">/ {{ $t('library.title_plural') }}</span>
+            <span
+              class="text-[10px] text-text-secondary/50 tracking-[0.15em] uppercase"
+              >/ {{ $t("library.title_plural") }}</span
+            >
           </div>
 
           <!-- Page nav -->
           <div class="flex items-center gap-3">
             <button
               class="text-text-secondary transition-colors"
-              :class="currentPage === 1 ? 'opacity-25 pointer-events-none' : 'hover:text-text-primary'"
+              :class="
+                currentPage === 1
+                  ? 'opacity-25 pointer-events-none'
+                  : 'hover:text-text-primary'
+              "
               @click="currentPage--"
             >
               <v-icon icon="mdi-chevron-left" size="18" />
             </button>
-            <span class="font-mono text-[10px] text-text-secondary tabular-nums">
+            <span
+              class="font-mono text-[10px] text-text-secondary tabular-nums"
+            >
               {{ currentPage }} / {{ totalPages }}
             </span>
             <button
               class="text-text-secondary transition-colors"
-              :class="currentPage === totalPages ? 'opacity-25 pointer-events-none' : 'hover:text-text-primary'"
+              :class="
+                currentPage === totalPages
+                  ? 'opacity-25 pointer-events-none'
+                  : 'hover:text-text-primary'
+              "
               @click="currentPage++"
             >
               <v-icon icon="mdi-chevron-right" size="18" />
@@ -235,34 +272,47 @@
         </div>
 
         <!-- Load more from server if needed -->
-        <div v-if="hasMore && currentPage === totalPages" class="flex justify-center pb-6">
+        <div
+          v-if="hasMore && currentPage === totalPages"
+          class="flex justify-center pb-6"
+        >
           <button
             class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
             :class="{ 'opacity-50 pointer-events-none': loadingMore }"
             @click="loadMore"
           >
-            {{ loadingMore ? '—' : $t('library.load_more') }}
+            {{ loadingMore ? "—" : $t("library.load_more") }}
           </button>
         </div>
       </div>
 
       <!-- Tile view -->
-      <div v-else-if="displayedBooks.length > 0 && viewMode === 'tile'" class="px-6 md:px-10 pt-5 pb-28">
-        <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 xl:grid-cols-8 gap-3 md:gap-4">
+      <div
+        v-else-if="displayedBooks.length > 0 && viewMode === 'tile'"
+        class="px-6 md:px-10 pt-5 pb-28"
+      >
+        <div
+          class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 xl:grid-cols-8 gap-3 md:gap-4"
+        >
           <div
             v-for="book in displayedBooks"
             :key="book.id"
             class="cursor-pointer group"
             @click="openDetail(book)"
           >
-            <div class="relative aspect-2/3 bg-charcoal-light border border-charcoal-border overflow-hidden mb-1.5">
+            <div
+              class="relative aspect-2/3 bg-charcoal-light border border-charcoal-border overflow-hidden mb-1.5"
+            >
               <img
                 v-if="book.cover_url"
                 :src="book.cover_url"
                 :alt="book.title || book.isbn"
                 class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
               />
-              <div v-else class="absolute inset-0 flex items-center justify-center">
+              <div
+                v-else
+                class="absolute inset-0 flex items-center justify-center"
+              >
                 <v-icon icon="mdi-book-outline" size="20" color="primary" />
               </div>
               <div
@@ -270,7 +320,9 @@
                 :style="{ background: statusDotColor(book.status) }"
               />
             </div>
-            <p class="text-[10px] font-heading font-bold text-text-primary leading-snug line-clamp-2">
+            <p
+              class="text-[10px] font-heading font-bold text-text-primary leading-snug line-clamp-2"
+            >
               {{ book.title || book.isbn }}
             </p>
           </div>
@@ -283,7 +335,7 @@
             :class="{ 'opacity-50 pointer-events-none': loadingMore }"
             @click="loadMore"
           >
-            {{ loadingMore ? '—' : $t('library.load_more') }}
+            {{ loadingMore ? "—" : $t("library.load_more") }}
           </button>
         </div>
       </div>
@@ -295,11 +347,15 @@
     <!-- Scan pill (mobile only) -->
     <button
       class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 md:hidden flex items-center justify-center gap-2 rounded-full py-4 text-[10px] font-bold tracking-[0.25em] uppercase text-white"
-      style="background: rgb(var(--v-theme-primary)); min-width: 58vw; box-shadow: 0 4px 28px rgba(255, 102, 0, 0.3);"
+      style="
+        background: rgb(var(--v-theme-primary));
+        min-width: 58vw;
+        box-shadow: 0 4px 28px rgba(255, 102, 0, 0.3);
+      "
       @click="$router.push('/scanner')"
     >
       <v-icon icon="mdi-camera" size="15" color="white" />
-      {{ $t('landing.start_scanning') }}
+      {{ $t("landing.start_scanning") }}
     </button>
 
     <!-- Book detail dialog -->
@@ -309,7 +365,10 @@
       :book="selectedBook"
       :guest="isGuest"
       @cycle-status="cycleStatus(selectedBook!)"
-      @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
+      @delete="
+        detailDialog = false;
+        openDeleteDialog(selectedBook!);
+      "
       @refreshed="(updated) => Object.assign(selectedBook!, updated)"
     />
 
@@ -319,10 +378,14 @@
         <v-card-title
           class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
         >
-          {{ $t('library.remove_heading') }}
+          {{ $t("library.remove_heading") }}
         </v-card-title>
         <v-card-text class="px-6 text-sm text-text-secondary">
-          {{ $t('library.remove_body', { title: bookToDelete?.title || bookToDelete?.isbn }) }}
+          {{
+            $t("library.remove_body", {
+              title: bookToDelete?.title || bookToDelete?.isbn,
+            })
+          }}
         </v-card-text>
         <v-card-actions class="px-4 pb-4 gap-2">
           <v-spacer />
@@ -332,7 +395,7 @@
             class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
             @click="deleteDialog = false"
           >
-            {{ $t('library.cancel') }}
+            {{ $t("library.cancel") }}
           </v-btn>
           <v-btn
             variant="flat"
@@ -343,7 +406,7 @@
             :loading="deleting"
             @click="confirmDelete"
           >
-            {{ $t('library.remove') }}
+            {{ $t("library.remove") }}
           </v-btn>
         </v-card-actions>
       </v-card>
@@ -410,7 +473,7 @@ const error = ref("");
 const search = ref("");
 const sortBy = ref<SortOption>("date_desc");
 const filterStatus = ref<StatusFilter>("all");
-const viewMode = ref<"list" | "tile">("list");
+const viewMode = ref<"list" | "tile">("tile");
 const pageSize = ref(10);
 const currentPage = ref(1);
 
@@ -431,7 +494,7 @@ const PAGE_SIZE = 200;
 
 // Source of truth switches between guest localStorage and server data
 const allBooks = computed<Book[]>(() =>
-  isGuest.value ? guestStore.scans : serverBooks.value
+  isGuest.value ? guestStore.scans : serverBooks.value,
 );
 
 const displayedBooks = computed(() => {
@@ -475,7 +538,7 @@ const statusCounts = computed<Record<StatusFilter, number>>(() => ({
 }));
 
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(displayedBooks.value.length / pageSize.value))
+  Math.max(1, Math.ceil(displayedBooks.value.length / pageSize.value)),
 );
 
 const paginatedBooks = computed(() => {
@@ -483,7 +546,9 @@ const paginatedBooks = computed(() => {
   return displayedBooks.value.slice(start, start + pageSize.value);
 });
 
-watch([displayedBooks, pageSize], () => { currentPage.value = 1; });
+watch([displayedBooks, pageSize], () => {
+  currentPage.value = 1;
+});
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

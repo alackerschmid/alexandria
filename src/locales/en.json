@@ -97,8 +97,6 @@
   "library": {
     "section": "Library",
     "heading": "Your Books.",
-    "heading_word1": "Your",
-    "heading_word2": "Books.",
     "title_singular": "title",
     "title_plural": "titles",
     "search_placeholder": "Search titles, authors, ISBNs…",

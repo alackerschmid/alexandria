@@ -21,7 +21,11 @@
       <div
         class="absolute top-0 inset-x-0 z-30 flex justify-between items-center px-4 md:px-6 py-3.5"
         :class="manualMode ? 'bg-charcoal border-b border-charcoal-border' : ''"
-        :style="manualMode ? '' : 'background: linear-gradient(180deg, rgba(0,0,0,.6), transparent)'"
+        :style="
+          manualMode
+            ? ''
+            : 'background: linear-gradient(180deg, rgba(0,0,0,.6), transparent)'
+        "
       >
         <!-- Back to library -->
         <button
@@ -30,9 +34,11 @@
         >
           <span
             class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-            :class="manualMode
-              ? 'bg-charcoal-light border border-charcoal-border text-text-primary'
-              : 'border border-white/15 text-white'"
+            :class="
+              manualMode
+                ? 'bg-charcoal-light border border-charcoal-border text-text-primary'
+                : 'border border-white/15 text-white'
+            "
             :style="manualMode ? '' : 'background: rgba(20,19,16,.7)'"
           >
             <v-icon icon="mdi-arrow-left" size="18" />
@@ -49,11 +55,18 @@
         <button
           v-if="sessionBooks.length"
           class="flex items-center gap-2.5 px-3.5 py-2 hover:opacity-90 transition-opacity"
-          style="background: rgba(20, 19, 16, 0.7); border: 1px solid rgba(255, 102, 0, 0.45)"
+          style="
+            background: rgba(20, 19, 16, 0.7);
+            border: 1px solid rgba(255, 102, 0, 0.45);
+          "
           @click="showReview = true"
         >
-          <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
-          <span class="text-white text-[11px] font-bold tracking-[0.14em] uppercase">
+          <span
+            class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
+          />
+          <span
+            class="text-white text-[11px] font-bold tracking-[0.14em] uppercase"
+          >
             {{ $t("scanner.saved_count", { n: sessionBooks.length }) }}
           </span>
         </button>
@@ -92,7 +105,9 @@
               </h1>
               <div class="flex items-start gap-2.5 mb-12">
                 <v-icon
-                  :icon="cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'"
+                  :icon="
+                    cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'
+                  "
                   size="15"
                   class="text-text-secondary/70 mt-0.5 shrink-0"
                 />
@@ -326,7 +341,13 @@
             sessionBooks.length
           "
           class="absolute inset-x-0 bottom-0 z-20 px-4 pt-12 pb-4 pointer-events-none"
-          style="background: linear-gradient(180deg, rgba(17, 17, 16, 0) 0%, #111110 28%)"
+          style="
+            background: linear-gradient(
+              180deg,
+              rgba(17, 17, 16, 0) 0%,
+              #111110 28%
+            );
+          "
         >
           <div class="flex justify-between items-center mb-3">
             <span class="text-[10px] text-white/50 tracking-[0.26em] uppercase">
@@ -345,7 +366,11 @@
               v-for="b in sessionBooks.slice(0, 3)"
               :key="b.isbn"
               class="flex gap-2.5 items-center flex-1 min-w-0"
-              style="background: #1c1b19; border: 1px solid #2e2b28; padding: 9px 11px"
+              style="
+                background: #1c1b19;
+                border: 1px solid #2e2b28;
+                padding: 9px 11px;
+              "
             >
               <div
                 class="w-6 h-8.5 shrink-0 relative overflow-hidden"
@@ -436,7 +461,10 @@
                 >
                   {{ detectedBook.title }}
                 </p>
-                <p v-if="!detectedBook.notFound" class="text-[13px] text-white/65">
+                <p
+                  v-if="!detectedBook.notFound"
+                  class="text-[13px] text-white/65"
+                >
                   {{ detectedBook.author }}
                 </p>
 
@@ -454,10 +482,7 @@
                     {{ chip }}
                   </span>
                 </div>
-                <p
-                  v-else
-                  class="text-[10px] text-white/30 font-mono mt-3"
-                >
+                <p v-else class="text-[10px] text-white/30 font-mono mt-3">
                   {{ detectedBook.isbn }}
                 </p>
               </div>
@@ -480,7 +505,9 @@
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full"
-                    :style="{ background: STATUS_COLORS[detectedBook.currentStatus] }"
+                    :style="{
+                      background: STATUS_COLORS[detectedBook.currentStatus],
+                    }"
                   />
                   {{ statusLabels[detectedBook.currentStatus] }}
                 </span>
@@ -597,7 +624,13 @@
                 <p
                   class="font-heading font-black text-lg text-text-primary leading-tight"
                 >
-                  {{ $t("scanner.session_count", { n: sessionBooks.length }, sessionBooks.length) }}
+                  {{
+                    $t(
+                      "scanner.session_count",
+                      { n: sessionBooks.length },
+                      sessionBooks.length,
+                    )
+                  }}
                 </p>
               </div>
             </div>
@@ -625,7 +658,9 @@
                   <div
                     class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-charcoal"
                     :class="swipeIsbn === b.isbn ? '' : 'swipe-snap'"
-                    :style="{ transform: `translateX(${swipeIsbn === b.isbn ? swipeX : 0}px)` }"
+                    :style="{
+                      transform: `translateX(${swipeIsbn === b.isbn ? swipeX : 0}px)`,
+                    }"
                     @touchstart="onSwipeStart(b.isbn, $event)"
                     @touchmove="onSwipeMove($event)"
                     @touchend="onSwipeEnd(b)"
@@ -756,7 +791,7 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 const FALLBACK_TO_MANUAL_ON_CAMERA_FAIL = false;
 
 // ── Status presentation ─────────────────────────────────────────────────────────
-const STATUS_ORDER: ReadStatus[] = ["unread", "reading", "read"];
+const STATUS_ORDER: ReadStatus[] = ["read", "unread", "reading"];
 const STATUS_COLORS: Record<ReadStatus, string> = {
   unread: "#8a8078",
   reading: "#ff6600",
@@ -815,7 +850,8 @@ const DUPLICATE_COLOR = "#e8a838";
 const detectedIndicator = computed(() => {
   const b = detectedBook.value;
   if (!b) return { color: "#8a8078", label: "" };
-  if (b.duplicate) return { color: DUPLICATE_COLOR, label: t("scanner.in_library") };
+  if (b.duplicate)
+    return { color: DUPLICATE_COLOR, label: t("scanner.in_library") };
   if (b.notFound) return { color: "#8a8078", label: t("scanner.no_match") };
   return { color: "#22c55e", label: t("scanner.match_found") };
 });
