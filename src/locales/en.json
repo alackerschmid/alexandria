@@ -70,7 +70,8 @@
     "band_heading": "From the book in your hand to your shelf in seconds.",
     "preview_section": "Library",
     "preview_title": "Your Books.",
-    "preview_count": "titles"
+    "preview_count": "titles",
+    "preview_more": "…and many more"
   },
   "landing": {
     "section": "Home",
@@ -182,6 +183,10 @@
     "scan_more": "Scan more",
     "done_library": "Done — go to library",
     "time_now": "Just now",
-    "time_min_ago": "{n} min ago"
+    "time_min_ago": "{n} min ago",
+    "in_library": "Already in your library",
+    "shelved_as": "Shelved as",
+    "continue_scanning": "Continue scanning",
+    "remove": "Remove"
   }
 }

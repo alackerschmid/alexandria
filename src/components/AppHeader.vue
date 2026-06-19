@@ -52,12 +52,29 @@
             </button>
             <div class="border-t border-charcoal-border my-1" />
             <button
+              v-if="authStore.isAuthenticated"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="authStore.logout()"
             >
               <v-icon icon="mdi-logout" size="14" class="text-text-secondary shrink-0" />
               <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('home.sign_out') }}</span>
             </button>
+            <template v-else>
+              <button
+                class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+                @click="router.push('/login')"
+              >
+                <v-icon icon="mdi-login" size="14" class="text-text-secondary shrink-0" />
+                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('auth.sign_in') }}</span>
+              </button>
+              <button
+                class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+                @click="router.push('/login?mode=register')"
+              >
+                <v-icon icon="mdi-account-plus-outline" size="14" class="text-text-secondary shrink-0" />
+                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('auth.create_account') }}</span>
+              </button>
+            </template>
           </div>
         </v-menu>
       </div>
@@ -67,7 +84,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -75,11 +92,17 @@ import { useLocaleStore } from '@/stores/locale'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const localeStore = useLocaleStore()
 
-const userInitial = computed(() => (authStore.email ?? '').charAt(0).toUpperCase())
+// "G" for guests; otherwise the first name's initial, falling back to the email.
+const userInitial = computed(() => {
+  if (!authStore.isAuthenticated) return 'G'
+  const source = authStore.firstname || authStore.email || ''
+  return source.charAt(0).toUpperCase()
+})
 
 const navLinks = computed(() => [
   { name: 'dashboard', to: '/home', label: t('home.nav_home') },

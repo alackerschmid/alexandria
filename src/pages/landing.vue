@@ -157,7 +157,7 @@
           <p
             class="font-mono text-[9px] text-text-secondary tracking-[0.12em] uppercase"
           >
-            {{ demoBooks.length }} {{ $t("marketing.preview_count") }}
+            {{ totalCount.toLocaleString() }} {{ $t("marketing.preview_count") }}
           </p>
         </div>
 
@@ -168,11 +168,20 @@
             :key="book.title"
             class="flex gap-3.5 px-6 py-3.5 md:py-4 border-b border-charcoal-border"
           >
-            <!-- Spine placeholder -->
+            <!-- Cover (spine placeholder as fallback) -->
             <div
-              class="w-9 h-[50px] md:h-14 flex-none bg-charcoal border border-charcoal-border relative shrink-0"
+              class="w-9 h-[50px] md:h-14 flex-none bg-charcoal border border-charcoal-border relative shrink-0 overflow-hidden"
             >
-              <div class="absolute left-0 top-0 bottom-0 w-[3px] bg-primary" />
+              <img
+                v-if="book.coverUrl"
+                :src="book.coverUrl"
+                :alt="book.title"
+                class="absolute inset-0 w-full h-full object-cover"
+              />
+              <div
+                v-else
+                class="absolute left-0 top-0 bottom-0 w-0.75 bg-primary"
+              />
             </div>
             <!-- Info -->
             <div class="min-w-0 flex-1">
@@ -197,6 +206,17 @@
                 </span>
               </div>
             </div>
+          </div>
+
+          <!-- …and many more (in place of a fourth book) -->
+          <div
+            class="flex items-center justify-end px-6 py-4 border-b border-charcoal-border"
+          >
+            <p
+              class="font-mono text-[11px] text-text-primary tracking-[0.2em] uppercase"
+            >
+              {{ $t("marketing.preview_more") }}
+            </p>
           </div>
         </div>
       </div>
@@ -225,30 +245,59 @@
 </template>
 
 <script lang="ts" setup>
+import { ref, onMounted } from "vue";
+import { useI18n } from "vue-i18n";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 
+const { t } = useI18n();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
 
-const demoBooks = [
-  {
-    title: "Infinite Jest",
-    author: "David Foster Wallace",
-    status: "read" as const,
-  },
-  {
-    title: "The Sun Also Rises",
-    author: "Ernest Hemingway",
-    status: "reading" as const,
-  },
-  { title: "The White Album", author: "Joan Didion", status: "read" as const },
-  {
-    title: "This Is How You Lose The Time War",
-    author: "Amal El-Mohtar",
-    status: "unread" as const,
-  },
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+type ReadStatus = "read" | "reading" | "unread";
+type DemoBook = {
+  title: string;
+  author: string;
+  status: ReadStatus;
+  coverUrl?: string;
+};
+
+// Decorative statuses, rotated across the previewed books for visual variety —
+// the books table has no per-user status of its own.
+const PREVIEW_STATUSES: ReadStatus[] = ["read", "reading", "unread"];
+
+// Shown until the live sample loads (and if the request fails or the catalogue
+// is too small), so the marketing preview is never empty.
+const FALLBACK_BOOKS: DemoBook[] = [
+  { title: "Infinite Jest", author: "David Foster Wallace", status: "read" },
+  { title: "The Sun Also Rises", author: "Ernest Hemingway", status: "reading" },
+  { title: "The White Album", author: "Joan Didion", status: "read" },
 ];
+
+const demoBooks = ref<DemoBook[]>(FALLBACK_BOOKS);
+const totalCount = ref(FALLBACK_BOOKS.length);
+
+onMounted(async () => {
+  try {
+    const res = await fetch(`${API_BASE}/api/books/sample?limit=3`);
+    if (!res.ok) return;
+    const data: {
+      books: { title: string; author: string | null; cover_url: string | null }[];
+      total: number;
+    } = await res.json();
+    if (data.books?.length >= 3) {
+      demoBooks.value = data.books.slice(0, 3).map((b, i) => ({
+        title: b.title,
+        author: b.author || t("book.unknown_author"),
+        status: PREVIEW_STATUSES[i % PREVIEW_STATUSES.length],
+        coverUrl: b.cover_url || undefined,
+      }));
+      totalCount.value = data.total;
+    }
+  } catch {}
+});
 
 function statusDot(s: "read" | "reading" | "unread"): string {
   if (s === "reading") return "rgb(var(--v-theme-primary))";

@@ -70,7 +70,8 @@
     "band_heading": "Vom Buch in deiner Hand ins Regal — in Sekunden.",
     "preview_section": "Bibliothek",
     "preview_title": "Deine Bücher.",
-    "preview_count": "Titel"
+    "preview_count": "Titel",
+    "preview_more": "…und viele mehr"
   },
   "landing": {
     "section": "Start",
@@ -182,6 +183,10 @@
     "scan_more": "Weiter scannen",
     "done_library": "Fertig — zur Bibliothek",
     "time_now": "Gerade eben",
-    "time_min_ago": "vor {n} Min."
+    "time_min_ago": "vor {n} Min.",
+    "in_library": "Bereits in deiner Bibliothek",
+    "shelved_as": "Eingeordnet als",
+    "continue_scanning": "Weiter scannen",
+    "remove": "Entfernen"
   }
 }

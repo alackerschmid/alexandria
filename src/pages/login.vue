@@ -112,17 +112,16 @@
         {{ loading ? '—' : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
       </button>
 
-      <!-- Continue as guest -->
-      <div class="text-center">
-        <button
-          type="button"
-          :disabled="loading"
-          class="text-xs text-text-secondary/50 tracking-wide hover:text-text-secondary transition-colors disabled:opacity-40"
-          @click="$router.push('/scanner')"
-        >
-          {{ $t('auth.continue_as_guest') }} →
-        </button>
-      </div>
+      <!-- Continue as guest — secondary action, more prominent than a text link
+           but quieter than the filled sign-in button above. -->
+      <button
+        type="button"
+        :disabled="loading"
+        class="w-full border border-charcoal-border text-text-primary py-3.5 text-xs font-bold tracking-[0.25em] uppercase hover:border-text-primary transition-colors disabled:opacity-40"
+        @click="$router.push('/library')"
+      >
+        {{ $t('auth.continue_as_guest') }}
+      </button>
     </form>
     <AppFooter />
   </div>

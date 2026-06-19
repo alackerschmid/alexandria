@@ -232,7 +232,7 @@ import { useLocaleStore } from '@/stores/locale'
 import AppHeader from '@/components/AppHeader.vue'
 import BookDetail from '@/components/BookDetail.vue'
 import AppToast from '@/components/AppToast.vue'
-import BookCard, { type Book, type ReadStatus } from '@/components/BookCard.vue'
+import type { Book, ReadStatus } from '@/components/BookCard.vue'
 
 const { t } = useI18n()
 const authStore = useAuthStore()

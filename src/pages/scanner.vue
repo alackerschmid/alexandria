@@ -209,11 +209,20 @@
                     {{ statusLabels[b.status] }}
                   </span>
                 </div>
-                <span
-                  class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
-                >
-                  {{ sessionTime(b.addedAt) }}
-                </span>
+                <div class="flex flex-col items-end gap-1.5 shrink-0">
+                  <span
+                    class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
+                  >
+                    {{ sessionTime(b.addedAt) }}
+                  </span>
+                  <button
+                    class="text-text-secondary/45 hover:text-error transition-colors"
+                    :title="$t('scanner.remove')"
+                    @click="removeSessionBook(b)"
+                  >
+                    <v-icon icon="mdi-delete-outline" size="15" />
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -389,13 +398,13 @@
             <div class="flex items-center gap-2 mb-4">
               <span
                 class="w-1.5 h-1.5 rounded-full shrink-0"
-                :style="{ background: detectedBook.notFound ? '#8a8078' : '#22c55e' }"
+                :style="{ background: detectedIndicator.color }"
               />
               <span
                 class="text-[10px] tracking-[0.24em] uppercase font-medium"
-                :style="{ color: detectedBook.notFound ? '#8a8078' : '#22c55e' }"
+                :style="{ color: detectedIndicator.color }"
               >
-                {{ detectedBook.notFound ? $t("scanner.no_match") : $t("scanner.match_found") }}
+                {{ detectedIndicator.label }}
               </span>
             </div>
 
@@ -454,8 +463,38 @@
               </div>
             </div>
 
+            <!-- Already in the library: read-only summary, no save -->
+            <template v-if="detectedBook.duplicate">
+              <div
+                v-if="detectedBook.currentStatus"
+                class="flex items-center gap-2.5 mb-6"
+              >
+                <span
+                  class="text-[10px] text-white/50 tracking-[0.24em] uppercase"
+                >
+                  {{ $t("scanner.shelved_as") }}
+                </span>
+                <span
+                  class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
+                  :style="{ color: STATUS_COLORS[detectedBook.currentStatus] }"
+                >
+                  <span
+                    class="w-1.5 h-1.5 rounded-full"
+                    :style="{ background: STATUS_COLORS[detectedBook.currentStatus] }"
+                  />
+                  {{ statusLabels[detectedBook.currentStatus] }}
+                </span>
+              </div>
+              <button
+                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity hover:opacity-90"
+                @click="scanAgain"
+              >
+                {{ $t("scanner.continue_scanning") }}
+              </button>
+            </template>
+
             <!-- Guest limit reached: prompt to create account -->
-            <template v-if="isGuest && guestStore.isAtLimit">
+            <template v-else-if="isGuest && guestStore.isAtLimit">
               <p class="text-sm font-bold text-white mb-1">
                 {{ $t("guest.limit_heading") }}
               </p>
@@ -530,17 +569,19 @@
         </div>
       </Transition>
 
-      <!-- ── Session review (full-screen) ─────────────────────────────────────── -->
+      <!-- ── Session review (bottom sheet, sized to content) ──────────────────── -->
       <Transition name="slide-up">
         <div
           v-if="showReview"
-          class="absolute inset-0 z-50 bg-charcoal flex flex-col"
+          class="absolute bottom-0 left-0 right-0 z-50 md:flex md:justify-center md:pointer-events-none"
         >
-          <!-- Top bar -->
           <div
-            class="shrink-0 flex justify-between items-center px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[85vh] md:max-h-[80vh] md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
           >
-            <div class="flex items-center gap-3 min-w-0">
+            <!-- Header -->
+            <div
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+            >
               <button
                 class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
                 @click="showReview = false"
@@ -560,80 +601,113 @@
                 </p>
               </div>
             </div>
-          </div>
 
-          <!-- List -->
-          <div class="flex-1 min-h-0 overflow-y-auto px-4 md:px-6">
-            <div
-              v-for="b in sessionBooks"
-              :key="b.isbn"
-              class="flex gap-4 items-start py-5 border-b border-charcoal-border"
-            >
-              <div
-                class="w-12 h-18 shrink-0 relative overflow-hidden"
-                style="background: #232220; border: 1px solid #2e2b28"
-              >
-                <img
-                  v-if="b.coverUrl"
-                  :src="b.coverUrl"
-                  class="absolute inset-0 w-full h-full object-cover"
-                />
+            <!-- List -->
+            <div class="flex-1 min-h-0 overflow-y-auto">
+              <TransitionGroup name="list">
                 <div
-                  v-else
-                  class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
-                />
-              </div>
-              <div class="flex-1 min-w-0">
-                <p
-                  class="font-heading font-bold text-base text-text-primary leading-snug"
+                  v-for="b in sessionBooks"
+                  :key="b.isbn"
+                  class="relative overflow-hidden border-b border-charcoal-border"
                 >
-                  {{ b.title }}
-                </p>
-                <p class="text-xs text-text-secondary mt-1">
-                  {{ b.author }}
-                </p>
-                <div class="flex items-center gap-3 mt-2.5">
-                  <span
-                    class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
-                    :style="{ color: STATUS_COLORS[b.status] }"
+                  <!-- Delete affordance, revealed while swiping left -->
+                  <div
+                    class="absolute inset-0 flex items-center justify-end px-6 pointer-events-none"
+                    style="background: rgb(var(--v-theme-error))"
                   >
-                    <span
-                      class="w-1.5 h-1.5 rounded-full"
-                      :style="{ background: STATUS_COLORS[b.status] }"
+                    <v-icon
+                      icon="mdi-delete-outline"
+                      size="20"
+                      style="color: #fff"
                     />
-                    {{ statusLabels[b.status] }}
-                  </span>
-                  <span
-                    class="font-mono text-[9px] text-text-secondary/55 tracking-wide"
+                  </div>
+                  <!-- Row content (swipes on touch; delete button on desktop) -->
+                  <div
+                    class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-charcoal"
+                    :class="swipeIsbn === b.isbn ? '' : 'swipe-snap'"
+                    :style="{ transform: `translateX(${swipeIsbn === b.isbn ? swipeX : 0}px)` }"
+                    @touchstart="onSwipeStart(b.isbn, $event)"
+                    @touchmove="onSwipeMove($event)"
+                    @touchend="onSwipeEnd(b)"
+                    @touchcancel="onSwipeCancel"
                   >
-                    {{ b.isbn }}
-                  </span>
+                    <div
+                      class="w-12 h-18 shrink-0 relative overflow-hidden"
+                      style="background: #232220; border: 1px solid #2e2b28"
+                    >
+                      <img
+                        v-if="b.coverUrl"
+                        :src="b.coverUrl"
+                        class="absolute inset-0 w-full h-full object-cover"
+                      />
+                      <div
+                        v-else
+                        class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                      />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p
+                        class="font-heading font-bold text-base text-text-primary leading-snug"
+                      >
+                        {{ b.title }}
+                      </p>
+                      <p class="text-xs text-text-secondary mt-1">
+                        {{ b.author }}
+                      </p>
+                      <div class="flex items-center gap-3 mt-2.5">
+                        <span
+                          class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
+                          :style="{ color: STATUS_COLORS[b.status] }"
+                        >
+                          <span
+                            class="w-1.5 h-1.5 rounded-full"
+                            :style="{ background: STATUS_COLORS[b.status] }"
+                          />
+                          {{ statusLabels[b.status] }}
+                        </span>
+                        <span
+                          class="font-mono text-[9px] text-text-secondary/55 tracking-wide"
+                        >
+                          {{ b.isbn }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="flex flex-col items-end gap-2 shrink-0 pt-1">
+                      <span
+                        class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap"
+                      >
+                        {{ sessionTime(b.addedAt) }}
+                      </span>
+                      <button
+                        class="hidden md:flex text-text-secondary/45 hover:text-error transition-colors"
+                        :title="$t('scanner.remove')"
+                        @click="removeSessionBook(b)"
+                      >
+                        <v-icon icon="mdi-delete-outline" size="16" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <span
-                class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-1"
-              >
-                {{ sessionTime(b.addedAt) }}
-              </span>
+              </TransitionGroup>
             </div>
-          </div>
 
-          <!-- Footer actions -->
-          <div
-            class="shrink-0 px-4 md:px-6 py-4 border-t border-charcoal-border flex gap-3"
-          >
-            <button
-              class="w-36 shrink-0 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
-              @click="showReview = false"
+            <!-- Footer actions -->
+            <div
+              class="shrink-0 px-4 md:px-6 py-4 border-t border-charcoal-border flex gap-3"
             >
-              {{ $t("scanner.scan_more") }}
-            </button>
-            <button
-              class="flex-1 bg-orange-neon text-black text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-90 transition-opacity"
-              @click="router.push('/library')"
-            >
-              {{ $t("scanner.done_library") }}
-            </button>
+              <button
+                class="w-36 shrink-0 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                @click="showReview = false"
+              >
+                {{ $t("scanner.scan_more") }}
+              </button>
+              <button
+                class="flex-1 bg-orange-neon text-black text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-90 transition-opacity"
+                @click="router.push('/library')"
+              >
+                {{ $t("scanner.done_library") }}
+              </button>
+            </div>
           </div>
         </div>
       </Transition>
@@ -713,6 +787,8 @@ interface BookPreview {
   publisher?: string;
   coverUrl?: string;
   notFound?: boolean;
+  duplicate?: boolean;
+  currentStatus?: ReadStatus;
 }
 
 const scanState = ref<ScanState>("scanning");
@@ -732,6 +808,18 @@ const detectedMeta = computed<string[]>(() => {
   return chips;
 });
 
+const DUPLICATE_COLOR = "#e8a838";
+
+// Indicator shown at the top of the detected-book sheet — green match, amber
+// duplicate, grey no-match.
+const detectedIndicator = computed(() => {
+  const b = detectedBook.value;
+  if (!b) return { color: "#8a8078", label: "" };
+  if (b.duplicate) return { color: DUPLICATE_COLOR, label: t("scanner.in_library") };
+  if (b.notFound) return { color: "#8a8078", label: t("scanner.no_match") };
+  return { color: "#22c55e", label: t("scanner.match_found") };
+});
+
 // ── Session shelf ──────────────────────────────────────────────────────────────
 // Books added during this scanning session — drives the counter pill, the camera
 // shelf peek, the desktop list and the full-screen review.
@@ -743,12 +831,15 @@ interface SessionBook {
   status: ReadStatus;
   coverUrl?: string;
   addedAt: number;
+  // Server scan id when saved online (authenticated) — needed to delete it.
+  // Absent for guest scans and offline-queued saves.
+  scanId?: number;
 }
 
 const sessionBooks = ref<SessionBook[]>([]);
 const showReview = ref(false);
 
-function recordSession(book: BookPreview, status: ReadStatus) {
+function recordSession(book: BookPreview, status: ReadStatus, scanId?: number) {
   sessionBooks.value.unshift({
     isbn: book.isbn,
     title: book.title || book.isbn,
@@ -756,6 +847,7 @@ function recordSession(book: BookPreview, status: ReadStatus) {
     status,
     coverUrl: book.coverUrl,
     addedAt: Date.now(),
+    scanId,
   });
 }
 
@@ -766,19 +858,17 @@ function sessionTime(ts: number): string {
 }
 
 // ISBNs already handled this session — prevents accidental re-scans while
-// the camera is still pointed at the same barcode after saving.
+// the camera is still pointed at the same barcode after saving (and ensures the
+// duplicate sheet shows at most once per book per session).
 const sessionScanned = new Set<string>();
 
-// ISBNs already saved in the library — populated on mount, kept in sync on save.
-const libraryIsbns = new Set<string>();
-
-// Short-lived cooldown for "already in library" notifications — clears after
-// the toast dismisses so the user can trigger it again on a fresh attempt.
-const libraryNotifiedCooldown = new Set<string>();
+// Books already in the library, keyed by ISBN → current status. Populated on
+// mount and kept in sync on save/delete; drives duplicate detection.
+const libraryBooks = new Map<string, ReadStatus>();
 
 async function loadLibraryIsbns() {
   if (isGuest.value) {
-    guestStore.scans.forEach((b) => libraryIsbns.add(b.isbn));
+    guestStore.scans.forEach((b) => libraryBooks.set(b.isbn, b.status));
     return;
   }
   try {
@@ -786,8 +876,8 @@ async function loadLibraryIsbns() {
       headers: { Authorization: `Bearer ${authStore.token}` },
     });
     if (res.ok) {
-      const data: { isbn: string }[] = await res.json();
-      data.forEach((b) => libraryIsbns.add(b.isbn));
+      const data: { isbn: string; status: ReadStatus }[] = await res.json();
+      data.forEach((b) => libraryBooks.set(b.isbn, b.status));
     }
   } catch {}
 }
@@ -878,20 +968,11 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
 const onBarcodeDetected = async (isbn: string) => {
   if (scanState.value !== "scanning") return;
 
-  // Already handled this session — ignore silently so the camera can keep running.
+  // Already handled this session — ignore silently so the camera can keep running
+  // (and so a just-saved book in view doesn't immediately re-trigger the sheet).
   if (sessionScanned.has(isbn)) return;
 
-  // Already in the library — notify and suppress without showing the preview card.
-  if (libraryIsbns.has(isbn)) {
-    if (libraryNotifiedCooldown.has(isbn)) return;
-    flash.value = true;
-    navigator.vibrate?.(30);
-    setTimeout(() => (flash.value = false), 200);
-    libraryNotifiedCooldown.add(isbn);
-    setTimeout(() => libraryNotifiedCooldown.delete(isbn), 4000);
-    showToast(t("scanner.toast_already_in_library"), "warning");
-    return;
-  }
+  const duplicate = libraryBooks.has(isbn);
 
   scanState.value = "detecting";
   flash.value = true;
@@ -899,9 +980,16 @@ const onBarcodeDetected = async (isbn: string) => {
   setTimeout(() => (flash.value = false), 200);
 
   const book = await lookupBook(isbn);
-  detectedBook.value = book ?? { isbn, title: "", author: "", notFound: true };
+  detectedBook.value = {
+    ...(book ?? { isbn, title: "", author: "", notFound: true }),
+    duplicate,
+    currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
+  };
   selectedStatus.value = "unread";
   scanState.value = "preview";
+
+  // A duplicate gets shown once, then suppressed for the rest of the session.
+  if (duplicate) sessionScanned.add(isbn);
 };
 
 // ── Offline queue ─────────────────────────────────────────────────────────────
@@ -974,10 +1062,18 @@ async function drainQueue() {
         remaining.push(book);
       } else if (res.status !== 409 && !res.ok) {
         remaining.push(book);
-      } else if (res.ok && book.status && book.status !== "unread") {
+      } else if (res.ok) {
+        // Backfill the server scan id onto the matching session entry so it can
+        // still be deleted, and apply any non-default status.
         try {
           const saved = await res.json();
-          if (saved?.id) await patchStatus(saved.id, book.status);
+          if (saved?.id) {
+            const entry = sessionBooks.value.find((b) => b.isbn === book.isbn);
+            if (entry) entry.scanId = saved.id;
+            if (book.status && book.status !== "unread") {
+              await patchStatus(saved.id, book.status);
+            }
+          }
         } catch {}
       }
     } catch {
@@ -1012,13 +1108,10 @@ const saveBook = async () => {
       },
       status,
     );
-    if (result === "duplicate") {
-      showToast(t("scanner.toast_already_in_library"), "warning");
-    } else if (result === "ok") {
+    if (result === "ok") {
       sessionScanned.add(book.isbn);
-      libraryIsbns.add(book.isbn);
+      libraryBooks.set(book.isbn, status);
       recordSession(book, status);
-      showToast(t("scanner.toast_guest_saved"), "warning");
     }
     detectedBook.value = null;
     scanState.value = "scanning";
@@ -1031,18 +1124,17 @@ const saveBook = async () => {
   try {
     const { result, id } = await postScan(queued);
     sessionScanned.add(book.isbn);
-    libraryIsbns.add(book.isbn);
-    if (result === "duplicate") {
-      showToast(t("scanner.toast_already_in_library"), "warning");
-    } else {
+    libraryBooks.set(book.isbn, status);
+    // result === "duplicate" → already in the library; nothing to add to the session.
+    if (result === "saved") {
       if (status !== "unread" && id) await patchStatus(id, status);
-      recordSession(book, status);
-      showToast(t("scanner.toast_saved"));
+      recordSession(book, status, id);
     }
   } catch {
     if (!navigator.onLine) {
       enqueue(queued);
       sessionScanned.add(book.isbn);
+      libraryBooks.set(book.isbn, status);
       recordSession(book, status);
       showToast(t("scanner.toast_will_sync"), "warning");
     } else {
@@ -1061,6 +1153,77 @@ const scanAgain = () => {
   selectedStatus.value = "unread";
   scanState.value = "scanning";
 };
+
+// ── Removing session books ──────────────────────────────────────────────────────
+
+function dequeue(isbn: string) {
+  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  const filtered = q.filter((b) => b.isbn !== isbn);
+  filtered.length
+    ? localStorage.setItem(QUEUE_KEY, JSON.stringify(filtered))
+    : localStorage.removeItem(QUEUE_KEY);
+}
+
+async function removeSessionBook(book: SessionBook) {
+  // Optimistically drop it from the session UI and the local indices.
+  sessionBooks.value = sessionBooks.value.filter((b) => b.isbn !== book.isbn);
+  sessionScanned.delete(book.isbn);
+  libraryBooks.delete(book.isbn);
+  if (!sessionBooks.value.length) showReview.value = false;
+
+  if (isGuest.value) {
+    guestStore.removeScan(book.isbn);
+    return;
+  }
+  if (book.scanId) {
+    // Saved online — delete the server scan.
+    try {
+      await fetch(`${API_BASE}/api/scans/${book.scanId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${authStore.token}` },
+      });
+    } catch {}
+  } else {
+    // Saved offline and still pending — drop it from the sync queue.
+    dequeue(book.isbn);
+  }
+}
+
+// ── Swipe-to-delete (touch) ─────────────────────────────────────────────────────
+
+const swipeIsbn = ref<string | null>(null);
+const swipeX = ref(0);
+let swipeStartX = 0;
+let swipeStartY = 0;
+
+function onSwipeStart(isbn: string, e: TouchEvent) {
+  swipeIsbn.value = isbn;
+  swipeStartX = e.touches[0].clientX;
+  swipeStartY = e.touches[0].clientY;
+  swipeX.value = 0;
+}
+
+function onSwipeMove(e: TouchEvent) {
+  if (swipeIsbn.value === null) return;
+  const dx = e.touches[0].clientX - swipeStartX;
+  const dy = e.touches[0].clientY - swipeStartY;
+  // Once the gesture is clearly horizontal, take over from vertical scrolling.
+  if (Math.abs(dx) > Math.abs(dy)) e.preventDefault();
+  swipeX.value = Math.min(0, dx);
+}
+
+function onSwipeEnd(book: SessionBook) {
+  if (swipeIsbn.value === null) return;
+  const triggered = swipeX.value < -120;
+  swipeIsbn.value = null;
+  swipeX.value = 0;
+  if (triggered) removeSessionBook(book);
+}
+
+function onSwipeCancel() {
+  swipeIsbn.value = null;
+  swipeX.value = 0;
+}
 
 // ── Camera lifecycle ──────────────────────────────────────────────────────────
 
@@ -1174,6 +1337,20 @@ canvas.drawingBuffer {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* Swipe-to-delete: snap the row back when not actively dragging. */
+.swipe-snap {
+  transition: transform 0.2s ease;
+}
+
+/* Session list removal (swipe past threshold, or desktop delete button). */
+.list-leave-active {
+  transition: all 0.25s ease;
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(-100%);
 }
 
 @keyframes scan {

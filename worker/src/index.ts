@@ -107,7 +107,7 @@ const authMiddleware = async (c: any, next: any) => {
     const { payload } = await jwtVerify(token, secret)
     c.set('userId', payload.userId as number)
     await next()
-  } catch (e) {
+  } catch {
     return c.json({ error: 'Invalid or expired token' }, 401)
   }
 }
@@ -155,6 +155,25 @@ app.get('/api/books/guest-lookup', async (c) => {
     .first<BookRow>()
 
   return c.json(book ?? { notFound: true })
+})
+
+// Public sample of random catalogued books — powers the marketing preview. No auth.
+app.get('/api/books/sample', async (c) => {
+  const limit = Math.min(parseInt(c.req.query('limit') ?? '3'), 12)
+  const db = c.env.DB
+
+  const { results } = await db
+    .prepare(
+      'SELECT title, author, cover_url FROM books WHERE title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?'
+    )
+    .bind(limit)
+    .all<{ title: string, author: string | null, cover_url: string | null }>()
+
+  const total = await db
+    .prepare('SELECT COUNT(*) AS n FROM books WHERE title IS NOT NULL')
+    .first<{ n: number }>()
+
+  return c.json({ books: results, total: total?.n ?? results.length })
 })
 
 app.use('/api/books/*', authMiddleware)
