@@ -110,7 +110,8 @@
     "filter_reading": "Lese ich",
     "filter_read": "Gelesen",
     "empty_heading": "Noch nichts hier.",
-    "empty_body": "Tippe auf den Button unten, um deinen ersten Barcode zu scannen.",
+    "empty_scan_cta": "Erstes Buch scannen",
+    "scan": "Scannen",
     "no_results": "Keine Bücher entsprechen diesem Filter.",
     "load_more": "Mehr laden",
     "remove_heading": "Buch entfernen?",
@@ -142,7 +143,13 @@
     "remove": "Entfernen",
     "edit_save": "Änderungen speichern",
     "edit_cancel": "Abbrechen",
-    "edit_error": "Änderungen konnten nicht gespeichert werden"
+    "edit_error": "Änderungen konnten nicht gespeichert werden",
+    "custom_fields": "Eigene Felder",
+    "custom_field_name": "Feldname",
+    "custom_field_value": "Wert",
+    "custom_field_delete": "Feld aus allen Büchern löschen",
+    "custom_field_confirm_delete": "Nochmal klicken zum Bestätigen – entfernt das Feld aus allen Büchern",
+    "add_custom_field": "Feld hinzufügen"
   },
   "scanner": {
     "saved_count": "{n} gespeichert",

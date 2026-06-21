@@ -6,3 +6,4 @@ dist
 worker/.dev.vars
 .wrangler
 look-at-the-current-soft-crescent.md
+wikidata-series-lookup.md

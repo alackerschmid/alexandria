@@ -120,20 +120,33 @@
                 </p>
               </div>
 
-              <div class="border-b border-charcoal-border mb-12 pb-2">
+              <div
+                class="border-b mb-12 pb-2 transition-colors"
+                :class="{
+                  'border-charcoal-border': isbnState === 'hidden',
+                  'border-success': isbnState === 'valid',
+                  'border-error': isbnState === 'invalid',
+                }"
+              >
                 <label
-                  class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 transition-colors"
+                  :class="{
+                    'text-text-secondary': isbnState === 'hidden',
+                    'text-success': isbnState === 'valid',
+                    'text-error': isbnState === 'invalid',
+                  }"
                 >
                   {{ $t("scanner.isbn_label") }}
                 </label>
                 <input
                   ref="manualEntryInput"
-                  v-model="manualIsbn"
+                  :value="manualIsbn"
                   type="text"
                   inputmode="numeric"
                   :disabled="scanState === 'detecting'"
                   placeholder="978…"
                   class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                  @input="onIsbnInput"
                 />
               </div>
 
@@ -772,6 +785,7 @@ import { useRouter } from "vue-router";
 import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
+import { useApi } from "@/composables/useApi";
 import type { ReadStatus } from "@/components/BookCard.vue";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
@@ -781,6 +795,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const guestStore = useGuestStore();
 const { mdAndUp } = useDisplay();
+const { apiFetch } = useApi();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -908,9 +923,7 @@ async function loadLibraryIsbns() {
     return;
   }
   try {
-    const res = await fetch(`${API_BASE}/api/scans?limit=500`, {
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
+    const res = await apiFetch(`/api/scans?limit=500`);
     if (res.ok) {
       const data: { isbn: string; status: ReadStatus }[] = await res.json();
       data.forEach((b) => libraryBooks.set(b.isbn, b.status));
@@ -922,6 +935,14 @@ async function loadLibraryIsbns() {
 
 const manualIsbn = ref("");
 const cameraFailed = ref(false);
+
+// 'hidden' = too short to judge, 'valid' = 10 or 13 digits, 'invalid' = wrong length
+const isbnState = computed<'hidden' | 'valid' | 'invalid'>(() => {
+  const len = manualIsbn.value.length;
+  if (len < 10) return 'hidden';
+  if (len === 10 || len === 13) return 'valid';
+  return 'invalid';
+});
 // Desktop opts into the camera explicitly; mobile starts it automatically.
 const cameraActive = ref(false);
 const manualEntryInput = ref<HTMLInputElement | null>(null);
@@ -942,12 +963,16 @@ watch(scanState, (state) => {
   if (state === "scanning" && manualMode.value) focusManualEntry();
 });
 
+function onIsbnInput(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const filtered = input.value.replace(/[^0-9xX]/g, "").slice(0, 13);
+  input.value = filtered;
+  manualIsbn.value = filtered;
+}
+
 const submitManualIsbn = () => {
-  const isbn = manualIsbn.value.replace(/[^0-9x]/gi, "");
-  if (isbn.length !== 10 && isbn.length !== 13) {
-    showToast(t("scanner.toast_invalid_isbn"), "error");
-    return;
-  }
+  const isbn = manualIsbn.value;
+  if (isbn.length !== 10 && isbn.length !== 13) return;
   manualIsbn.value = "";
   onBarcodeDetected(isbn.toUpperCase());
 };
@@ -1021,7 +1046,7 @@ const onBarcodeDetected = async (isbn: string) => {
     duplicate,
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };
-  selectedStatus.value = "unread";
+  selectedStatus.value = "read";
   scanState.value = "preview";
 
   // A duplicate gets shown once, then suppressed for the rest of the session.
@@ -1046,12 +1071,8 @@ function enqueue(book: QueuedBook) {
 
 async function patchStatus(id: number, status: ReadStatus) {
   try {
-    await fetch(`${API_BASE}/api/scans/${id}`, {
+    await apiFetch(`/api/scans/${id}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
       body: JSON.stringify({ status }),
     });
   } catch {}
@@ -1060,12 +1081,8 @@ async function patchStatus(id: number, status: ReadStatus) {
 async function postScan(
   book: QueuedBook,
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
-  const res = await fetch(`${API_BASE}/api/scans`, {
+  const res = await apiFetch(`/api/scans`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${authStore.token}`,
-    },
     body: JSON.stringify({ isbn: book.isbn }),
   });
   if (res.status === 409) return { result: "duplicate" };
@@ -1085,12 +1102,8 @@ async function drainQueue() {
       continue;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/scans`, {
+      const res = await apiFetch(`/api/scans`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${authStore.token}`,
-        },
         body: JSON.stringify({ isbn: book.isbn }),
       });
       if (res.status === 401) {
@@ -1186,7 +1199,7 @@ const saveBook = async () => {
 
 const scanAgain = () => {
   detectedBook.value = null;
-  selectedStatus.value = "unread";
+  selectedStatus.value = "read";
   scanState.value = "scanning";
 };
 
@@ -1214,10 +1227,7 @@ async function removeSessionBook(book: SessionBook) {
   if (book.scanId) {
     // Saved online — delete the server scan.
     try {
-      await fetch(`${API_BASE}/api/scans/${book.scanId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${authStore.token}` },
-      });
+      await apiFetch(`/api/scans/${book.scanId}`, { method: "DELETE" });
     } catch {}
   } else {
     // Saved offline and still pending — drop it from the sync queue.

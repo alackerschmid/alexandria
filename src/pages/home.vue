@@ -233,13 +233,16 @@ import AppHeader from '@/components/AppHeader.vue'
 import BookDetail from '@/components/BookDetail.vue'
 import AppToast from '@/components/AppToast.vue'
 import type { Book, ReadStatus } from '@/components/BookCard.vue'
+import { useApi } from '@/composables/useApi'
+import { useFieldDefsStore } from '@/stores/fieldDefs'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const localeStore = useLocaleStore()
+const { apiFetch } = useApi()
+const fieldDefsStore = useFieldDefsStore()
 
-const API_BASE = import.meta.env.VITE_API_URL || ''
 const PAGE_SIZE = 200
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -264,12 +267,8 @@ const saveFirstname = async () => {
   if (!firstnameInput.value.trim() || savingFirstname.value) return
   savingFirstname.value = true
   try {
-    const res = await fetch(`${API_BASE}/api/auth/me`, {
+    const res = await apiFetch('/api/auth/me', {
       method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authStore.token}`,
-      },
       body: JSON.stringify({ firstname: firstnameInput.value.trim() }),
     })
     if (res.ok) {
@@ -339,10 +338,7 @@ function timeAgo(dateStr: string): string {
 
 const fetchBooks = async () => {
   try {
-    const res = await fetch(
-      `${API_BASE}/api/scans?limit=${PAGE_SIZE}&offset=0&sort=date_desc`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    )
+    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE}&offset=0&sort=date_desc`)
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Failed to fetch')
     serverBooks.value = data
@@ -363,10 +359,9 @@ const cycleStatus = async (book: Book) => {
   const prev = book.status
   book.status = newStatus
   try {
-    const res = await fetch(`${API_BASE}/api/scans/${book.id}`, {
-      method:  'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authStore.token}` },
-      body:    JSON.stringify({ status: newStatus }),
+    const res = await apiFetch(`/api/scans/${book.id}`, {
+      method: 'PATCH',
+      body:   JSON.stringify({ status: newStatus }),
     })
     if (!res.ok) throw new Error()
   } catch {
@@ -384,10 +379,7 @@ const confirmDelete = async () => {
   if (!book) return
   deleting.value = true
   try {
-    const res = await fetch(`${API_BASE}/api/scans/${book.id}`, {
-      method:  'DELETE',
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    })
+    const res = await apiFetch(`/api/scans/${book.id}`, { method: 'DELETE' })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || t('library.error_delete'))
     serverBooks.value = serverBooks.value.filter(b => b.id !== book.id)
@@ -405,7 +397,7 @@ const confirmDelete = async () => {
 
 onMounted(async () => {
   loading.value = true
-  await fetchBooks()
+  await Promise.all([fetchBooks(), fieldDefsStore.load()])
   loading.value = false
 })
 </script>

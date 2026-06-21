@@ -162,6 +162,19 @@
               </div>
             </div>
           </div>
+
+          <!-- Custom fields -->
+          <div
+            v-if="fieldDefsStore.defs.length"
+            class="border-t border-charcoal-border px-6 py-4 grid grid-cols-2 gap-y-4"
+          >
+            <div v-for="def in fieldDefsStore.defs" :key="def.id">
+              <div class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1">
+                {{ def.name }}
+              </div>
+              <div class="text-xs text-text-primary">{{ customFieldMap.get(def.id) || '—' }}</div>
+            </div>
+          </div>
         </template>
 
         <!-- Edit mode body -->
@@ -240,6 +253,70 @@
                 class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
               />
             </div>
+
+            <!-- Custom fields editor -->
+            <div>
+              <label
+                class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-2 block"
+              >
+                {{ $t('detail.custom_fields') }}
+              </label>
+              <div
+                v-for="def in fieldDefsStore.defs"
+                :key="def.id"
+                class="flex gap-2 mb-2 items-center"
+              >
+                <div class="w-28 shrink-0 text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase truncate pt-2">
+                  {{ def.name }}
+                </div>
+                <input
+                  v-model="customFieldValues[def.id]"
+                  :placeholder="$t('detail.custom_field_value')"
+                  class="flex-1 bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                />
+                <button
+                  class="shrink-0 transition-colors"
+                  :class="confirmingDeleteId === def.id ? 'text-error' : 'text-text-secondary/30 hover:text-text-secondary/60'"
+                  :title="confirmingDeleteId === def.id ? $t('detail.custom_field_confirm_delete') : $t('detail.custom_field_delete')"
+                  @click="deleteFieldDefinition(def.id)"
+                  @blur="confirmingDeleteId = null"
+                >
+                  <v-icon :icon="confirmingDeleteId === def.id ? 'mdi-delete' : 'mdi-delete-outline'" size="16" />
+                </button>
+              </div>
+
+              <!-- Add field -->
+              <div v-if="addingField" class="flex gap-2 mt-1 items-center">
+                <input
+                  v-model="newFieldName"
+                  :placeholder="$t('detail.custom_field_name')"
+                  class="flex-1 bg-charcoal border border-orange-neon text-xs text-text-primary px-3 py-2 outline-none"
+                  @keyup.enter="createFieldDefinition"
+                  @keyup.escape="addingField = false; newFieldName = ''"
+                />
+                <button
+                  class="text-orange-neon hover:text-orange-neon/70 transition-colors shrink-0"
+                  @click="createFieldDefinition"
+                >
+                  <v-icon icon="mdi-check" size="16" />
+                </button>
+                <button
+                  class="text-text-secondary/40 hover:text-text-secondary/70 transition-colors shrink-0"
+                  @click="addingField = false; newFieldName = ''"
+                >
+                  <v-icon icon="mdi-close" size="16" />
+                </button>
+              </div>
+              <button
+                v-else
+                class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-text-secondary/60 hover:text-orange-neon transition-colors mt-1"
+                @click="addingField = true"
+              >
+                <v-icon icon="mdi-plus" size="14" />
+                {{ $t('detail.add_custom_field') }}
+              </button>
+            </div>
+
             <p
               v-if="saveError"
               class="text-[10px] text-error tracking-widest uppercase"
@@ -302,6 +379,11 @@
 <script lang="ts">
 import type { Book } from "./BookCard.vue";
 
+export interface CustomFieldValue {
+  field_def_id: number;
+  value: string | null;
+}
+
 export interface BookWithOverrides extends Book {
   title_overridden?: number;
   author_overridden?: number;
@@ -311,13 +393,15 @@ export interface BookWithOverrides extends Book {
   pages_overridden?: number;
   description_overridden?: number;
   publisher_overridden?: number;
+  custom_field_values?: CustomFieldValue[] | null;
 }
 </script>
 
 <script lang="ts" setup>
 import { ref, reactive, watch, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { useAuthStore } from "@/stores/auth";
+import { useApi } from "@/composables/useApi";
+import { useFieldDefsStore } from "@/stores/fieldDefs";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -333,14 +417,23 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const authStore = useAuthStore();
-const API_BASE = import.meta.env.VITE_API_URL || "";
+const { apiFetch } = useApi();
+const fieldDefsStore = useFieldDefsStore();
 
 const descriptionExpanded = ref(false);
 const refreshing = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const saveError = ref(false);
+const customFieldValues = ref<Record<number, string>>({});
+const customFieldMap = computed(() =>
+  new Map(
+    (props.book.custom_field_values ?? []).map((v) => [v.field_def_id, v.value]),
+  ),
+);
+const addingField = ref(false);
+const newFieldName = ref("");
+const confirmingDeleteId = ref<number | null>(null);
 
 const form = reactive({
   title: "",
@@ -368,6 +461,15 @@ watch(
   },
 );
 
+function cfSnapshot(): Record<number, string> {
+  return Object.fromEntries(
+    fieldDefsStore.defs.map((d) => [
+      d.id,
+      props.book.custom_field_values?.find((v) => v.field_def_id === d.id)?.value ?? "",
+    ]),
+  );
+}
+
 function enterEdit() {
   form.title = props.book.title ?? "";
   form.author = props.book.author ?? "";
@@ -377,8 +479,47 @@ function enterEdit() {
   form.number_of_pages_median = props.book.number_of_pages_median ?? null;
   form.description = props.book.description ?? "";
   form.publisher = props.book.publisher ?? "";
+  customFieldValues.value = cfSnapshot();
+  addingField.value = false;
+  newFieldName.value = "";
+  confirmingDeleteId.value = null;
   saveError.value = false;
   editing.value = true;
+}
+
+async function createFieldDefinition() {
+  const name = newFieldName.value.trim();
+  if (!name) return;
+  try {
+    const res = await apiFetch("/api/field-definitions", {
+      method: "POST",
+      body: JSON.stringify({ name, type: "text" }),
+    });
+    if (!res.ok) throw new Error();
+    const def = (await res.json()) as { id: number; name: string; type: string };
+    customFieldValues.value[def.id] = "";
+    newFieldName.value = "";
+    addingField.value = false;
+    fieldDefsStore.add(def);
+  } catch {
+    saveError.value = true;
+  }
+}
+
+async function deleteFieldDefinition(id: number) {
+  if (confirmingDeleteId.value !== id) {
+    confirmingDeleteId.value = id;
+    return;
+  }
+  try {
+    const res = await apiFetch(`/api/field-definitions/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error();
+    delete customFieldValues.value[id];
+    confirmingDeleteId.value = null;
+    fieldDefsStore.remove(id);
+  } catch {
+    saveError.value = true;
+  }
 }
 
 async function save() {
@@ -402,7 +543,10 @@ async function save() {
   if (newPages !== on(props.book.number_of_pages_median))
     changes.number_of_pages_median = newPages;
 
-  if (!Object.keys(changes).length) {
+  const customFieldsChanged =
+    JSON.stringify(cfSnapshot()) !== JSON.stringify(customFieldValues.value);
+
+  if (!Object.keys(changes).length && !customFieldsChanged) {
     editing.value = false;
     return;
   }
@@ -410,15 +554,27 @@ async function save() {
   saveError.value = false;
   saving.value = true;
   try {
-    const res = await fetch(`${API_BASE}/api/books/override`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
-      body: JSON.stringify({ isbn: props.book.isbn, changes }),
-    });
-    if (!res.ok) throw new Error();
+    const saves: Promise<Response>[] = [];
+    if (Object.keys(changes).length) {
+      saves.push(apiFetch("/api/books/override", {
+        method: "PATCH",
+        body: JSON.stringify({ isbn: props.book.isbn, changes }),
+      }));
+    }
+    if (customFieldsChanged) {
+      saves.push(apiFetch("/api/books/custom-fields", {
+        method: "PATCH",
+        body: JSON.stringify({
+          isbn: props.book.isbn,
+          values: Object.entries(customFieldValues.value).map(([id, value]) => ({
+            field_def_id: Number(id),
+            value,
+          })),
+        }),
+      }));
+    }
+    const results = await Promise.all(saves);
+    if (results.some((r) => !r.ok)) throw new Error();
 
     const updated: Partial<BookWithOverrides> = { ...changes } as Partial<BookWithOverrides>;
     if ("title" in changes) updated.title_overridden = changes.title != null ? 1 : 0;
@@ -430,6 +586,10 @@ async function save() {
       updated.pages_overridden = changes.number_of_pages_median != null ? 1 : 0;
     if ("description" in changes) updated.description_overridden = changes.description != null ? 1 : 0;
     if ("publisher" in changes) updated.publisher_overridden = changes.publisher != null ? 1 : 0;
+    updated.custom_field_values = fieldDefsStore.defs.map((d) => ({
+      field_def_id: d.id,
+      value: customFieldValues.value[d.id] ?? null,
+    }));
 
     emit("refreshed", updated);
     editing.value = false;
@@ -443,13 +603,9 @@ async function save() {
 const refresh = async () => {
   refreshing.value = true;
   try {
-    const res = await fetch(
-      `${API_BASE}/api/books/refresh?isbn=${props.book.isbn}`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${authStore.token}` },
-      },
-    );
+    const res = await apiFetch(`/api/books/refresh?isbn=${props.book.isbn}`, {
+      method: "POST",
+    });
     if (!res.ok) throw new Error();
     const updated = await res.json();
     emit("refreshed", updated);

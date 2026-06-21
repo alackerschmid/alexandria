@@ -17,6 +17,17 @@
               {{ $t("library.heading") }}
             </h1>
           </div>
+          <v-btn
+            variant="outlined"
+            size="small"
+            color="primary"
+            rounded="0"
+            class="text-[10px] tracking-[0.15em] uppercase mb-1"
+            prepend-icon="mdi-barcode-scan"
+            @click="$router.push('/scanner')"
+          >
+            {{ $t("library.scan") }}
+          </v-btn>
         </div>
       </div>
 
@@ -185,9 +196,16 @@
         <p class="font-heading text-3xl font-bold text-text-primary mb-3">
           {{ $t("library.empty_heading") }}
         </p>
-        <p class="text-sm text-text-secondary leading-relaxed">
-          {{ $t("library.empty_body") }}
-        </p>
+        <v-btn
+          variant="text"
+          color="primary"
+          rounded="0"
+          class="text-[10px] tracking-[0.15em] uppercase px-0 mt-1"
+          append-icon="mdi-arrow-right"
+          @click="$router.push('/scanner')"
+        >
+          {{ $t("library.empty_scan_cta") }}
+        </v-btn>
       </div>
 
       <!-- No results for current filter -->
@@ -428,6 +446,8 @@ import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
+import { useApi } from "@/composables/useApi";
+import { useFieldDefsStore } from "@/stores/fieldDefs";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
@@ -441,6 +461,8 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const guestStore = useGuestStore();
+const { apiFetch } = useApi();
+const fieldDefsStore = useFieldDefsStore();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
 
@@ -487,7 +509,6 @@ const selectedBook = ref<Book | null>(null);
 const errorToast = ref(false);
 const errorMessage = ref("");
 
-const API_BASE = import.meta.env.VITE_API_URL || "";
 const PAGE_SIZE = 200;
 
 // ── Computed ──────────────────────────────────────────────────────────────────
@@ -562,10 +583,7 @@ function statusDotColor(s: ReadStatus): string {
 
 const fetchBooks = async (offset = 0) => {
   try {
-    const res = await fetch(
-      `${API_BASE}/api/scans?limit=${PAGE_SIZE}&offset=${offset}`,
-      { headers: { Authorization: `Bearer ${authStore.token}` } },
-    );
+    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE}&offset=${offset}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch books");
 
@@ -605,12 +623,8 @@ const cycleStatus = async (book: Book) => {
   book.status = newStatus;
 
   try {
-    const res = await fetch(`${API_BASE}/api/scans/${book.id}`, {
+    const res = await apiFetch(`/api/scans/${book.id}`, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
-      },
       body: JSON.stringify({ status: newStatus }),
     });
     if (!res.ok) throw new Error();
@@ -646,10 +660,7 @@ const confirmDelete = async () => {
 
   deleting.value = true;
   try {
-    const res = await fetch(`${API_BASE}/api/scans/${book.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${authStore.token}` },
-    });
+    const res = await apiFetch(`/api/scans/${book.id}`, { method: "DELETE" });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || t("library.error_delete"));
     serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
@@ -668,7 +679,7 @@ const confirmDelete = async () => {
 onMounted(async () => {
   if (authStore.isAuthenticated) {
     loading.value = true;
-    await fetchBooks();
+    await Promise.all([fetchBooks(), fieldDefsStore.load()]);
     loading.value = false;
   }
 });

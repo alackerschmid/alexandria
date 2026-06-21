@@ -11,6 +11,8 @@
   "compilerOptions": {
     "composite": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "declarationDir": "./node_modules/.tmp/ts-declarations",
+    "emitDeclarationOnly": true,
     "paths": {
       "@/*": [
         "./src/*"

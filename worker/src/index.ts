@@ -177,6 +177,7 @@ app.get('/api/books/sample', async (c) => {
 })
 
 app.use('/api/books/*', authMiddleware)
+app.use('/api/field-definitions/*', authMiddleware)
 
 // ── Books ─────────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,10 @@ app.post('/api/books/refresh', async (c) => {
 
 // ── Book overrides ────────────────────────────────────────────────────────────
 
+function getBookByIsbn(db: D1Database, isbn: string) {
+  return db.prepare('SELECT id FROM books WHERE isbn = ?').bind(isbn).first<{ id: number }>()
+}
+
 const OVERRIDE_FIELDS = ['title', 'author', 'cover_url', 'language', 'publish_date', 'number_of_pages_median', 'description', 'publisher'] as const
 type OverrideField = typeof OVERRIDE_FIELDS[number]
 
@@ -344,10 +349,7 @@ app.patch('/api/books/override', async (c) => {
   const validFields = Object.keys(changes ?? {}).filter(f => (OVERRIDE_FIELDS as readonly string[]).includes(f)) as OverrideField[]
   if (!validFields.length) return c.json({ ok: true })
 
-  const book = await c.env.DB
-    .prepare('SELECT id FROM books WHERE isbn = ?')
-    .bind(isbn)
-    .first<{ id: number }>()
+  const book = await getBookByIsbn(c.env.DB, isbn)
   if (!book) return c.json({ error: 'Book not found' }, 404)
 
   const values = validFields.map(f => changes[f] ?? null)
@@ -369,6 +371,76 @@ app.patch('/api/books/override', async (c) => {
   return c.json({ ok: true })
 })
 
+app.patch('/api/books/custom-fields', async (c) => {
+  const userId = c.get('userId')
+  const body = await c.req.json<{ isbn: string; values: Array<{ field_def_id: number; value: string }> }>()
+  if (!body.isbn) return c.json({ error: 'ISBN required' }, 400)
+
+  const [book, { results: ownedDefs }] = await Promise.all([
+    getBookByIsbn(c.env.DB, body.isbn),
+    c.env.DB.prepare('SELECT id FROM user_field_definitions WHERE user_id = ?').bind(userId).all<{ id: number }>(),
+  ])
+  if (!book) return c.json({ error: 'Book not found' }, 404)
+
+  const validIds = new Set(ownedDefs.map(d => d.id))
+  const values = (body.values ?? []).filter(v => validIds.has(v.field_def_id))
+
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM book_custom_fields WHERE user_id = ? AND book_id = ?').bind(userId, book.id),
+    ...values.map(v =>
+      c.env.DB.prepare('INSERT INTO book_custom_fields (user_id, book_id, field_def_id, field_value) VALUES (?, ?, ?, ?)')
+        .bind(userId, book.id, v.field_def_id, (v.value ?? '').trim() || null)
+    ),
+  ])
+
+  return c.json({ ok: true })
+})
+
+// ── Field definitions ──────────────────────────────────────────────────────────
+
+app.get('/api/field-definitions', async (c) => {
+  const userId = c.get('userId')
+  const { results } = await c.env.DB
+    .prepare('SELECT id, field_name AS name, field_type AS type, field_options AS options, sort_order FROM user_field_definitions WHERE user_id = ? ORDER BY sort_order')
+    .bind(userId)
+    .all()
+  return c.json(results)
+})
+
+app.post('/api/field-definitions', async (c) => {
+  const userId = c.get('userId')
+  const { name, type = 'text' } = await c.req.json<{ name: string; type?: string }>()
+  if (!name?.trim()) return c.json({ error: 'Name required' }, 400)
+  const VALID_TYPES = ['text', 'integer', 'select']
+  if (!VALID_TYPES.includes(type)) return c.json({ error: 'Invalid type' }, 400)
+
+  const maxOrder = await c.env.DB
+    .prepare('SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM user_field_definitions WHERE user_id = ?')
+    .bind(userId)
+    .first<{ max_order: number }>()
+
+  try {
+    const result = await c.env.DB
+      .prepare('INSERT INTO user_field_definitions (user_id, field_name, field_type, sort_order) VALUES (?, ?, ?, ?)')
+      .bind(userId, name.trim(), type, (maxOrder?.max_order ?? -1) + 1)
+      .run()
+    return c.json({ id: result.meta.last_row_id, name: name.trim(), type, sort_order: (maxOrder?.max_order ?? -1) + 1 }, 201)
+  } catch (e: any) {
+    if (e.message?.includes('UNIQUE constraint failed')) return c.json({ error: 'A field with that name already exists' }, 409)
+    return c.json({ error: 'Failed to create field' }, 500)
+  }
+})
+
+app.delete('/api/field-definitions/:id', async (c) => {
+  const userId = c.get('userId')
+  const result = await c.env.DB
+    .prepare('DELETE FROM user_field_definitions WHERE id = ? AND user_id = ?')
+    .bind(c.req.param('id'), userId)
+    .run()
+  if (!result.meta.changes) return c.json({ error: 'Not found' }, 404)
+  return c.json({ ok: true })
+})
+
 // ── Scans ─────────────────────────────────────────────────────────────────────
 
 const SORT_CLAUSES: Record<string, string> = {
@@ -380,8 +452,10 @@ const SORT_CLAUSES: Record<string, string> = {
   author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE",
 }
 
+// book_id is included here solely for custom-field merging in JS; it is stripped before the response.
 const SCAN_SELECT = `
   SELECT s.id, s.status, s.created_at,
+         b.id   AS book_id,
          b.isbn,
          COALESCE(o.title, b.title)                          AS title,
          COALESCE(o.author, b.author)                        AS author,
@@ -403,6 +477,36 @@ const SCAN_SELECT = `
   JOIN books b ON s.book_id = b.id
   LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id`
 
+async function fetchCustomFields(db: D1Database, userId: number, bookIds: number[]) {
+  if (!bookIds.length) return { defs: [], valuesByBook: new Map<number, Map<number, string | null>>() }
+  const placeholders = bookIds.map(() => '?').join(',')
+  const [{ results: defs }, { results: rawValues }] = await Promise.all([
+    db.prepare('SELECT id, field_name AS name, field_type AS type FROM user_field_definitions WHERE user_id = ? ORDER BY sort_order')
+      .bind(userId).all<{ id: number; name: string; type: string }>(),
+    db.prepare(`SELECT book_id, field_def_id, field_value FROM book_custom_fields WHERE user_id = ? AND book_id IN (${placeholders})`)
+      .bind(userId, ...bookIds).all<{ book_id: number; field_def_id: number; field_value: string | null }>(),
+  ])
+  const valuesByBook = new Map<number, Map<number, string | null>>()
+  for (const v of rawValues) {
+    if (!valuesByBook.has(v.book_id)) valuesByBook.set(v.book_id, new Map())
+    valuesByBook.get(v.book_id)!.set(v.field_def_id, v.field_value)
+  }
+  return { defs, valuesByBook }
+}
+
+function attachCustomFields(
+  row: any,
+  defs: { id: number; name: string; type: string }[],
+  valuesByBook: Map<number, Map<number, string | null>>,
+) {
+  const { book_id, ...rest } = row
+  const bookVals = valuesByBook.get(book_id)
+  return {
+    ...rest,
+    custom_field_values: defs.map(d => ({ field_def_id: d.id, value: bookVals?.get(d.id) ?? null })),
+  }
+}
+
 const VALID_STATUSES = ['unread', 'reading', 'read'] as const
 
 app.get('/api/scans', async (c) => {
@@ -414,9 +518,12 @@ app.get('/api/scans', async (c) => {
   const { results } = await c.env.DB
     .prepare(`${SCAN_SELECT} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
     .bind(userId, limit, offset)
-    .all()
+    .all<any>()
 
-  return c.json(results)
+  const bookIds = results.map((r: any) => r.book_id as number)
+  const { defs, valuesByBook } = await fetchCustomFields(c.env.DB, userId, bookIds)
+
+  return c.json(results.map(row => attachCustomFields(row, defs, valuesByBook)))
 })
 
 app.post('/api/scans', async (c) => {
@@ -434,18 +541,27 @@ app.post('/api/scans', async (c) => {
 
   if (!book) {
     // Book wasn't looked up beforehand (e.g. drained from offline queue) — fetch and cache now.
+    // fetchBookMetadata never throws (catches internally), so ?? handles the null/undefined case.
     const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY) ?? {
       title: null, author: null, cover_url: null, language: null,
       publish_date: null, number_of_pages_median: null, description: null, publisher: null,
     }
-    await db
-      .prepare('INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(isbn, bookData.title, bookData.author, bookData.cover_url, bookData.language, bookData.publish_date, bookData.number_of_pages_median, bookData.description, bookData.publisher)
-      .run()
+    try {
+      await db
+        .prepare('INSERT OR IGNORE INTO books (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(isbn, bookData.title, bookData.author, bookData.cover_url, bookData.language, bookData.publish_date, bookData.number_of_pages_median, bookData.description, bookData.publisher)
+        .run()
+    } catch (e) {
+      console.error('[POST /api/scans] book resolution failed:', e)
+      return c.json({ error: 'Failed to resolve book entry' }, 500)
+    }
     book = await db.prepare('SELECT id FROM books WHERE isbn = ?').bind(isbn).first<{ id: number }>()
   }
 
-  if (!book) return c.json({ error: 'Failed to resolve book entry' }, 500)
+  if (!book) {
+    console.error('[POST /api/scans] book still null after insert, isbn:', isbn)
+    return c.json({ error: 'Failed to resolve book entry' }, 500)
+  }
 
   let result
   try {
@@ -457,15 +573,18 @@ app.post('/api/scans', async (c) => {
     if (e.message?.includes('UNIQUE constraint failed')) {
       return c.json({ error: 'Already in your list' }, 409)
     }
+    console.error('[POST /api/scans] scan INSERT failed:', e)
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
   const saved = await db
     .prepare(`${SCAN_SELECT} WHERE s.id = ?`)
     .bind(result.meta.last_row_id)
-    .first()
+    .first<any>()
 
-  return c.json(saved, 201)
+  const { defs, valuesByBook } = await fetchCustomFields(db, userId, saved ? [saved.book_id] : [])
+
+  return c.json(saved ? attachCustomFields(saved, defs, valuesByBook) : {}, 201)
 })
 
 app.patch('/api/scans/:id', async (c) => {
@@ -499,6 +618,7 @@ app.delete('/api/scans/:id', async (c) => {
 
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?').bind(userId, scan.book_id),
+    c.env.DB.prepare('DELETE FROM book_custom_fields WHERE user_id = ? AND book_id = ?').bind(userId, scan.book_id),
     c.env.DB.prepare('DELETE FROM scans WHERE id = ? AND user_id = ?').bind(scanId, userId),
   ])
 

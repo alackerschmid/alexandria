@@ -110,7 +110,8 @@
     "filter_reading": "Reading",
     "filter_read": "Read",
     "empty_heading": "Nothing here yet.",
-    "empty_body": "Tap the button below to scan your first barcode.",
+    "empty_scan_cta": "Scan your first book",
+    "scan": "Scan",
     "no_results": "No books match this filter.",
     "load_more": "Load more",
     "remove_heading": "Remove book?",
@@ -142,7 +143,13 @@
     "remove": "Remove",
     "edit_save": "Save changes",
     "edit_cancel": "Cancel",
-    "edit_error": "Failed to save changes"
+    "edit_error": "Failed to save changes",
+    "custom_fields": "Custom fields",
+    "custom_field_name": "Field name",
+    "custom_field_value": "Value",
+    "custom_field_delete": "Delete field from all books",
+    "custom_field_confirm_delete": "Click again to confirm — removes field from all books",
+    "add_custom_field": "Add field"
   },
   "scanner": {
     "saved_count": "{n} saved",
