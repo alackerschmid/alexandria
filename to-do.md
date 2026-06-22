@@ -1,5 +1,6 @@
 # TO DO
 
+- fix linux / windows npm stuff
 - lookup for un-enriched books -> how
 - handle exotic editions (ie infinite jest 30th anniversary edition)
 - make author / genre / ... clickable
