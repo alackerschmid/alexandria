@@ -965,7 +965,7 @@ watch(scanState, (state) => {
 
 function onIsbnInput(e: Event) {
   const input = e.target as HTMLInputElement;
-  const filtered = input.value.replace(/[^0-9xX]/g, "").slice(0, 13);
+  const filtered = input.value.replace(/[^0-9x]/gi, "").slice(0, 13);
   input.value = filtered;
   manualIsbn.value = filtered;
 }

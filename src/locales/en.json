@@ -2,7 +2,7 @@
   "app_name": "The Library of Alexandria",
   "footer": {
     "latest_update": "Latest update: {hash}",
-    "data_credit": "Book data provided via OpenLibrary & Google Books",
+    "data_credit": "Book data provided via Wikidata, OpenLibrary & Google Books",
     "privacy": "Privacy"
   },
   "auth": {
@@ -105,6 +105,9 @@
     "sort_title_asc": "Title A–Z",
     "sort_title_desc": "Title Z–A",
     "sort_author_asc": "Author A–Z",
+    "group_by_series": "Group by series",
+    "standalone": "Standalone",
+    "series_completeness": "{owned} of {total}",
     "filter_all": "All",
     "filter_unread": "Unread",
     "filter_reading": "Reading",
@@ -149,7 +152,26 @@
     "custom_field_value": "Value",
     "custom_field_delete": "Delete field from all books",
     "custom_field_confirm_delete": "Click again to confirm — removes field from all books",
-    "add_custom_field": "Add field"
+    "add_custom_field": "Add field",
+    "series": "Series",
+    "series_position": "Book {n}",
+    "other_editions": "Other editions",
+    "edition_in_library": "In your library",
+    "standalone": "Standalone",
+    "enrichment_pending": "Series lookup pending",
+    "enrichment_failed": "Series lookup failed",
+    "original_pub_date": "First published",
+    "genres": "Genres",
+    "awards": "Awards",
+    "nominations": "Nominated for"
+  },
+  "series": {
+    "section": "Series",
+    "back": "Back",
+    "owned_count": "{owned} of {total} owned",
+    "missing": "Not in your library",
+    "untitled": "Untitled",
+    "not_found": "Series not found."
   },
   "scanner": {
     "saved_count": "{n} saved",

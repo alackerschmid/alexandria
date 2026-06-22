@@ -44,7 +44,7 @@
           Third parties
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Book metadata (title, author, cover) is fetched from Google Books API
+          Book metadata is fetched from Wikidata, Google Books API
           and OpenLibrary using the provided ISBN. No other identifying
           information is sent to these services.
         </p>

@@ -2,7 +2,7 @@
   "app_name": "Die Bibliothek von Alexandria",
   "footer": {
     "latest_update": "Letztes Update: {hash}",
-    "data_credit": "Buchdaten bereitgestellt von OpenLibrary & Google Books",
+    "data_credit": "Buchdaten bereitgestellt von Wikidata, OpenLibrary & Google Books",
     "privacy": "Datenschutz"
   },
   "auth": {
@@ -105,6 +105,9 @@
     "sort_title_asc": "Titel A–Z",
     "sort_title_desc": "Titel Z–A",
     "sort_author_asc": "Autor A–Z",
+    "group_by_series": "Nach Reihe gruppieren",
+    "standalone": "Einzelbände",
+    "series_completeness": "{owned} von {total}",
     "filter_all": "Alle",
     "filter_unread": "Ungelesen",
     "filter_reading": "Lese ich",
@@ -149,7 +152,26 @@
     "custom_field_value": "Wert",
     "custom_field_delete": "Feld aus allen Büchern löschen",
     "custom_field_confirm_delete": "Nochmal klicken zum Bestätigen – entfernt das Feld aus allen Büchern",
-    "add_custom_field": "Feld hinzufügen"
+    "add_custom_field": "Feld hinzufügen",
+    "series": "Reihe",
+    "series_position": "Band {n}",
+    "other_editions": "Weitere Ausgaben",
+    "edition_in_library": "In deiner Bibliothek",
+    "standalone": "Einzelband",
+    "enrichment_pending": "Reihenanreicherung ausstehend",
+    "enrichment_failed": "Reihenanreicherung fehlgeschlagen",
+    "original_pub_date": "Erstveröffentlichung",
+    "genres": "Genres",
+    "awards": "Auszeichnungen",
+    "nominations": "Nominierungen"
+  },
+  "series": {
+    "section": "Reihe",
+    "back": "Zurück",
+    "owned_count": "{owned} von {total} im Besitz",
+    "missing": "Nicht in deiner Bibliothek",
+    "untitled": "Ohne Titel",
+    "not_found": "Reihe nicht gefunden."
   },
   "scanner": {
     "saved_count": "{n} gespeichert",

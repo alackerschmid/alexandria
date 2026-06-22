@@ -76,6 +76,16 @@ export interface Book {
   number_of_pages_median?: number | null;
   description?: string | null;
   publisher?: string | null;
+  work_id?: number | null;
+  series_id?: number | null;
+  series_name?: string | null;
+  series_ordinal?: number | null;
+  series_total?: number | null;
+  enrichment_status?: 'pending' | 'done' | 'failed';
+  genres?: string[] | null;
+  original_pub_date?: string | null;
+  awards?: string[] | null;
+  nominations?: string[] | null;
 }
 
 </script>
@@ -83,13 +93,12 @@ export interface Book {
 <script lang="ts" setup>
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
+import { BCP47 } from "@/plugins/i18n";
 
 defineProps<{ book: Book }>();
 defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
 const { t, locale } = useI18n();
-
-const BCP47: Record<string, string> = { de: "de-DE", en: "en-GB" };
 
 function formatDatePart(isoString: string, loc: string): string {
   return new Date(isoString.replace(" ", "T")).toLocaleDateString(BCP47[loc] ?? "en-GB", {

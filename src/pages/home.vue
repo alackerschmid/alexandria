@@ -144,7 +144,7 @@
       :guest="false"
       @cycle-status="cycleStatus(selectedBook!)"
       @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
-      @refreshed="(updated) => Object.assign(selectedBook!, updated)"
+      @refreshed="handleRefreshed"
     />
 
     <!-- ── Delete confirmation ─────────────────────────────────────────────────── -->
@@ -338,7 +338,7 @@ function timeAgo(dateStr: string): string {
 
 const fetchBooks = async () => {
   try {
-    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE}&offset=0&sort=date_desc`)
+    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE}&offset=0&sort=date_desc&locale=${localeStore.locale}`)
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Failed to fetch')
     serverBooks.value = data
@@ -372,6 +372,13 @@ const cycleStatus = async (book: Book) => {
 }
 
 const openDetail      = (book: Book) => { selectedBook.value = book; detailDialog.value = true }
+function handleRefreshed(updated: Partial<Book>) {
+  if (!selectedBook.value) return;
+  const merged = { ...selectedBook.value, ...updated } as Book;
+  selectedBook.value = merged;
+  const idx = serverBooks.value.findIndex(b => b.id === merged.id);
+  if (idx !== -1) serverBooks.value[idx] = merged;
+}
 const openDeleteDialog = (book: Book) => { bookToDelete.value = book; deleteDialog.value  = true }
 
 const confirmDelete = async () => {

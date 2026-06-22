@@ -42,6 +42,11 @@ const router = createRouter({
       component: Login,
     },
     {
+      path: '/series/:id',
+      name: 'series',
+      component: () => import('@/pages/series.vue'),
+    },
+    {
       path: '/privacy',
       name: 'privacy',
       component: () => import('@/pages/privacy.vue'),
@@ -60,7 +65,7 @@ router.beforeEach((to) => {
     if (to.name === 'home')  return { name: 'dashboard' }
     if (to.name === 'login') return { name: 'dashboard' }
   }
-  if (!authStore.isAuthenticated && to.name === 'dashboard') {
+  if (!authStore.isAuthenticated && (to.name === 'dashboard' || to.name === 'series')) {
     return { name: 'home' }
   }
 })

@@ -162,6 +162,18 @@
             >
               <v-icon icon="mdi-view-grid" size="18" />
             </button>
+            <button
+              class="transition-colors"
+              :class="
+                viewMode === 'series'
+                  ? 'text-text-primary'
+                  : 'text-text-secondary/40 hover:text-text-secondary'
+              "
+              :title="$t('library.group_by_series')"
+              @click="viewMode = 'series'"
+            >
+              <v-icon icon="mdi-bookshelf" size="18" />
+            </button>
           </div>
         </div>
       </div>
@@ -358,6 +370,61 @@
         </div>
       </div>
 
+      <!-- Series view -->
+      <div
+        v-else-if="displayedBooks.length > 0 && viewMode === 'series'"
+        class="pb-28"
+      >
+        <div v-for="group in seriesGroups" :key="group.id ?? 'standalone'">
+          <div
+            class="flex items-baseline justify-between gap-3 px-6 md:px-10 py-3 border-b border-charcoal-border"
+          >
+            <button
+              v-if="group.id != null"
+              class="font-heading text-lg font-bold text-text-primary hover:text-orange-neon transition-colors text-left min-w-0 truncate"
+              @click="$router.push(`/series/${group.id}`)"
+            >
+              {{ group.name }}
+            </button>
+            <span
+              v-else
+              class="font-heading text-lg font-bold text-text-secondary min-w-0 truncate"
+            >
+              {{ group.name }}
+            </span>
+            <span
+              v-if="group.total != null"
+              class="text-[10px] text-text-secondary/60 tracking-[0.15em] uppercase font-mono shrink-0"
+            >
+              {{ $t("library.series_completeness", { owned: group.books.length, total: group.total }) }}
+            </span>
+          </div>
+          <div
+            class="md:px-10 md:grid md:grid-cols-2 xl:grid-cols-3 md:gap-x-10 mb-4"
+          >
+            <BookCard
+              v-for="book in group.books"
+              :key="book.id"
+              :book="book"
+              @cycle-status="cycleStatus(book)"
+              @delete="openDeleteDialog(book)"
+              @select="openDetail(book)"
+            />
+          </div>
+        </div>
+
+        <!-- Load more -->
+        <div v-if="hasMore" class="flex justify-center py-8">
+          <button
+            class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
+            :class="{ 'opacity-50 pointer-events-none': loadingMore }"
+            @click="loadMore"
+          >
+            {{ loadingMore ? "—" : $t("library.load_more") }}
+          </button>
+        </div>
+      </div>
+
       <!-- Footer -->
       <AppFooter class="mt-auto" />
     </div>
@@ -387,7 +454,7 @@
         detailDialog = false;
         openDeleteDialog(selectedBook!);
       "
-      @refreshed="(updated) => Object.assign(selectedBook!, updated)"
+      @refreshed="handleRefreshed"
     />
 
     <!-- Delete confirmation dialog -->
@@ -446,6 +513,7 @@ import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
+import { useLocaleStore } from "@/stores/locale";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import AppHeader from "@/components/AppHeader.vue";
@@ -461,6 +529,7 @@ const { t } = useI18n();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const guestStore = useGuestStore();
+const localeStore = useLocaleStore();
 const { apiFetch } = useApi();
 const fieldDefsStore = useFieldDefsStore();
 
@@ -495,7 +564,7 @@ const error = ref("");
 const search = ref("");
 const sortBy = ref<SortOption>("date_desc");
 const filterStatus = ref<StatusFilter>("all");
-const viewMode = ref<"list" | "tile">("tile");
+const viewMode = ref<"list" | "tile" | "series">("tile");
 const pageSize = ref(10);
 const currentPage = ref(1);
 
@@ -538,11 +607,11 @@ const displayedBooks = computed(() => {
   return [...list].sort((a, b) => {
     switch (sortBy.value) {
       case "title_asc":
-        return (a.title ?? a.isbn).localeCompare(b.title ?? b.isbn);
+        return (a.title ?? a.isbn).localeCompare(b.title ?? b.isbn, localeStore.locale);
       case "title_desc":
-        return (b.title ?? b.isbn).localeCompare(a.title ?? a.isbn);
+        return (b.title ?? b.isbn).localeCompare(a.title ?? a.isbn, localeStore.locale);
       case "author_asc":
-        return (a.author ?? "").localeCompare(b.author ?? "");
+        return (a.author ?? "").localeCompare(b.author ?? "", localeStore.locale);
       case "date_asc":
         return a.created_at.localeCompare(b.created_at);
       default:
@@ -571,6 +640,52 @@ watch([displayedBooks, pageSize], () => {
   currentPage.value = 1;
 });
 
+// ── Series grouping ─────────────────────────────────────────────────────────
+
+interface SeriesGroup {
+  id: number | null;
+  name: string;
+  total: number | null;
+  books: Book[];
+}
+
+// Groups the (already filtered/searched) books by series; ordered within a group by
+// ordinal, with the "Standalone" bucket last. Completeness counts loaded books.
+const seriesGroups = computed<SeriesGroup[]>(() => {
+  const map = new Map<number, SeriesGroup>();
+  const standalone: Book[] = [];
+
+  for (const b of displayedBooks.value) {
+    if (b.series_id != null) {
+      let g = map.get(b.series_id);
+      if (!g) {
+        g = {
+          id: b.series_id,
+          name: b.series_name || t("detail.series"),
+          total: b.series_total ?? null,
+          books: [],
+        };
+        map.set(b.series_id, g);
+      }
+      g.books.push(b);
+    } else {
+      standalone.push(b);
+    }
+  }
+
+  const groups = [...map.values()];
+  for (const g of groups) {
+    g.books.sort(
+      (a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity),
+    );
+  }
+  groups.sort((a, b) => a.name.localeCompare(b.name, localeStore.locale));
+  if (standalone.length) {
+    groups.push({ id: null, name: t("library.standalone"), total: null, books: standalone });
+  }
+  return groups;
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function statusDotColor(s: ReadStatus): string {
@@ -583,7 +698,9 @@ function statusDotColor(s: ReadStatus): string {
 
 const fetchBooks = async (offset = 0) => {
   try {
-    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE}&offset=${offset}`);
+    const res = await apiFetch(
+      `/api/scans?limit=${PAGE_SIZE}&offset=${offset}&locale=${localeStore.locale}`,
+    );
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch books");
 
@@ -642,6 +759,14 @@ const openDetail = (book: Book) => {
   detailDialog.value = true;
 };
 
+function handleRefreshed(updated: Partial<Book>) {
+  if (!selectedBook.value) return;
+  const merged = { ...selectedBook.value, ...updated } as Book;
+  selectedBook.value = merged;
+  const idx = serverBooks.value.findIndex(b => b.id === merged.id);
+  if (idx !== -1) serverBooks.value[idx] = merged;
+}
+
 const openDeleteDialog = (book: Book) => {
   bookToDelete.value = book;
   deleteDialog.value = true;
@@ -683,4 +808,12 @@ onMounted(async () => {
     loading.value = false;
   }
 });
+
+// Re-fetch so server-side localized series names update when the locale changes.
+watch(
+  () => localeStore.locale,
+  () => {
+    if (authStore.isAuthenticated) fetchBooks();
+  },
+);
 </script>
