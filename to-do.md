@@ -1,18 +1,32 @@
 # TO DO
 
+## bugfixes
 - fix linux / windows npm stuff
-- lookup for un-enriched books -> how
-- handle exotic editions (ie infinite jest 30th anniversary edition)
-- make author / genre / ... clickable
-- fine grained search that auto picks up keywords
-- pagination for grid view
-- move custom- field management (& hiding default fields) to settings page
-- add expanded view for details page
-- simplify index.ts
-- add proper error handling for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
-- favicon
+- add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
+- favicon not properly displayed on ios (shown as default vue icon)
 
-# prio 2
+## batch 1: making series more robust
+- distinguish main / side series (ie dresden files)
+- properly handle multilingual series
+- handle exotic editions (ie infinite jest 30th anniversary edition)
+
+# batch 2: improve library view
+- sorting needs to depend on group by
+- some sort of automated lookup for un-enriched books
+- backfill of enrichment for series items (directly on queue?)
+- pagination for grid view
+- add expanded view for details page
+- idea: show preceding / following books to the left / right, slightly transparent, blurred or os (on mobile, give icons to cycle left / right)
+
+# batch 3: improve custom field handling and management
+- move custom-field management (& hiding default fields) to settings page
+- incorporate custom fields into search prefix options, groupby and so on
+- allow custom fields to have types (int, str, literal, date)
+
+# big picture items
+- mass import books before prod go-live to prep enrichment (-> how?)
+- redo home page
+- redo home / scan / library flow for guests
 - bulk editing / import
 - incorporate CV page
 - export all design elements as npm package

@@ -28,8 +28,15 @@
               {{ book.title || book.isbn }}
               <span v-if="book.title_overridden" class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0" />
             </div>
-            <div class="text-sm text-text-secondary mb-2">
-              {{ book.author || $t('book.unknown_author') }}
+            <button
+              v-if="book.author"
+              class="text-sm text-text-secondary mb-2 hover:text-orange-neon transition-colors text-left"
+              @click="filterBy('author', book.author)"
+            >
+              {{ book.author }}
+            </button>
+            <div v-else class="text-sm text-text-secondary mb-2">
+              {{ $t('book.unknown_author') }}
             </div>
             <button
               v-if="book.series_id"
@@ -150,16 +157,20 @@
                 {{ $t('detail.publisher') }}
                 <span v-if="book.publisher_overridden" class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0" />
               </div>
-              <div class="text-xs text-text-primary">{{ book.publisher }}</div>
+              <button
+                class="text-xs text-text-primary hover:text-orange-neon transition-colors text-left"
+                @click="filterBy('publisher', book.publisher!)"
+              >{{ book.publisher }}</button>
             </div>
             <div v-if="book.language">
               <div class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 flex items-center gap-1">
                 {{ $t('detail.language') }}
                 <span v-if="book.language_overridden" class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0" />
               </div>
-              <div class="text-xs text-text-primary uppercase">
-                {{ book.language }}
-              </div>
+              <button
+                class="text-xs text-text-primary uppercase hover:text-orange-neon transition-colors text-left"
+                @click="filterBy('language', book.language!)"
+              >{{ book.language }}</button>
             </div>
             <div v-if="book.publish_date">
               <div class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 flex items-center gap-1">
@@ -197,7 +208,15 @@
               <div class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1">
                 {{ $t('detail.genres') }}
               </div>
-              <div class="text-xs text-text-primary">{{ book.genres!.join(' · ') }}</div>
+              <div class="flex flex-wrap gap-1.5">
+                <template v-for="(genre, idx) in book.genres" :key="genre">
+                  <button
+                    class="text-xs text-text-primary hover:text-orange-neon transition-colors"
+                    @click="filterBy('genre', genre)"
+                  >{{ genre }}</button>
+                  <span v-if="idx < book.genres!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                </template>
+              </div>
             </div>
           </div>
 
@@ -622,6 +641,11 @@ function goToSeries() {
   if (props.book.series_id == null) return;
   emit("update:modelValue", false);
   router.push(`/series/${props.book.series_id}`);
+}
+
+function filterBy(field: 'author' | 'genre' | 'publisher' | 'language', value: string) {
+  emit("update:modelValue", false);
+  router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
 }
 
 watch(

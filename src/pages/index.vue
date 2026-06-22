@@ -21,6 +21,15 @@
       </div>
     </div>
 
+    <!-- Scrim (sits above page content, below search dropdown) -->
+    <v-fade-transition>
+      <div
+        v-if="searchFocused"
+        class="fixed inset-0 z-[50] bg-black/30 backdrop-blur-[2px] cursor-default"
+        @click="searchFocused = false"
+      />
+    </v-fade-transition>
+
     <!-- ── Search hero ──────────────────────────────────────────────────────── -->
     <div class="border-b border-charcoal-border px-6 md:px-10 pt-10 md:pt-14 pb-8 md:pb-10 flex flex-col items-center shrink-0">
       <!-- Heading + count -->
@@ -33,46 +42,116 @@
         </span>
       </div>
 
-      <!-- Search input -->
+      <!-- Search wrapper (lifts above scrim when focused) -->
       <div
-        class="w-full max-w-2xl flex items-center gap-3 border border-charcoal-border bg-charcoal-light px-5 py-4 cursor-text"
-        @click="searchRef?.focus()"
+        class="w-full max-w-2xl relative"
+        :class="searchFocused ? 'z-[60]' : 'z-[2]'"
       >
-        <span class="text-orange-neon text-lg leading-none shrink-0">⌕</span>
-        <input
-          ref="searchRef"
-          v-model="search"
-          type="search"
-          :placeholder="$t('library.search_placeholder_e')"
-          class="flex-1 bg-transparent text-text-primary text-sm md:text-base outline-none placeholder:text-text-secondary/40 min-w-0"
-          @keydown.escape="search = ''"
-        />
-        <button
-          v-if="search"
-          class="text-text-secondary hover:text-text-primary transition-colors shrink-0"
-          @click.stop="search = ''"
+        <!-- Bar -->
+        <div
+          class="flex items-center gap-3 border bg-charcoal-light px-5 py-4 cursor-text transition-all duration-200"
+          :class="searchFocused
+            ? 'border-orange-neon -translate-y-[3px] scale-[1.012] shadow-[0_22px_55px_-14px_rgba(0,0,0,0.6)] ring-4 ring-orange-neon/10'
+            : 'border-charcoal-border'"
+          @click="onSearchBarClick"
         >
-          <v-icon icon="mdi-close" size="15" />
-        </button>
-        <kbd
-          v-else
-          class="hidden md:flex shrink-0 font-mono text-[10px] text-text-secondary/40 tracking-[0.1em] border border-charcoal-border px-1.5 py-0.5 leading-none"
-        >
-          ⌘K
-        </kbd>
-      </div>
+          <span class="text-orange-neon text-lg leading-none shrink-0">⌕</span>
+          <!-- Input + highlight overlay wrapper -->
+          <div class="flex-1 min-w-0 relative">
+            <!-- Highlight overlay (behind the input, synced via translateX on scroll) -->
+            <div aria-hidden="true" class="absolute inset-0 flex items-center pointer-events-none overflow-hidden">
+              <div
+                class="whitespace-pre text-sm md:text-base"
+                :style="{ transform: `translateX(-${searchScrollLeft}px)` }"
+              >
+                <template v-for="(seg, i) in searchSegments" :key="i">
+                  <span v-if="seg.role === 'key'" class="text-orange-neon">{{ seg.text }}</span>
+                  <span v-else class="text-text-primary">{{ seg.text }}</span>
+                </template>
+              </div>
+            </div>
+            <!-- Actual input — text is transparent so overlay shows through -->
+            <input
+              ref="searchRef"
+              v-model="search"
+              type="text"
+              :placeholder="$t('library.search_placeholder_smart')"
+              class="relative w-full bg-transparent text-transparent caret-text-primary text-sm md:text-base outline-none placeholder:text-text-secondary/40"
+              :class="{ 'token-selecting': tokenSelecting }"
+              @focus="searchFocused = true"
+              @blur="onSearchBlur"
+              @keydown="onSearchKeydown"
+              @mousedown="tokenSelecting = false"
+              @scroll="searchScrollLeft = ($event.target as HTMLInputElement).scrollLeft"
+            />
+          </div>
+          <button
+            v-if="search"
+            class="text-text-secondary hover:text-text-primary transition-colors shrink-0"
+            @mousedown.prevent
+            @click.stop="search = ''; searchRef?.focus()"
+          >
+            <v-icon icon="mdi-close" size="15" />
+          </button>
+          <kbd
+            v-else
+            class="hidden md:flex shrink-0 font-mono text-[10px] text-text-secondary/40 tracking-[0.1em] border border-charcoal-border px-1.5 py-0.5 leading-none"
+          >
+            ⌘K
+          </kbd>
+        </div>
 
-      <!-- Hint chips -->
-      <div class="flex items-center gap-2 mt-3 w-full max-w-2xl flex-wrap">
-        <span class="font-mono text-[10px] text-text-secondary/50 tracking-[0.04em]">{{ $t('library.search_try') }}</span>
-        <button
-          v-for="hint in SEARCH_HINTS"
-          :key="hint"
-          class="font-mono text-[10px] text-text-secondary border border-charcoal-border px-2 py-1 hover:text-text-primary hover:border-charcoal-border/70 transition-colors"
-          @click="search = hint"
-        >
-          {{ hint }}
-        </button>
+        <!-- Autocomplete dropdown -->
+        <v-slide-y-transition>
+          <div
+            v-if="searchFocused"
+            class="absolute top-full left-0 right-0 mt-3 bg-charcoal-light border border-charcoal-border shadow-[0_28px_64px_-18px_rgba(0,0,0,0.85)] overflow-hidden"
+            @mousedown.prevent
+          >
+            <!-- Header -->
+            <div class="flex items-center justify-between px-[18px] py-[13px] border-b border-charcoal-border/60">
+              <span class="font-mono text-[10px] tracking-[0.2em] uppercase text-text-secondary">{{ dropdownHeading }}</span>
+              <span class="font-mono text-[10px] text-text-secondary/50">{{ $t('library.filtered_count', { n: baseFiltered.length }) }}</span>
+            </div>
+
+            <!-- Prefix chips (empty state) -->
+            <div v-if="suggestions[0]?.kind === 'prefix'" class="flex flex-wrap gap-2.5 px-[18px] py-4 border-b border-charcoal-border/40">
+              <button
+                v-for="(s, i) in suggestions"
+                :key="s.token"
+                class="flex items-center gap-2 px-3 py-2 border bg-charcoal-light transition-colors"
+                :class="i === activeIndex ? 'border-orange-neon text-orange-neon' : 'border-charcoal-border hover:border-orange-neon'"
+                @mousedown.prevent="applySuggestion(s)"
+              >
+                <v-icon :icon="s.icon" size="12" color="primary" />
+                <span class="font-mono text-[13px] text-orange-neon tracking-[0.02em]">{{ s.token }}</span>
+              </button>
+            </div>
+
+            <!-- Stacked suggestion rows -->
+            <template v-else>
+              <div
+                v-for="(s, i) in suggestions"
+                :key="i"
+                class="flex items-center gap-3.5 px-[18px] py-[13px] cursor-pointer border-b border-charcoal-border/30 transition-colors"
+                :class="i === activeIndex ? 'bg-white/[0.04]' : 'hover:bg-white/[0.03]'"
+                @mousedown.prevent="applySuggestion(s)"
+              >
+                <v-icon :icon="s.icon" size="13" :color="s.kind === 'book' ? undefined : 'primary'" class="shrink-0 w-[22px]" :class="s.kind === 'book' ? 'text-text-secondary/50' : ''" />
+                <span v-if="s.kind !== 'book'" class="font-mono text-[13px] text-orange-neon tracking-[0.02em] shrink-0 whitespace-nowrap">{{ s.token }}:</span>
+                <span class="text-[14px] text-text-primary min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ s.label }}</span>
+                <span class="ml-auto text-[11px] text-text-secondary/70 shrink-0 whitespace-nowrap">{{ s.typeLabel }}</span>
+              </div>
+            </template>
+
+            <!-- Footer -->
+            <div class="flex items-center gap-4 px-[18px] py-[11px] bg-charcoal/80">
+              <span class="font-mono text-[10px] text-text-secondary/60"><span class="text-text-secondary">↑↓ ⇥</span> {{ $t('library.kbd_navigate') }}</span>
+              <span class="font-mono text-[10px] text-text-secondary/60"><span class="text-text-secondary">↵</span> {{ $t('library.kbd_select') }}</span>
+              <span class="font-mono text-[10px] text-text-secondary/60"><span class="text-text-secondary">esc</span> {{ $t('library.kbd_dismiss') }}</span>
+            </div>
+          </div>
+        </v-slide-y-transition>
       </div>
 
       <!-- Active parsed-token pills -->
@@ -305,6 +384,7 @@
 <script lang="ts" setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useGuestStore } from '@/stores/guest'
@@ -321,6 +401,8 @@ import AppSelect from '@/components/AppSelect.vue'
 import BookDetail from '@/components/BookDetail.vue'
 
 const { t } = useI18n()
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const guestStore = useGuestStore()
@@ -357,32 +439,313 @@ const errorMessage = ref('')
 const PAGE_SIZE = 200
 let fetchSeq = 0
 
-// ── Search hint chips ─────────────────────────────────────────────────────────
+// ── Autocomplete ──────────────────────────────────────────────────────────────
 
-const SEARCH_HINTS = computed(() => [
-  t('library.search_hint_status_reading'),
-  t('library.search_hint_status_unread'),
-  t('library.search_hint_award'),
-  t('library.search_hint_series'),
+const searchFocused = ref(false)
+const activeIndex = ref(-1)
+const tokenSelecting = ref(false)
+
+type SuggestionPrefix = { kind: 'prefix'; token: string; icon: string; label: string; typeLabel: string }
+type SuggestionFacet  = { kind: 'facet';  token: string; icon: string; label: string; typeLabel: string }
+type SuggestionBook   = { kind: 'book';   book: Book;    icon: string; label: string; typeLabel: string; token: '' }
+type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook
+
+const PREFIXES = computed(() => [
+  { key: 'status', icon: 'mdi-progress-check',  label: t('library.filter_status') },
+  { key: 'author', icon: 'mdi-account-outline', label: t('library.group_author')  },
+  { key: 'genre',  icon: 'mdi-tag-outline',     label: t('library.group_genre')   },
+  { key: 'series', icon: 'mdi-bookshelf',       label: t('library.group_series')  },
 ])
 
+function quote(v: string) { return /\s/.test(v) ? `"${v}"` : v }
+
+// ── Search highlight overlay ───────────────────────────────────────────────────
+
+const KNOWN_KEYS_SET = new Set(['status', 'author', 'genre', 'series', 'publisher', 'language', 'award'])
+const HIGHLIGHT_PATTERN = `((?:${[...KNOWN_KEYS_SET].join('|')}):)("(?:[^"]*)"?|\\S*)`
+
+interface SearchSegment { text: string; role: 'key' | 'plain' }
+
+// Keys whose handling doesn't affect the current text selection
+const PRESERVES_SELECTION = new Set(['ArrowUp', 'ArrowDown', 'Tab', 'Escape', 'Shift', 'Control', 'Alt', 'Meta'])
+
+const searchSegments = computed<SearchSegment[]>(() => {
+  const s = search.value
+  if (!s) return []
+  const re = new RegExp(HIGHLIGHT_PATTERN, 'gi')
+  const segments: SearchSegment[] = []
+  let last = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s)) !== null) {
+    const [, key, val] = m
+    if (m.index > last) segments.push({ text: s.slice(last, m.index), role: 'plain' })
+    segments.push({ text: key, role: 'key' })
+    if (val) segments.push({ text: val, role: 'plain' })
+    last = re.lastIndex
+  }
+  if (last < s.length) segments.push({ text: s.slice(last), role: 'plain' })
+  return segments
+})
+
+const searchScrollLeft = ref(0)
+
+const facetEntries = computed<SuggestionFacet[]>(() => {
+  const pool = baseFiltered.value
+  const statusLabel = t('library.filter_status')
+  const authorLabel = t('library.group_author')
+  const genreLabel  = t('library.group_genre')
+  const seriesLabel = t('library.group_series')
+
+  const entries: SuggestionFacet[] = []
+
+  // Only suggest statuses that actually exist in the current filtered pool
+  const presentStatuses = new Set(pool.map(b => b.status))
+  for (const [val, label] of [['read', t('book.read')], ['reading', t('book.reading')], ['unread', t('book.unread')]] as [string, string][]) {
+    if (presentStatuses.has(val as 'read' | 'reading' | 'unread'))
+      entries.push({ kind: 'facet', token: `status:${val}`, icon: 'mdi-progress-check', label, typeLabel: statusLabel })
+  }
+
+  const seen = new Set<string>()
+  for (const b of pool) {
+    if (b.author) {
+      const k = b.author.toLowerCase()
+      if (!seen.has(`author:${k}`)) { seen.add(`author:${k}`); entries.push({ kind: 'facet', token: `author:${quote(b.author)}`, icon: 'mdi-account-outline', label: b.author, typeLabel: authorLabel }) }
+    }
+    for (const g of b.genres ?? []) {
+      const k = g.toLowerCase()
+      if (!seen.has(`genre:${k}`)) { seen.add(`genre:${k}`); entries.push({ kind: 'facet', token: `genre:${quote(g)}`, icon: 'mdi-tag-outline', label: g, typeLabel: genreLabel }) }
+    }
+    if (b.series_name) {
+      const k = b.series_name.toLowerCase()
+      if (!seen.has(`series:${k}`)) { seen.add(`series:${k}`); entries.push({ kind: 'facet', token: `series:${quote(b.series_name)}`, icon: 'mdi-bookshelf', label: b.series_name, typeLabel: seriesLabel }) }
+    }
+  }
+  return entries
+})
+
+// The trailing chunk the user is currently typing (after the last complete token)
+const searchFragment = computed(() => {
+  const s = search.value
+  // Find where the last *committed* structured token ends (key:value with a non-empty value).
+  // Everything after that is the trailing fragment the user is still building (may contain spaces).
+  const re = /\S+:"[^"]*"|"[^"]*"|\S+/g
+  let lastStructuredEnd = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(s)) !== null) {
+    const part = m[0]
+    const colonIdx = part.indexOf(':')
+    if (colonIdx > 0) {
+      const key = part.slice(0, colonIdx).toLowerCase()
+      const val = part.slice(colonIdx + 1).replace(/^"|"$/g, '').toLowerCase()
+      if (KNOWN_KEYS_SET.has(key) && val) lastStructuredEnd = m.index + part.length
+    }
+  }
+  return s.slice(lastStructuredEnd).replace(/^\s+/, '')
+})
+
+const suggestions = computed<Suggestion[]>(() => {
+  const frag = searchFragment.value.trim().toLowerCase()
+  const titleLabel = t('library.facet_title')
+
+  if (!frag) {
+    // Empty/idle → show prefix chips
+    return PREFIXES.value.map(p => ({
+      kind: 'prefix' as const,
+      token: `${p.key}:`,
+      icon: p.icon,
+      label: p.label,
+      typeLabel: p.label,
+    }))
+  }
+
+  const results: Suggestion[] = []
+  const MAX = 8
+
+  // Typing inside a known key: eg "author:pyn"
+  const matchedPrefix = PREFIXES.value.find(p => frag.startsWith(`${p.key}:`))
+  if (matchedPrefix) {
+    const val = frag.slice(matchedPrefix.key.length + 1)
+    const filtered = facetEntries.value
+      .filter(e => e.token.startsWith(`${matchedPrefix.key}:`) && e.label.toLowerCase().includes(val))
+      .slice(0, MAX)
+    return filtered.length
+      ? filtered
+      : [{ kind: 'facet', token: `${matchedPrefix.key}:`, icon: matchedPrefix.icon, label: t('library.search_no_matches'), typeLabel: matchedPrefix.label }]
+  }
+
+  // Free typing: match prefix words, facet values, and titles
+  for (const p of PREFIXES.value) {
+    if (p.key.startsWith(frag) || p.label.toLowerCase().startsWith(frag)) {
+      results.push({ kind: 'prefix', token: `${p.key}:`, icon: p.icon, label: p.label, typeLabel: p.label })
+    }
+  }
+  for (const e of facetEntries.value) {
+    if (e.label.toLowerCase().includes(frag)) {
+      results.push(e)
+      if (results.length >= MAX) break
+    }
+  }
+  if (results.length < MAX) {
+    for (const b of baseFiltered.value) {
+      if (b.title?.toLowerCase().includes(frag)) {
+        results.push({ kind: 'book', book: b, icon: 'mdi-book-outline', label: b.title!, typeLabel: titleLabel, token: '' })
+        if (results.length >= MAX) break
+      }
+    }
+  }
+  return results
+})
+
+const dropdownHeading = computed(() => {
+  const frag = searchFragment.value.trim().toLowerCase()
+  if (!frag) return t('library.search_refine')
+  const pm = PREFIXES.value.find(p => frag.startsWith(`${p.key}:`))
+  if (pm) return t('library.search_values', { facet: pm.label })
+  return t('library.search_matches')
+})
+
+function applySuggestion(s: Suggestion) {
+  if (s.kind === 'book') {
+    openDetail(s.book)
+    searchFocused.value = false
+    return
+  }
+  const head = search.value.slice(0, search.value.length - searchFragment.value.length)
+  if (s.kind === 'prefix') {
+    search.value = head + s.token
+  } else {
+    search.value = head + s.token + ' '
+  }
+  activeIndex.value = -1
+  searchRef.value?.focus()
+}
+
+function onSearchBarClick() {
+  searchRef.value?.focus()
+  searchFocused.value = true
+}
+
+function onSearchBlur() {
+  searchFocused.value = false
+}
+
+function onSearchKeydown(e: KeyboardEvent) {
+  if (!PRESERVES_SELECTION.has(e.key)) tokenSelecting.value = false
+  if (e.key === 'Backspace') {
+    const el = searchRef.value
+    if (!el) return
+    const { selectionStart, selectionEnd } = el
+    // If there's already a selection, let the browser delete it
+    if (selectionStart !== selectionEnd) return
+    const cursor = selectionStart ?? 0
+    // Only intercept when cursor is at the very end
+    if (cursor !== search.value.length) return
+    const s = search.value
+    // Skip trailing spaces to figure out what to select
+    let contentEnd = cursor
+    while (contentEnd > 0 && s[contentEnd - 1] === ' ') contentEnd--
+    if (contentEnd === 0) return
+    const char = s[contentEnd - 1]
+    let selectStart: number
+    if (char === '"') {
+      // Closing quote → select the quoted value ("…")
+      const openQuote = s.lastIndexOf('"', contentEnd - 2)
+      selectStart = openQuote !== -1 ? openQuote : contentEnd - 1
+    } else if (char === ':') {
+      // Bare key: → select the entire key:
+      let i = contentEnd - 1
+      while (i > 0 && s[i - 1] !== ' ') i--
+      selectStart = i
+    } else {
+      // Plain text or unquoted value — find the chunk since the last space
+      const lastSpace = s.lastIndexOf(' ', contentEnd - 1)
+      const chunkStart = lastSpace === -1 ? 0 : lastSpace + 1
+      const chunk = s.slice(chunkStart, contentEnd)
+      const colonIdx = chunk.indexOf(':')
+      if (colonIdx > 0 && KNOWN_KEYS_SET.has(chunk.slice(0, colonIdx).toLowerCase())) {
+        // Known key:value → select only the value, leaving key: intact
+        selectStart = chunkStart + colonIdx + 1
+      } else {
+        // Plain word or unknown token → select the whole chunk
+        selectStart = chunkStart
+      }
+    }
+    e.preventDefault()
+    el.setSelectionRange(selectStart, cursor)
+    tokenSelecting.value = true
+    return
+  }
+  if (e.key === 'Escape') {
+    if (searchFocused.value) { searchFocused.value = false; e.preventDefault() }
+    else { search.value = '' }
+    return
+  }
+  if (e.key === 'Tab') {
+    if (!suggestions.value.length) return
+    e.preventDefault()
+    const len = suggestions.value.length
+    activeIndex.value = e.shiftKey
+      ? (activeIndex.value <= 0 ? len - 1 : activeIndex.value - 1)
+      : (activeIndex.value >= len - 1 ? 0 : activeIndex.value + 1)
+    return
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    const len = suggestions.value.length
+    activeIndex.value = activeIndex.value >= len - 1 ? 0 : activeIndex.value + 1
+    return
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    const len = suggestions.value.length
+    activeIndex.value = activeIndex.value <= 0 ? len - 1 : activeIndex.value - 1
+    return
+  }
+  if (e.key === 'Enter') {
+    if (activeIndex.value >= 0 && suggestions.value[activeIndex.value]) {
+      e.preventDefault()
+      applySuggestion(suggestions.value[activeIndex.value])
+    } else {
+      searchFocused.value = false
+    }
+    return
+  }
+  // Reset keyboard nav on any other key
+  activeIndex.value = -1
+}
+
+// Reset activeIndex when suggestions change
+watch(suggestions, () => { activeIndex.value = -1 })
+
 // ── Parsed search ─────────────────────────────────────────────────────────────
-// Supports structured tokens: status:X  series:X  award:X
+// Supports structured tokens: status:X  series:X  award:X  author:"X"  genre:"X"  publisher:"X"  language:X
 // Remaining words are free-text matched against title/author/isbn.
+
+function tokenize(s: string): string[] {
+  return s.match(/\S+:"[^"]*"|"[^"]*"|\S+/g) ?? []
+}
 
 interface ParsedSearch {
   status: ReadStatus | null
   series: string
   award: string
+  author: string
+  genre: string
+  publisher: string
+  language: string
   text: string
   tokens: string[]   // the structured parts only, for the active-token pills
 }
 
 const parsedSearch = computed<ParsedSearch>(() => {
-  const parts = search.value.trim().split(/\s+/).filter(Boolean)
+  const parts = tokenize(search.value.trim())
   let status: ReadStatus | null = null
   let series = ''
   let award = ''
+  let author = ''
+  let genre = ''
+  let publisher = ''
+  let language = ''
   const remaining: string[] = []
   const tokens: string[] = []
 
@@ -390,7 +753,8 @@ const parsedSearch = computed<ParsedSearch>(() => {
     const colon = part.indexOf(':')
     if (colon === -1) { remaining.push(part); continue }
     const key = part.slice(0, colon).toLowerCase()
-    const val = part.slice(colon + 1).toLowerCase()
+    const rawVal = part.slice(colon + 1)
+    const val = rawVal.replace(/^"|"$/g, '').toLowerCase()
     if (key === 'status' && (val === 'unread' || val === 'reading' || val === 'read')) {
       status = val as ReadStatus
       tokens.push(part.toLowerCase())
@@ -400,17 +764,30 @@ const parsedSearch = computed<ParsedSearch>(() => {
     } else if (key === 'award' && val) {
       award = val
       tokens.push(part.toLowerCase())
-    } else {
+    } else if (key === 'author' && val) {
+      author = val
+      tokens.push(part)
+    } else if (key === 'genre' && val) {
+      genre = val
+      tokens.push(part)
+    } else if (key === 'publisher' && val) {
+      publisher = val
+      tokens.push(part)
+    } else if (key === 'language' && val) {
+      language = val
+      tokens.push(part)
+    } else if (!KNOWN_KEYS_SET.has(key)) {
       remaining.push(part)
     }
+    // Known key with no/invalid value (in-progress token like "status:") — silently ignored
   }
 
-  return { status, series, award, text: remaining.join(' ').toLowerCase(), tokens }
+  return { status, series, award, author, genre, publisher, language, text: remaining.join(' ').toLowerCase(), tokens }
 })
 
 function removeToken(token: string) {
   const lower = token.toLowerCase()
-  search.value = search.value.trim().split(/\s+/).filter(p => p.toLowerCase() !== lower).join(' ')
+  search.value = tokenize(search.value.trim()).filter(p => p.toLowerCase() !== lower).join(' ')
 }
 
 // ── Computed ──────────────────────────────────────────────────────────────────
@@ -421,7 +798,7 @@ const allBooks = computed<Book[]>(() =>
 
 // Pure filter — no sort. Used by groupedBooks series branch (sorted within groups by ordinal).
 const baseFiltered = computed<Book[]>(() => {
-  const { status, series, award, text } = parsedSearch.value
+  const { status, series, award, author, genre, publisher, language, text } = parsedSearch.value
   let list = allBooks.value
 
   if (status) {
@@ -435,6 +812,18 @@ const baseFiltered = computed<Book[]>(() => {
       b.awards?.some(a => a.toLowerCase().includes(award)) ||
       b.nominations?.some(n => n.toLowerCase().includes(award)),
     )
+  }
+  if (author) {
+    list = list.filter(b => b.author?.toLowerCase().includes(author))
+  }
+  if (genre) {
+    list = list.filter(b => b.genres?.some(g => g.toLowerCase().includes(genre)))
+  }
+  if (publisher) {
+    list = list.filter(b => b.publisher?.toLowerCase().includes(publisher))
+  }
+  if (language) {
+    list = list.filter(b => b.language?.toLowerCase().includes(language))
   }
   if (text) {
     list = list.filter(b =>
@@ -676,6 +1065,22 @@ const confirmDelete = async () => {
   }
 }
 
+// ── URL ↔ search sync ─────────────────────────────────────────────────────────
+
+// Sync search from URL query param — runs on mount and whenever the route changes
+// (handles clicking a filter while already on the library page)
+watch(() => route.query.q, (q) => {
+  const val = typeof q === 'string' ? q : ''
+  if (val !== search.value) search.value = val
+}, { immediate: true })
+
+// Keep URL in sync as search changes (e.g. user types in the search box)
+watch(search, (val) => {
+  const current = typeof route.query.q === 'string' ? route.query.q : ''
+  if (val === current) return
+  router.replace({ query: val ? { q: val } : {} })
+})
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 onMounted(async () => {
@@ -693,3 +1098,10 @@ watch(() => localeStore.locale, async () => {
   loading.value = false
 })
 </script>
+
+<style scoped>
+/* Orange selection highlight when a whole token was selected via backspace */
+input.token-selecting::selection {
+  background-color: rgba(255, 102, 0, 0.35);
+}
+</style>
