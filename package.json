@@ -50,6 +50,7 @@
   "overrides": {
     "unplugin-fonts": {
       "vite": "^8.0.0"
-    }
+    },
+    "@eslint/js": "^9.0.0"
   }
 }
