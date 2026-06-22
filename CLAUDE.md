@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## General instructions
+
+1. Ask, don't assume. If something is unclear, ask before writing a single line. Never make silent assumptions about intent, architecture, or requirements. When running unattended, pick the most reasonable interpretation, proceed, and record the assumption rather than blocking.
+
+2. Implement the simplest solution for simple problems, better solutions for harder problems. Do not over-engineer or add flexibility that isn't needed yet. 
+
+3. Don't touch unrelated code but please do surface bad code or design smells you discover with me so we can address them as a separate issue.
+
+4. Flag uncertainty explicitly. If you're unsure about something, see point 1 above. If it makes sense to do so, conduct a small, localised and low-risk experiment and bring the hypothesis and results to me to discuss. Confidence without certainty causes more damage than admitting a gap.
+
+5. I'm always open to ideas on better ways to do things. Please don't hesitate to suggest a better way, or one that has long lasting impact over a tactical change. If what we are trying to do is similar to settled science or industry practice, let me know. We don’t have to reinvent the wheel. 
+
 ## Commands
 
 ### Frontend (root)
@@ -149,6 +161,8 @@ There is no cron sweeper — the only retry path is the user manually triggering
 
 ### Styling system
 
+Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
+
 Tailwind for layout/spacing, Vuetify components for interactive elements. Do not mix — use Tailwind classes on plain HTML, Vuetify props on `<v-*>` components.
 
 **Tailwind tokens** (defined in `src/styles/tailwind.css`, theme-aware via CSS variables):
@@ -166,3 +180,6 @@ Tailwind for layout/spacing, Vuetify components for interactive elements. Do not
 
 ### i18n
 All user-visible strings must go through `$t()` / `t()`. Add new strings to both `src/locales/en.json` and `src/locales/de.json`. The `useLocaleStore` store handles locale persistence and updates `i18n.global.locale` reactively. `STATUS_CONFIG` objects in `BookCard` and `BookDetail` are `computed` so labels update on locale change.
+
+## Verification
+Always run type-checks after code edits and verify they pass before considering a task complete.

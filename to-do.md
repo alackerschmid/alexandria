@@ -3,6 +3,7 @@
 - lookup for un-enriched books -> how
 - handle exotic editions (ie infinite jest 30th anniversary edition)
 - make author / genre / ... clickable
+- fine grained search that auto picks up keywords
 - pagination for grid view
 - move custom- field management (& hiding default fields) to settings page
 - add expanded view for details page
