@@ -473,7 +473,7 @@
 </template>
 
 <script lang="ts">
-import type { Book } from "./BookCard.vue";
+import type { Book } from "@/types/book";
 
 export interface CustomFieldValue {
   field_def_id: number;

@@ -232,7 +232,7 @@ import { useLocaleStore } from '@/stores/locale'
 import AppHeader from '@/components/AppHeader.vue'
 import BookDetail from '@/components/BookDetail.vue'
 import AppToast from '@/components/AppToast.vue'
-import type { Book, ReadStatus } from '@/components/BookCard.vue'
+import type { Book, ReadStatus } from '@/types/book'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
 

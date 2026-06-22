@@ -786,7 +786,7 @@ import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useApi } from "@/composables/useApi";
-import type { ReadStatus } from "@/components/BookCard.vue";
+import type { ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
 

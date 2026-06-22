@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Book, ReadStatus } from '@/components/BookCard.vue'
+import type { Book, ReadStatus } from '@/types/book'
 
 const STORAGE_KEY = 'guest_scans'
 const MAX_GUEST_SCANS = 3
