@@ -51,7 +51,7 @@ books.get('/lookup', async (c) => {
 
   const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY)
   if (!book) return c.json({ error: 'Book not found' }, 404)
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id))
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY))
   return c.json(book)
 })
 
@@ -91,8 +91,9 @@ books.post('/refresh', async (c) => {
 
   if (!book) return c.json({ error: 'Book not found' }, 404)
   if (!book.work_id) await linkWork(c.env.DB, book)
-  // Manual refresh doubles as the enrichment retry path (no cron sweeper): force a re-check.
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, true))
+  // force=true clears series_checked_at so enrichment re-runs even if already done.
+  // Unlike the cron sweeper (which only picks up series_checked_at IS NULL), this forces any work.
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, true, c.env.GOOGLE_BOOKS_API_KEY))
   return c.json(book)
 })
 

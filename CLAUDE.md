@@ -44,12 +44,12 @@ cd worker && npx wrangler d1 migrations apply bookscan --remote
 
 ## Architecture
 
-Two separate deployments:
+Two separate deployments, both triggered by pushing to `main`:
 
 - **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main`
-- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed manually via `wrangler deploy`
+- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed automatically on push to `main` via Cloudflare's Git integration (Workers Builds). `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys.
 
-Pushing to GitHub only redeploys the frontend. The worker must be manually deployed after any changes to `worker/`.
+Pushing to GitHub redeploys both the frontend and the worker. Note: deploys do **not** run D1 migrations — apply those manually with `npx wrangler d1 migrations apply bookscan --remote` (see below).
 
 ### Frontend (`src/`)
 Vue 3 + TypeScript + Vite.
@@ -127,7 +127,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **FRBR-style works/series model** (added in migrations 0009–0011):
 
-**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at`, `genres` (JSON), `original_pub_date` (year string), `awards` (JSON), `nominations` (JSON)
+**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at`, `enrichment_attempts` (failure count, caps cron-sweeper retries), `genres` (JSON), `original_pub_date` (year string), `awards` (JSON), `nominations` (JSON)
 
 **`authors`** — `normalized_name` (UNIQUE dedup key), `name` (display form), `wikidata_qid`
 
@@ -149,15 +149,19 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 ### Wikidata enrichment pipeline
 
-Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWork(...))` after lookups and scans. It is intentionally skipped for guest lookups to avoid anonymous SPARQL load.
+Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWork(...))` after lookups and scans, and in the background via a cron sweeper (see below). It is intentionally skipped for guest lookups to avoid anonymous SPARQL load.
 
-**Flow:** `enrichWork(db, workId)` → `fetchBookInfo(title, author)` (SPARQL: title+author search → work QID + primary series) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as placeholder works with `wikidata_qid`) → `fetchWorkDetails(workQid)` (genres, original pub date, awards, nominations) → writes back to `works`.
+**Flow:** `enrichWork(db, workId, force?, apiKey?)` →
+- If the work **already has a `wikidata_qid`** (a series-member placeholder, or a force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
+- Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → work QID + primary series) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as placeholder works with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
+
+Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an identified work with no linked edition it resolves a representative ISBN from Wikidata (`P747` editions → `P212`/`P957`, preferring en/de), fetches metadata via `fetchBookMetadata`, and inserts a `books` row with `work_id` set directly. This gives unowned/placeholder works a cover so the series-completeness view renders them. Finally it writes genres/pub date/awards/nominations back to `works`.
 
 **Merge logic:** If `fetchBookInfo` returns a QID already assigned to another work row, `mergeWorks` repoints all `books`, `work_authors`, and `work_series` rows from the duplicate onto the canonical row and deletes the duplicate.
 
-**Negative caching:** `series_checked_at` non-NULL means the work was already enriched (success or "not found"). `enrichment_failed_at` non-NULL means the last SPARQL run threw (network/timeout); these can be retried via `POST /api/books/refresh`. `force=true` clears `series_checked_at` to re-run even for already-enriched works.
+**Negative caching:** `series_checked_at` non-NULL means the work was already enriched (success or "not found"). `enrichment_failed_at` non-NULL means the last SPARQL run threw (network/timeout); `enrichment_attempts` counts failures. `force=true` clears `series_checked_at` to re-run even for already-enriched works.
 
-There is no cron sweeper — the only retry path is the user manually triggering `POST /api/books/refresh`.
+**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/2 * * * *` in `wrangler.toml`): each tick enriches a bounded batch (5) of un-enriched works — `series_checked_at IS NULL` (placeholders never touched + never-run works), plus failed works retried with backoff (`enrichment_failed_at` older than 30 min, capped at `enrichment_attempts < 5`). Runs sequentially with a short delay to stay polite to Wikidata. This is what fills in an entire series after any one of its books is scanned; `POST /api/books/refresh` remains the manual force-retry path.
 
 ### Styling system
 

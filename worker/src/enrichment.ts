@@ -1,5 +1,5 @@
 import type { WorkRow, WorkDetails, SeriesHit } from './types'
-import { splitAuthors } from './editions'
+import { splitAuthors, fetchBookMetadata } from './editions'
 
 const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql'
 const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)'
@@ -172,6 +172,51 @@ async function fetchSeriesMembers(seriesQid: string): Promise<{ qid: string; ord
   return out
 }
 
+// A representative ISBN for a work QID (via its editions), preferring en/de editions.
+// Many works have no edition/ISBN data in Wikidata — returns null in that case.
+async function fetchWorkEditionIsbn(workQid: string): Promise<string | null> {
+  if (!/^Q\d+$/.test(workQid)) return null
+  const query = `
+    SELECT ?isbn ?lang WHERE {
+      wd:${workQid} wdt:P747 ?ed.
+      { ?ed wdt:P212 ?isbn } UNION { ?ed wdt:P957 ?isbn }
+      OPTIONAL { ?ed wdt:P407 ?l. ?l wdt:P218 ?lang }
+    } LIMIT 20`.trim()
+  const rows = await runSparql(query)
+  if (!rows.length) return null
+  const clean = (v: string | undefined) => (v ?? '').replace(/[-\s]/g, '')
+  // Prefer an English, then German, then any edition.
+  const pick = rows.find(r => r.lang?.value === 'en')
+    ?? rows.find(r => r.lang?.value === 'de')
+    ?? rows[0]
+  const isbn = clean(pick.isbn?.value)
+  return isbn || null
+}
+
+// Gives a placeholder/unowned work a real books row (with cover) so the series view shows it.
+// No-op when the work already has a linked edition (a scanned book), to avoid duplicates.
+async function backfillEdition(db: D1Database, workId: number, workQid: string, apiKey?: string): Promise<void> {
+  const existing = await db.prepare('SELECT 1 FROM books WHERE work_id = ? LIMIT 1').bind(workId).first()
+  if (existing) return
+
+  const isbn = await fetchWorkEditionIsbn(workQid)
+  if (!isbn) { console.log(`[backfillEdition] no ISBN for ${workQid} (work ${workId})`); return }
+
+  const meta = await fetchBookMetadata(isbn, apiKey)
+  if (!meta) { console.log(`[backfillEdition] no metadata for ISBN ${isbn}`); return }
+
+  // Set work_id directly (bypasses linkWork, which would mint a competing match-key work).
+  await db.prepare(`INSERT OR IGNORE INTO books
+      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher, work_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .bind(isbn, meta.title, meta.author, meta.cover_url, meta.language,
+          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher, workId)
+    .run()
+  // If the ISBN row already existed unlinked (e.g. an earlier guest lookup), adopt it.
+  await db.prepare('UPDATE books SET work_id = ? WHERE isbn = ? AND work_id IS NULL').bind(workId, isbn).run()
+  console.log(`[backfillEdition] linked ISBN ${isbn} to work ${workId}`)
+}
+
 // Repoint everything from a match-key work onto the canonical QID work, then drop the dup.
 async function mergeWorks(db: D1Database, from: number, into: number): Promise<void> {
   await db.batch([
@@ -213,7 +258,8 @@ async function populateSeriesMembers(db: D1Database, seriesId: number, seriesQid
 }
 
 // Best-effort enrichment for a work. Negative-cached via works.series_checked_at unless force=true.
-export async function enrichWork(db: D1Database, workId: number, force = false): Promise<void> {
+// apiKey (Google Books) is only needed when backfilling a cover edition for an unowned work.
+export async function enrichWork(db: D1Database, workId: number, force = false, apiKey?: string): Promise<void> {
   let canonicalId = workId
   try {
     console.log(`[enrichWork] start workId=${workId} force=${force}`)
@@ -223,45 +269,58 @@ export async function enrichWork(db: D1Database, workId: number, force = false):
     // Clear series_checked_at so the enrichment poll sees 'pending' while we run SPARQL.
     if (force) await db.prepare('UPDATE works SET series_checked_at = NULL WHERE id = ?').bind(workId).run()
 
-    const ed = await db.prepare('SELECT title, author FROM books WHERE work_id = ? AND title IS NOT NULL LIMIT 1')
-      .bind(workId)
-      .first<{ title: string | null; author: string | null }>()
-    const title = ed?.title ?? w.canonical_title
-    if (!title) {
-      console.warn(`[enrichWork] no title for work ${workId}, marking done`)
-      await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL WHERE id = ?").bind(workId).run()
-      return
-    }
-    const author = splitAuthors(ed?.author ?? null)[0] ?? ''
-    console.log(`[enrichWork] looking up: title="${title}" author="${author}"`)
-
-    const info = await fetchBookInfo(title, author)
-    console.log(`[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? 'null'} seriesQid=${info?.series?.seriesQid ?? 'null'}`)
-
+    let workQid: string | null = w.wikidata_qid
     let details: WorkDetails | null = null
-    if (info?.workQid) {
-      const existing = await db.prepare('SELECT id FROM works WHERE wikidata_qid = ? AND id != ?')
-        .bind(info.workQid, workId)
-        .first<{ id: number }>()
-      if (existing) {
-        console.log(`[enrichWork] QID ${info.workQid} already on work ${existing.id}, merging ${workId} → ${existing.id}`)
-        await mergeWorks(db, workId, existing.id)
-        canonicalId = existing.id
-      } else {
-        console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
-        await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
-      }
 
-      if (info.series) {
-        console.log(`[enrichWork] upserting series ${info.series.seriesQid} for work ${canonicalId}`)
-        const seriesId = await upsertSeries(db, canonicalId, info.series)
-        console.log(`[enrichWork] seriesId=${seriesId}`)
-        if (seriesId) await populateSeriesMembers(db, seriesId, info.series.seriesQid)
-      }
-      details = await fetchWorkDetails(info.workQid)
+    if (workQid) {
+      // QID-first (placeholder series member, or force-refresh of an already-identified work):
+      // we already know the work, so skip the title search, merge, and series repopulation.
+      console.log(`[enrichWork] work ${workId} already has QID ${workQid}, fetching details directly`)
+      details = await fetchWorkDetails(workQid)
     } else {
-      console.log(`[enrichWork] no Wikidata match found, will store nulls`)
+      const ed = await db.prepare('SELECT title, author FROM books WHERE work_id = ? AND title IS NOT NULL LIMIT 1')
+        .bind(workId)
+        .first<{ title: string | null; author: string | null }>()
+      const title = ed?.title ?? w.canonical_title
+      if (!title) {
+        console.warn(`[enrichWork] no title for work ${workId}, marking done`)
+        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL WHERE id = ?").bind(workId).run()
+        return
+      }
+      const author = splitAuthors(ed?.author ?? null)[0] ?? ''
+      console.log(`[enrichWork] looking up: title="${title}" author="${author}"`)
+
+      const info = await fetchBookInfo(title, author)
+      console.log(`[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? 'null'} seriesQid=${info?.series?.seriesQid ?? 'null'}`)
+
+      if (info?.workQid) {
+        workQid = info.workQid
+        const existing = await db.prepare('SELECT id FROM works WHERE wikidata_qid = ? AND id != ?')
+          .bind(info.workQid, workId)
+          .first<{ id: number }>()
+        if (existing) {
+          console.log(`[enrichWork] QID ${info.workQid} already on work ${existing.id}, merging ${workId} → ${existing.id}`)
+          await mergeWorks(db, workId, existing.id)
+          canonicalId = existing.id
+        } else {
+          console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
+          await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
+        }
+
+        if (info.series) {
+          console.log(`[enrichWork] upserting series ${info.series.seriesQid} for work ${canonicalId}`)
+          const seriesId = await upsertSeries(db, canonicalId, info.series)
+          console.log(`[enrichWork] seriesId=${seriesId}`)
+          if (seriesId) await populateSeriesMembers(db, seriesId, info.series.seriesQid)
+        }
+        details = await fetchWorkDetails(info.workQid)
+      } else {
+        console.log(`[enrichWork] no Wikidata match found, will store nulls`)
+      }
     }
+
+    // Give unowned/placeholder works a real edition (cover + ISBN) so the series view renders them.
+    if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
 
     const genresJson   = details?.genres.length      ? JSON.stringify(details.genres)      : null
     const awardsJson   = details?.awards.length       ? JSON.stringify(details.awards)      : null
@@ -271,9 +330,10 @@ export async function enrichWork(db: D1Database, workId: number, force = false):
 
     const updateResult = await db.prepare(`
       UPDATE works SET
-        series_checked_at  = datetime('now'),
+        series_checked_at    = datetime('now'),
         enrichment_failed_at = NULL,
-        genres             = ?,
+        enrichment_attempts  = 0,
+        genres               = ?,
         original_pub_date  = ?,
         awards             = ?,
         nominations        = ?
@@ -284,7 +344,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false):
   } catch (e) {
     console.error('[enrichWork] failed for work', workId, e)
     try {
-      await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now') WHERE id = ?").bind(canonicalId).run()
+      await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(canonicalId).run()
     } catch {}
   }
 }

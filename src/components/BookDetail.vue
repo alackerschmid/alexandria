@@ -54,6 +54,7 @@
               {{ $t('detail.standalone') }}
             </span>
             <button
+              v-if="!readonly"
               class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase transition-colors"
               :class="STATUS_CONFIG[book.status].class"
               @click="$emit('cycle-status')"
@@ -62,7 +63,7 @@
               {{ STATUS_CONFIG[book.status].label }}
             </button>
             <div
-              v-if="!guest && book.enrichment_status && book.enrichment_status !== 'done'"
+              v-if="!guest && !readonly && book.enrichment_status && book.enrichment_status !== 'done'"
               class="flex items-center gap-1 mt-1.5"
               :class="book.enrichment_status === 'failed' ? 'text-error/60' : 'text-text-secondary/30'"
             >
@@ -91,14 +92,14 @@
         <div class="flex items-center gap-1 shrink-0">
           <template v-if="!editing">
             <button
-              v-if="!guest"
+              v-if="!guest && !readonly"
               class="text-text-secondary/50 hover:text-text-secondary transition-colors"
               @click="enterEdit"
             >
               <v-icon icon="mdi-pencil-outline" size="18" />
             </button>
             <button
-              v-if="!guest"
+              v-if="!guest && !readonly"
               class="transition-colors disabled:opacity-30"
               :class="enrichmentButtonClass"
               :disabled="refreshing"
@@ -280,7 +281,7 @@
 
           <!-- Custom fields -->
           <div
-            v-if="fieldDefsStore.defs.length"
+            v-if="!readonly && fieldDefsStore.defs.length"
             class="border-t border-charcoal-border px-6 py-4 grid grid-cols-2 gap-y-4"
           >
             <div v-for="def in fieldDefsStore.defs" :key="def.id">
@@ -456,6 +457,7 @@
             {{ $t('detail.close') }}
           </v-btn>
           <v-btn
+            v-if="!readonly"
             variant="text"
             size="small"
             color="error"
@@ -532,6 +534,7 @@ const props = defineProps<{
   modelValue: boolean;
   book: BookWithOverrides;
   guest?: boolean;
+  readonly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -618,7 +621,7 @@ async function pollOnce(attempt: number) {
 
 function startEnrichmentPoll() {
   clearPoll();
-  if (props.guest || props.book.enrichment_status !== 'pending') return;
+  if (props.guest || props.readonly || props.book.enrichment_status !== 'pending') return;
   pollTimer = setTimeout(() => pollOnce(0), POLL_DELAYS[0]);
 }
 

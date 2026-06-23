@@ -56,7 +56,7 @@ scans.post('/', async (c) => {
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(db, book.work_id))
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(db, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY))
 
   const saved = await db
     .prepare(`${SCAN_SELECT} WHERE s.id = ?`)

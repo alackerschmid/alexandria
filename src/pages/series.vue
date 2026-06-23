@@ -42,8 +42,12 @@
         <div
           v-for="entry in entries"
           :key="entry.work_id"
-          class="flex items-center gap-4 px-6 md:px-10 py-3 border-b border-charcoal-border"
-          :class="entry.owned ? '' : 'opacity-50'"
+          class="flex items-center gap-4 px-6 md:px-10 py-3 border-b border-charcoal-border transition-colors"
+          :class="[
+            entry.owned ? '' : 'opacity-50',
+            entry.scan_id || entry.isbn ? 'cursor-pointer hover:bg-white/[0.02]' : '',
+          ]"
+          @click="openEntry(entry)"
         >
           <div
             class="w-6 shrink-0 text-center font-mono text-xs"
@@ -79,6 +83,14 @@
       <AppFooter class="mt-auto" />
     </div>
   </div>
+
+  <BookDetail
+    v-if="detailBook"
+    v-model="detailOpen"
+    :book="detailBook"
+    :readonly="detailReadonly"
+    @update:model-value="v => { detailOpen = v; if (!v) detailBook = null }"
+  />
 </template>
 
 <script lang="ts" setup>
@@ -88,6 +100,9 @@ import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
+import BookDetail from "@/components/BookDetail.vue";
+import type { BookWithOverrides } from "@/components/BookDetail.vue";
+import type { Book } from "@/types/book";
 
 interface SeriesEntry {
   work_id: number;
@@ -113,6 +128,41 @@ const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
 const entries = computed(() => series.value?.entries ?? []);
 const ownedCount = computed(() => entries.value.filter((e) => e.owned).length);
+
+const detailOpen = ref(false);
+const detailBook = ref<BookWithOverrides | null>(null);
+const detailReadonly = ref(false);
+
+async function openEntry(entry: SeriesEntry) {
+  if (entry.scan_id) {
+    const res = await apiFetch(`/api/scans/${entry.scan_id}?locale=${localeStore.locale}`);
+    if (!res.ok) return;
+    detailBook.value = await res.json() as Book;
+    detailReadonly.value = false;
+    detailOpen.value = true;
+  } else if (entry.isbn) {
+    const res = await apiFetch(`/api/books/lookup?isbn=${entry.isbn}`);
+    if (!res.ok) return;
+    const raw = await res.json() as any;
+    detailBook.value = {
+      id: raw.id,
+      isbn: raw.isbn,
+      title: entry.title ?? raw.title,
+      author: raw.author,
+      cover_url: entry.cover_url ?? raw.cover_url,
+      status: 'unread',
+      created_at: raw.fetched_at ?? '',
+      language: raw.language,
+      publish_date: raw.publish_date,
+      number_of_pages_median: raw.number_of_pages_median,
+      description: raw.description,
+      publisher: raw.publisher,
+      work_id: raw.work_id,
+    };
+    detailReadonly.value = true;
+    detailOpen.value = true;
+  }
+}
 
 async function load() {
   loading.value = true;

@@ -12,8 +12,8 @@
 
 # batch 2: improve library view
 - sorting needs to depend on group by
-- some sort of automated lookup for un-enriched books
-- backfill of enrichment for series items (directly on queue?)
+- ~~some sort of automated lookup for un-enriched books~~
+- ~~backfill of enrichment for series items (directly on queue?)~~
 - pagination for grid view
 - add expanded view for details page
 - idea: show preceding / following books to the left / right, slightly transparent, blurred or os (on mobile, give icons to cycle left / right)
@@ -24,6 +24,7 @@
 - allow custom fields to have types (int, str, literal, date)
 
 # big picture items
+- proper versioning / releases / patch notes
 - mass import books before prod go-live to prep enrichment (-> how?)
 - redo home page
 - redo home / scan / library flow for guests
