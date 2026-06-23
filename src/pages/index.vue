@@ -138,7 +138,7 @@
                 @mousedown.prevent="applySuggestion(s)"
               >
                 <v-icon :icon="s.icon" size="13" :color="s.kind === 'book' ? undefined : 'primary'" class="shrink-0 w-[22px]" :class="s.kind === 'book' ? 'text-text-secondary/50' : ''" />
-                <span v-if="s.kind !== 'book'" class="font-mono text-[13px] text-orange-neon tracking-[0.02em] shrink-0 whitespace-nowrap">{{ s.token }}:</span>
+                <!-- <span v-if="s.kind !== 'book'" class="font-mono text-[13px] text-orange-neon tracking-[0.02em] shrink-0 whitespace-nowrap">{{ s.token }}:</span> -->
                 <span class="text-[14px] text-text-primary min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">{{ s.label }}</span>
                 <span class="ml-auto text-[11px] text-text-secondary/70 shrink-0 whitespace-nowrap">{{ s.typeLabel }}</span>
               </div>
@@ -202,7 +202,7 @@
         </div>
 
         <!-- Scan button (desktop) -->
-        <v-btn
+        <!-- <v-btn
           variant="outlined"
           size="small"
           color="primary"
@@ -212,7 +212,7 @@
           @click="$router.push('/scanner')"
         >
           {{ $t('library.scan') }}
-        </v-btn>
+        </v-btn> -->
       </div>
     </div>
 
@@ -268,7 +268,7 @@
         </div>
 
         <!-- 3-column grid -->
-        <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-3.5 px-6 md:px-10 pb-2">
+        <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5 px-6 md:px-10 pb-2">
           <LibraryRowCard
             v-for="book in group.books"
             :key="book.id"
@@ -294,7 +294,7 @@
 
     <!-- ── Tile view ──────────────────────────────────────────────────────────── -->
     <div v-else-if="!loading && viewMode === 'tile'" class="flex-1 px-6 md:px-10 pt-6 pb-28">
-      <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-7 xl:grid-cols-9 gap-3 md:gap-4">
+      <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4">
         <div
           v-for="book in filteredBooks"
           :key="book.id"

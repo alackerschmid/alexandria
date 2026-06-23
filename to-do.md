@@ -4,6 +4,7 @@
 - fix linux / windows npm stuff
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - favicon not properly displayed on ios (shown as default vue icon)
+- proper capitalization for genres
 
 ## batch 1: making series more robust
 - distinguish main / side series (ie dresden files)
