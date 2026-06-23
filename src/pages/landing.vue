@@ -48,7 +48,7 @@
         </h1>
 
         <p
-          class="text-[13px] md:text-base text-text-secondary leading-relaxed max-w-xs md:max-w-sm"
+          class="text-[13px] md:text-base text-text-secondary leading-relaxed max-w-xs md:max-w-lg"
         >
           {{ $t("marketing.body") }}
         </p>

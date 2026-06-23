@@ -9,7 +9,7 @@
     "sign_in_heading": "Sign in.",
     "register_heading": "Create account.",
     "sign_in_subtitle": "Welcome back to your library.",
-    "register_subtitle": "Start cataloguing your collection.",
+    "register_subtitle": "It costs you nothing but time.",
     "email": "Email",
     "password": "Password",
     "sign_in": "Sign in",
@@ -26,7 +26,7 @@
     "limit_body": "Create a free account to save unlimited books.",
     "sign_in": "Sign in",
     "register": "Create account"
-  },
+  },  
   "home": {
     "welcome": "Welcome back",
     "greeting_morning": "Good morning, {name}.",
@@ -63,38 +63,19 @@
   },
   "marketing": {
     "eyebrow": "Personal library catalogue",
-    "heading": "Find out how many books you actually own.",
-    "body": "Just scan a barcode and voilà.",
+    "heading": "Do you know what books you actually own?",
+    "body": "If you also happen to have a penchant for statistics, a lot of books, and a wish to combine those two, you're in the right place.",
     "cta_primary": "Catalogue your library",
     "cta_secondary": "Sign in",
-    "band_heading": "From the book in your hand to your shelf in seconds.",
+    "band_heading": "Just scan a barcode and voilà.",
     "preview_section": "Library",
-    "preview_title": "Your Books.",
+    "preview_title": "This is where your books could be listed.",
     "preview_count": "titles",
-    "preview_more": "…and many more"
+    "preview_more": "...all of them"
   },
-  "landing": {
-    "section": "Home",
-    "heading": "Your Library.",
-    "heading_line1": "Your",
-    "heading_line2": "Library.",
-    "tagline": "Scan. Catalogue. Track.",
-    "start_scanning": "Start scanning",
-    "view_library": "View all books",
-    "stats_books": "Books",
-    "stats_reading": "Reading",
-    "stats_read": "Read",
-    "stats_blurb": "Every book, in one place.",
-    "stats_prose_auth": "Your library holds {n} titles — {read} read, {reading} in progress.",
-    "stats_prose_guest": "Every book you own, in one place.",
-    "stats_prose_empty": "Your library is ready. Scan your first book.",
-    "recent_heading": "Recently added",
-    "empty_heading": "Nothing here yet.",
-    "empty_body": "Tap the button below to scan your first barcode.",
-    "guest_cta_heading": "Your library starts here.",
-    "guest_cta_body": "Scan up to 3 books as a guest, or create a free account for unlimited cataloguing."
-  },
+
   "library": {
+    "empty_body": "No books in your library yet. Scan a book to get started.",
     "section": "Library",
     "heading": "Your Books.",
     "title_singular": "title",

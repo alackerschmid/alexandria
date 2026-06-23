@@ -5,6 +5,7 @@
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - favicon not properly displayed on ios (shown as default vue icon)
 - proper capitalization for genres
+- only display "series lookup pending" if it is actually pending
 
 ## batch 1: making series more robust
 - distinguish main / side series (ie dresden files)
@@ -21,14 +22,18 @@
 
 # batch 3: improve custom field handling and management
 - move custom-field management (& hiding default fields) to settings page
+- add a theme color picker to the settings page
 - incorporate custom fields into search prefix options, groupby and so on
 - allow custom fields to have types (int, str, literal, date)
+
+# lower priority UI improvements
+- sharpen marketing page
+- redo home page (typography styled)
+- redo home / scan / library flow for guests
 
 # big picture items
 - proper versioning / releases / patch notes
 - mass import books before prod go-live to prep enrichment (-> how?)
-- redo home page
-- redo home / scan / library flow for guests
 - bulk editing / import
 - incorporate CV page
 - export all design elements as npm package
