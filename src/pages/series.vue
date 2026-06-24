@@ -23,7 +23,17 @@
           v-if="series"
           class="text-xs text-text-secondary tracking-[0.15em] uppercase mt-3 font-mono"
         >
-          {{ $t("series.owned_count", { owned: ownedCount, total: entries.length }) }}
+          <template v-if="sideEntries.length > 0">
+            {{ $t("series.main_owned_count", { owned: mainOwnedCount, total: mainEntries.length }) }};
+            {{ $t("series.side_owned_count", { owned: sideOwnedCount, total: sideEntries.length }) }}
+            <button
+              class="text-orange-neon hover:underline cursor-pointer"
+              @click="showSideEntries = !showSideEntries"
+            >({{ showSideEntries ? $t("series.hide_side") : $t("series.show_side") }})</button>
+          </template>
+          <template v-else>
+            {{ $t("series.owned_count", { owned: mainOwnedCount, total: mainEntries.length }) }}
+          </template>
         </p>
       </div>
 
@@ -40,7 +50,7 @@
       <!-- Entries -->
       <div v-else class="pb-28">
         <div
-          v-for="entry in entries"
+          v-for="entry in displayedEntries"
           :key="entry.work_id"
           class="flex items-center gap-4 px-6 md:px-10 py-3 border-b border-charcoal-border transition-colors"
           :class="[
@@ -128,8 +138,16 @@ const localeStore = useLocaleStore();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
+const showSideEntries = ref(false);
+
 const entries = computed(() => series.value?.entries ?? []);
-const ownedCount = computed(() => entries.value.filter((e) => e.owned).length);
+const mainEntries = computed(() => entries.value.filter((e) => e.ordinal != null && e.ordinal % 1 === 0));
+const sideEntries = computed(() => entries.value.filter((e) => e.ordinal == null || e.ordinal % 1 !== 0));
+const mainOwnedCount = computed(() => mainEntries.value.filter((e) => e.owned).length);
+const sideOwnedCount = computed(() => sideEntries.value.filter((e) => e.owned).length);
+const displayedEntries = computed(() =>
+  showSideEntries.value ? entries.value : mainEntries.value
+);
 
 const detailOpen = ref(false);
 const detailBook = ref<BookWithOverrides | null>(null);

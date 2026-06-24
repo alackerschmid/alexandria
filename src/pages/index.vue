@@ -183,6 +183,12 @@
           <AppSelect v-model="sortBy" :options="SORT_OPTIONS" :min-width="180" />
         </div>
 
+        <!-- Per page -->
+        <div class="flex items-center gap-3 border-l border-charcoal-border pl-4">
+          <span class="text-[10px] text-text-secondary tracking-[0.22em] uppercase">{{ $t('library.per_page') }}</span>
+          <AppSelect v-model="perPage" :options="PAGE_SIZE_OPTIONS" :min-width="70" />
+        </div>
+
         <!-- View toggle -->
         <div class="flex items-center gap-2 border-l border-charcoal-border pl-4">
           <button
@@ -438,9 +444,16 @@ const errorToast = ref(false)
 const errorMessage = ref('')
 
 const FETCH_LIMIT = 5000
-const LIST_PAGE_SIZE = 24
-const TILE_PAGE_SIZE = 60
 let fetchSeq = 0
+
+const perPage = ref<string>(String(libraryDefaultsStore.defaultPageSize))
+
+const PAGE_SIZE_OPTIONS = [
+  { value: '12', label: '12' },
+  { value: '24', label: '24' },
+  { value: '48', label: '48' },
+  { value: '96', label: '96' },
+]
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
 
@@ -858,7 +871,9 @@ function sortBooks(list: Book[]): Book[] {
 
 const currentPage = ref(1)
 
-const pageSize = computed(() => viewMode.value === 'tile' ? TILE_PAGE_SIZE : LIST_PAGE_SIZE)
+const pageSize = computed(() => parseInt(perPage.value, 10))
+
+watch(perPage, (val) => { libraryDefaultsStore.setPageSize(parseInt(val, 10)) })
 const totalPages = computed(() => Math.max(1, Math.ceil(filteredBooks.value.length / pageSize.value)))
 
 // Flat series-ordered list for the series groupBy pagination source.
@@ -892,7 +907,7 @@ const pagedBooks = computed<Book[]>(() => {
 })
 
 // Reset to page 1 whenever the visible set or view changes.
-watch([filteredBooks, viewMode, sortBy, groupBy], () => { currentPage.value = 1 })
+watch([filteredBooks, viewMode, sortBy, groupBy, perPage], () => { currentPage.value = 1 })
 
 function changePage(p: number) {
   currentPage.value = p

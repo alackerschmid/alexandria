@@ -105,6 +105,7 @@
     "sort_author_asc": "Author A–Z",
     "sort_by": "Sort by",
     "group_by": "Group by",
+    "per_page": "Per page",
     "group_none": "None",
     "group_author": "Author",
     "group_series": "Series",
@@ -183,6 +184,10 @@
     "section": "Series",
     "back": "Back",
     "owned_count": "{owned} of {total} owned",
+    "main_owned_count": "{owned} of {total} main entries owned",
+    "side_owned_count": "{owned} of {total} side entries owned",
+    "show_side": "show",
+    "hide_side": "hide",
     "missing": "Not in your library",
     "untitled": "Untitled",
     "not_found": "Series not found."

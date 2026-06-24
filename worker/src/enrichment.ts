@@ -290,7 +290,14 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       const author = splitAuthors(ed?.author ?? null)[0] ?? ''
       console.log(`[enrichWork] looking up: title="${title}" author="${author}"`)
 
-      const info = await fetchBookInfo(title, author)
+      let info = await fetchBookInfo(title, author)
+      if (!info) {
+        const strippedTitle = title.replace(/\s*[([{].*?[)\]}]/g, '').trim()
+        if (strippedTitle && strippedTitle !== title) {
+          console.log(`[enrichWork] no results for "${title}", retrying with stripped title "${strippedTitle}"`)
+          info = await fetchBookInfo(strippedTitle, author)
+        }
+      }
       console.log(`[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? 'null'} seriesQid=${info?.series?.seriesQid ?? 'null'}`)
 
       if (info?.workQid) {

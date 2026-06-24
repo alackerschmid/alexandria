@@ -104,6 +104,7 @@
     "sort_author_asc": "Autor A–Z",
     "sort_by": "Sortieren nach",
     "group_by": "Gruppieren nach",
+    "per_page": "Pro Seite",
     "group_none": "Keine Gruppierung",
     "group_author": "Autor",
     "group_series": "Reihe",
@@ -183,6 +184,10 @@
     "section": "Reihe",
     "back": "Zurück",
     "owned_count": "{owned} von {total} im Besitz",
+    "main_owned_count": "{owned} von {total} Hauptbänden im Besitz",
+    "side_owned_count": "{owned} von {total} Nebenbänden im Besitz",
+    "show_side": "anzeigen",
+    "hide_side": "ausblenden",
     "missing": "Nicht in deiner Bibliothek",
     "untitled": "Ohne Titel",
     "not_found": "Reihe nicht gefunden."
