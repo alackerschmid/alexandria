@@ -86,7 +86,7 @@
                 <p v-if="passwordError" class="text-[11px]" style="color: rgb(var(--v-theme-error))">{{ passwordError }}</p>
                 <button
                   class="self-start font-mono text-[10px] tracking-[0.14em] uppercase text-text-secondary/60 hover:text-text-secondary transition-colors"
-                  @click="showPasswordForm = false; passwordForm = { current: '', next: '', confirm: '' }; passwordError = ''"
+                  @click="showPasswordForm = false; Object.assign(passwordForm, { current: '', next: '', confirm: '' }); passwordError = ''"
                 >
                   {{ $t('settings.account.hide_password_form') }}
                 </button>
