@@ -352,6 +352,7 @@
       :book="selectedBook"
       :guest="isGuest"
       @cycle-status="cycleStatus(selectedBook!)"
+      @set-status="(s) => setStatus(selectedBook!, s)"
       @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
       @refreshed="handleRefreshed"
     />
@@ -1019,6 +1020,21 @@ const NEXT_STATUS: Record<ReadStatus, ReadStatus> = { unread: 'reading', reading
 const cycleStatus = async (book: Book) => {
   if (isGuest.value) { guestStore.cycleStatus(book.isbn); return }
   const newStatus = NEXT_STATUS[book.status]
+  const prev = book.status
+  book.status = newStatus
+  try {
+    const res = await apiFetch(`/api/scans/${book.id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
+    if (!res.ok) throw new Error()
+  } catch {
+    book.status = prev
+    errorMessage.value = t('library.error_update_status')
+    errorToast.value = true
+  }
+}
+
+const setStatus = async (book: Book, newStatus: ReadStatus) => {
+  if (book.status === newStatus) return
+  if (isGuest.value) { guestStore.setStatus(book.isbn, newStatus); return }
   const prev = book.status
   book.status = newStatus
   try {

@@ -1,5 +1,6 @@
-import type { Bindings } from './types'
+import type { Bindings, BookRow } from './types'
 import { enrichWork } from './enrichment'
+import { linkWork } from './editions'
 
 // How many works to enrich per cron tick. Each work costs ~3-6 external calls, so this stays
 // comfortably under the Workers free-plan ceiling of 50 subrequests per invocation.
@@ -14,6 +15,16 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 // Background sweeper: drains the backlog of un-enriched works — series-member placeholders that
 // were never touched, plus works whose enrichment failed (retried with a cap + backoff).
 export async function scheduled(_event: ScheduledController, env: Bindings, _ctx: ExecutionContext): Promise<void> {
+  const { results: unlinked } = await env.DB
+    .prepare('SELECT * FROM books WHERE work_id IS NULL LIMIT ?')
+    .bind(BATCH_SIZE)
+    .all<BookRow>()
+
+  if (unlinked.length) {
+    console.log(`[sweeper] linking ${unlinked.length} book(s) with no work`)
+    for (const book of unlinked) await linkWork(env.DB, book)
+  }
+
   const { results } = await env.DB.prepare(`
     SELECT id FROM works
     WHERE series_checked_at IS NULL

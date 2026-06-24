@@ -52,6 +52,13 @@ export const useGuestStore = defineStore('guest', () => {
     persist()
   }
 
+  function setStatus(isbn: string, status: ReadStatus) {
+    const scan = scans.value.find(s => s.isbn === isbn)
+    if (!scan) return
+    scan.status = status
+    persist()
+  }
+
   async function syncToAccount(token: string): Promise<void> {
     const toSync = [...scans.value].reverse() // oldest first
     for (const scan of toSync) {
@@ -74,5 +81,5 @@ export const useGuestStore = defineStore('guest', () => {
     localStorage.removeItem(STORAGE_KEY)
   }
 
-  return { scans, remaining, isAtLimit, addScan, removeScan, cycleStatus, syncToAccount, clear }
+  return { scans, remaining, isAtLimit, addScan, removeScan, cycleStatus, setStatus, syncToAccount, clear }
 })

@@ -171,7 +171,12 @@
     "original_pub_date": "First published",
     "genres": "Genres",
     "awards": "Awards",
-    "nominations": "Nominated for"
+    "nominations": "Nominated for",
+    "expand": "Expand",
+    "back_to_card": "Back to card",
+    "edition": "Edition",
+    "your_record": "Your record",
+    "added": "Added"
   },
   "series": {
     "section": "Series",

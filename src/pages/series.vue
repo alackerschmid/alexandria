@@ -90,6 +90,8 @@
     :book="detailBook"
     :readonly="detailReadonly"
     @update:model-value="v => { detailOpen = v; if (!v) detailBook = null }"
+    @cycle-status="cycleDetailStatus"
+    @set-status="(s) => setDetailStatus(s)"
   />
 </template>
 
@@ -102,7 +104,7 @@ import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
-import type { Book } from "@/types/book";
+import type { Book, ReadStatus } from "@/types/book";
 
 interface SeriesEntry {
   work_id: number;
@@ -162,6 +164,32 @@ async function openEntry(entry: SeriesEntry) {
     detailReadonly.value = true;
     detailOpen.value = true;
   }
+}
+
+const NEXT_STATUS: Record<ReadStatus, ReadStatus> = { unread: 'reading', reading: 'read', read: 'unread' }
+
+async function updateDetailStatus(newStatus: ReadStatus) {
+  if (!detailBook.value || detailReadonly.value) return
+  const prev = detailBook.value.status
+  detailBook.value = { ...detailBook.value, status: newStatus }
+  try {
+    const res = await apiFetch(`/api/scans/${detailBook.value.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: newStatus }),
+    })
+    if (!res.ok) throw new Error()
+  } catch {
+    if (detailBook.value) detailBook.value = { ...detailBook.value, status: prev }
+  }
+}
+
+function cycleDetailStatus() {
+  if (!detailBook.value) return
+  updateDetailStatus(NEXT_STATUS[detailBook.value.status])
+}
+
+function setDetailStatus(s: ReadStatus) {
+  updateDetailStatus(s)
 }
 
 async function load() {
