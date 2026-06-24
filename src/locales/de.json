@@ -163,6 +163,9 @@
     "custom_field_delete": "Feld aus allen Büchern löschen",
     "custom_field_confirm_delete": "Nochmal klicken zum Bestätigen – entfernt das Feld aus allen Büchern",
     "add_custom_field": "Feld hinzufügen",
+    "tag_add": "Tag hinzufügen…",
+    "tag_delete": "Tag aus allen Büchern entfernen",
+    "tag_delete_confirm": "Nochmal klicken, um ‚{tag}‘ aus allen Büchern zu entfernen",
     "series": "Reihe",
     "series_position": "Band {n}",
     "other_editions": "Weitere Ausgaben",
@@ -224,9 +227,11 @@
       "col_required": "Pflichtfeld",
       "add": "Feld hinzufügen",
       "new_placeholder": "Feldname",
-      "type_text": "Text",
-      "type_number": "Zahl",
-      "type_select": "Auswahl"
+      "type_text": "Zeichenkette",
+      "type_number": "Ganzzahl",
+      "type_select": "Auswahl",
+      "type_tag": "Tag",
+      "type_date": "Datum"
     },
     "export": {
       "heading": "Daten & Export",

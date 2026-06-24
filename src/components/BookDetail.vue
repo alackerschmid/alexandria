@@ -444,12 +444,122 @@
                   </div>
                 </div>
 
-                <!-- custom fields (view mode) -->
-                <div v-if="!readonly && fieldDefsStore.defs.length" class="mb-8 grid grid-cols-2 gap-y-4">
-                  <div v-for="def in fieldDefsStore.defs" :key="def.id">
-                    <div class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1">{{ def.name }}</div>
-                    <div class="text-xs text-text-primary">{{ customFieldMap.get(def.id) || '—' }}</div>
+                <!-- custom fields (always editable) -->
+                <div v-if="!readonly && !guest && fieldDefsStore.defs.length" class="mb-8 pt-8 border-t border-charcoal-border">
+                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4">
+                    {{ $t('detail.custom_fields') }}
                   </div>
+
+                  <div class="flex flex-col gap-4 max-w-md">
+                    <div v-for="def in fieldDefsStore.defs" :key="def.id" class="flex items-start gap-2">
+                      <div class="flex-1 min-w-0">
+                        <label class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block">{{ def.name }}</label>
+
+                        <!-- tag: multi-value combobox with global-delete suggestions -->
+                        <v-combobox
+                          v-if="def.type === 'tag'"
+                          :model-value="(customFieldValues[def.id] as string[]) ?? []"
+                          :items="fieldDefsStore.tagValues[def.id] ?? []"
+                          multiple
+                          chips
+                          closable-chips
+                          density="compact"
+                          variant="outlined"
+                          hide-details
+                          :placeholder="$t('detail.tag_add')"
+                          @update:model-value="onTagChange(def.id, $event)"
+                          @update:menu="(open: boolean) => onTagMenu(def.id, open)"
+                        >
+                          <template #item="{ props: itemProps }">
+                            <v-list-item v-bind="itemProps">
+                              <template #append>
+                                <button
+                                  class="ml-2 shrink-0 transition-colors"
+                                  :class="confirmingTag === `${def.id}:${itemProps.title}` ? 'text-error' : 'text-text-secondary/40 hover:text-error'"
+                                  :title="confirmingTag === `${def.id}:${itemProps.title}` ? $t('detail.tag_delete_confirm', { tag: itemProps.title }) : $t('detail.tag_delete')"
+                                  @click.stop="confirmDeleteTag(def.id, String(itemProps.title))"
+                                >
+                                  <v-icon :icon="confirmingTag === `${def.id}:${itemProps.title}` ? 'mdi-delete' : 'mdi-close'" size="14" />
+                                </button>
+                              </template>
+                            </v-list-item>
+                          </template>
+                        </v-combobox>
+
+                        <!-- date -->
+                        <input
+                          v-else-if="def.type === 'date'"
+                          type="date"
+                          :value="(customFieldValues[def.id] as string) ?? ''"
+                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                          @change="onValueChange(def.id, ($event.target as HTMLInputElement).value)"
+                        />
+
+                        <!-- integer -->
+                        <input
+                          v-else-if="def.type === 'integer'"
+                          type="number"
+                          :value="(customFieldValues[def.id] as string) ?? ''"
+                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                          @input="setLocalValue(def.id, ($event.target as HTMLInputElement).value)"
+                          @blur="saveCustomFields"
+                          @keyup.enter="($event.target as HTMLInputElement).blur()"
+                        />
+
+                        <!-- text / select -->
+                        <input
+                          v-else
+                          type="text"
+                          :value="(customFieldValues[def.id] as string) ?? ''"
+                          :placeholder="$t('detail.custom_field_value')"
+                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                          @input="setLocalValue(def.id, ($event.target as HTMLInputElement).value)"
+                          @blur="saveCustomFields"
+                          @keyup.enter="($event.target as HTMLInputElement).blur()"
+                        />
+                      </div>
+
+                      <!-- delete field definition (removes the field from all books) -->
+                      <button
+                        class="shrink-0 transition-colors pt-7"
+                        :class="confirmingDeleteId === def.id ? 'text-error' : 'text-text-secondary/30 hover:text-text-secondary/60'"
+                        :title="confirmingDeleteId === def.id ? $t('detail.custom_field_confirm_delete') : $t('detail.custom_field_delete')"
+                        @click="deleteFieldDefinition(def.id)"
+                        @blur="confirmingDeleteId = null"
+                      >
+                        <v-icon :icon="confirmingDeleteId === def.id ? 'mdi-delete' : 'mdi-delete-outline'" size="16" />
+                      </button>
+                    </div>
+
+                    <!-- add field -->
+                    <!-- <div v-if="addingField" class="flex gap-2 items-center">
+                      <input
+                        v-model="newFieldName"
+                        :placeholder="$t('detail.custom_field_name')"
+                        class="flex-1 bg-charcoal border border-orange-neon text-xs text-text-primary px-3 py-2 outline-none"
+                        @keyup.enter="createFieldDefinition"
+                        @keyup.escape="addingField = false; newFieldName = ''"
+                      />
+                      <button class="text-orange-neon hover:text-orange-neon/70 transition-colors shrink-0" @click="createFieldDefinition">
+                        <v-icon icon="mdi-check" size="16" />
+                      </button>
+                      <button class="text-text-secondary/40 hover:text-text-secondary/70 transition-colors shrink-0" @click="addingField = false; newFieldName = ''">
+                        <v-icon icon="mdi-close" size="16" />
+                      </button>
+                    </div>
+                    <button
+                      v-else
+                      class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-text-secondary/60 hover:text-orange-neon transition-colors"
+                      @click="addingField = true"
+                    >
+                      <v-icon icon="mdi-plus" size="14" />
+                      {{ $t('detail.add_custom_field') }}
+                    </button> -->
+                  </div>
+
+                  <p v-if="cfError" class="text-[10px] text-error tracking-widest uppercase mt-3">
+                    {{ $t('detail.edit_error') }}
+                  </p>
                 </div>
 
               </div>
@@ -516,56 +626,6 @@
                     {{ $t('detail.cover_url') }}
                   </label>
                   <input v-model="form.cover_url" class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon" />
-                </div>
-
-                <!-- custom fields editor -->
-                <div>
-                  <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-2 block">
-                    {{ $t('detail.custom_fields') }}
-                  </label>
-                  <div v-for="def in fieldDefsStore.defs" :key="def.id" class="flex gap-2 mb-2 items-center">
-                    <div class="w-28 shrink-0 text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase truncate pt-2">
-                      {{ def.name }}
-                    </div>
-                    <input
-                      v-model="customFieldValues[def.id]"
-                      :placeholder="$t('detail.custom_field_value')"
-                      class="flex-1 bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                    />
-                    <button
-                      class="shrink-0 transition-colors"
-                      :class="confirmingDeleteId === def.id ? 'text-error' : 'text-text-secondary/30 hover:text-text-secondary/60'"
-                      :title="confirmingDeleteId === def.id ? $t('detail.custom_field_confirm_delete') : $t('detail.custom_field_delete')"
-                      @click="deleteFieldDefinition(def.id)"
-                      @blur="confirmingDeleteId = null"
-                    >
-                      <v-icon :icon="confirmingDeleteId === def.id ? 'mdi-delete' : 'mdi-delete-outline'" size="16" />
-                    </button>
-                  </div>
-
-                  <div v-if="addingField" class="flex gap-2 mt-1 items-center">
-                    <input
-                      v-model="newFieldName"
-                      :placeholder="$t('detail.custom_field_name')"
-                      class="flex-1 bg-charcoal border border-orange-neon text-xs text-text-primary px-3 py-2 outline-none"
-                      @keyup.enter="createFieldDefinition"
-                      @keyup.escape="addingField = false; newFieldName = ''"
-                    />
-                    <button class="text-orange-neon hover:text-orange-neon/70 transition-colors shrink-0" @click="createFieldDefinition">
-                      <v-icon icon="mdi-check" size="16" />
-                    </button>
-                    <button class="text-text-secondary/40 hover:text-text-secondary/70 transition-colors shrink-0" @click="addingField = false; newFieldName = ''">
-                      <v-icon icon="mdi-close" size="16" />
-                    </button>
-                  </div>
-                  <button
-                    v-else
-                    class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-text-secondary/60 hover:text-orange-neon transition-colors mt-1"
-                    @click="addingField = true"
-                  >
-                    <v-icon icon="mdi-plus" size="14" />
-                    {{ $t('detail.add_custom_field') }}
-                  </button>
                 </div>
 
                 <p v-if="saveError" class="text-[10px] text-error tracking-widest uppercase">
@@ -637,11 +697,12 @@ export interface WorkEdition {
 </script>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, computed, onUnmounted } from "vue";
+import { ref, reactive, watch, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
+import { parseTagList } from "@/utils/tags";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
 import type { ReadStatus } from "@/types/book";
@@ -714,12 +775,10 @@ const refreshing = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const saveError = ref(false);
-const customFieldValues = ref<Record<number, string>>({});
-const customFieldMap = computed(() =>
-  new Map(
-    (props.book.custom_field_values ?? []).map((v) => [v.field_def_id, v.value]),
-  ),
-);
+// Per-field model: a string for text/integer/select/date, a string[] for tag.
+const customFieldValues = ref<Record<number, string | string[]>>({});
+const cfError = ref(false);
+const confirmingTag = ref<string | null>(null); // `${defId}:${value}` awaiting delete-confirm
 const addingField = ref(false);
 const newFieldName = ref("");
 const confirmingDeleteId = ref<number | null>(null);
@@ -818,15 +877,125 @@ watch(
   },
 );
 
+onMounted(() => {
+  if (!props.guest && !props.readonly) fieldDefsStore.load();
+});
+
 // ── Custom field helpers ──────────────────────────────────────────────────────
 
-function cfSnapshot(): Record<number, string> {
-  return Object.fromEntries(
-    fieldDefsStore.defs.map((d) => [
-      d.id,
-      props.book.custom_field_values?.find((v) => v.field_def_id === d.id)?.value ?? "",
-    ]),
-  );
+function valueFromBook(def: { id: number; type: string }): string | string[] {
+  const raw = props.book.custom_field_values?.find((v) => v.field_def_id === def.id)?.value ?? null;
+  return def.type === "tag" ? parseTagList(raw) : raw ?? "";
+}
+
+// Reconcile the local editor model with the current schema, preserving values the
+// user may be editing. Existing in-shape entries are kept; only new/removed fields
+// (or a field whose type changed) are (re)derived from the saved book values.
+function reconcileCustomFields() {
+  const next: Record<number, string | string[]> = {};
+  for (const def of fieldDefsStore.defs) {
+    const existing = customFieldValues.value[def.id];
+    const inShape = def.type === "tag" ? Array.isArray(existing) : typeof existing === "string";
+    next[def.id] = inShape ? existing : valueFromBook(def);
+  }
+  customFieldValues.value = next;
+}
+
+// Full reset only when the book identity changes — so an external refresh of the
+// *same* book (e.g. enrichment poll) can't clobber unsaved in-progress edits.
+watch(
+  () => props.book.isbn,
+  () => { customFieldValues.value = {}; reconcileCustomFields(); },
+  { immediate: true },
+);
+// Schema changes (definitions loaded / field added / removed) only add or drop keys.
+watch(() => fieldDefsStore.defs, reconcileCustomFields, { deep: true });
+
+function setLocalValue(id: number, value: string) {
+  customFieldValues.value = { ...customFieldValues.value, [id]: value };
+}
+
+function onValueChange(id: number, value: string) {
+  setLocalValue(id, value);
+  saveCustomFields();
+}
+
+function onTagChange(id: number, value: unknown) {
+  const arr = (Array.isArray(value) ? value : []).map((v) => String(v).trim()).filter(Boolean);
+  const unique = [...new Set(arr)];
+  customFieldValues.value = { ...customFieldValues.value, [id]: unique };
+  for (const tag of unique) fieldDefsStore.addTagValueLocal(id, tag);
+  saveCustomFields();
+}
+
+function onTagMenu(id: number, open: boolean) {
+  if (open) fieldDefsStore.loadTagValues(id);
+  else confirmingTag.value = null;
+}
+
+async function confirmDeleteTag(id: number, value: string) {
+  const key = `${id}:${value}`;
+  if (confirmingTag.value !== key) {
+    confirmingTag.value = key;
+    return;
+  }
+  confirmingTag.value = null;
+  const res = await fieldDefsStore.deleteTagValueEverywhere(id, value);
+  if (!res.ok) { cfError.value = true; return; }
+  // Server stripped the tag from every book (including this one) — reflect it locally.
+  const current = customFieldValues.value[id];
+  if (Array.isArray(current) && current.includes(value)) {
+    customFieldValues.value = { ...customFieldValues.value, [id]: current.filter((v) => v !== value) };
+    emitCustomFieldsRefreshed();
+  }
+}
+
+// Serialize the local model into the API value list (tag arrays → JSON; empty → "").
+function customFieldsPayload() {
+  return fieldDefsStore.defs.map((def) => {
+    const v = customFieldValues.value[def.id];
+    let value = "";
+    if (def.type === "tag") {
+      const arr = (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean);
+      value = arr.length ? JSON.stringify(arr) : "";
+    } else if (typeof v === "string") {
+      value = v;
+    }
+    return { field_def_id: def.id, value };
+  });
+}
+
+function emitCustomFieldsRefreshed() {
+  const custom_field_values = customFieldsPayload().map((v) => ({
+    field_def_id: v.field_def_id,
+    value: v.value || null,
+  }));
+  emit("refreshed", { custom_field_values });
+}
+
+// Auto-saves are chained so they apply in call order. The endpoint replaces all
+// values at once, so overlapping requests arriving out of order could otherwise
+// drop a field; each queued save also rebuilds its payload from the latest model.
+let saveQueue: Promise<void> = Promise.resolve();
+
+function saveCustomFields() {
+  saveQueue = saveQueue.then(doSaveCustomFields);
+  return saveQueue;
+}
+
+async function doSaveCustomFields() {
+  if (props.readonly || props.guest) return;
+  cfError.value = false;
+  try {
+    const res = await apiFetch("/api/books/custom-fields", {
+      method: "PATCH",
+      body: JSON.stringify({ isbn: props.book.isbn, values: customFieldsPayload() }),
+    });
+    if (!res.ok) throw new Error();
+    emitCustomFieldsRefreshed();
+  } catch {
+    cfError.value = true;
+  }
 }
 
 function enterEdit() {
@@ -837,10 +1006,6 @@ function enterEdit() {
   form.number_of_pages_median = props.book.number_of_pages_median ?? null;
   form.description = props.book.description ?? "";
   form.publisher = props.book.publisher ?? "";
-  customFieldValues.value = cfSnapshot();
-  addingField.value = false;
-  newFieldName.value = "";
-  confirmingDeleteId.value = null;
   saveError.value = false;
   editing.value = true;
 }
@@ -855,12 +1020,12 @@ async function createFieldDefinition() {
     });
     if (!res.ok) throw new Error();
     const def = (await res.json()) as { id: number; name: string; type: string };
-    customFieldValues.value[def.id] = "";
+    customFieldValues.value = { ...customFieldValues.value, [def.id]: "" };
     newFieldName.value = "";
     addingField.value = false;
     fieldDefsStore.add(def);
   } catch {
-    saveError.value = true;
+    cfError.value = true;
   }
 }
 
@@ -872,11 +1037,12 @@ async function deleteFieldDefinition(id: number) {
   try {
     const res = await apiFetch(`/api/field-definitions/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error();
-    delete customFieldValues.value[id];
+    const { [id]: _, ...rest } = customFieldValues.value;
+    customFieldValues.value = rest;
     confirmingDeleteId.value = null;
     fieldDefsStore.remove(id);
   } catch {
-    saveError.value = true;
+    cfError.value = true;
   }
 }
 
@@ -900,10 +1066,7 @@ async function save() {
   if (newPages !== on(props.book.number_of_pages_median))
     changes.number_of_pages_median = newPages;
 
-  const customFieldsChanged =
-    JSON.stringify(cfSnapshot()) !== JSON.stringify(customFieldValues.value);
-
-  if (!Object.keys(changes).length && !customFieldsChanged) {
+  if (!Object.keys(changes).length) {
     editing.value = false;
     return;
   }
@@ -911,27 +1074,11 @@ async function save() {
   saveError.value = false;
   saving.value = true;
   try {
-    const saves: Promise<Response>[] = [];
-    if (Object.keys(changes).length) {
-      saves.push(apiFetch("/api/books/override", {
-        method: "PATCH",
-        body: JSON.stringify({ isbn: props.book.isbn, changes }),
-      }));
-    }
-    if (customFieldsChanged) {
-      saves.push(apiFetch("/api/books/custom-fields", {
-        method: "PATCH",
-        body: JSON.stringify({
-          isbn: props.book.isbn,
-          values: Object.entries(customFieldValues.value).map(([id, value]) => ({
-            field_def_id: Number(id),
-            value,
-          })),
-        }),
-      }));
-    }
-    const results = await Promise.all(saves);
-    if (results.some((r) => !r.ok)) throw new Error();
+    const res = await apiFetch("/api/books/override", {
+      method: "PATCH",
+      body: JSON.stringify({ isbn: props.book.isbn, changes }),
+    });
+    if (!res.ok) throw new Error();
 
     const updated: Partial<BookWithOverrides> = { ...changes } as Partial<BookWithOverrides>;
     if ("title" in changes) updated.title_overridden = changes.title != null ? 1 : 0;
@@ -942,10 +1089,6 @@ async function save() {
       updated.pages_overridden = changes.number_of_pages_median != null ? 1 : 0;
     if ("description" in changes) updated.description_overridden = changes.description != null ? 1 : 0;
     if ("publisher" in changes) updated.publisher_overridden = changes.publisher != null ? 1 : 0;
-    updated.custom_field_values = fieldDefsStore.defs.map((d) => ({
-      field_def_id: d.id,
-      value: customFieldValues.value[d.id] ?? null,
-    }));
 
     emit("refreshed", updated);
     editing.value = false;

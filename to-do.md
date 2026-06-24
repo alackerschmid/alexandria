@@ -17,6 +17,7 @@
 
 # batch 2: improve library view
 - sorting needs to depend on group by
+- move "delete" to fourth option of reading status
 - adjust layout of detail page:
   - triple column layout:
   - col1: cover

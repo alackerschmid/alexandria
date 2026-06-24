@@ -23,4 +23,5 @@ export interface Book {
   original_pub_date?: string | null
   awards?: string[] | null
   nominations?: string[] | null
+  custom_field_values?: Array<{ field_def_id: number; value: string | null }> | null
 }

@@ -397,6 +397,7 @@ import { useGuestStore } from '@/stores/guest'
 import { useLocaleStore } from '@/stores/locale'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
+import { parseTagList } from '@/utils/tags'
 import type { Book, ReadStatus } from '@/types/book'
 import type { GroupBy, SortOption } from '@/types/library'
 import AppHeader from '@/components/AppHeader.vue'
@@ -466,19 +467,53 @@ type SuggestionFacet  = { kind: 'facet';  token: string; icon: string; label: st
 type SuggestionBook   = { kind: 'book';   book: Book;    icon: string; label: string; typeLabel: string; token: '' }
 type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook
 
+// ── Custom-field search/group helpers ──────────────────────────────────────────
+
+interface CustomFieldMeta { def: { id: number; name: string; type: string }; slug: string }
+
+const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award']
+
+// One search/group entry per custom field, each with a collision-free prefix slug.
+const customFieldMetas = computed<CustomFieldMeta[]>(() => {
+  const used = new Set<string>([...BUILTIN_KEYS, 'title', 'isbn'])
+  const metas: CustomFieldMeta[] = []
+  for (const def of fieldDefsStore.defs) {
+    let slug = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '') || `field${def.id}`
+    if (used.has(slug)) slug = `${slug}${def.id}`
+    used.add(slug)
+    metas.push({ def, slug })
+  }
+  return metas
+})
+const customSlugMap = computed(() => new Map(customFieldMetas.value.map(m => [m.slug, m.def])))
+
+function cfIcon(type: string) {
+  switch (type) {
+    case 'tag':     return 'mdi-tag-multiple-outline'
+    case 'date':    return 'mdi-calendar-outline'
+    case 'integer': return 'mdi-numeric'
+    default:        return 'mdi-form-textbox'
+  }
+}
+
+function bookCustomValue(b: Book, defId: number): string | null {
+  return b.custom_field_values?.find(v => v.field_def_id === defId)?.value ?? null
+}
+
 const PREFIXES = computed(() => [
   { key: 'status', icon: 'mdi-progress-check',  label: t('library.filter_status') },
   { key: 'author', icon: 'mdi-account-outline', label: t('library.group_author')  },
   { key: 'genre',  icon: 'mdi-tag-outline',     label: t('library.group_genre')   },
   { key: 'series', icon: 'mdi-bookshelf',       label: t('library.group_series')  },
+  ...customFieldMetas.value.map(m => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),
 ])
 
 function quote(v: string) { return /\s/.test(v) ? `"${v}"` : v }
 
 // ── Search highlight overlay ───────────────────────────────────────────────────
 
-const KNOWN_KEYS_SET = new Set(['status', 'author', 'genre', 'series', 'publisher', 'language', 'award'])
-const HIGHLIGHT_PATTERN = `((?:${[...KNOWN_KEYS_SET].join('|')}):)("(?:[^"]*)"?|\\S*)`
+const knownKeys = computed(() => new Set<string>([...BUILTIN_KEYS, ...customFieldMetas.value.map(m => m.slug)]))
+const HIGHLIGHT_PATTERN = computed(() => `((?:${[...knownKeys.value].join('|')}):)("(?:[^"]*)"?|\\S*)`)
 
 interface SearchSegment { text: string; role: 'key' | 'plain' }
 
@@ -488,7 +523,7 @@ const PRESERVES_SELECTION = new Set(['ArrowUp', 'ArrowDown', 'Tab', 'Escape', 'S
 const searchSegments = computed<SearchSegment[]>(() => {
   const s = search.value
   if (!s) return []
-  const re = new RegExp(HIGHLIGHT_PATTERN, 'gi')
+  const re = new RegExp(HIGHLIGHT_PATTERN.value, 'gi')
   const segments: SearchSegment[] = []
   let last = 0
   let m: RegExpExecArray | null
@@ -521,6 +556,10 @@ const facetEntries = computed<SuggestionFacet[]>(() => {
       entries.push({ kind: 'facet', token: `status:${val}`, icon: 'mdi-progress-check', label, typeLabel: statusLabel })
   }
 
+  // Resolve a book's custom-field value entries to their meta in one lookup,
+  // avoiding a per-field scan of custom_field_values for every book.
+  const metaByDefId = new Map(customFieldMetas.value.map(m => [m.def.id, m]))
+
   const seen = new Set<string>()
   for (const b of pool) {
     if (b.author) {
@@ -534,6 +573,16 @@ const facetEntries = computed<SuggestionFacet[]>(() => {
     if (b.series_name) {
       const k = b.series_name.toLowerCase()
       if (!seen.has(`series:${k}`)) { seen.add(`series:${k}`); entries.push({ kind: 'facet', token: `series:${quote(b.series_name)}`, icon: 'mdi-bookshelf', label: b.series_name, typeLabel: seriesLabel }) }
+    }
+    for (const cf of b.custom_field_values ?? []) {
+      if (cf.value == null) continue
+      const meta = metaByDefId.get(cf.field_def_id)
+      if (!meta) continue
+      const vals = meta.def.type === 'tag' ? parseTagList(cf.value) : [cf.value]
+      for (const v of vals) {
+        const k = `${meta.slug}:${v.toLowerCase()}`
+        if (!seen.has(k)) { seen.add(k); entries.push({ kind: 'facet', token: `${meta.slug}:${quote(v)}`, icon: cfIcon(meta.def.type), label: v, typeLabel: meta.def.name }) }
+      }
     }
   }
   return entries
@@ -553,7 +602,7 @@ const searchFragment = computed(() => {
     if (colonIdx > 0) {
       const key = part.slice(0, colonIdx).toLowerCase()
       const val = part.slice(colonIdx + 1).replace(/^"|"$/g, '').toLowerCase()
-      if (KNOWN_KEYS_SET.has(key) && val) lastStructuredEnd = m.index + part.length
+      if (knownKeys.value.has(key) && val) lastStructuredEnd = m.index + part.length
     }
   }
   return s.slice(lastStructuredEnd).replace(/^\s+/, '')
@@ -678,7 +727,7 @@ function onSearchKeydown(e: KeyboardEvent) {
       const chunkStart = lastSpace === -1 ? 0 : lastSpace + 1
       const chunk = s.slice(chunkStart, contentEnd)
       const colonIdx = chunk.indexOf(':')
-      if (colonIdx > 0 && KNOWN_KEYS_SET.has(chunk.slice(0, colonIdx).toLowerCase())) {
+      if (colonIdx > 0 && knownKeys.value.has(chunk.slice(0, colonIdx).toLowerCase())) {
         // Known key:value → select only the value, leaving key: intact
         selectStart = chunkStart + colonIdx + 1
       } else {
@@ -749,6 +798,7 @@ interface ParsedSearch {
   genre: string
   publisher: string
   language: string
+  custom: Record<string, string>   // custom-field slug → search value
   text: string
   tokens: string[]   // the structured parts only, for the active-token pills
 }
@@ -762,6 +812,7 @@ const parsedSearch = computed<ParsedSearch>(() => {
   let genre = ''
   let publisher = ''
   let language = ''
+  const custom: Record<string, string> = {}
   const remaining: string[] = []
   const tokens: string[] = []
 
@@ -792,13 +843,16 @@ const parsedSearch = computed<ParsedSearch>(() => {
     } else if (key === 'language' && val) {
       language = val
       tokens.push(part)
-    } else if (!KNOWN_KEYS_SET.has(key)) {
+    } else if (customSlugMap.value.has(key) && val) {
+      custom[key] = val
+      tokens.push(part)
+    } else if (!knownKeys.value.has(key)) {
       remaining.push(part)
     }
     // Known key with no/invalid value (in-progress token like "status:") — silently ignored
   }
 
-  return { status, series, award, author, genre, publisher, language, text: remaining.join(' ').toLowerCase(), tokens }
+  return { status, series, award, author, genre, publisher, language, custom, text: remaining.join(' ').toLowerCase(), tokens }
 })
 
 function removeToken(token: string) {
@@ -814,7 +868,7 @@ const allBooks = computed<Book[]>(() =>
 
 // Pure filter — no sort. Used by groupedBooks series branch (sorted within groups by ordinal).
 const baseFiltered = computed<Book[]>(() => {
-  const { status, series, award, author, genre, publisher, language, text } = parsedSearch.value
+  const { status, series, award, author, genre, publisher, language, custom, text } = parsedSearch.value
   let list = allBooks.value
 
   if (status) {
@@ -840,6 +894,17 @@ const baseFiltered = computed<Book[]>(() => {
   }
   if (language) {
     list = list.filter(b => b.language?.toLowerCase().includes(language))
+  }
+  for (const [slug, val] of Object.entries(custom)) {
+    const def = customSlugMap.value.get(slug)
+    if (!def) continue
+    list = list.filter(b => {
+      const raw = bookCustomValue(b, def.id)
+      if (!raw) return false
+      return def.type === 'tag'
+        ? parseTagList(raw).some(tg => tg.toLowerCase().includes(val))
+        : raw.toLowerCase().includes(val)
+    })
   }
   if (text) {
     list = list.filter(b =>
@@ -999,6 +1064,29 @@ const groupedBooks = computed<BookGroup[]>(() => {
     return groups
   }
 
+  if (groupBy.value.startsWith('cf:')) {
+    const defId = Number(groupBy.value.slice(3))
+    const def = fieldDefsStore.defs.find(d => d.id === defId)
+    const map = new Map<string, Book[]>()
+    const none: Book[] = []
+    for (const b of books) {
+      const raw = bookCustomValue(b, defId)
+      const vals = def?.type === 'tag' ? parseTagList(raw) : (raw ? [raw] : [])
+      if (!vals.length) { none.push(b); continue }
+      for (const v of vals) {
+        if (!map.has(v)) map.set(v, [])
+        map.get(v)!.push(b)
+      }
+    }
+    const groups = [...map.entries()]
+      .map(([val, bks]) => ({ key: val, label: val, books: bks }))
+      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+    if (none.length) {
+      groups.push({ key: '__cfnone__', label: t('library.unclassified'), books: none })
+    }
+    return groups
+  }
+
   return [{ key: '__all__', label: '', books }]
 })
 
@@ -1010,6 +1098,7 @@ const GROUP_OPTIONS = computed(() => [
   { value: 'series' as GroupBy, label: t('library.group_series') },
   { value: 'genre' as GroupBy,  label: t('library.group_genre') },
   { value: 'status' as GroupBy, label: t('library.group_status') },
+  ...customFieldMetas.value.map(m => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
 ])
 
 const SORT_OPTIONS = computed(() => [

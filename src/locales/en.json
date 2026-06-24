@@ -163,6 +163,9 @@
     "custom_field_delete": "Delete field from all books",
     "custom_field_confirm_delete": "Click again to confirm — removes field from all books",
     "add_custom_field": "Add field",
+    "tag_add": "Add tag…",
+    "tag_delete": "Remove tag from all books",
+    "tag_delete_confirm": "Click again to remove ‘{tag}’ from all books",
     "series": "Series",
     "series_position": "Book {n}",
     "other_editions": "Other editions",
@@ -224,9 +227,11 @@
       "col_required": "Required",
       "add": "Add field",
       "new_placeholder": "Field name",
-      "type_text": "Text",
-      "type_number": "Number",
-      "type_select": "Select"
+      "type_text": "String",
+      "type_number": "Int",
+      "type_select": "Select",
+      "type_tag": "Tag",
+      "type_date": "Date"
     },
     "export": {
       "heading": "Data & export",

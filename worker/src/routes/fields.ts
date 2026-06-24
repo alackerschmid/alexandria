@@ -4,6 +4,8 @@ import { authMiddleware } from '../auth'
 
 const fields = new Hono<Env>()
 
+const VALID_TYPES = ['text', 'integer', 'select', 'tag', 'date']
+
 fields.use('*', authMiddleware)
 
 fields.get('/', async (c) => {
@@ -19,7 +21,6 @@ fields.post('/', async (c) => {
   const userId = c.get('userId')
   const { name, type = 'text' } = await c.req.json<{ name: string; type?: string }>()
   if (!name?.trim()) return c.json({ error: 'Name required' }, 400)
-  const VALID_TYPES = ['text', 'integer', 'select']
   if (!VALID_TYPES.includes(type)) return c.json({ error: 'Invalid type' }, 400)
 
   const maxOrder = await c.env.DB
@@ -44,7 +45,6 @@ fields.patch('/:id', async (c) => {
   const id = Number(c.req.param('id'))
   const body = await c.req.json<{ name?: string; type?: string; required?: boolean }>()
 
-  const VALID_TYPES = ['text', 'integer', 'select']
   if (body.type !== undefined && !VALID_TYPES.includes(body.type)) {
     return c.json({ error: 'Invalid type' }, 400)
   }
@@ -95,6 +95,69 @@ fields.delete('/:id', async (c) => {
     .bind(c.req.param('id'), userId)
     .run()
   if (!result.meta.changes) return c.json({ error: 'Not found' }, 404)
+  return c.json({ ok: true })
+})
+
+// Parse a stored field_value into a flat list of tag strings (tags are stored as JSON arrays).
+function parseTags(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string' && v !== '') : []
+  } catch {
+    return []
+  }
+}
+
+async function userOwnsField(db: D1Database, userId: number, id: number): Promise<boolean> {
+  const row = await db
+    .prepare('SELECT 1 FROM user_field_definitions WHERE id = ? AND user_id = ?')
+    .bind(id, userId)
+    .first()
+  return !!row
+}
+
+// Distinct tag values used across the user's books for a field — powers the tag autocomplete.
+fields.get('/:id/values', async (c) => {
+  const userId = c.get('userId')
+  const id = Number(c.req.param('id'))
+  if (!(await userOwnsField(c.env.DB, userId, id))) return c.json({ error: 'Not found' }, 404)
+
+  const { results } = await c.env.DB
+    .prepare('SELECT field_value FROM book_custom_fields WHERE user_id = ? AND field_def_id = ? AND field_value IS NOT NULL')
+    .bind(userId, id)
+    .all<{ field_value: string }>()
+
+  const distinct = new Set<string>()
+  for (const r of results) for (const t of parseTags(r.field_value)) distinct.add(t)
+  return c.json([...distinct].sort((a, b) => a.localeCompare(b)))
+})
+
+// Remove a tag value from every book the user owns (global tag delete).
+fields.delete('/:id/values', async (c) => {
+  const userId = c.get('userId')
+  const id = Number(c.req.param('id'))
+  const value = c.req.query('value')
+  if (!value) return c.json({ error: 'Value required' }, 400)
+  if (!(await userOwnsField(c.env.DB, userId, id))) return c.json({ error: 'Not found' }, 404)
+
+  const { results } = await c.env.DB
+    .prepare('SELECT id, field_value FROM book_custom_fields WHERE user_id = ? AND field_def_id = ? AND field_value IS NOT NULL')
+    .bind(userId, id)
+    .all<{ id: number; field_value: string }>()
+
+  const updates = []
+  for (const r of results) {
+    const tags = parseTags(r.field_value)
+    if (!tags.includes(value)) continue
+    const remaining = tags.filter(t => t !== value)
+    updates.push(
+      c.env.DB
+        .prepare('UPDATE book_custom_fields SET field_value = ? WHERE id = ?')
+        .bind(remaining.length ? JSON.stringify(remaining) : null, r.id),
+    )
+  }
+  if (updates.length) await c.env.DB.batch(updates)
   return c.json({ ok: true })
 })
 

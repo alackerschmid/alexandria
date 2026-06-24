@@ -561,11 +561,13 @@ async function saveAccount() {
 
 // ── Custom fields ─────────────────────────────────────────────────────────────
 
-const FIELD_TYPES = ['text', 'integer', 'select']
+const FIELD_TYPES = ['text', 'integer', 'select', 'tag', 'date']
 const TYPE_LABELS: Record<string, string> = {
   text: t('settings.fields.type_text'),
   integer: t('settings.fields.type_number'),
   select: t('settings.fields.type_select'),
+  tag: t('settings.fields.type_tag'),
+  date: t('settings.fields.type_date'),
 }
 function typeLabel(type: string) { return TYPE_LABELS[type] ?? type }
 

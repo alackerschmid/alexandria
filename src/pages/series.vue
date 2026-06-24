@@ -102,6 +102,7 @@
     @update:model-value="v => { detailOpen = v; if (!v) detailBook = null }"
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
+    @refreshed="onDetailRefreshed"
   />
 </template>
 
@@ -182,6 +183,10 @@ async function openEntry(entry: SeriesEntry) {
     detailReadonly.value = true;
     detailOpen.value = true;
   }
+}
+
+function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
+  if (detailBook.value) detailBook.value = { ...detailBook.value, ...updated }
 }
 
 const NEXT_STATUS: Record<ReadStatus, ReadStatus> = { unread: 'reading', reading: 'read', read: 'unread' }

@@ -14,6 +14,16 @@ export interface FieldDef {
 export const useFieldDefsStore = defineStore('fieldDefs', () => {
   const defs = ref<FieldDef[]>([])
   const loaded = ref(false)
+  // Distinct tag values per tag-field id, populated lazily for autocomplete.
+  const tagValues = ref<Record<number, string[]>>({})
+
+  function authHeaders() {
+    const authStore = useAuthStore()
+    return {
+      Authorization: `Bearer ${authStore.token}`,
+      'Content-Type': 'application/json',
+    }
+  }
 
   async function load() {
     if (loaded.value) return
@@ -29,9 +39,42 @@ export const useFieldDefsStore = defineStore('fieldDefs', () => {
     } catch {}
   }
 
+  async function loadTagValues(id: number) {
+    try {
+      const res = await fetch(`${BASE}/api/field-definitions/${id}/values`, {
+        headers: authHeaders(),
+      })
+      if (res.ok) tagValues.value = { ...tagValues.value, [id]: await res.json() }
+    } catch {}
+  }
+
+  function addTagValueLocal(id: number, value: string) {
+    const current = tagValues.value[id] ?? []
+    if (current.includes(value)) return
+    tagValues.value = { ...tagValues.value, [id]: [...current, value].sort((a, b) => a.localeCompare(b)) }
+  }
+
+  async function deleteTagValueEverywhere(id: number, value: string) {
+    try {
+      const res = await fetch(`${BASE}/api/field-definitions/${id}/values?value=${encodeURIComponent(value)}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+      if (!res.ok) return { ok: false }
+      tagValues.value = { ...tagValues.value, [id]: (tagValues.value[id] ?? []).filter(v => v !== value) }
+      return { ok: true }
+    } catch {
+      return { ok: false }
+    }
+  }
+
   function add(def: FieldDef) { defs.value = [...defs.value, def] }
-  function remove(id: number) { defs.value = defs.value.filter(d => d.id !== id) }
-  function reset() { defs.value = []; loaded.value = false }
+  function remove(id: number) {
+    defs.value = defs.value.filter(d => d.id !== id)
+    const { [id]: _, ...rest } = tagValues.value
+    tagValues.value = rest
+  }
+  function reset() { defs.value = []; loaded.value = false; tagValues.value = {} }
 
   async function update(id: number, changes: { name?: string; type?: string; required?: boolean }) {
     const authStore = useAuthStore()
@@ -56,5 +99,5 @@ export const useFieldDefsStore = defineStore('fieldDefs', () => {
     }
   }
 
-  return { defs, loaded, load, add, remove, reset, update }
+  return { defs, loaded, tagValues, load, loadTagValues, addTagValueLocal, deleteTagValueEverywhere, add, remove, reset, update }
 })
