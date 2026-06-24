@@ -187,6 +187,74 @@
     "untitled": "Untitled",
     "not_found": "Series not found."
   },
+  "settings": {
+    "nav_label": "Settings",
+    "heading": "Settings.",
+    "signed_in_as": "Signed in as {email}",
+    "account": {
+      "heading": "Account details",
+      "description": "Your name, sign-in email and password.",
+      "firstname": "First name",
+      "email": "Email",
+      "save": "Save changes",
+      "saved": "Saved",
+      "change_password": "Change password",
+      "current_password": "Current password",
+      "new_password": "New password",
+      "confirm_password": "Confirm new password",
+      "password_mismatch": "Passwords don't match",
+      "password_saved": "Password updated",
+      "hide_password_form": "Cancel"
+    },
+    "accent": {
+      "heading": "Accent color",
+      "description": "Used for highlights, active states and the scan button across the app.",
+      "custom": "Custom"
+    },
+    "fields": {
+      "heading": "Custom book fields",
+      "description": "Extra fields shown on every book record.",
+      "col_name": "Field name",
+      "col_type": "Type",
+      "col_required": "Required",
+      "add": "Add field",
+      "new_placeholder": "Field name",
+      "type_text": "Text",
+      "type_number": "Number",
+      "type_select": "Select"
+    },
+    "export": {
+      "heading": "Data & export",
+      "description": "Download all your books and custom fields as a CSV or JSON file.",
+      "button": "Export data ↓",
+      "coming_soon": "Export coming soon"
+    },
+    "defaults": {
+      "heading": "Library defaults",
+      "description": "Applied on every fresh session.",
+      "language": "Language",
+      "theme": "Theme",
+      "theme_light": "Light",
+      "theme_dark": "Dark",
+      "theme_auto": "Auto",
+      "view": "Default view",
+      "view_list": "List",
+      "view_tile": "Tile",
+      "scan_status": "Default scan status"
+    },
+    "danger": {
+      "heading": "Danger zone",
+      "delete_heading": "Delete account",
+      "delete_body": "Permanently removes your account and every catalogued book. This cannot be undone.",
+      "delete_button": "Delete account",
+      "dialog_heading": "Delete your account?",
+      "dialog_body": "This is irreversible. Type your email address below to confirm.",
+      "dialog_email_label": "Confirm email",
+      "dialog_password_label": "Password",
+      "dialog_confirm": "Delete permanently",
+      "dialog_cancel": "Cancel"
+    }
+  },
   "scanner": {
     "saved_count": "{n} saved",
     "manual_label": "Manual entry",

@@ -28,6 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.setItem('firstname', name)
   }
 
+  const setEmail = (e: string) => {
+    email.value = e
+    localStorage.setItem('email', e)
+  }
+
   const logout = () => {
     token.value = null
     email.value = null
@@ -45,6 +50,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     setAuth,
     setFirstname,
+    setEmail,
     logout,
   }
 })

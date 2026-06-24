@@ -28,8 +28,10 @@ scans.get('/', async (c) => {
 })
 
 scans.post('/', async (c) => {
-  const { isbn } = await c.req.json()
+  const { isbn, status } = await c.req.json<{ isbn: string; status?: string }>()
   if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
+  const VALID_STATUSES = ['unread', 'reading', 'read']
+  const initialStatus = VALID_STATUSES.includes(status ?? '') ? status : 'unread'
 
   const userId = c.get('userId')
   const db = c.env.DB
@@ -45,8 +47,8 @@ scans.post('/', async (c) => {
   let result
   try {
     result = await db
-      .prepare('INSERT INTO scans (user_id, book_id) VALUES (?, ?)')
-      .bind(userId, book.id)
+      .prepare('INSERT INTO scans (user_id, book_id, status) VALUES (?, ?, ?)')
+      .bind(userId, book.id, initialStatus)
       .run()
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {

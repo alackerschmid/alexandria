@@ -6,6 +6,7 @@
 - favicon not properly displayed on ios (shown as default vue icon)
 - proper capitalization for genres
 - only display "series lookup pending" if it is actually pending
+- fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
 
 ## batch 1: making series more robust
 - distinguish main / side series (ie dresden files)
@@ -17,14 +18,15 @@
 - ~~some sort of automated lookup for un-enriched books~~
 - ~~backfill of enrichment for series items (directly on queue?)~~
 - pagination for grid view
-~~- add expanded view for details page
-- idea: show preceding / following books to the left / right, slightly transparent, blurred or os (on mobile, give icons to cycle left / right)~~
+- ~~add expanded view for details page~~
+- ~~idea: show preceding / following books to the left / right, slightly transparent, blurred or os (on mobile, give icons to cycle left / right)~~ shelved for now
 
 # batch 3: improve custom field handling and management
-- move custom-field management (& hiding default fields) to settings page
-- add a theme color picker to the settings page
+- ~~move custom-field management (& hiding default fields) to settings page~~
+- ~~add a theme color picker to the settings page~~
 - incorporate custom fields into search prefix options, groupby and so on
-- allow custom fields to have types (int, str, literal, date)
+- allow custom fields to have types (int, str, literal, date) -> not working properly atm
+- overhaul edit process
 
 # lower priority UI improvements
 - sharpen marketing page

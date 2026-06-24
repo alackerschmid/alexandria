@@ -47,6 +47,11 @@ const router = createRouter({
       component: () => import('@/pages/series.vue'),
     },
     {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/pages/settings.vue'),
+    },
+    {
       path: '/privacy',
       name: 'privacy',
       component: () => import('@/pages/privacy.vue'),

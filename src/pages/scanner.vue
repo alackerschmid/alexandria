@@ -785,6 +785,7 @@ import { useRouter } from "vue-router";
 import { useDisplay } from "vuetify";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
+import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
 import type { ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
@@ -794,6 +795,7 @@ const { t } = useI18n();
 const router = useRouter();
 const authStore = useAuthStore();
 const guestStore = useGuestStore();
+const libraryDefaultsStore = useLibraryDefaultsStore();
 const { mdAndUp } = useDisplay();
 const { apiFetch } = useApi();
 
@@ -1083,7 +1085,7 @@ async function postScan(
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
   const res = await apiFetch(`/api/scans`, {
     method: "POST",
-    body: JSON.stringify({ isbn: book.isbn }),
+    body: JSON.stringify({ isbn: book.isbn, status: libraryDefaultsStore.defaultScanStatus }),
   });
   if (res.status === 409) return { result: "duplicate" };
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
@@ -1104,7 +1106,7 @@ async function drainQueue() {
     try {
       const res = await apiFetch(`/api/scans`, {
         method: "POST",
-        body: JSON.stringify({ isbn: book.isbn }),
+        body: JSON.stringify({ isbn: book.isbn, status: libraryDefaultsStore.defaultScanStatus }),
       });
       if (res.status === 401) {
         authExpired = true;

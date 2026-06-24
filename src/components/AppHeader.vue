@@ -50,6 +50,14 @@
               <v-icon icon="mdi-translate" size="14" class="text-text-secondary shrink-0" />
               <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ localeStore.locale === 'en' ? 'Deutsch' : 'English' }}</span>
             </button>
+            <button
+              v-if="authStore.isAuthenticated"
+              class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+              @click="router.push('/settings')"
+            >
+              <v-icon icon="mdi-cog-outline" size="14" class="text-text-secondary shrink-0" />
+              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('settings.nav_label') }}</span>
+            </button>
             <div class="border-t border-charcoal-border my-1" />
             <button
               v-if="authStore.isAuthenticated"

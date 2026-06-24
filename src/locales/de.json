@@ -187,6 +187,74 @@
     "untitled": "Ohne Titel",
     "not_found": "Reihe nicht gefunden."
   },
+  "settings": {
+    "nav_label": "Einstellungen",
+    "heading": "Einstellungen.",
+    "signed_in_as": "Angemeldet als {email}",
+    "account": {
+      "heading": "Kontodetails",
+      "description": "Dein Name, deine Anmelde-E-Mail und dein Passwort.",
+      "firstname": "Vorname",
+      "email": "E-Mail",
+      "save": "Änderungen speichern",
+      "saved": "Gespeichert",
+      "change_password": "Passwort ändern",
+      "current_password": "Aktuelles Passwort",
+      "new_password": "Neues Passwort",
+      "confirm_password": "Neues Passwort bestätigen",
+      "password_mismatch": "Passwörter stimmen nicht überein",
+      "password_saved": "Passwort aktualisiert",
+      "hide_password_form": "Abbrechen"
+    },
+    "accent": {
+      "heading": "Akzentfarbe",
+      "description": "Wird für Hervorhebungen, aktive Zustände und den Scan-Button in der ganzen App verwendet.",
+      "custom": "Eigene Farbe"
+    },
+    "fields": {
+      "heading": "Eigene Buchfelder",
+      "description": "Zusätzliche Felder, die bei jedem Bucheintrag angezeigt werden.",
+      "col_name": "Feldname",
+      "col_type": "Typ",
+      "col_required": "Pflichtfeld",
+      "add": "Feld hinzufügen",
+      "new_placeholder": "Feldname",
+      "type_text": "Text",
+      "type_number": "Zahl",
+      "type_select": "Auswahl"
+    },
+    "export": {
+      "heading": "Daten & Export",
+      "description": "Lade alle deine Bücher und eigene Felder als CSV- oder JSON-Datei herunter.",
+      "button": "Daten exportieren ↓",
+      "coming_soon": "Export folgt bald"
+    },
+    "defaults": {
+      "heading": "Bibliotheksstandards",
+      "description": "Wird bei jeder neuen Sitzung angewendet.",
+      "language": "Sprache",
+      "theme": "Design",
+      "theme_light": "Hell",
+      "theme_dark": "Dunkel",
+      "theme_auto": "Auto",
+      "view": "Standardansicht",
+      "view_list": "Liste",
+      "view_tile": "Kacheln",
+      "scan_status": "Standard-Scanstatus"
+    },
+    "danger": {
+      "heading": "Gefahrenzone",
+      "delete_heading": "Konto löschen",
+      "delete_body": "Entfernt dein Konto und alle katalogisierten Bücher dauerhaft. Dies kann nicht rückgängig gemacht werden.",
+      "delete_button": "Konto löschen",
+      "dialog_heading": "Konto wirklich löschen?",
+      "dialog_body": "Dies ist unwiderruflich. Gib deine E-Mail-Adresse ein, um zu bestätigen.",
+      "dialog_email_label": "E-Mail bestätigen",
+      "dialog_password_label": "Passwort",
+      "dialog_confirm": "Endgültig löschen",
+      "dialog_cancel": "Abbrechen"
+    }
+  },
   "scanner": {
     "saved_count": "{n} gespeichert",
     "manual_label": "Manuelle Eingabe",

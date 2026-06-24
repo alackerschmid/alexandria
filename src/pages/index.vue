@@ -400,6 +400,7 @@ import LibraryRowCard from '@/components/LibraryRowCard.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import BookDetail from '@/components/BookDetail.vue'
 import AppPagination from '@/components/AppPagination.vue'
+import { useLibraryDefaultsStore } from '@/stores/libraryDefaults'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -410,6 +411,7 @@ const guestStore = useGuestStore()
 const localeStore = useLocaleStore()
 const { apiFetch } = useApi()
 const fieldDefsStore = useFieldDefsStore()
+const libraryDefaultsStore = useLibraryDefaultsStore()
 
 const isGuest = computed(() => !authStore.isAuthenticated)
 
@@ -422,7 +424,7 @@ const error = ref('')
 const search = ref('')
 const groupBy = ref<GroupBy>('none')
 const sortBy = ref<SortOption>('date_desc')
-const viewMode = ref<'list' | 'tile'>('list')
+const viewMode = ref<'list' | 'tile'>(libraryDefaultsStore.defaultView)
 const searchRef = ref<HTMLInputElement | null>(null)
 
 const deleteDialog = ref(false)
