@@ -280,23 +280,22 @@
         </div>
       </div>
 
-      <!-- Load more -->
-      <div v-if="hasMore" class="flex justify-center py-10">
-        <button
-          class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
-          :class="{ 'opacity-50 pointer-events-none': loadingMore }"
-          @click="loadMore"
-        >
-          {{ loadingMore ? '—' : $t('library.load_more') }}
-        </button>
-      </div>
+      <!-- Pagination -->
+      <AppPagination
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :range-start="(currentPage - 1) * pageSize + 1"
+        :range-end="Math.min(currentPage * pageSize, filteredBooks.length)"
+        :total="filteredBooks.length"
+        @change="changePage"
+      />
     </div>
 
     <!-- ── Tile view ──────────────────────────────────────────────────────────── -->
     <div v-else-if="!loading && viewMode === 'tile'" class="flex-1 px-6 md:px-10 pt-6 pb-28">
       <div class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4">
         <div
-          v-for="book in filteredBooks"
+          v-for="book in pagedBooks"
           :key="book.id"
           class="cursor-pointer group"
           @click="openDetail(book)"
@@ -322,15 +321,15 @@
         </div>
       </div>
 
-      <div v-if="hasMore" class="flex justify-center py-10">
-        <button
-          class="text-[10px] text-text-secondary tracking-[0.25em] uppercase border-b border-charcoal-border pb-0.5 hover:text-text-primary transition-colors"
-          :class="{ 'opacity-50 pointer-events-none': loadingMore }"
-          @click="loadMore"
-        >
-          {{ loadingMore ? '—' : $t('library.load_more') }}
-        </button>
-      </div>
+      <!-- Pagination -->
+      <AppPagination
+        :current-page="currentPage"
+        :total-pages="totalPages"
+        :range-start="(currentPage - 1) * pageSize + 1"
+        :range-end="Math.min(currentPage * pageSize, filteredBooks.length)"
+        :total="filteredBooks.length"
+        @change="changePage"
+      />
     </div>
 
     <AppFooter class="mt-auto" />
@@ -400,6 +399,7 @@ import AppFooter from '@/components/AppFooter.vue'
 import LibraryRowCard from '@/components/LibraryRowCard.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import BookDetail from '@/components/BookDetail.vue'
+import AppPagination from '@/components/AppPagination.vue'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -417,8 +417,6 @@ const isGuest = computed(() => !authStore.isAuthenticated)
 
 const serverBooks = ref<Book[]>([])
 const loading = ref(false)
-const loadingMore = ref(false)
-const hasMore = ref(false)
 const error = ref('')
 
 const search = ref('')
@@ -437,7 +435,9 @@ const selectedBook = ref<Book | null>(null)
 const errorToast = ref(false)
 const errorMessage = ref('')
 
-const PAGE_SIZE = 200
+const FETCH_LIMIT = 5000
+const LIST_PAGE_SIZE = 24
+const TILE_PAGE_SIZE = 60
 let fetchSeq = 0
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────
@@ -852,6 +852,51 @@ function sortBooks(list: Book[]): Book[] {
   })
 }
 
+// ── Pagination ────────────────────────────────────────────────────────────────
+
+const currentPage = ref(1)
+
+const pageSize = computed(() => viewMode.value === 'tile' ? TILE_PAGE_SIZE : LIST_PAGE_SIZE)
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredBooks.value.length / pageSize.value)))
+
+// Flat series-ordered list for the series groupBy pagination source.
+const seriesOrderedBooks = computed<Book[]>(() => {
+  const seriesMap = new Map<number, Book[]>()
+  const standalones: Book[] = []
+  for (const b of baseFiltered.value) {
+    if (b.series_id != null) {
+      if (!seriesMap.has(b.series_id)) seriesMap.set(b.series_id, [])
+      seriesMap.get(b.series_id)!.push(b)
+    } else {
+      standalones.push(b)
+    }
+  }
+  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) =>
+    (a[0].series_name ?? '').localeCompare(b[0].series_name ?? '', localeStore.locale),
+  )
+  const flat: Book[] = []
+  for (const [, books] of sortedGroups) {
+    books.sort((a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity))
+    flat.push(...books)
+  }
+  flat.push(...sortBooks(standalones))
+  return flat
+})
+
+const pagedBooks = computed<Book[]>(() => {
+  const source = groupBy.value === 'series' ? seriesOrderedBooks.value : filteredBooks.value
+  const start = (currentPage.value - 1) * pageSize.value
+  return source.slice(start, start + pageSize.value)
+})
+
+// Reset to page 1 whenever the visible set or view changes.
+watch([filteredBooks, viewMode, sortBy, groupBy], () => { currentPage.value = 1 })
+
+function changePage(p: number) {
+  currentPage.value = p
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+
 // ── Grouped books ─────────────────────────────────────────────────────────────
 
 interface BookGroup {
@@ -863,7 +908,7 @@ interface BookGroup {
 }
 
 const groupedBooks = computed<BookGroup[]>(() => {
-  const books = filteredBooks.value
+  const books = pagedBooks.value
 
   if (groupBy.value === 'none') {
     return [{ key: '__all__', label: '', books }]
@@ -877,12 +922,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
   }
 
   if (groupBy.value === 'series') {
-    // Use baseFiltered (not pre-sorted) — within groups we sort by ordinal, so the
-    // user's sort choice would be discarded anyway. Standalone books use the sorted list.
-    const unsorted = baseFiltered.value
+    // pagedBooks for series comes from seriesOrderedBooks (already ordinal-sorted).
     const map = new Map<number, BookGroup>()
-    const standaloneUnsorted: Book[] = []
-    for (const b of unsorted) {
+    const standalones: Book[] = []
+    for (const b of books) {
       if (b.series_id != null) {
         let g = map.get(b.series_id)
         if (!g) {
@@ -891,16 +934,13 @@ const groupedBooks = computed<BookGroup[]>(() => {
         }
         g.books.push(b)
       } else {
-        standaloneUnsorted.push(b)
+        standalones.push(b)
       }
     }
     const groups = [...map.values()]
-    for (const g of groups) {
-      g.books.sort((a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity))
-    }
     groups.sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
-    if (standaloneUnsorted.length) {
-      groups.push({ key: '__standalone__', label: t('library.standalone'), books: sortBooks(standaloneUnsorted) })
+    if (standalones.length) {
+      groups.push({ key: '__standalone__', label: t('library.standalone'), books: standalones })
     }
     return groups
   }
@@ -985,32 +1025,18 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
-const fetchBooks = async (offset = 0) => {
+const fetchBooks = async () => {
   const seq = ++fetchSeq
   try {
-    // Fetch one extra item to detect whether another page exists, avoiding a false
-    // positive when the library size is an exact multiple of PAGE_SIZE.
-    const res = await apiFetch(`/api/scans?limit=${PAGE_SIZE + 1}&offset=${offset}&locale=${localeStore.locale}`)
+    const res = await apiFetch(`/api/scans?limit=${FETCH_LIMIT}&offset=0&locale=${localeStore.locale}`)
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Failed to fetch books')
-    if (seq !== fetchSeq) return  // superseded by a later fetch (e.g. rapid locale switch)
-    const page = data.slice(0, PAGE_SIZE)
-    if (offset === 0) {
-      serverBooks.value = page
-    } else {
-      serverBooks.value = [...serverBooks.value, ...page]
-    }
-    hasMore.value = data.length > PAGE_SIZE
+    if (seq !== fetchSeq) return
+    serverBooks.value = data
   } catch (err: any) {
     if (seq !== fetchSeq) return
     error.value = err.message
   }
-}
-
-const loadMore = async () => {
-  loadingMore.value = true
-  await fetchBooks(serverBooks.value.length)
-  loadingMore.value = false
 }
 
 // ── Status cycling ────────────────────────────────────────────────────────────

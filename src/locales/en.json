@@ -125,6 +125,7 @@
     "scan": "Scan",
     "no_results": "No books match this filter.",
     "load_more": "Load more",
+    "page_of": "{start}–{end} of {total}",
     "remove_heading": "Remove book?",
     "remove_body": "\"{title}\" will be removed from your library.",
     "cancel": "Cancel",
