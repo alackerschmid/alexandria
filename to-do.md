@@ -39,7 +39,8 @@
 
 # lower priority UI improvements
 - design uniform view for chip items (dropdown values when selected, genres, ...)
--
+- re-add library button to stats page
+- write some taglines for the stats page
 - ~~sharpen marketing page~~
 - ~~redo home page (typography styled)~~
 - ~~redo home / scan / library flow for guests~~
