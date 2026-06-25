@@ -73,13 +73,17 @@ books.post('/refresh', async (c) => {
         publish_date = COALESCE(publish_date, ?),
         number_of_pages_median = COALESCE(number_of_pages_median, ?),
         description = COALESCE(description, ?),
-        publisher = COALESCE(publisher, ?)
+        publisher = COALESCE(publisher, ?),
+        physical_format = COALESCE(physical_format, ?),
+        edition_name = COALESCE(edition_name, ?),
+        physical_dimensions = COALESCE(physical_dimensions, ?)
       WHERE isbn = ?
     `)
     .bind(
       bookData.title, bookData.author, bookData.cover_url, bookData.language,
       bookData.publish_date, bookData.number_of_pages_median,
       bookData.description, bookData.publisher,
+      bookData.physical_format, bookData.edition_name, bookData.physical_dimensions,
       isbn
     )
     .run()

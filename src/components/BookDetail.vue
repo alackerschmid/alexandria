@@ -45,9 +45,12 @@
               </button>
             </div>
 
-            <div class="text-sm text-text-secondary mb-3">
-              {{ book.author || $t('book.unknown_author') }}
-            </div>
+            <button
+              v-if="book.author"
+              class="text-sm text-text-secondary hover:text-orange-neon transition-colors mb-3 text-left"
+              @click="filterBy('author', book.author!)"
+            >{{ book.author }}</button>
+            <div v-else class="text-sm text-text-secondary mb-3">{{ $t('book.unknown_author') }}</div>
 
             <!-- series label -->
             <button
@@ -105,12 +108,12 @@
           <p class="text-[13px] leading-relaxed text-text-secondary line-clamp-3">
             {{ book.description }}
           </p>
-          <button
+          <!-- <button
             class="mt-3 text-[10px] tracking-[0.16em] uppercase text-orange-neon hover:opacity-70 transition-opacity"
             @click="expand"
           >
             {{ $t('detail.show_more') }} →
-          </button>
+          </button> -->
         </div>
 
         <!-- quick facts -->
@@ -124,7 +127,12 @@
             <div class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2">{{ $t('detail.pages') }}</div>
           </div>
           <div class="py-4 px-3 text-center overflow-hidden">
-            <div class="font-heading font-bold text-xl text-text-primary leading-none truncate">{{ firstGenre }}</div>
+            <button
+              v-if="book.genres?.length"
+              class="font-heading font-bold text-xl text-text-primary leading-none truncate hover:text-orange-neon transition-colors"
+              @click="filterBy('genre', book.genres[0])"
+            >{{ firstGenre }}</button>
+            <div v-else class="font-heading font-bold text-xl text-text-primary leading-none truncate">{{ firstGenre }}</div>
             <div class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2">{{ $t('detail.genres') }}</div>
           </div>
         </div>
@@ -331,6 +339,18 @@
                   <p class="text-[15px] leading-relaxed text-text-secondary">{{ book.description }}</p>
                 </div>
 
+                <!-- first line -->
+                <div v-if="book.first_line" class="mb-10">
+                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">{{ $t('detail.first_line') }}</div>
+                  <p class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4">{{ book.first_line }}</p>
+                </div>
+
+                <!-- epigraph -->
+                <div v-if="book.epigraph" class="mb-10">
+                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">{{ $t('detail.epigraph') }}</div>
+                  <p class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4">{{ book.epigraph }}</p>
+                </div>
+
                 <!-- edition + your record grid -->
                 <div class="grid md:grid-cols-2 gap-x-12 pt-8 border-t border-charcoal-border mb-10">
                   <!-- edition column -->
@@ -378,6 +398,18 @@
                       <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.original_pub_date') }}</span>
                       <span class="font-mono text-xs text-text-primary">{{ book.original_pub_date }}</span>
                     </div>
+                    <div v-if="book.physical_format" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
+                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.physical_format') }}</span>
+                      <span class="font-mono text-xs text-text-primary text-right">{{ book.physical_format }}</span>
+                    </div>
+                    <div v-if="book.edition_name" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
+                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.edition_name') }}</span>
+                      <span class="font-mono text-xs text-text-primary text-right">{{ book.edition_name }}</span>
+                    </div>
+                    <div v-if="book.physical_dimensions" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
+                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.physical_dimensions') }}</span>
+                      <span class="font-mono text-xs text-text-primary text-right">{{ book.physical_dimensions }}</span>
+                    </div>
                   </div>
 
                   <!-- your record column -->
@@ -385,10 +417,10 @@
                     <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4">
                       {{ $t('detail.your_record') }}
                     </div>
-                    <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
+                    <!-- <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
                       <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('library.filter_status') }}</span>
                       <span class="font-mono text-xs text-text-primary">{{ STATUS_CONFIG[book.status].label }}</span>
-                    </div>
+                    </div> -->
                     <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
                       <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.added') }}</span>
                       <span class="font-mono text-xs text-text-primary">{{ formattedAdded }}</span>
@@ -417,6 +449,40 @@
                       <div v-if="book.nominations?.length" class="pt-4">
                         <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.nominations') }}</div>
                         <div class="text-xs text-text-primary leading-relaxed">{{ book.nominations!.join(' · ') }}</div>
+                      </div>
+                    </template>
+
+                    <!-- wikidata work metadata -->
+                    <template v-if="book.form_of_work || book.language_of_work || book.main_subject || book.narrative_locations?.length || book.countries_of_origin?.length">
+                      <div v-if="book.form_of_work" class="pt-4">
+                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.form_of_work') }}</div>
+                        <div class="text-xs text-text-primary">{{ book.form_of_work }}</div>
+                      </div>
+                      <div v-if="book.language_of_work" class="pt-4">
+                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.language_of_work') }}</div>
+                        <div class="text-xs text-text-primary">{{ book.language_of_work }}</div>
+                      </div>
+                      <div v-if="book.main_subject" class="pt-4">
+                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.main_subject') }}</div>
+                        <div class="text-xs text-text-primary">{{ book.main_subject }}</div>
+                      </div>
+                      <div v-if="book.narrative_locations?.length" class="pt-4">
+                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.narrative_locations') }}</div>
+                        <div class="flex flex-wrap gap-1.5">
+                          <template v-for="(loc, idx) in book.narrative_locations" :key="loc">
+                            <span class="text-xs text-text-primary">{{ loc }}</span>
+                            <span v-if="idx < book.narrative_locations!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                          </template>
+                        </div>
+                      </div>
+                      <div v-if="book.countries_of_origin?.length" class="pt-4">
+                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.countries_of_origin') }}</div>
+                        <div class="flex flex-wrap gap-1.5">
+                          <template v-for="(country, idx) in book.countries_of_origin" :key="country">
+                            <span class="text-xs text-text-primary">{{ country }}</span>
+                            <span v-if="idx < book.countries_of_origin!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                          </template>
+                        </div>
                       </div>
                     </template>
                   </div>

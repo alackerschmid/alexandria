@@ -118,7 +118,7 @@
         type="button"
         :disabled="loading"
         class="w-full border border-charcoal-border text-text-primary py-3.5 text-xs font-bold tracking-[0.25em] uppercase hover:border-text-primary transition-colors disabled:opacity-40"
-        @click="$router.push('/library')"
+        @click="continueAsGuest"
       >
         {{ $t('auth.continue_as_guest') }}
       </button>
@@ -130,7 +130,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
-import { useAuthStore } from "@/stores/auth";
+import { useAuthStore, WELCOME_SEEN_KEY } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import { useGuestStore } from "@/stores/guest";
@@ -151,6 +151,11 @@ const loading = ref(false);
 const error = ref("");
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
+function continueAsGuest() {
+  const dest = localStorage.getItem(WELCOME_SEEN_KEY) ? '/library' : '/welcome'
+  router.push(dest)
+}
+
 function setMode(login: boolean) {
   isLogin.value = login;
   error.value = "";
@@ -159,11 +164,12 @@ function setMode(login: boolean) {
 const submit = async () => {
   if (!email.value || !password.value) return;
 
+  const wasLogin = isLogin.value;
   loading.value = true;
   error.value = "";
 
   try {
-    const endpoint = isLogin.value
+    const endpoint = wasLogin
       ? `${API_BASE}/api/auth/login`
       : `${API_BASE}/api/auth/register`;
     const res = await fetch(endpoint, {
@@ -185,7 +191,7 @@ const submit = async () => {
       await guestStore.syncToAccount(data.token);
     }
 
-    router.push({ name: "dashboard" });
+    router.push({ name: wasLogin ? 'dashboard' : 'welcome' });
   } catch (err: any) {
     error.value = err.message;
   } finally {

@@ -1,5 +1,5 @@
 import type { Bindings, BookRow } from './types'
-import { enrichWork } from './enrichment'
+import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from './enrichment'
 import { linkWork } from './editions'
 
 // How many works to enrich per cron tick. Each work costs ~3-6 external calls, so this stays
@@ -27,13 +27,19 @@ export async function scheduled(_event: ScheduledController, env: Bindings, _ctx
 
   const { results } = await env.DB.prepare(`
     SELECT id FROM works
-    WHERE series_checked_at IS NULL
+    WHERE (
+      series_checked_at IS NULL
       AND ( enrichment_failed_at IS NULL
             OR ( enrichment_attempts < ?
                  AND enrichment_failed_at < datetime('now', '-30 minutes') ) )
-    ORDER BY enrichment_failed_at IS NOT NULL, id
+    ) OR (
+      enrichment_schema_version < ?
+      AND series_checked_at IS NOT NULL
+      AND enrichment_failed_at IS NULL
+    )
+    ORDER BY enrichment_schema_version ASC, enrichment_failed_at IS NOT NULL, id
     LIMIT ?`)
-    .bind(MAX_ATTEMPTS, BATCH_SIZE)
+    .bind(MAX_ATTEMPTS, CURRENT_ENRICHMENT_SCHEMA_VERSION, BATCH_SIZE)
     .all<{ id: number }>()
 
   console.log(`[sweeper] ${results.length} work(s) to enrich`)

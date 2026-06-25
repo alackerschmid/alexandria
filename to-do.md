@@ -4,7 +4,7 @@
 - fix linux / windows npm stuff
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - favicon not properly displayed on ios (shown as default vue icon)
-- proper capitalization for genres
+- ~~proper capitalization for genres~~
 - only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
 
@@ -38,9 +38,11 @@
 - overhaul edit process
 
 # lower priority UI improvements
-- sharpen marketing page
-- redo home page (typography styled)
-- redo home / scan / library flow for guests
+- design uniform view for chip items (dropdown values when selected, genres, ...)
+-
+- ~~sharpen marketing page~~
+- ~~redo home page (typography styled)~~
+- ~~redo home / scan / library flow for guests~~
 
 # big picture items
 - proper versioning / releases / patch notes

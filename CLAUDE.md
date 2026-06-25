@@ -58,17 +58,21 @@ Vue 3 + TypeScript + Vite.
   - `landing.vue` — unauthenticated marketing page (`/`)
   - `home.vue` — authenticated dashboard: stats, greeting, recently-added (`/home`)
   - `index.vue` — full paginated library (`/library`)
+  - `welcome.vue` — first-run onboarding (`/welcome`); seen-state stored in `localStorage` under `WELCOME_SEEN_KEY`
+  - `series.vue` — series completeness view (`/series/:id`)
+  - `settings.vue` — custom field management (`/settings`)
   - `login.vue`, `scanner.vue`, `privacy.vue`, `NotFound.vue`
 - `src/components/` — `AppHeader`, `AppFooter`, `AppToast`, `BookCard`, `BookDetail`
 - `src/stores/` — Pinia stores:
-  - `auth.ts` — JWT + email + firstname in localStorage
+  - `auth.ts` — JWT + email + firstname in localStorage; exports `WELCOME_SEEN_KEY`
   - `guest.ts` — up to 3 scans for unauthenticated users stored in localStorage; `syncToAccount()` migrates them on register/login
   - `theme.ts` (dark/light), `locale.ts` (i18n locale)
+- `src/types/stats.ts` — `CollectionStats` interface matching the `GET /api/stats` response shape
 - `src/locales/` — `en.json`, `de.json` — all UI strings; add new languages here
 - `src/plugins/i18n.ts` — vue-i18n setup (legacy: false, reads locale from localStorage)
 - `src/plugins/vuetify.ts` — Vuetify 4 with `editorial` / `editorial-dark` themes
 - `src/styles/tailwind.css` — Tailwind v4 config with custom design tokens
-- `src/router/index.ts` — Vue Router; authenticated users are redirected from `/` and `/login` → `/home`; unauthenticated users are redirected from `/home` → `/`
+- `src/router/index.ts` — Vue Router guards: authenticated users redirect from `/`, `/login` → `/home`; unauthenticated from `/home`, `/series/:id`, `/welcome` → `/`; `/welcome` also redirects to `/home` if `WELCOME_SEEN_KEY` is set
 
 The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
 
@@ -107,10 +111,11 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Op
 - `DELETE /api/field-definitions/:id` — remove a field and all its stored values
 - `GET /api/works/:workId/editions` — other editions of the same work; `scan_id` is non-null for editions the user owns
 - `GET /api/series/:seriesId?locale=` — series name + all member works with ownership status
+- `GET /api/stats` — aggregated library statistics (status counts, top authors, genres, languages, page/year stats); response shape defined in `src/types/stats.ts`
 
 `GET /api/scans` accepts a `locale` query param (default `en`) for localized series names, and `sort` with values: `date_desc` (default), `date_asc`, `title_asc`, `title_desc`, `author_asc`, `author_desc`, `series_asc`.
 
-Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `genres` (JSON array | null), `original_pub_date` (4-digit year | null), `awards` (JSON array | null), `nominations` (JSON array | null), `custom_field_values` (array of `{ field_def_id, value }`), plus the existing `*_overridden` flags. `author` is never overridable — it's managed through the works/authors model.
+Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `genres`/`awards`/`nominations` (JSON arrays | null), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph` (strings | null), `narrative_locations`/`countries_of_origin` (JSON arrays | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
 
 ### Database schema
 Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the initial state — migrations are authoritative.
@@ -119,7 +124,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **`users`** — `id`, `email` (UNIQUE), `password_hash`, `firstname`
 
-**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `fetched_at`, `work_id` → `works`
+**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `fetched_at`, `work_id` → `works`
 
 **`book_overrides`** — per-user field overrides: `user_id` → `users`, `book_id` → `books`, same nullable fields as `books` (except `author` — not overridable), `updated_at`. Unique on `(user_id, book_id)`.
 
@@ -127,7 +132,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **FRBR-style works/series model** (added in migrations 0009–0011):
 
-**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at`, `enrichment_attempts` (failure count, caps cron-sweeper retries), `genres` (JSON), `original_pub_date` (year string), `awards` (JSON), `nominations` (JSON)
+**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at`, `enrichment_attempts` (failure count, caps cron-sweeper retries), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph` (strings), `narrative_locations`/`countries_of_origin` (JSON arrays)
 
 **`authors`** — `normalized_name` (UNIQUE dedup key), `name` (display form), `wikidata_qid`
 
@@ -161,7 +166,9 @@ Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an
 
 **Negative caching:** `series_checked_at` non-NULL means the work was already enriched (success or "not found"). `enrichment_failed_at` non-NULL means the last SPARQL run threw (network/timeout); `enrichment_attempts` counts failures. `force=true` clears `series_checked_at` to re-run even for already-enriched works.
 
-**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/2 * * * *` in `wrangler.toml`): each tick enriches a bounded batch (5) of un-enriched works — `series_checked_at IS NULL` (placeholders never touched + never-run works), plus failed works retried with backoff (`enrichment_failed_at` older than 30 min, capped at `enrichment_attempts < 5`). Runs sequentially with a short delay to stay polite to Wikidata. This is what fills in an entire series after any one of its books is scanned; `POST /api/books/refresh` remains the manual force-retry path.
+**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/2 * * * *` in `wrangler.toml`): each tick enriches a bounded batch (5) of works matching either condition — `series_checked_at IS NULL` (never enriched), failed works with backoff (`enrichment_failed_at` older than 30 min, capped at `enrichment_attempts < 5`), or `enrichment_schema_version < CURRENT_ENRICHMENT_SCHEMA_VERSION` (already enriched but missing newer Wikidata columns). The last condition is the backfill mechanism: when new columns are added to `works`, bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` (exported from `enrichment.ts`) and all existing enriched works drain through the sweeper automatically. Runs sequentially with a short delay to stay polite to Wikidata. `POST /api/books/refresh` is the manual force-retry path.
+
+**Adding new Wikidata fields:** (1) add `ALTER TABLE works ADD COLUMN` in a new migration, (2) bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` in `enrichment.ts`, (3) add the SPARQL subquery + `WorkDetails` field + `UPDATE works SET` binding, (4) add to `SCAN_SELECT` in `library-query.ts`, (5) JSON-parse in `attachCustomFields` if it's an array.
 
 ### Styling system
 

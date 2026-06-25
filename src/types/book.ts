@@ -23,5 +23,15 @@ export interface Book {
   original_pub_date?: string | null
   awards?: string[] | null
   nominations?: string[] | null
+  main_subject?: string | null
+  form_of_work?: string | null
+  language_of_work?: string | null
+  first_line?: string | null
+  epigraph?: string | null
+  narrative_locations?: string[] | null
+  countries_of_origin?: string[] | null
+  physical_format?: string | null
+  edition_name?: string | null
+  physical_dimensions?: string | null
   custom_field_values?: Array<{ field_def_id: number; value: string | null }> | null
 }

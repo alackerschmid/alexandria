@@ -16,16 +16,28 @@ async function fetchFromGoogleBooks(isbn: string, apiKey: string): Promise<BookM
     number_of_pages_median: info.pageCount ?? null,
     description: info.description ?? null,
     publisher: info.publisher ?? null,
+    physical_format: null,
+    edition_name: null,
+    physical_dimensions: null,
   }
 }
 
 async function fetchFromOpenLibrary(isbn: string): Promise<BookMetadata | null> {
-  const res = await fetch(
-    `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
-  )
-  const data: any = await res.json()
-  const book = data[`ISBN:${isbn}`]
+  const bibkey = `ISBN:${isbn}`
+  const base = `https://openlibrary.org/api/books?bibkeys=${bibkey}&format=json`
+
+  // Fetch data (existing fields) and details (physical_dimensions, edition_name) in parallel.
+  // details fetch is best-effort; failures leave those fields null.
+  const [dataJson, detailsJson] = await Promise.all([
+    fetch(`${base}&jscmd=data`).then(r => r.json() as Promise<any>),
+    fetch(`${base}&jscmd=details`).then(r => r.json() as Promise<any>).catch(() => ({})),
+  ])
+
+  const book = dataJson[bibkey]
   if (!book) return null
+  const details: any = detailsJson[bibkey]?.details ?? null
+
+  const pdRaw = details?.physical_dimensions
   return {
     title: book.title ?? null,
     author: book.authors?.[0]?.name ?? null,
@@ -37,6 +49,9 @@ async function fetchFromOpenLibrary(isbn: string): Promise<BookMetadata | null> 
       ? book.description
       : book.description?.value ?? null,
     publisher: book.publishers?.[0]?.name ?? null,
+    physical_format: book.physical_format ?? null,
+    edition_name: details?.edition_name ?? null,
+    physical_dimensions: typeof pdRaw === 'string' ? pdRaw : pdRaw?.value ?? null,
   }
 }
 
@@ -113,13 +128,16 @@ export async function resolveEdition(db: D1Database, isbn: string, apiKey?: stri
   const meta = fetched ?? {
     title: null, author: null, cover_url: null, language: null,
     publish_date: null, number_of_pages_median: null, description: null, publisher: null,
+    physical_format: null, edition_name: null, physical_dimensions: null,
   }
 
   await db.prepare(`INSERT OR IGNORE INTO books
-      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
+       physical_format, edition_name, physical_dimensions)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(isbn, meta.title, meta.author, meta.cover_url, meta.language,
-          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher)
+          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher,
+          meta.physical_format, meta.edition_name, meta.physical_dimensions)
     .run()
 
   book = await db.prepare('SELECT * FROM books WHERE isbn = ?').bind(isbn).first<BookRow>()

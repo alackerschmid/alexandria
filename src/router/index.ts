@@ -11,7 +11,7 @@ import Home from '@/pages/home.vue'
 import Index from '@/pages/index.vue'
 import Login from '@/pages/login.vue'
 import Scanner from '@/pages/scanner.vue'
-import { useAuthStore } from '@/stores/auth'
+import { useAuthStore, WELCOME_SEEN_KEY } from '@/stores/auth'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -42,6 +42,11 @@ const router = createRouter({
       component: Login,
     },
     {
+      path: '/welcome',
+      name: 'welcome',
+      component: () => import('@/pages/welcome.vue'),
+    },
+    {
       path: '/series/:id',
       name: 'series',
       component: () => import('@/pages/series.vue'),
@@ -69,6 +74,7 @@ router.beforeEach((to) => {
   if (authStore.isAuthenticated) {
     if (to.name === 'home')  return { name: 'dashboard' }
     if (to.name === 'login') return { name: 'dashboard' }
+    if (to.name === 'welcome' && localStorage.getItem(WELCOME_SEEN_KEY)) return { name: 'dashboard' }
   }
   if (!authStore.isAuthenticated && (to.name === 'dashboard' || to.name === 'series')) {
     return { name: 'home' }

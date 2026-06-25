@@ -22,6 +22,9 @@ export type BookRow = {
   number_of_pages_median: number | null
   description: string | null
   publisher: string | null
+  physical_format: string | null
+  edition_name: string | null
+  physical_dimensions: string | null
   fetched_at: string
   work_id: number | null
 }
@@ -39,6 +42,13 @@ export type WorkRow = {
   original_pub_date: string | null
   awards: string | null
   nominations: string | null
+  main_subject: string | null
+  form_of_work: string | null
+  language_of_work: string | null
+  first_line: string | null
+  epigraph: string | null
+  narrative_locations: string | null
+  countries_of_origin: string | null
 }
 
 export type BookMetadata = {
@@ -50,6 +60,9 @@ export type BookMetadata = {
   number_of_pages_median: number | null
   description: string | null
   publisher: string | null
+  physical_format: string | null
+  edition_name: string | null
+  physical_dimensions: string | null
 }
 
 export type WorkDetails = {
@@ -57,6 +70,13 @@ export type WorkDetails = {
   originalPubDate: string | null
   awards: string[]
   nominations: string[]
+  mainSubject: string | null
+  formOfWork: string | null
+  languageOfWork: string | null
+  firstLine: string | null
+  epigraph: string | null
+  narrativeLocations: string[]
+  countriesOfOrigin: string[]
 }
 
 export type SeriesHit = { seriesQid: string; ordinal: number | null; nameEn: string | null; nameDe: string | null }

@@ -35,6 +35,9 @@ export const SCAN_SELECT = `
          COALESCE(o.number_of_pages_median, b.number_of_pages_median) AS number_of_pages_median,
          COALESCE(o.description, b.description)              AS description,
          COALESCE(o.publisher, b.publisher)                  AS publisher,
+         b.physical_format                                   AS physical_format,
+         b.edition_name                                      AS edition_name,
+         b.physical_dimensions                               AS physical_dimensions,
          ws.series_id                                        AS series_id,
          COALESCE(sn.name, sr.canonical_name)                AS series_name,
          ws.ordinal                                          AS series_ordinal,
@@ -49,6 +52,13 @@ export const SCAN_SELECT = `
          wk.original_pub_date                              AS original_pub_date,
          wk.awards                                         AS awards,
          wk.nominations                                    AS nominations,
+         wk.main_subject                                   AS main_subject,
+         wk.form_of_work                                   AS form_of_work,
+         wk.language_of_work                               AS language_of_work,
+         wk.first_line                                     AS first_line,
+         wk.epigraph                                       AS epigraph,
+         wk.narrative_locations                            AS narrative_locations,
+         wk.countries_of_origin                            AS countries_of_origin,
          (o.title IS NOT NULL)                               AS title_overridden,
          (o.cover_url IS NOT NULL)                           AS cover_url_overridden,
          (o.language IS NOT NULL)                            AS language_overridden,
@@ -95,9 +105,11 @@ export function attachCustomFields(
   const bookVals = valuesByBook.get(book_id)
   return {
     ...rest,
-    genres:      rest.genres      ? JSON.parse(rest.genres)      : null,
-    awards:      rest.awards      ? JSON.parse(rest.awards)      : null,
-    nominations: rest.nominations ? JSON.parse(rest.nominations) : null,
+    genres:              rest.genres              ? (JSON.parse(rest.genres) as string[]).map(g => g.replace(/\b\w/g, c => c.toUpperCase())) : null,
+    awards:              rest.awards              ? JSON.parse(rest.awards)              : null,
+    nominations:         rest.nominations         ? JSON.parse(rest.nominations)         : null,
+    narrative_locations: rest.narrative_locations ? JSON.parse(rest.narrative_locations) : null,
+    countries_of_origin: rest.countries_of_origin ? JSON.parse(rest.countries_of_origin) : null,
     custom_field_values: defs.map(d => ({ field_def_id: d.id, value: bookVals?.get(d.id) ?? null })),
   }
 }

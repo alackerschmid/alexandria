@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 
+export const WELCOME_SEEN_KEY = 'welcome_seen'
+
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token'))
   const email = ref<string | null>(localStorage.getItem('email'))
@@ -40,6 +42,7 @@ export const useAuthStore = defineStore('auth', () => {
     localStorage.removeItem('token')
     localStorage.removeItem('email')
     localStorage.removeItem('firstname')
+    localStorage.removeItem(WELCOME_SEEN_KEY)
     router.push('/')
   }
 

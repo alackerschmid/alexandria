@@ -1,7 +1,9 @@
 <template>
   <v-app>
-    <v-main>
-      <router-view />
+    <v-main class="bg-charcoal">
+      <div class="max-w-[1440px] mx-auto">
+        <router-view />
+      </div>
     </v-main>
   </v-app>
 </template>

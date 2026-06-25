@@ -6,6 +6,7 @@ import booksRoutes from './routes/books'
 import fieldsRoutes from './routes/fields'
 import scansRoutes from './routes/scans'
 import { works, series } from './routes/catalog'
+import statsRoutes from './routes/stats'
 import { scheduled } from './sweeper'
 
 const app = new Hono<Env>()
@@ -26,5 +27,6 @@ app.route('/api/field-definitions', fieldsRoutes)
 app.route('/api/scans', scansRoutes)
 app.route('/api/works', works)
 app.route('/api/series', series)
+app.route('/api/stats', statsRoutes)
 
 export default { fetch: app.fetch, scheduled }

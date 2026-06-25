@@ -1,6 +1,10 @@
 import type { WorkRow, WorkDetails, SeriesHit } from './types'
 import { splitAuthors, fetchBookMetadata } from './editions'
 
+// Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
+// works that were enriched with an older schema and are missing the new fields.
+export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 1
+
 const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql'
 const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)'
 
@@ -107,17 +111,23 @@ async function fetchBookInfo(title: string, author: string): Promise<{ workQid: 
   return { workQid, series }
 }
 
-// Fetches genres, original publication year, awards and nominations for a known Wikidata QID.
-// Uses subqueries per property to avoid a cartesian-product explosion when a work has many values.
+// Fetches work-level metadata for a known Wikidata QID.
+// Uses one subquery per property to avoid cartesian-product explosion when a work has many values.
 async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
-  const empty: WorkDetails = { genres: [], originalPubDate: null, awards: [], nominations: [] }
+  const empty: WorkDetails = {
+    genres: [], originalPubDate: null, awards: [], nominations: [],
+    mainSubject: null, formOfWork: null, languageOfWork: null,
+    firstLine: null, epigraph: null, narrativeLocations: [], countriesOfOrigin: [],
+  }
   if (!/^Q\d+$/.test(workQid)) {
     console.warn('[fetchWorkDetails] invalid QID:', workQid)
     return empty
   }
   console.log('[fetchWorkDetails] fetching details for', workQid)
   const query = `
-    SELECT ?genres ?originalPubDate ?awards ?nominations WHERE {
+    SELECT ?genres ?originalPubDate ?awards ?nominations
+           ?mainSubject ?formOfWork ?languageOfWork ?firstLine ?epigraph
+           ?narrativeLocations ?countriesOfOrigin WHERE {
       { SELECT (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres) WHERE {
           OPTIONAL { wd:${workQid} wdt:P136 ?genre.
                      ?genre rdfs:label ?genreLabel. FILTER(LANG(?genreLabel) = "en") } } }
@@ -126,30 +136,57 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
       { SELECT (GROUP_CONCAT(DISTINCT ?awardLabel; separator="|") AS ?awards) WHERE {
           OPTIONAL { wd:${workQid} wdt:P166 ?award.
                      ?award rdfs:label ?awardLabel. FILTER(LANG(?awardLabel) = "en") } } }
-      { SELECT (GROUP_CONCAT(DISTINCT ?nominationLabel; separator="|") AS ?nominations) WHERE {
-          OPTIONAL { wd:${workQid} wdt:P1411 ?nomination.
-                     ?nomination rdfs:label ?nominationLabel. FILTER(LANG(?nominationLabel) = "en") } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?nominLabel; separator="|") AS ?nominations) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P1411 ?nomin.
+                     ?nomin rdfs:label ?nominLabel. FILTER(LANG(?nominLabel) = "en") } } }
+      { SELECT (SAMPLE(?subjLabel) AS ?mainSubject) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P921 ?subj.
+                     ?subj rdfs:label ?subjLabel. FILTER(LANG(?subjLabel) = "en") } } }
+      { SELECT (SAMPLE(?formLabel) AS ?formOfWork) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P7937 ?form.
+                     ?form rdfs:label ?formLabel. FILTER(LANG(?formLabel) = "en") } } }
+      { SELECT (SAMPLE(?langLabel) AS ?languageOfWork) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P407 ?lang.
+                     ?lang rdfs:label ?langLabel. FILTER(LANG(?langLabel) = "en") } } }
+      { SELECT (SAMPLE(STR(?fl)) AS ?firstLine) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P1922 ?fl. } } }
+      { SELECT (SAMPLE(STR(?ep)) AS ?epigraph) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P7150 ?ep. } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?narLocLabel; separator="|") AS ?narrativeLocations) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P840 ?narLoc.
+                     ?narLoc rdfs:label ?narLocLabel. FILTER(LANG(?narLocLabel) = "en") } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?countryLabel; separator="|") AS ?countriesOfOrigin) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P495 ?country.
+                     ?country rdfs:label ?countryLabel. FILTER(LANG(?countryLabel) = "en") } } }
     }`.trim()
   const rows = await runSparql(query)
   const row = rows[0]
   console.log('[fetchWorkDetails] raw row:', JSON.stringify(row ?? null))
   const splitPipe = (v: string | undefined) => (v ? v.split('|').filter(Boolean) : [])
+  const strOrNull = (v: string | undefined) => v || null
   const yearFrom = (v: string | undefined) => {
     if (!v) return null
     const m = v.match(/(\d{4})/)
     return m ? m[1] : null
   }
   const result: WorkDetails = {
-    genres: splitPipe(row?.genres?.value),
-    originalPubDate: yearFrom(row?.originalPubDate?.value),
-    awards: splitPipe(row?.awards?.value),
-    nominations: splitPipe(row?.nominations?.value),
+    genres:            splitPipe(row?.genres?.value),
+    originalPubDate:   yearFrom(row?.originalPubDate?.value),
+    awards:            splitPipe(row?.awards?.value),
+    nominations:       splitPipe(row?.nominations?.value),
+    mainSubject:       strOrNull(row?.mainSubject?.value),
+    formOfWork:        strOrNull(row?.formOfWork?.value),
+    languageOfWork:    strOrNull(row?.languageOfWork?.value),
+    firstLine:         strOrNull(row?.firstLine?.value),
+    epigraph:          strOrNull(row?.epigraph?.value),
+    narrativeLocations: splitPipe(row?.narrativeLocations?.value),
+    countriesOfOrigin:  splitPipe(row?.countriesOfOrigin?.value),
   }
   console.log('[fetchWorkDetails] parsed:', {
-    genres: result.genres,
-    originalPubDate: result.originalPubDate,
-    awards: result.awards.length,
-    nominations: result.nominations.length,
+    genres: result.genres, originalPubDate: result.originalPubDate,
+    awards: result.awards.length, nominations: result.nominations.length,
+    mainSubject: result.mainSubject, formOfWork: result.formOfWork,
+    narrativeLocations: result.narrativeLocations.length, countriesOfOrigin: result.countriesOfOrigin.length,
   })
   return result
 }
@@ -329,23 +366,37 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     // Give unowned/placeholder works a real edition (cover + ISBN) so the series view renders them.
     if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
 
-    const genresJson   = details?.genres.length      ? JSON.stringify(details.genres)      : null
-    const awardsJson   = details?.awards.length       ? JSON.stringify(details.awards)      : null
-    const nominJson    = details?.nominations.length  ? JSON.stringify(details.nominations) : null
-    const pubDate      = details?.originalPubDate ?? null
+    const genresJson     = details?.genres.length             ? JSON.stringify(details.genres)             : null
+    const awardsJson     = details?.awards.length              ? JSON.stringify(details.awards)             : null
+    const nominJson      = details?.nominations.length         ? JSON.stringify(details.nominations)        : null
+    const narLocsJson    = details?.narrativeLocations.length  ? JSON.stringify(details.narrativeLocations) : null
+    const countriesJson  = details?.countriesOfOrigin.length   ? JSON.stringify(details.countriesOfOrigin)  : null
+    const pubDate        = details?.originalPubDate ?? null
     console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
 
     const updateResult = await db.prepare(`
       UPDATE works SET
-        series_checked_at    = datetime('now'),
-        enrichment_failed_at = NULL,
-        enrichment_attempts  = 0,
-        genres               = ?,
-        original_pub_date  = ?,
-        awards             = ?,
-        nominations        = ?
+        series_checked_at         = datetime('now'),
+        enrichment_failed_at      = NULL,
+        enrichment_attempts       = 0,
+        enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
+        genres                    = ?,
+        original_pub_date         = ?,
+        awards                    = ?,
+        nominations               = ?,
+        main_subject              = ?,
+        form_of_work              = ?,
+        language_of_work          = ?,
+        first_line                = ?,
+        epigraph                  = ?,
+        narrative_locations       = ?,
+        countries_of_origin       = ?
       WHERE id = ?`)
-      .bind(genresJson, pubDate, awardsJson, nominJson, canonicalId)
+      .bind(genresJson, pubDate, awardsJson, nominJson,
+            details?.mainSubject ?? null, details?.formOfWork ?? null,
+            details?.languageOfWork ?? null, details?.firstLine ?? null,
+            details?.epigraph ?? null, narLocsJson, countriesJson,
+            canonicalId)
       .run()
     console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
   } catch (e) {
