@@ -302,7 +302,10 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     console.log(`[enrichWork] start workId=${workId} force=${force}`)
     const w = await db.prepare('SELECT * FROM works WHERE id = ?').bind(workId).first<WorkRow>()
     if (!w) { console.warn(`[enrichWork] work ${workId} not found`); return }
-    if (w.series_checked_at && !force) { console.log(`[enrichWork] already enriched (series_checked_at=${w.series_checked_at}), skipping`); return }
+    // Re-enrich already-checked works when they're behind the current schema version (the sweeper's
+    // backfill path passes force=false), so new Wikidata columns get populated without a force-refresh.
+    const schemaStale = (w.enrichment_schema_version ?? 0) < CURRENT_ENRICHMENT_SCHEMA_VERSION
+    if (w.series_checked_at && !force && !schemaStale) { console.log(`[enrichWork] already enriched (series_checked_at=${w.series_checked_at}), skipping`); return }
     // Clear series_checked_at so the enrichment poll sees 'pending' while we run SPARQL.
     if (force) await db.prepare('UPDATE works SET series_checked_at = NULL WHERE id = ?').bind(workId).run()
 

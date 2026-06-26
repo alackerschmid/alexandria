@@ -38,6 +38,7 @@ export type WorkRow = {
   series_checked_at: string | null
   enrichment_failed_at: string | null
   enrichment_attempts: number
+  enrichment_schema_version: number
   genres: string | null
   original_pub_date: string | null
   awards: string | null

@@ -55,18 +55,29 @@ async function fetchFromOpenLibrary(isbn: string): Promise<BookMetadata | null> 
   }
 }
 
-// Tries Google Books first, then OpenLibrary. Returns null if neither has the book.
-export async function fetchBookMetadata(isbn: string, googleApiKey?: string): Promise<BookMetadata | null> {
-  if (googleApiKey) {
-    try {
-      const result = await fetchFromGoogleBooks(isbn, googleApiKey)
-      if (result) return result
-    } catch {}
+// Fill any null field in `primary` from `fallback` (primary's non-null values always win).
+function mergeMetadata(primary: BookMetadata, fallback: BookMetadata): BookMetadata {
+  const out = { ...primary }
+  for (const key of Object.keys(out) as (keyof BookMetadata)[]) {
+    if (out[key] == null) (out[key] as BookMetadata[typeof key]) = fallback[key]
   }
-  try {
-    return await fetchFromOpenLibrary(isbn)
-  } catch {}
-  return null
+  return out
+}
+
+// Tries Google Books, then fills gaps from OpenLibrary. Google often omits page counts and never
+// returns physical_format/edition_name/physical_dimensions, so we consult OpenLibrary even when
+// Google has the book. Returns null if neither source has it.
+export async function fetchBookMetadata(isbn: string, googleApiKey?: string): Promise<BookMetadata | null> {
+  let google: BookMetadata | null = null
+  if (googleApiKey) {
+    try { google = await fetchFromGoogleBooks(isbn, googleApiKey) } catch {}
+  }
+  let openlib: BookMetadata | null = null
+  try { openlib = await fetchFromOpenLibrary(isbn) } catch {}
+
+  if (!google) return openlib
+  if (!openlib) return google
+  return mergeMetadata(google, openlib)
 }
 
 export function normalizeStr(s: string | null | undefined): string {

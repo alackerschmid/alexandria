@@ -7,6 +7,7 @@
 - ~~proper capitalization for genres~~
 - only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
+- add display names and titles to the DB that the user can edit
 
 ## batch 1: making series more robust
 - ~~distinguish main / side series (ie dresden files) -> series entries without a numbering should be labelled as "side entries"~~ 
@@ -25,7 +26,7 @@
   - col3: edition stats, your stats (added on, custom fields)
 - ~~some sort of automated lookup for un-enriched books~~
 - ~~backfill of enrichment for series items (directly on queue?)~~
-- pagination for grid view -> make pagination adjustable
+- ~~pagination for grid view -> make pagination adjustable~~
 - ~~add expanded view for details page~~
 - ~~idea: show preceding / following books to the left / right, slightly transparent, blurred or os (on mobile, give icons to cycle left / right)~~ shelved for now
 
@@ -38,6 +39,7 @@
 - overhaul edit process
 
 # lower priority UI improvements
+- general legibility / contrast etc. check
 - design uniform view for chip items (dropdown values when selected, genres, ...)
 - re-add library button to stats page
 - write some taglines for the stats page
