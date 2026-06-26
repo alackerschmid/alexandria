@@ -7,8 +7,9 @@
   >
     <!-- ── CARD MODE ─────────────────────────────────────────────────────── -->
     <template v-if="mode === 'card'">
-      <div class="bg-charcoal-light border border-charcoal-border flex flex-col">
-
+      <div
+        class="bg-charcoal-light border border-charcoal-border flex flex-col"
+      >
         <!-- header: cover + meta -->
         <div class="flex gap-5 p-7">
           <!-- cover -->
@@ -24,7 +25,9 @@
             >
               <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-neon" />
               <div class="flex-1" />
-              <div class="font-heading font-bold text-xs text-text-primary leading-tight pl-2 line-clamp-4">
+              <div
+                class="font-heading font-bold text-xs text-text-primary leading-tight pl-2 line-clamp-4"
+              >
                 {{ book.title || book.isbn }}
               </div>
             </div>
@@ -33,9 +36,14 @@
           <!-- meta -->
           <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-3">
-              <h2 class="font-heading font-bold text-2xl text-text-primary leading-tight mb-1 flex items-center gap-1.5">
+              <h2
+                class="font-heading font-bold text-2xl text-text-primary leading-tight mb-1 flex items-center gap-1.5"
+              >
                 {{ book.title || book.isbn }}
-                <span v-if="book.title_overridden" class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0" />
+                <span
+                  v-if="book.title_overridden"
+                  class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0"
+                />
               </h2>
               <button
                 class="shrink-0 text-text-secondary/50 hover:text-text-secondary transition-colors pt-0.5"
@@ -49,8 +57,12 @@
               v-if="book.author"
               class="text-sm text-text-secondary hover:text-orange-neon transition-colors mb-3 text-left"
               @click="filterBy('author', book.author!)"
-            >{{ book.author }}</button>
-            <div v-else class="text-sm text-text-secondary mb-3">{{ $t('book.unknown_author') }}</div>
+            >
+              {{ book.author }}
+            </button>
+            <div v-else class="text-sm text-text-secondary mb-3">
+              {{ $t("book.unknown_author") }}
+            </div>
 
             <!-- series label -->
             <button
@@ -59,13 +71,18 @@
               @click="goToSeries"
             >
               <span class="text-orange-neon">♦</span>
-              {{ book.series_name || $t('detail.series') }}{{ book.series_ordinal != null ? ` · ${$t('detail.series_position', { n: book.series_ordinal })}` : '' }}
+              {{ book.series_name || $t("detail.series")
+              }}{{
+                book.series_ordinal != null
+                  ? ` · ${$t("detail.series_position", { n: book.series_ordinal })}`
+                  : ""
+              }}
             </button>
             <span
               v-else-if="book.enrichment_status === 'done'"
               class="flex items-center text-[10px] tracking-[0.14em] uppercase text-text-secondary/40 mb-3"
             >
-              {{ $t('detail.standalone') }}
+              {{ $t("detail.standalone") }}
             </span>
 
             <!-- status pill -->
@@ -75,25 +92,43 @@
               :class="STATUS_CONFIG[book.status].class"
               @click="$emit('cycle-status')"
             >
-              <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="STATUS_CONFIG[book.status].dotClass" />
+              <span
+                class="w-1.5 h-1.5 rounded-full shrink-0"
+                :class="STATUS_CONFIG[book.status].dotClass"
+              />
               {{ STATUS_CONFIG[book.status].label }}
             </button>
             <span
               v-else
               class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-text-secondary/50"
             >
-              <span class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border" />
+              <span
+                class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border"
+              />
               {{ STATUS_CONFIG[book.status].label }}
             </span>
 
             <!-- enrichment indicator -->
             <div
-              v-if="!guest && !readonly && book.enrichment_status && book.enrichment_status !== 'done'"
+              v-if="
+                !guest &&
+                !readonly &&
+                book.enrichment_status &&
+                book.enrichment_status !== 'done'
+              "
               class="flex items-center gap-1 mt-1.5"
-              :class="book.enrichment_status === 'failed' ? 'text-error/60' : 'text-text-secondary/30'"
+              :class="
+                book.enrichment_status === 'failed'
+                  ? 'text-error/60'
+                  : 'text-text-secondary/30'
+              "
             >
               <v-icon
-                :icon="book.enrichment_status === 'failed' ? 'mdi-alert-circle-outline' : 'mdi-progress-clock'"
+                :icon="
+                  book.enrichment_status === 'failed'
+                    ? 'mdi-alert-circle-outline'
+                    : 'mdi-progress-clock'
+                "
                 size="10"
               />
               <span class="text-[9px] tracking-[0.15em] uppercase">
@@ -104,8 +139,13 @@
         </div>
 
         <!-- synopsis snippet -->
-        <div v-if="book.description" class="border-t border-charcoal-border px-7 py-5">
-          <p class="text-[13px] leading-relaxed text-text-secondary line-clamp-3">
+        <div
+          v-if="book.description"
+          class="border-t border-charcoal-border px-7 py-5"
+        >
+          <p
+            class="text-[13px] leading-relaxed text-text-secondary line-clamp-3"
+          >
             {{ book.description }}
           </p>
           <!-- <button
@@ -119,57 +159,88 @@
         <!-- quick facts -->
         <div class="grid grid-cols-3 border-t border-charcoal-border">
           <div class="py-4 px-3 text-center border-r border-charcoal-border">
-            <div class="font-heading font-bold text-xl text-text-primary leading-none">{{ publishYear }}</div>
-            <div class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2">{{ $t('detail.published') }}</div>
+            <div
+              class="font-heading font-bold text-xl text-text-primary leading-none"
+            >
+              {{ publishYear }}
+            </div>
+            <div
+              class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2"
+            >
+              {{ $t("detail.published") }}
+            </div>
           </div>
           <div class="py-4 px-3 text-center border-r border-charcoal-border">
-            <div class="font-heading font-bold text-xl text-text-primary leading-none">{{ book.number_of_pages_median || '—' }}</div>
-            <div class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2">{{ $t('detail.pages') }}</div>
+            <div
+              class="font-heading font-bold text-xl text-text-primary leading-none"
+            >
+              {{ book.number_of_pages_median || "—" }}
+            </div>
+            <div
+              class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2"
+            >
+              {{ $t("detail.pages") }}
+            </div>
           </div>
           <div class="py-4 px-3 text-center overflow-hidden">
             <button
               v-if="book.genres?.length"
               class="font-heading font-bold text-xl text-text-primary leading-none truncate hover:text-orange-neon transition-colors"
               @click="filterBy('genre', book.genres[0])"
-            >{{ firstGenre }}</button>
-            <div v-else class="font-heading font-bold text-xl text-text-primary leading-none truncate">{{ firstGenre }}</div>
-            <div class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2">{{ $t('detail.genres') }}</div>
+            >
+              {{ firstGenre }}
+            </button>
+            <div
+              v-else
+              class="font-heading font-bold text-xl text-text-primary leading-none truncate"
+            >
+              {{ firstGenre }}
+            </div>
+            <div
+              class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2"
+            >
+              {{ $t("detail.genres") }}
+            </div>
           </div>
         </div>
 
         <!-- footer -->
-        <div class="border-t border-charcoal-border flex items-center justify-between px-5 py-4 bg-charcoal/30">
-          <button
-            class="text-[11px] tracking-[0.16em] uppercase text-text-secondary hover:text-text-primary transition-colors"
-            @click="$emit('update:modelValue', false)"
-          >
-            {{ $t('detail.close') }}
-          </button>
+        <div
+          class="border-t border-charcoal-border flex items-center justify-between px-5 py-4 bg-charcoal/30"
+        >
           <button
             class="flex items-center gap-2 bg-orange-neon px-5 py-3 text-[12px] tracking-[0.14em] uppercase font-bold hover:opacity-90 transition-opacity"
             style="color: #111110"
             @click="expand"
           >
-            {{ $t('detail.expand') }}
+            {{ $t("detail.expand") }}
             <v-icon icon="mdi-arrow-expand" size="14" style="color: #111110" />
           </button>
+          <button
+            class="text-[11px] tracking-[0.16em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+            @click="$emit('update:modelValue', false)"
+          >
+            {{ $t("detail.close") }}
+          </button>
         </div>
-
       </div>
     </template>
 
     <!-- ── FULL MODE ──────────────────────────────────────────────────────── -->
     <template v-else>
       <div class="bg-charcoal flex flex-col h-screen">
-
         <!-- sticky top bar -->
-        <div class="shrink-0 flex items-center justify-between px-6 md:px-10 py-4 border-b border-charcoal-border bg-charcoal z-10">
+        <div
+          class="shrink-0 flex items-center justify-between px-6 md:px-10 py-4 border-b border-charcoal-border bg-charcoal z-10"
+        >
           <button
             class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
             @click="mode = 'card'"
           >
             <v-icon icon="mdi-arrow-left" size="16" />
-            <span class="text-[10px] tracking-[0.18em] uppercase">{{ $t('detail.back_to_card') }}</span>
+            <span class="text-[10px] tracking-[0.18em] uppercase">{{
+              $t("detail.back_to_card")
+            }}</span>
           </button>
           <div class="flex items-center gap-2">
             <template v-if="!editing">
@@ -187,7 +258,11 @@
                 :disabled="refreshing"
                 @click="refresh"
               >
-                <v-icon icon="mdi-refresh" size="18" :class="refreshing ? 'animate-spin' : ''" />
+                <v-icon
+                  icon="mdi-refresh"
+                  size="18"
+                  :class="refreshing ? 'animate-spin' : ''"
+                />
               </button>
               <button
                 v-if="!readonly"
@@ -216,13 +291,13 @@
 
         <!-- scrollable body -->
         <div class="flex-1 overflow-y-auto">
-
           <!-- view mode -->
           <template v-if="!editing">
             <div class="flex items-start">
-
               <!-- left: cover stage (desktop only, sticky) -->
-              <div class="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-charcoal-border px-8 py-14 flex-col items-center justify-center sticky top-0 self-start min-h-[calc(100vh-52px)]">
+              <div
+                class="hidden md:flex md:w-72 lg:w-80 shrink-0 border-r border-charcoal-border px-8 py-14 flex-col items-center justify-center sticky top-0 self-start min-h-[calc(100vh-52px)]"
+              >
                 <div class="w-48 h-72 lg:w-56 lg:h-84 relative">
                   <img
                     v-if="book.cover_url"
@@ -233,12 +308,21 @@
                     v-else
                     class="relative w-full h-full bg-charcoal-light border border-charcoal-border flex flex-col p-6 overflow-hidden shadow-2xl"
                   >
-                    <div class="absolute left-0 top-0 bottom-0 w-2 bg-orange-neon" />
+                    <div
+                      class="absolute left-0 top-0 bottom-0 w-2 bg-orange-neon"
+                    />
                     <div class="flex-1" />
-                    <div class="font-heading font-bold text-2xl text-text-primary leading-tight pl-3">
+                    <div
+                      class="font-heading font-bold text-2xl text-text-primary leading-tight pl-3"
+                    >
                       {{ book.title || book.isbn }}
                     </div>
-                    <div v-if="book.author" class="text-sm text-text-secondary mt-3 pl-3">{{ book.author }}</div>
+                    <div
+                      v-if="book.author"
+                      class="text-sm text-text-secondary mt-3 pl-3"
+                    >
+                      {{ book.author }}
+                    </div>
                   </div>
                 </div>
                 <!-- series link below cover -->
@@ -248,37 +332,53 @@
                   @click="goToSeries"
                 >
                   <v-icon icon="mdi-bookshelf" size="11" />
-                  {{ book.series_name || $t('detail.series') }}
-                  <span v-if="book.series_ordinal != null"> · {{ $t('detail.series_position', { n: book.series_ordinal }) }}</span>
+                  {{ book.series_name || $t("detail.series") }}
+                  <span v-if="book.series_ordinal != null">
+                    ·
+                    {{
+                      $t("detail.series_position", { n: book.series_ordinal })
+                    }}</span
+                  >
                 </button>
               </div>
 
               <!-- right: detail content -->
               <div class="flex-1 min-w-0 px-6 md:px-10 lg:px-14 py-10 md:py-14">
-
                 <!-- genre + series eyebrow -->
                 <div class="flex items-center gap-3 mb-4 flex-wrap">
                   <span
                     v-if="book.genres?.length"
                     class="text-[10px] tracking-[0.3em] uppercase font-bold text-orange-neon"
-                  >{{ book.genres[0] }}</span>
+                    >{{ book.genres[0] }}</span
+                  >
                   <button
                     v-if="book.series_id"
                     class="text-[10px] tracking-[0.16em] uppercase text-text-secondary/60 hover:text-text-secondary transition-colors"
                     @click="goToSeries"
                   >
-                    · {{ book.series_name || $t('detail.series') }}{{ book.series_ordinal != null ? ` · ${$t('detail.series_position', { n: book.series_ordinal })}` : '' }}
+                    · {{ book.series_name || $t("detail.series")
+                    }}{{
+                      book.series_ordinal != null
+                        ? ` · ${$t("detail.series_position", { n: book.series_ordinal })}`
+                        : ""
+                    }}
                   </button>
                   <span
                     v-else-if="book.enrichment_status === 'done'"
                     class="text-[10px] tracking-[0.16em] uppercase text-text-secondary/40"
-                  >· {{ $t('detail.standalone') }}</span>
+                    >· {{ $t("detail.standalone") }}</span
+                  >
                 </div>
 
                 <!-- title -->
-                <h1 class="font-heading font-bold text-3xl md:text-5xl text-text-primary leading-tight tracking-tight mb-3 flex items-start gap-2">
+                <h1
+                  class="font-heading font-bold text-3xl md:text-5xl text-text-primary leading-tight tracking-tight mb-3 flex items-start gap-2"
+                >
                   {{ book.title || book.isbn }}
-                  <span v-if="book.title_overridden" class="inline-block w-2 h-2 rounded-full bg-orange-neon shrink-0 mt-2" />
+                  <span
+                    v-if="book.title_overridden"
+                    class="inline-block w-2 h-2 rounded-full bg-orange-neon shrink-0 mt-2"
+                  />
                 </h1>
 
                 <!-- author -->
@@ -289,16 +389,31 @@
                 >
                   {{ book.author }}
                 </button>
-                <div v-else class="text-base text-text-secondary mb-8">{{ $t('book.unknown_author') }}</div>
+                <div v-else class="text-base text-text-secondary mb-8">
+                  {{ $t("book.unknown_author") }}
+                </div>
 
                 <!-- enrichment status (full view) -->
                 <div
-                  v-if="!guest && !readonly && book.enrichment_status && book.enrichment_status !== 'done'"
+                  v-if="
+                    !guest &&
+                    !readonly &&
+                    book.enrichment_status &&
+                    book.enrichment_status !== 'done'
+                  "
                   class="flex items-center gap-1.5 mb-6 -mt-4"
-                  :class="book.enrichment_status === 'failed' ? 'text-error/60' : 'text-text-secondary/30'"
+                  :class="
+                    book.enrichment_status === 'failed'
+                      ? 'text-error/60'
+                      : 'text-text-secondary/30'
+                  "
                 >
                   <v-icon
-                    :icon="book.enrichment_status === 'failed' ? 'mdi-alert-circle-outline' : 'mdi-progress-clock'"
+                    :icon="
+                      book.enrichment_status === 'failed'
+                        ? 'mdi-alert-circle-outline'
+                        : 'mdi-progress-clock'
+                    "
                     size="11"
                   />
                   <span class="text-[9px] tracking-[0.15em] uppercase">
@@ -308,22 +423,30 @@
 
                 <!-- status segmented control -->
                 <div v-if="!readonly" class="mb-10">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">
-                    {{ $t('library.filter_status') }}
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
+                  >
+                    {{ $t("library.filter_status") }}
                   </div>
                   <div class="flex max-w-xs border border-charcoal-border">
                     <button
                       v-for="opt in STATUS_OPTIONS"
                       :key="opt.status"
                       class="flex-1 flex items-center justify-center gap-2 py-3 text-[11px] tracking-[0.14em] uppercase font-medium transition-all border-r border-charcoal-border last:border-r-0"
-                      :class="book.status === opt.status
-                        ? `bg-orange-neon/10 ${opt.activeClass}`
-                        : 'text-text-secondary/50 hover:text-text-secondary'"
+                      :class="
+                        book.status === opt.status
+                          ? `bg-orange-neon/10 ${opt.activeClass}`
+                          : 'text-text-secondary/50 hover:text-text-secondary'
+                      "
                       @click="$emit('set-status', opt.status)"
                     >
                       <span
                         class="w-1.5 h-1.5 rounded-full shrink-0"
-                        :class="book.status === opt.status ? opt.dotClass : 'bg-charcoal-border'"
+                        :class="
+                          book.status === opt.status
+                            ? opt.dotClass
+                            : 'bg-charcoal-border'
+                        "
                       />
                       {{ opt.label }}
                     </button>
@@ -332,155 +455,359 @@
 
                 <!-- synopsis -->
                 <div v-if="book.description" class="mb-10">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3 flex items-center gap-1.5">
-                    {{ $t('detail.description') }}
-                    <span v-if="book.description_overridden" class="w-1.5 h-1.5 rounded-full bg-orange-neon" />
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3 flex items-center gap-1.5"
+                  >
+                    {{ $t("detail.description") }}
+                    <span
+                      v-if="book.description_overridden"
+                      class="w-1.5 h-1.5 rounded-full bg-orange-neon"
+                    />
                   </div>
-                  <p class="text-[15px] leading-relaxed text-text-secondary">{{ book.description }}</p>
+                  <p class="text-[15px] leading-relaxed text-text-secondary">
+                    {{ book.description }}
+                  </p>
                 </div>
 
                 <!-- first line -->
                 <div v-if="book.first_line" class="mb-10">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">{{ $t('detail.first_line') }}</div>
-                  <p class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4">{{ book.first_line }}</p>
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
+                  >
+                    {{ $t("detail.first_line") }}
+                  </div>
+                  <p
+                    class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4"
+                  >
+                    {{ book.first_line }}
+                  </p>
                 </div>
 
                 <!-- epigraph -->
                 <div v-if="book.epigraph" class="mb-10">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">{{ $t('detail.epigraph') }}</div>
-                  <p class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4">{{ book.epigraph }}</p>
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
+                  >
+                    {{ $t("detail.epigraph") }}
+                  </div>
+                  <p
+                    class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4"
+                  >
+                    {{ book.epigraph }}
+                  </p>
                 </div>
 
                 <!-- edition + your record grid -->
-                <div class="grid md:grid-cols-2 gap-x-12 pt-8 border-t border-charcoal-border mb-10">
+                <div
+                  class="grid md:grid-cols-2 gap-x-12 pt-8 border-t border-charcoal-border mb-10"
+                >
                   <!-- edition column -->
                   <div>
-                    <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4">
-                      {{ $t('detail.edition') }}
+                    <div
+                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
+                    >
+                      {{ $t("detail.edition") }}
                     </div>
-                    <div v-if="book.publisher" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0">
-                        {{ $t('detail.publisher') }}
-                        <span v-if="book.publisher_overridden" class="w-1 h-1 rounded-full bg-orange-neon" />
+                    <div
+                      v-if="book.publisher"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
+                      >
+                        {{ $t("detail.publisher") }}
+                        <span
+                          v-if="book.publisher_overridden"
+                          class="w-1 h-1 rounded-full bg-orange-neon"
+                        />
                       </span>
-                      <button class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors text-right truncate" @click="filterBy('publisher', book.publisher!)">
+                      <button
+                        class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors text-right truncate"
+                        @click="filterBy('publisher', book.publisher!)"
+                      >
                         {{ book.publisher }}
                       </button>
                     </div>
-                    <div v-if="book.language" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0">
-                        {{ $t('detail.language') }}
-                        <span v-if="book.language_overridden" class="w-1 h-1 rounded-full bg-orange-neon" />
+                    <div
+                      v-if="book.language"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
+                      >
+                        {{ $t("detail.language") }}
+                        <span
+                          v-if="book.language_overridden"
+                          class="w-1 h-1 rounded-full bg-orange-neon"
+                        />
                       </span>
-                      <button class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors" @click="filterBy('language', book.language!)">
+                      <button
+                        class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors"
+                        @click="filterBy('language', book.language!)"
+                      >
                         {{ langDisplay(book.language) }}
                       </button>
                     </div>
-                    <div v-if="book.publish_date" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0">
-                        {{ $t('detail.published') }}
-                        <span v-if="book.publish_date_overridden" class="w-1 h-1 rounded-full bg-orange-neon" />
+                    <div
+                      v-if="book.publish_date"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
+                      >
+                        {{ $t("detail.published") }}
+                        <span
+                          v-if="book.publish_date_overridden"
+                          class="w-1 h-1 rounded-full bg-orange-neon"
+                        />
                       </span>
-                      <span class="font-mono text-xs text-text-primary text-right">{{ formatPublishDate(book.publish_date) }}</span>
+                      <span
+                        class="font-mono text-xs text-text-primary text-right"
+                        >{{ formatPublishDate(book.publish_date) }}</span
+                      >
                     </div>
-                    <div v-if="book.number_of_pages_median" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0">
-                        {{ $t('detail.pages') }}
-                        <span v-if="book.pages_overridden" class="w-1 h-1 rounded-full bg-orange-neon" />
+                    <div
+                      v-if="book.number_of_pages_median"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
+                      >
+                        {{ $t("detail.pages") }}
+                        <span
+                          v-if="book.pages_overridden"
+                          class="w-1 h-1 rounded-full bg-orange-neon"
+                        />
                       </span>
-                      <span class="font-mono text-xs text-text-primary">{{ book.number_of_pages_median }}</span>
+                      <span class="font-mono text-xs text-text-primary">{{
+                        book.number_of_pages_median
+                      }}</span>
                     </div>
-                    <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.isbn') }}</span>
-                      <span class="font-mono text-xs text-text-primary text-right">{{ book.isbn }}</span>
+                    <div
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.isbn") }}</span
+                      >
+                      <span
+                        class="font-mono text-xs text-text-primary text-right"
+                        >{{ book.isbn }}</span
+                      >
                     </div>
-                    <div v-if="book.original_pub_date" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.original_pub_date') }}</span>
-                      <span class="font-mono text-xs text-text-primary">{{ book.original_pub_date }}</span>
+                    <div
+                      v-if="book.original_pub_date"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.original_pub_date") }}</span
+                      >
+                      <span class="font-mono text-xs text-text-primary">{{
+                        book.original_pub_date
+                      }}</span>
                     </div>
-                    <div v-if="book.physical_format" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.physical_format') }}</span>
-                      <span class="font-mono text-xs text-text-primary text-right">{{ book.physical_format }}</span>
+                    <div
+                      v-if="book.physical_format"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.physical_format") }}</span
+                      >
+                      <span
+                        class="font-mono text-xs text-text-primary text-right"
+                        >{{ book.physical_format }}</span
+                      >
                     </div>
-                    <div v-if="book.edition_name" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.edition_name') }}</span>
-                      <span class="font-mono text-xs text-text-primary text-right">{{ book.edition_name }}</span>
+                    <div
+                      v-if="book.edition_name"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.edition_name") }}</span
+                      >
+                      <span
+                        class="font-mono text-xs text-text-primary text-right"
+                        >{{ book.edition_name }}</span
+                      >
                     </div>
-                    <div v-if="book.physical_dimensions" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.physical_dimensions') }}</span>
-                      <span class="font-mono text-xs text-text-primary text-right">{{ book.physical_dimensions }}</span>
+                    <div
+                      v-if="book.physical_dimensions"
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.physical_dimensions") }}</span
+                      >
+                      <span
+                        class="font-mono text-xs text-text-primary text-right"
+                        >{{ book.physical_dimensions }}</span
+                      >
                     </div>
                   </div>
 
                   <!-- your record column -->
                   <div class="mt-8 md:mt-0">
-                    <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4">
-                      {{ $t('detail.your_record') }}
+                    <div
+                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
+                    >
+                      {{ $t("detail.your_record") }}
                     </div>
                     <!-- <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
                       <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('library.filter_status') }}</span>
                       <span class="font-mono text-xs text-text-primary">{{ STATUS_CONFIG[book.status].label }}</span>
                     </div> -->
-                    <div class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
-                      <span class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0">{{ $t('detail.added') }}</span>
-                      <span class="font-mono text-xs text-text-primary">{{ formattedAdded }}</span>
+                    <div
+                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
+                    >
+                      <span
+                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
+                        >{{ $t("detail.added") }}</span
+                      >
+                      <span class="font-mono text-xs text-text-primary">{{
+                        formattedAdded
+                      }}</span>
                     </div>
 
                     <!-- genres -->
                     <div v-if="book.genres?.length" class="pt-4">
-                      <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.genres') }}</div>
+                      <div
+                        class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                      >
+                        {{ $t("detail.genres") }}
+                      </div>
                       <div class="flex flex-wrap gap-1.5">
-                        <template v-for="(genre, idx) in book.genres" :key="genre">
+                        <template
+                          v-for="(genre, idx) in book.genres"
+                          :key="genre"
+                        >
                           <button
                             class="text-xs text-text-primary hover:text-orange-neon transition-colors"
                             @click="filterBy('genre', genre)"
-                          >{{ genre }}</button>
-                          <span v-if="idx < book.genres!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                          >
+                            {{ genre }}
+                          </button>
+                          <span
+                            v-if="idx < book.genres!.length - 1"
+                            class="text-xs text-text-secondary/30 select-none"
+                            aria-hidden="true"
+                            >·</span
+                          >
                         </template>
                       </div>
                     </div>
 
                     <!-- awards & nominations -->
-                    <template v-if="book.awards?.length || book.nominations?.length">
+                    <template
+                      v-if="book.awards?.length || book.nominations?.length"
+                    >
                       <div v-if="book.awards?.length" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.awards') }}</div>
-                        <div class="text-xs text-text-primary leading-relaxed">{{ book.awards!.join(' · ') }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.awards") }}
+                        </div>
+                        <div class="text-xs text-text-primary leading-relaxed">
+                          {{ book.awards!.join(" · ") }}
+                        </div>
                       </div>
                       <div v-if="book.nominations?.length" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.nominations') }}</div>
-                        <div class="text-xs text-text-primary leading-relaxed">{{ book.nominations!.join(' · ') }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.nominations") }}
+                        </div>
+                        <div class="text-xs text-text-primary leading-relaxed">
+                          {{ book.nominations!.join(" · ") }}
+                        </div>
                       </div>
                     </template>
 
                     <!-- wikidata work metadata -->
-                    <template v-if="book.form_of_work || book.language_of_work || book.main_subject || book.narrative_locations?.length || book.countries_of_origin?.length">
+                    <template
+                      v-if="
+                        book.form_of_work ||
+                        book.language_of_work ||
+                        book.main_subject ||
+                        book.narrative_locations?.length ||
+                        book.countries_of_origin?.length
+                      "
+                    >
                       <div v-if="book.form_of_work" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.form_of_work') }}</div>
-                        <div class="text-xs text-text-primary">{{ book.form_of_work }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.form_of_work") }}
+                        </div>
+                        <div class="text-xs text-text-primary">
+                          {{ book.form_of_work }}
+                        </div>
                       </div>
                       <div v-if="book.language_of_work" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.language_of_work') }}</div>
-                        <div class="text-xs text-text-primary">{{ book.language_of_work }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.language_of_work") }}
+                        </div>
+                        <div class="text-xs text-text-primary">
+                          {{ book.language_of_work }}
+                        </div>
                       </div>
                       <div v-if="book.main_subject" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.main_subject') }}</div>
-                        <div class="text-xs text-text-primary">{{ book.main_subject }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.main_subject") }}
+                        </div>
+                        <div class="text-xs text-text-primary">
+                          {{ book.main_subject }}
+                        </div>
                       </div>
                       <div v-if="book.narrative_locations?.length" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.narrative_locations') }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.narrative_locations") }}
+                        </div>
                         <div class="flex flex-wrap gap-1.5">
-                          <template v-for="(loc, idx) in book.narrative_locations" :key="loc">
-                            <span class="text-xs text-text-primary">{{ loc }}</span>
-                            <span v-if="idx < book.narrative_locations!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                          <template
+                            v-for="(loc, idx) in book.narrative_locations"
+                            :key="loc"
+                          >
+                            <span class="text-xs text-text-primary">{{
+                              loc
+                            }}</span>
+                            <span
+                              v-if="idx < book.narrative_locations!.length - 1"
+                              class="text-xs text-text-secondary/30 select-none"
+                              aria-hidden="true"
+                              >·</span
+                            >
                           </template>
                         </div>
                       </div>
                       <div v-if="book.countries_of_origin?.length" class="pt-4">
-                        <div class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2">{{ $t('detail.countries_of_origin') }}</div>
+                        <div
+                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-2"
+                        >
+                          {{ $t("detail.countries_of_origin") }}
+                        </div>
                         <div class="flex flex-wrap gap-1.5">
-                          <template v-for="(country, idx) in book.countries_of_origin" :key="country">
-                            <span class="text-xs text-text-primary">{{ country }}</span>
-                            <span v-if="idx < book.countries_of_origin!.length - 1" class="text-xs text-text-secondary/30 select-none" aria-hidden="true">·</span>
+                          <template
+                            v-for="(country, idx) in book.countries_of_origin"
+                            :key="country"
+                          >
+                            <span class="text-xs text-text-primary">{{
+                              country
+                            }}</span>
+                            <span
+                              v-if="idx < book.countries_of_origin!.length - 1"
+                              class="text-xs text-text-secondary/30 select-none"
+                              aria-hidden="true"
+                              >·</span
+                            >
                           </template>
                         </div>
                       </div>
@@ -490,19 +817,47 @@
 
                 <!-- other editions -->
                 <div v-if="otherEditions.length" class="mb-8">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3">{{ $t('detail.other_editions') }}</div>
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
+                  >
+                    {{ $t("detail.other_editions") }}
+                  </div>
                   <div class="flex flex-col gap-2">
-                    <div v-for="ed in otherEditions" :key="ed.isbn" class="flex items-center gap-3">
-                      <img v-if="ed.cover_url" :src="ed.cover_url" class="w-8 h-12 object-cover shrink-0" />
-                      <div v-else class="w-8 h-12 bg-charcoal border border-charcoal-border flex items-center justify-center shrink-0">
-                        <v-icon icon="mdi-book-outline" size="14" color="primary" />
+                    <div
+                      v-for="ed in otherEditions"
+                      :key="ed.isbn"
+                      class="flex items-center gap-3"
+                    >
+                      <img
+                        v-if="ed.cover_url"
+                        :src="ed.cover_url"
+                        class="w-8 h-12 object-cover shrink-0"
+                      />
+                      <div
+                        v-else
+                        class="w-8 h-12 bg-charcoal border border-charcoal-border flex items-center justify-center shrink-0"
+                      >
+                        <v-icon
+                          icon="mdi-book-outline"
+                          size="14"
+                          color="primary"
+                        />
                       </div>
                       <div class="min-w-0 flex-1">
-                        <div class="text-xs text-text-primary truncate">{{ ed.title || ed.isbn }}</div>
-                        <div class="text-[10px] text-text-secondary/60 flex items-center gap-2">
-                          <span v-if="ed.language">{{ langDisplay(ed.language) }}</span>
-                          <span v-if="ed.scan_id" class="text-orange-neon tracking-[0.15em] uppercase">
-                            {{ $t('detail.edition_in_library') }}
+                        <div class="text-xs text-text-primary truncate">
+                          {{ ed.title || ed.isbn }}
+                        </div>
+                        <div
+                          class="text-[10px] text-text-secondary/60 flex items-center gap-2"
+                        >
+                          <span v-if="ed.language">{{
+                            langDisplay(ed.language)
+                          }}</span>
+                          <span
+                            v-if="ed.scan_id"
+                            class="text-orange-neon tracking-[0.15em] uppercase"
+                          >
+                            {{ $t("detail.edition_in_library") }}
                           </span>
                         </div>
                       </div>
@@ -511,20 +866,34 @@
                 </div>
 
                 <!-- custom fields (always editable) -->
-                <div v-if="!readonly && !guest && fieldDefsStore.defs.length" class="mb-8 pt-8 border-t border-charcoal-border">
-                  <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4">
-                    {{ $t('detail.custom_fields') }}
+                <div
+                  v-if="!readonly && !guest && fieldDefsStore.defs.length"
+                  class="mb-8 pt-8 border-t border-charcoal-border"
+                >
+                  <div
+                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
+                  >
+                    {{ $t("detail.custom_fields") }}
                   </div>
 
                   <div class="flex flex-col gap-4 max-w-md">
-                    <div v-for="def in fieldDefsStore.defs" :key="def.id" class="flex items-start gap-2">
+                    <div
+                      v-for="def in fieldDefsStore.defs"
+                      :key="def.id"
+                      class="flex items-start gap-2"
+                    >
                       <div class="flex-1 min-w-0">
-                        <label class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block">{{ def.name }}</label>
+                        <label
+                          class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block"
+                          >{{ def.name }}</label
+                        >
 
                         <!-- tag: multi-value combobox with global-delete suggestions -->
                         <v-combobox
                           v-if="def.type === 'tag'"
-                          :model-value="(customFieldValues[def.id] as string[]) ?? []"
+                          :model-value="
+                            (customFieldValues[def.id] as string[]) ?? []
+                          "
                           :items="fieldDefsStore.tagValues[def.id] ?? []"
                           multiple
                           chips
@@ -534,18 +903,45 @@
                           hide-details
                           :placeholder="$t('detail.tag_add')"
                           @update:model-value="onTagChange(def.id, $event)"
-                          @update:menu="(open: boolean) => onTagMenu(def.id, open)"
+                          @update:menu="
+                            (open: boolean) => onTagMenu(def.id, open)
+                          "
                         >
                           <template #item="{ props: itemProps }">
                             <v-list-item v-bind="itemProps">
                               <template #append>
                                 <button
                                   class="ml-2 shrink-0 transition-colors"
-                                  :class="confirmingTag === `${def.id}:${itemProps.title}` ? 'text-error' : 'text-text-secondary/40 hover:text-error'"
-                                  :title="confirmingTag === `${def.id}:${itemProps.title}` ? $t('detail.tag_delete_confirm', { tag: itemProps.title }) : $t('detail.tag_delete')"
-                                  @click.stop="confirmDeleteTag(def.id, String(itemProps.title))"
+                                  :class="
+                                    confirmingTag ===
+                                    `${def.id}:${itemProps.title}`
+                                      ? 'text-error'
+                                      : 'text-text-secondary/40 hover:text-error'
+                                  "
+                                  :title="
+                                    confirmingTag ===
+                                    `${def.id}:${itemProps.title}`
+                                      ? $t('detail.tag_delete_confirm', {
+                                          tag: itemProps.title,
+                                        })
+                                      : $t('detail.tag_delete')
+                                  "
+                                  @click.stop="
+                                    confirmDeleteTag(
+                                      def.id,
+                                      String(itemProps.title),
+                                    )
+                                  "
                                 >
-                                  <v-icon :icon="confirmingTag === `${def.id}:${itemProps.title}` ? 'mdi-delete' : 'mdi-close'" size="14" />
+                                  <v-icon
+                                    :icon="
+                                      confirmingTag ===
+                                      `${def.id}:${itemProps.title}`
+                                        ? 'mdi-delete'
+                                        : 'mdi-close'
+                                    "
+                                    size="14"
+                                  />
                                 </button>
                               </template>
                             </v-list-item>
@@ -558,7 +954,12 @@
                           type="date"
                           :value="(customFieldValues[def.id] as string) ?? ''"
                           class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @change="onValueChange(def.id, ($event.target as HTMLInputElement).value)"
+                          @change="
+                            onValueChange(
+                              def.id,
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
                         />
 
                         <!-- integer -->
@@ -567,9 +968,16 @@
                           type="number"
                           :value="(customFieldValues[def.id] as string) ?? ''"
                           class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @input="setLocalValue(def.id, ($event.target as HTMLInputElement).value)"
+                          @input="
+                            setLocalValue(
+                              def.id,
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
                           @blur="saveCustomFields"
-                          @keyup.enter="($event.target as HTMLInputElement).blur()"
+                          @keyup.enter="
+                            ($event.target as HTMLInputElement).blur()
+                          "
                         />
 
                         <!-- text / select -->
@@ -579,21 +987,43 @@
                           :value="(customFieldValues[def.id] as string) ?? ''"
                           :placeholder="$t('detail.custom_field_value')"
                           class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @input="setLocalValue(def.id, ($event.target as HTMLInputElement).value)"
+                          @input="
+                            setLocalValue(
+                              def.id,
+                              ($event.target as HTMLInputElement).value,
+                            )
+                          "
                           @blur="saveCustomFields"
-                          @keyup.enter="($event.target as HTMLInputElement).blur()"
+                          @keyup.enter="
+                            ($event.target as HTMLInputElement).blur()
+                          "
                         />
                       </div>
 
                       <!-- delete field definition (removes the field from all books) -->
                       <button
                         class="shrink-0 transition-colors pt-7"
-                        :class="confirmingDeleteId === def.id ? 'text-error' : 'text-text-secondary/30 hover:text-text-secondary/60'"
-                        :title="confirmingDeleteId === def.id ? $t('detail.custom_field_confirm_delete') : $t('detail.custom_field_delete')"
+                        :class="
+                          confirmingDeleteId === def.id
+                            ? 'text-error'
+                            : 'text-text-secondary/30 hover:text-text-secondary/60'
+                        "
+                        :title="
+                          confirmingDeleteId === def.id
+                            ? $t('detail.custom_field_confirm_delete')
+                            : $t('detail.custom_field_delete')
+                        "
                         @click="deleteFieldDefinition(def.id)"
                         @blur="confirmingDeleteId = null"
                       >
-                        <v-icon :icon="confirmingDeleteId === def.id ? 'mdi-delete' : 'mdi-delete-outline'" size="16" />
+                        <v-icon
+                          :icon="
+                            confirmingDeleteId === def.id
+                              ? 'mdi-delete'
+                              : 'mdi-delete-outline'
+                          "
+                          size="16"
+                        />
                       </button>
                     </div>
 
@@ -623,11 +1053,13 @@
                     </button> -->
                   </div>
 
-                  <p v-if="cfError" class="text-[10px] text-error tracking-widest uppercase mt-3">
-                    {{ $t('detail.edit_error') }}
+                  <p
+                    v-if="cfError"
+                    class="text-[10px] text-error tracking-widest uppercase mt-3"
+                  >
+                    {{ $t("detail.edit_error") }}
                   </p>
                 </div>
-
               </div>
             </div>
           </template>
@@ -642,13 +1074,15 @@
                 :placeholder="book.isbn"
               />
               <div class="text-sm text-text-secondary/60 mb-6">
-                {{ book.author || $t('book.unknown_author') }}
+                {{ book.author || $t("book.unknown_author") }}
               </div>
 
               <div class="flex flex-col gap-4">
                 <div>
-                  <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                    {{ $t('detail.description') }}
+                  <label
+                    class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                  >
+                    {{ $t("detail.description") }}
                   </label>
                   <textarea
                     v-model="form.description"
@@ -658,26 +1092,43 @@
                 </div>
                 <div class="grid grid-cols-2 gap-4">
                   <div>
-                    <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                      {{ $t('detail.publisher') }}
+                    <label
+                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                    >
+                      {{ $t("detail.publisher") }}
                     </label>
-                    <input v-model="form.publisher" class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon" />
+                    <input
+                      v-model="form.publisher"
+                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                    />
                   </div>
                   <div>
-                    <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                      {{ $t('detail.language') }}
+                    <label
+                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                    >
+                      {{ $t("detail.language") }}
                     </label>
-                    <input v-model="form.language" class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon" />
+                    <input
+                      v-model="form.language"
+                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                    />
                   </div>
                   <div>
-                    <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                      {{ $t('detail.published') }}
+                    <label
+                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                    >
+                      {{ $t("detail.published") }}
                     </label>
-                    <input v-model="form.publish_date" class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon" />
+                    <input
+                      v-model="form.publish_date"
+                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                    />
                   </div>
                   <div>
-                    <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                      {{ $t('detail.pages') }}
+                    <label
+                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                    >
+                      {{ $t("detail.pages") }}
                     </label>
                     <input
                       v-model.number="form.number_of_pages_median"
@@ -688,19 +1139,26 @@
                   </div>
                 </div>
                 <div>
-                  <label class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block">
-                    {{ $t('detail.cover_url') }}
+                  <label
+                    class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
+                  >
+                    {{ $t("detail.cover_url") }}
                   </label>
-                  <input v-model="form.cover_url" class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon" />
+                  <input
+                    v-model="form.cover_url"
+                    class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+                  />
                 </div>
 
-                <p v-if="saveError" class="text-[10px] text-error tracking-widest uppercase">
-                  {{ $t('detail.edit_error') }}
+                <p
+                  v-if="saveError"
+                  class="text-[10px] text-error tracking-widest uppercase"
+                >
+                  {{ $t("detail.edit_error") }}
                 </p>
               </div>
             </div>
           </template>
-
         </div>
 
         <!-- edit mode footer -->
@@ -714,7 +1172,7 @@
             class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
             @click="editing = false"
           >
-            {{ $t('detail.edit_cancel') }}
+            {{ $t("detail.edit_cancel") }}
           </v-btn>
           <v-btn
             variant="text"
@@ -724,13 +1182,11 @@
             :loading="saving"
             @click="save"
           >
-            {{ $t('detail.edit_save') }}
+            {{ $t("detail.edit_save") }}
           </v-btn>
         </div>
-
       </div>
     </template>
-
   </v-dialog>
 </template>
 
@@ -794,44 +1250,57 @@ const { apiFetch } = useApi();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
-const langDisplay = computed(() => languageDisplayFormatter(localeStore.locale))
+const langDisplay = computed(() =>
+  languageDisplayFormatter(localeStore.locale),
+);
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
-const mode = ref<'card' | 'full'>('card');
+const mode = ref<"card" | "full">("card");
 
-function expand() { mode.value = 'full'; }
+function expand() {
+  mode.value = "full";
+}
 
 // ── Computed helpers ──────────────────────────────────────────────────────────
 
 const publishYear = computed(() => {
   const d = props.book.publish_date || props.book.original_pub_date;
-  if (!d) return '—';
+  if (!d) return "—";
   return String(d).slice(0, 4);
 });
 
-const firstGenre = computed(() => props.book.genres?.[0] ?? '—');
+const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 
 const formattedAdded = computed(() => {
-  if (!props.book.created_at) return '—';
-  const loc = BCP47[localeStore.locale] ?? 'en-GB';
+  if (!props.book.created_at) return "—";
+  const loc = BCP47[localeStore.locale] ?? "en-GB";
   return new Date(props.book.created_at).toLocaleDateString(loc, {
-    year: 'numeric', month: 'short', day: 'numeric',
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 });
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
 function formatPublishDate(date: string | null | undefined): string {
-  if (!date) return '';
-  const loc = BCP47[localeStore.locale] ?? 'en-GB';
+  if (!date) return "";
+  const loc = BCP47[localeStore.locale] ?? "en-GB";
   if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [y, m, d] = date.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(loc, { year: 'numeric', month: 'short', day: 'numeric' });
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(loc, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
   }
   if (/^\d{4}-\d{2}$/.test(date)) {
-    const [y, m] = date.split('-').map(Number);
-    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(loc, { year: 'numeric', month: 'long' });
+    const [y, m] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(loc, {
+      year: "numeric",
+      month: "long",
+    });
   }
   return date;
 }
@@ -884,29 +1353,47 @@ const POLL_DELAYS = [5_000, 8_000, 12_000, 15_000, 20_000];
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clearPoll() {
-  if (pollTimer !== null) { clearTimeout(pollTimer); pollTimer = null; }
+  if (pollTimer !== null) {
+    clearTimeout(pollTimer);
+    pollTimer = null;
+  }
 }
 
 async function pollOnce(attempt: number) {
-  if (!props.modelValue || props.guest || props.book.enrichment_status !== 'pending') return;
+  if (
+    !props.modelValue ||
+    props.guest ||
+    props.book.enrichment_status !== "pending"
+  )
+    return;
   try {
-    const res = await apiFetch(`/api/scans/${props.book.id}?locale=${localeStore.locale}`);
+    const res = await apiFetch(
+      `/api/scans/${props.book.id}?locale=${localeStore.locale}`,
+    );
     if (res.ok) {
       const data = await res.json();
-      if (data.enrichment_status !== 'pending') {
-        emit('refreshed', data);
+      if (data.enrichment_status !== "pending") {
+        emit("refreshed", data);
         return;
       }
     }
   } catch {}
   if (attempt + 1 < POLL_DELAYS.length && props.modelValue) {
-    pollTimer = setTimeout(() => pollOnce(attempt + 1), POLL_DELAYS[attempt + 1]);
+    pollTimer = setTimeout(
+      () => pollOnce(attempt + 1),
+      POLL_DELAYS[attempt + 1],
+    );
   }
 }
 
 function startEnrichmentPoll() {
   clearPoll();
-  if (props.guest || props.readonly || props.book.enrichment_status !== 'pending') return;
+  if (
+    props.guest ||
+    props.readonly ||
+    props.book.enrichment_status !== "pending"
+  )
+    return;
   pollTimer = setTimeout(() => pollOnce(0), POLL_DELAYS[0]);
 }
 
@@ -920,7 +1407,10 @@ function goToSeries() {
   router.push(`/series/${props.book.series_id}`);
 }
 
-function filterBy(field: 'author' | 'genre' | 'publisher' | 'language', value: string) {
+function filterBy(
+  field: "author" | "genre" | "publisher" | "language",
+  value: string,
+) {
   emit("update:modelValue", false);
   router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
 }
@@ -930,18 +1420,27 @@ function filterBy(field: 'author' | 'genre' | 'publisher' | 'language', value: s
 watch(
   () => props.book.isbn,
   () => {
-    mode.value = 'card';
+    mode.value = "card";
     descriptionExpanded.value = false;
     editing.value = false;
-    if (props.modelValue) { loadOtherEditions(); startEnrichmentPoll(); }
+    if (props.modelValue) {
+      loadOtherEditions();
+      startEnrichmentPoll();
+    }
   },
 );
 
 watch(
   () => props.modelValue,
   (val) => {
-    if (!val) { mode.value = 'card'; editing.value = false; clearPoll(); }
-    else { loadOtherEditions(); startEnrichmentPoll(); }
+    if (!val) {
+      mode.value = "card";
+      editing.value = false;
+      clearPoll();
+    } else {
+      loadOtherEditions();
+      startEnrichmentPoll();
+    }
   },
 );
 
@@ -952,8 +1451,10 @@ onMounted(() => {
 // ── Custom field helpers ──────────────────────────────────────────────────────
 
 function valueFromBook(def: { id: number; type: string }): string | string[] {
-  const raw = props.book.custom_field_values?.find((v) => v.field_def_id === def.id)?.value ?? null;
-  return def.type === "tag" ? parseTagList(raw) : raw ?? "";
+  const raw =
+    props.book.custom_field_values?.find((v) => v.field_def_id === def.id)
+      ?.value ?? null;
+  return def.type === "tag" ? parseTagList(raw) : (raw ?? "");
 }
 
 // Reconcile the local editor model with the current schema, preserving values the
@@ -963,7 +1464,10 @@ function reconcileCustomFields() {
   const next: Record<number, string | string[]> = {};
   for (const def of fieldDefsStore.defs) {
     const existing = customFieldValues.value[def.id];
-    const inShape = def.type === "tag" ? Array.isArray(existing) : typeof existing === "string";
+    const inShape =
+      def.type === "tag"
+        ? Array.isArray(existing)
+        : typeof existing === "string";
     next[def.id] = inShape ? existing : valueFromBook(def);
   }
   customFieldValues.value = next;
@@ -973,7 +1477,10 @@ function reconcileCustomFields() {
 // *same* book (e.g. enrichment poll) can't clobber unsaved in-progress edits.
 watch(
   () => props.book.isbn,
-  () => { customFieldValues.value = {}; reconcileCustomFields(); },
+  () => {
+    customFieldValues.value = {};
+    reconcileCustomFields();
+  },
   { immediate: true },
 );
 // Schema changes (definitions loaded / field added / removed) only add or drop keys.
@@ -989,7 +1496,9 @@ function onValueChange(id: number, value: string) {
 }
 
 function onTagChange(id: number, value: unknown) {
-  const arr = (Array.isArray(value) ? value : []).map((v) => String(v).trim()).filter(Boolean);
+  const arr = (Array.isArray(value) ? value : [])
+    .map((v) => String(v).trim())
+    .filter(Boolean);
   const unique = [...new Set(arr)];
   customFieldValues.value = { ...customFieldValues.value, [id]: unique };
   for (const tag of unique) fieldDefsStore.addTagValueLocal(id, tag);
@@ -1009,11 +1518,17 @@ async function confirmDeleteTag(id: number, value: string) {
   }
   confirmingTag.value = null;
   const res = await fieldDefsStore.deleteTagValueEverywhere(id, value);
-  if (!res.ok) { cfError.value = true; return; }
+  if (!res.ok) {
+    cfError.value = true;
+    return;
+  }
   // Server stripped the tag from every book (including this one) — reflect it locally.
   const current = customFieldValues.value[id];
   if (Array.isArray(current) && current.includes(value)) {
-    customFieldValues.value = { ...customFieldValues.value, [id]: current.filter((v) => v !== value) };
+    customFieldValues.value = {
+      ...customFieldValues.value,
+      [id]: current.filter((v) => v !== value),
+    };
     emitCustomFieldsRefreshed();
   }
 }
@@ -1024,7 +1539,9 @@ function customFieldsPayload() {
     const v = customFieldValues.value[def.id];
     let value = "";
     if (def.type === "tag") {
-      const arr = (Array.isArray(v) ? v : []).map((s) => String(s).trim()).filter(Boolean);
+      const arr = (Array.isArray(v) ? v : [])
+        .map((s) => String(s).trim())
+        .filter(Boolean);
       value = arr.length ? JSON.stringify(arr) : "";
     } else if (typeof v === "string") {
       value = v;
@@ -1057,7 +1574,10 @@ async function doSaveCustomFields() {
   try {
     const res = await apiFetch("/api/books/custom-fields", {
       method: "PATCH",
-      body: JSON.stringify({ isbn: props.book.isbn, values: customFieldsPayload() }),
+      body: JSON.stringify({
+        isbn: props.book.isbn,
+        values: customFieldsPayload(),
+      }),
     });
     if (!res.ok) throw new Error();
     emitCustomFieldsRefreshed();
@@ -1087,7 +1607,11 @@ async function createFieldDefinition() {
       body: JSON.stringify({ name, type: "text" }),
     });
     if (!res.ok) throw new Error();
-    const def = (await res.json()) as { id: number; name: string; type: string };
+    const def = (await res.json()) as {
+      id: number;
+      name: string;
+      type: string;
+    };
     customFieldValues.value = { ...customFieldValues.value, [def.id]: "" };
     newFieldName.value = "";
     addingField.value = false;
@@ -1103,7 +1627,9 @@ async function deleteFieldDefinition(id: number) {
     return;
   }
   try {
-    const res = await apiFetch(`/api/field-definitions/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/field-definitions/${id}`, {
+      method: "DELETE",
+    });
     if (!res.ok) throw new Error();
     const { [id]: _, ...rest } = customFieldValues.value;
     customFieldValues.value = rest;
@@ -1121,11 +1647,16 @@ async function save() {
 
   const changes: Record<string, string | number | null> = {};
   if (s(form.title) !== o(props.book.title)) changes.title = s(form.title);
-  if (s(form.cover_url) !== o(props.book.cover_url)) changes.cover_url = s(form.cover_url);
-  if (s(form.language) !== o(props.book.language)) changes.language = s(form.language);
-  if (s(form.publish_date) !== o(props.book.publish_date)) changes.publish_date = s(form.publish_date);
-  if (s(form.description) !== o(props.book.description)) changes.description = s(form.description);
-  if (s(form.publisher) !== o(props.book.publisher)) changes.publisher = s(form.publisher);
+  if (s(form.cover_url) !== o(props.book.cover_url))
+    changes.cover_url = s(form.cover_url);
+  if (s(form.language) !== o(props.book.language))
+    changes.language = s(form.language);
+  if (s(form.publish_date) !== o(props.book.publish_date))
+    changes.publish_date = s(form.publish_date);
+  if (s(form.description) !== o(props.book.description))
+    changes.description = s(form.description);
+  if (s(form.publisher) !== o(props.book.publisher))
+    changes.publisher = s(form.publisher);
 
   const newPages =
     form.number_of_pages_median && form.number_of_pages_median > 0
@@ -1148,15 +1679,23 @@ async function save() {
     });
     if (!res.ok) throw new Error();
 
-    const updated: Partial<BookWithOverrides> = { ...changes } as Partial<BookWithOverrides>;
-    if ("title" in changes) updated.title_overridden = changes.title != null ? 1 : 0;
-    if ("cover_url" in changes) updated.cover_url_overridden = changes.cover_url != null ? 1 : 0;
-    if ("language" in changes) updated.language_overridden = changes.language != null ? 1 : 0;
-    if ("publish_date" in changes) updated.publish_date_overridden = changes.publish_date != null ? 1 : 0;
+    const updated: Partial<BookWithOverrides> = {
+      ...changes,
+    } as Partial<BookWithOverrides>;
+    if ("title" in changes)
+      updated.title_overridden = changes.title != null ? 1 : 0;
+    if ("cover_url" in changes)
+      updated.cover_url_overridden = changes.cover_url != null ? 1 : 0;
+    if ("language" in changes)
+      updated.language_overridden = changes.language != null ? 1 : 0;
+    if ("publish_date" in changes)
+      updated.publish_date_overridden = changes.publish_date != null ? 1 : 0;
     if ("number_of_pages_median" in changes)
       updated.pages_overridden = changes.number_of_pages_median != null ? 1 : 0;
-    if ("description" in changes) updated.description_overridden = changes.description != null ? 1 : 0;
-    if ("publisher" in changes) updated.publisher_overridden = changes.publisher != null ? 1 : 0;
+    if ("description" in changes)
+      updated.description_overridden = changes.description != null ? 1 : 0;
+    if ("publisher" in changes)
+      updated.publisher_overridden = changes.publisher != null ? 1 : 0;
 
     emit("refreshed", updated);
     editing.value = false;
@@ -1170,18 +1709,22 @@ async function save() {
 // ── Enrichment refresh ────────────────────────────────────────────────────────
 
 const enrichmentButtonClass = computed(() => {
-  if (props.book.enrichment_status === 'failed') return 'text-error/70 hover:text-error';
-  if (props.book.enrichment_status === 'pending') return 'text-orange-neon/40 hover:text-orange-neon/70';
-  return 'text-text-secondary/50 hover:text-text-secondary';
+  if (props.book.enrichment_status === "failed")
+    return "text-error/70 hover:text-error";
+  if (props.book.enrichment_status === "pending")
+    return "text-orange-neon/40 hover:text-orange-neon/70";
+  return "text-text-secondary/50 hover:text-text-secondary";
 });
 
 const refresh = async () => {
   refreshing.value = true;
   try {
-    const res = await apiFetch(`/api/books/refresh?isbn=${props.book.isbn}`, { method: "POST" });
+    const res = await apiFetch(`/api/books/refresh?isbn=${props.book.isbn}`, {
+      method: "POST",
+    });
     if (!res.ok) throw new Error();
     await res.json();
-    emit("refreshed", { enrichment_status: 'pending' as const });
+    emit("refreshed", { enrichment_status: "pending" as const });
     startEnrichmentPoll();
   } finally {
     refreshing.value = false;
@@ -1213,22 +1756,22 @@ const STATUS_CONFIG = computed(() => ({
 
 const STATUS_OPTIONS = computed(() => [
   {
-    status: 'unread' as ReadStatus,
-    label: t('book.unread'),
-    dotClass: 'bg-text-secondary/40',
-    activeClass: 'text-text-secondary',
+    status: "unread" as ReadStatus,
+    label: t("book.unread"),
+    dotClass: "bg-text-secondary/40",
+    activeClass: "text-text-secondary",
   },
   {
-    status: 'reading' as ReadStatus,
-    label: t('book.reading'),
-    dotClass: 'bg-orange-neon',
-    activeClass: 'text-orange-neon',
+    status: "reading" as ReadStatus,
+    label: t("book.reading"),
+    dotClass: "bg-orange-neon",
+    activeClass: "text-orange-neon",
   },
   {
-    status: 'read' as ReadStatus,
-    label: t('book.read'),
-    dotClass: 'bg-[#22c55e]',
-    activeClass: 'text-[#22c55e]',
+    status: "read" as ReadStatus,
+    label: t("book.read"),
+    dotClass: "bg-[#22c55e]",
+    activeClass: "text-[#22c55e]",
   },
 ]);
 </script>
