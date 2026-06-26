@@ -11,13 +11,22 @@
           <h1 class="font-heading font-black text-[2.2rem] md:text-[2.75rem] leading-[1.02] text-text-primary mb-2">{{ greeting }}</h1>
           <p v-if="statsData" class="font-mono text-[10px] md:text-[11px] tracking-[0.05em] text-text-secondary">{{ metaLine }}</p>
         </div>
-        <div
-          class="flex justify-between items-center px-6 py-3.5 md:py-5 md:w-72 shrink-0 cursor-pointer hover:opacity-90 transition-opacity"
-          style="background: rgb(var(--v-theme-primary));"
-          @click="$router.push('/scanner')"
-        >
-          <p class="font-heading font-black text-2xl leading-none" style="color: #111110;">{{ $t('home.scan_cta') }}</p>
-          <v-icon icon="mdi-barcode" size="28" style="color: #111110;" />
+        <div class="flex gap-3 shrink-0">
+          <div
+            class="flex justify-between items-center px-6 py-3 md:py-3 flex-1 md:w-52 cursor-pointer hover:opacity-90 transition-opacity"
+            style="background: rgb(var(--v-theme-primary));"
+            @click="$router.push('/scanner')"
+          >
+            <p class="font-heading font-black text-2xl leading-none" style="color: #111110;">{{ $t('home.scan_cta') }}</p>
+            <v-icon icon="mdi-barcode" size="28" style="color: #111110;" />
+          </div>
+          <div
+            class="flex justify-between items-center px-5 py-3 md:py-3 flex-1 md:w-52 cursor-pointer border border-charcoal-border hover:opacity-70 transition-opacity"
+            @click="$router.push('/library')"
+          >
+            <p class="font-heading font-black text-2xl leading-none text-text-primary">{{ $t('home.go_to_library') }}</p>
+            <v-icon icon="mdi-bookshelf" size="28" class="text-text-secondary" />
+          </div>
         </div>
       </div>
     </div>

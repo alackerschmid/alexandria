@@ -34,10 +34,10 @@
     "greeting_evening": "Good evening, {name}.",
     "greeting_night": "Good night, {name}.",
     "meta": "{date} · {count} books catalogued",
-    "scan_cta": "Scan a book",
+    "scan_cta": "Scan",
     "scan_sub": "Add by barcode",
     "recently_added": "Recently added",
-    "go_to_library": "Go to library",
+    "go_to_library": "Library",
     "stat_overview": "Overview",
     "stat_in_library": "In library",
     "stat_total": "Total",
@@ -79,7 +79,8 @@
     "time_yesterday": "Yesterday",
     "time_days_ago": "{n} days ago",
     "time_weeks_ago": "{n}w ago",
-    "time_months_ago": "{n}mo ago"
+    "time_months_ago": "{n}mo ago",
+    "start_scanning": "Scan a book"
   },
   "marketing": {
     "eyebrow": "Personal library catalogue",

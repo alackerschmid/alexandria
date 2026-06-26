@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col h-screen bg-black overflow-hidden">
+  <div class="flex flex-col h-dvh bg-black overflow-hidden overscroll-none">
     <!-- Camera / scanner area -->
     <div class="flex-1 relative overflow-hidden touch-none select-none">
       <!-- Camera (always running) -->
@@ -1337,6 +1337,8 @@ const startScanner = () => {
 };
 
 onMounted(() => {
+  document.documentElement.style.overflow = 'hidden';
+  document.body.style.overflow = 'hidden';
   drainQueue();
   loadLibraryIsbns();
   window.addEventListener("online", drainQueue);
@@ -1349,6 +1351,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.documentElement.style.overflow = '';
+  document.body.style.overflow = '';
   window.removeEventListener("online", drainQueue);
   Quagga.offDetected(onQuaggaDetected);
   if (scannerStarted) Quagga.stop();

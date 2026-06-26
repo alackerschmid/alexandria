@@ -79,7 +79,8 @@
     "time_yesterday": "Gestern",
     "time_days_ago": "Vor {n} Tagen",
     "time_weeks_ago": "Vor {n}W",
-    "time_months_ago": "Vor {n}M"
+    "time_months_ago": "Vor {n}M",
+    "start_scanning": "Ein Buch scannen"
   },
   "marketing": {
     "eyebrow": "Persönlicher Bibliothekskatalog",

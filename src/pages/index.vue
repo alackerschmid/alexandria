@@ -347,7 +347,7 @@
       @click="$router.push('/scanner')"
     >
       <v-icon icon="mdi-camera" size="15" color="white" />
-      {{ $t('landing.start_scanning') }}
+      {{ $t('home.start_scanning') }}
     </button>
 
     <!-- Book detail dialog -->
