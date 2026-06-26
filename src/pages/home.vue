@@ -202,6 +202,7 @@ import AppSelect from '@/components/AppSelect.vue'
 import AppToast from '@/components/AppToast.vue'
 import { useApi } from '@/composables/useApi'
 import type { CollectionStats } from '@/types/stats'
+import { languageDisplayFormatter } from '@/utils/language'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
@@ -303,9 +304,7 @@ const mostRepresentedData = computed(() => {
   }
 
   if (mostRepMode.value === 'language') {
-    let displayNames: Intl.DisplayNames | null = null
-    try { displayNames = new Intl.DisplayNames([localeStore.locale], { type: 'language' }) } catch {}
-    const langLabel = (code: string) => { try { return displayNames?.of(code) ?? code } catch { return code } }
+    const langLabel = languageDisplayFormatter(localeStore.locale)
     const top = languages.slice(0, 6)
     const max = top[0]?.count ?? 1
     return top.map((l, i) => ({
@@ -407,11 +406,7 @@ const glanceData = computed(() => {
   }
 
   if (glanceMode.value === 'language') {
-    let displayNames: Intl.DisplayNames | null = null
-    try { displayNames = new Intl.DisplayNames([localeStore.locale], { type: 'language' }) } catch {}
-    const langLabel = (code: string) => {
-      try { return displayNames?.of(code) ?? code } catch { return code }
-    }
+    const langLabel = languageDisplayFormatter(localeStore.locale)
     const top = languages.slice(0, 5)
     const topTotal = top.reduce((s, l) => s + l.count, 0)
     const otherCount = total - topTotal

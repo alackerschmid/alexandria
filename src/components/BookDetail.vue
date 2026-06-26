@@ -372,8 +372,8 @@
                         {{ $t('detail.language') }}
                         <span v-if="book.language_overridden" class="w-1 h-1 rounded-full bg-orange-neon" />
                       </span>
-                      <button class="font-mono text-xs text-text-primary uppercase hover:text-orange-neon transition-colors" @click="filterBy('language', book.language!)">
-                        {{ book.language }}
+                      <button class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors" @click="filterBy('language', book.language!)">
+                        {{ langDisplay(book.language) }}
                       </button>
                     </div>
                     <div v-if="book.publish_date" class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50">
@@ -500,7 +500,7 @@
                       <div class="min-w-0 flex-1">
                         <div class="text-xs text-text-primary truncate">{{ ed.title || ed.isbn }}</div>
                         <div class="text-[10px] text-text-secondary/60 flex items-center gap-2">
-                          <span v-if="ed.language" class="uppercase">{{ ed.language }}</span>
+                          <span v-if="ed.language">{{ langDisplay(ed.language) }}</span>
                           <span v-if="ed.scan_id" class="text-orange-neon tracking-[0.15em] uppercase">
                             {{ $t('detail.edition_in_library') }}
                           </span>
@@ -769,6 +769,7 @@ import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { parseTagList } from "@/utils/tags";
+import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
 import type { ReadStatus } from "@/types/book";
@@ -793,6 +794,7 @@ const { apiFetch } = useApi();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
+const langDisplay = computed(() => languageDisplayFormatter(localeStore.locale))
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 

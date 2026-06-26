@@ -398,6 +398,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
 import { parseTagList } from '@/utils/tags'
+import { languageDisplayFormatter } from '@/utils/language'
 import type { Book, ReadStatus } from '@/types/book'
 import type { GroupBy, SortOption } from '@/types/library'
 import AppHeader from '@/components/AppHeader.vue'
@@ -471,7 +472,7 @@ type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook
 
 interface CustomFieldMeta { def: { id: number; name: string; type: string }; slug: string }
 
-const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award']
+const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award', 'format', 'form', 'country', 'year', 'subject', 'location']
 
 // One search/group entry per custom field, each with a collision-free prefix slug.
 const customFieldMetas = computed<CustomFieldMeta[]>(() => {
@@ -501,11 +502,22 @@ function bookCustomValue(b: Book, defId: number): string | null {
 }
 
 const PREFIXES = computed(() => [
-  { key: 'status', icon: 'mdi-progress-check',  label: t('library.filter_status') },
-  { key: 'author', icon: 'mdi-account-outline', label: t('library.group_author')  },
-  { key: 'genre',  icon: 'mdi-tag-outline',     label: t('library.group_genre')   },
-  { key: 'series', icon: 'mdi-bookshelf',       label: t('library.group_series')  },
-  ...customFieldMetas.value.map(m => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),
+  { key: 'status',    icon: 'mdi-progress-check',       label: t('library.filter_status')    },
+  { key: 'author',    icon: 'mdi-account-outline',      label: t('library.group_author')      },
+  { key: 'genre',     icon: 'mdi-tag-outline',          label: t('library.group_genre')       },
+  { key: 'series',    icon: 'mdi-bookshelf',            label: t('library.group_series')      },
+  { key: 'publisher', icon: 'mdi-domain',               label: t('library.group_publisher')   },
+  { key: 'language',  icon: 'mdi-translate',            label: t('library.group_language')    },
+  { key: 'award',     icon: 'mdi-trophy-outline',       label: t('library.filter_awards')     },
+  { key: 'format',    icon: 'mdi-book-open-variant',    label: t('library.group_format')      },
+  { key: 'form',      icon: 'mdi-text-box-outline',     label: t('library.group_form')        },
+  { key: 'country',   icon: 'mdi-earth',                label: t('library.group_country')     },
+  { key: 'year',      icon: 'mdi-calendar-range',       label: t('library.group_year')        },
+  { key: 'subject',   icon: 'mdi-lightbulb-outline',    label: t('library.group_subject')     },
+  { key: 'location',  icon: 'mdi-map-marker-outline',   label: t('library.group_location')    },
+  ...customFieldMetas.value
+    .filter(m => m.def.type !== 'date' && m.def.type !== 'integer')
+    .map(m => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),
 ])
 
 function quote(v: string) { return /\s/.test(v) ? `"${v}"` : v }
@@ -540,12 +552,23 @@ const searchSegments = computed<SearchSegment[]>(() => {
 
 const searchScrollLeft = ref(0)
 
+const langFmt = computed(() => languageDisplayFormatter(localeStore.locale))
+
 const facetEntries = computed<SuggestionFacet[]>(() => {
   const pool = baseFiltered.value
   const statusLabel = t('library.filter_status')
   const authorLabel = t('library.group_author')
   const genreLabel  = t('library.group_genre')
   const seriesLabel = t('library.group_series')
+
+  const publisherLabel = t('library.group_publisher')
+  const languageLabel  = t('library.group_language')
+  const awardLabel     = t('library.filter_awards')
+  const formatLabel    = t('library.group_format')
+  const formLabel      = t('library.group_form')
+  const countryLabel   = t('library.group_country')
+  const subjectLabel   = t('library.group_subject')
+  const locationLabel  = t('library.group_location')
 
   const entries: SuggestionFacet[] = []
 
@@ -574,10 +597,46 @@ const facetEntries = computed<SuggestionFacet[]>(() => {
       const k = b.series_name.toLowerCase()
       if (!seen.has(`series:${k}`)) { seen.add(`series:${k}`); entries.push({ kind: 'facet', token: `series:${quote(b.series_name)}`, icon: 'mdi-bookshelf', label: b.series_name, typeLabel: seriesLabel }) }
     }
+    if (b.publisher) {
+      const k = b.publisher.toLowerCase()
+      if (!seen.has(`publisher:${k}`)) { seen.add(`publisher:${k}`); entries.push({ kind: 'facet', token: `publisher:${quote(b.publisher)}`, icon: 'mdi-domain', label: b.publisher, typeLabel: publisherLabel }) }
+    }
+    if (b.language) {
+      const k = b.language.toLowerCase()
+      if (!seen.has(`language:${k}`)) { seen.add(`language:${k}`); entries.push({ kind: 'facet', token: `language:${quote(b.language)}`, icon: 'mdi-translate', label: langFmt.value(b.language), typeLabel: languageLabel }) }
+    }
+    for (const a of b.awards ?? []) {
+      const k = a.toLowerCase()
+      if (!seen.has(`award:${k}`)) { seen.add(`award:${k}`); entries.push({ kind: 'facet', token: `award:${quote(a)}`, icon: 'mdi-trophy-outline', label: a, typeLabel: awardLabel }) }
+    }
+    for (const a of b.nominations ?? []) {
+      const k = a.toLowerCase()
+      if (!seen.has(`award:${k}`)) { seen.add(`award:${k}`); entries.push({ kind: 'facet', token: `award:${quote(a)}`, icon: 'mdi-trophy-outline', label: a, typeLabel: awardLabel }) }
+    }
+    if (b.physical_format) {
+      const k = b.physical_format.toLowerCase()
+      if (!seen.has(`format:${k}`)) { seen.add(`format:${k}`); entries.push({ kind: 'facet', token: `format:${quote(b.physical_format)}`, icon: 'mdi-book-open-variant', label: b.physical_format, typeLabel: formatLabel }) }
+    }
+    if (b.form_of_work) {
+      const k = b.form_of_work.toLowerCase()
+      if (!seen.has(`form:${k}`)) { seen.add(`form:${k}`); entries.push({ kind: 'facet', token: `form:${quote(b.form_of_work)}`, icon: 'mdi-text-box-outline', label: b.form_of_work, typeLabel: formLabel }) }
+    }
+    for (const c of b.countries_of_origin ?? []) {
+      const k = c.toLowerCase()
+      if (!seen.has(`country:${k}`)) { seen.add(`country:${k}`); entries.push({ kind: 'facet', token: `country:${quote(c)}`, icon: 'mdi-earth', label: c, typeLabel: countryLabel }) }
+    }
+    if (b.main_subject) {
+      const k = b.main_subject.toLowerCase()
+      if (!seen.has(`subject:${k}`)) { seen.add(`subject:${k}`); entries.push({ kind: 'facet', token: `subject:${quote(b.main_subject)}`, icon: 'mdi-lightbulb-outline', label: b.main_subject, typeLabel: subjectLabel }) }
+    }
+    for (const loc of b.narrative_locations ?? []) {
+      const k = loc.toLowerCase()
+      if (!seen.has(`location:${k}`)) { seen.add(`location:${k}`); entries.push({ kind: 'facet', token: `location:${quote(loc)}`, icon: 'mdi-map-marker-outline', label: loc, typeLabel: locationLabel }) }
+    }
     for (const cf of b.custom_field_values ?? []) {
       if (cf.value == null) continue
       const meta = metaByDefId.get(cf.field_def_id)
-      if (!meta) continue
+      if (!meta || meta.def.type === 'date' || meta.def.type === 'integer') continue
       const vals = meta.def.type === 'tag' ? parseTagList(cf.value) : [cf.value]
       for (const v of vals) {
         const k = `${meta.slug}:${v.toLowerCase()}`
@@ -798,6 +857,12 @@ interface ParsedSearch {
   genre: string
   publisher: string
   language: string
+  format: string
+  form: string
+  country: string
+  year: string
+  subject: string
+  location: string
   custom: Record<string, string>   // custom-field slug → search value
   text: string
   tokens: string[]   // the structured parts only, for the active-token pills
@@ -812,6 +877,12 @@ const parsedSearch = computed<ParsedSearch>(() => {
   let genre = ''
   let publisher = ''
   let language = ''
+  let format = ''
+  let form = ''
+  let country = ''
+  let year = ''
+  let subject = ''
+  let location = ''
   const custom: Record<string, string> = {}
   const remaining: string[] = []
   const tokens: string[] = []
@@ -843,6 +914,24 @@ const parsedSearch = computed<ParsedSearch>(() => {
     } else if (key === 'language' && val) {
       language = val
       tokens.push(part)
+    } else if (key === 'format' && val) {
+      format = val
+      tokens.push(part)
+    } else if (key === 'form' && val) {
+      form = val
+      tokens.push(part)
+    } else if (key === 'country' && val) {
+      country = val
+      tokens.push(part)
+    } else if (key === 'year' && val) {
+      year = val
+      tokens.push(part)
+    } else if (key === 'subject' && val) {
+      subject = val
+      tokens.push(part)
+    } else if (key === 'location' && val) {
+      location = val
+      tokens.push(part)
     } else if (customSlugMap.value.has(key) && val) {
       custom[key] = val
       tokens.push(part)
@@ -852,7 +941,7 @@ const parsedSearch = computed<ParsedSearch>(() => {
     // Known key with no/invalid value (in-progress token like "status:") — silently ignored
   }
 
-  return { status, series, award, author, genre, publisher, language, custom, text: remaining.join(' ').toLowerCase(), tokens }
+  return { status, series, award, author, genre, publisher, language, format, form, country, year, subject, location, custom, text: remaining.join(' ').toLowerCase(), tokens }
 })
 
 function removeToken(token: string) {
@@ -868,7 +957,7 @@ const allBooks = computed<Book[]>(() =>
 
 // Pure filter — no sort. Used by groupedBooks series branch (sorted within groups by ordinal).
 const baseFiltered = computed<Book[]>(() => {
-  const { status, series, award, author, genre, publisher, language, custom, text } = parsedSearch.value
+  const { status, series, award, author, genre, publisher, language, format, form, country, year, subject, location, custom, text } = parsedSearch.value
   let list = allBooks.value
 
   if (status) {
@@ -894,6 +983,24 @@ const baseFiltered = computed<Book[]>(() => {
   }
   if (language) {
     list = list.filter(b => b.language?.toLowerCase().includes(language))
+  }
+  if (format) {
+    list = list.filter(b => b.physical_format?.toLowerCase().includes(format))
+  }
+  if (form) {
+    list = list.filter(b => b.form_of_work?.toLowerCase().includes(form))
+  }
+  if (country) {
+    list = list.filter(b => b.countries_of_origin?.some(c => c.toLowerCase().includes(country)))
+  }
+  if (year) {
+    list = list.filter(b => b.original_pub_date?.toLowerCase().includes(year))
+  }
+  if (subject) {
+    list = list.filter(b => b.main_subject?.toLowerCase().includes(subject))
+  }
+  if (location) {
+    list = list.filter(b => b.narrative_locations?.some(l => l.toLowerCase().includes(location)))
   }
   for (const [slug, val] of Object.entries(custom)) {
     const def = customSlugMap.value.get(slug)
@@ -1064,6 +1171,70 @@ const groupedBooks = computed<BookGroup[]>(() => {
     return groups
   }
 
+  if (groupBy.value === 'publisher' || groupBy.value === 'language' || groupBy.value === 'format' || groupBy.value === 'form' || groupBy.value === 'subject') {
+    const fieldMap: Record<string, keyof Book> = {
+      publisher: 'publisher', language: 'language', format: 'physical_format', form: 'form_of_work', subject: 'main_subject',
+    }
+    const field = fieldMap[groupBy.value]
+    const labelFor = groupBy.value === 'language'
+      ? langFmt.value
+      : (v: string) => v
+    const map = new Map<string, Book[]>()
+    const unclassified: Book[] = []
+    for (const b of books) {
+      const val = b[field] as string | null | undefined
+      if (val) {
+        if (!map.has(val)) map.set(val, [])
+        map.get(val)!.push(b)
+      } else {
+        unclassified.push(b)
+      }
+    }
+    const groups = [...map.entries()]
+      .map(([val, bks]) => ({ key: val, label: labelFor(val), books: bks }))
+      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+    if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
+    return groups
+  }
+
+  if (groupBy.value === 'country') {
+    const map = new Map<string, Book[]>()
+    const unclassified: Book[] = []
+    for (const b of books) {
+      const vals = b.countries_of_origin
+      if (!vals?.length) { unclassified.push(b); continue }
+      for (const c of vals) {
+        if (!map.has(c)) map.set(c, [])
+        map.get(c)!.push(b)
+      }
+    }
+    const groups = [...map.entries()]
+      .map(([c, bks]) => ({ key: c, label: c, books: bks }))
+      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+    if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
+    return groups
+  }
+
+  if (groupBy.value === 'decade') {
+    const map = new Map<string, Book[]>()
+    const unclassified: Book[] = []
+    for (const b of books) {
+      const year = parseInt(b.original_pub_date ?? '')
+      if (!isNaN(year)) {
+        const label = `${Math.floor(year / 10) * 10}s`
+        if (!map.has(label)) map.set(label, [])
+        map.get(label)!.push(b)
+      } else {
+        unclassified.push(b)
+      }
+    }
+    const groups = [...map.entries()]
+      .map(([label, bks]) => ({ key: label, label, books: bks }))
+      .sort((a, b) => parseInt(a.key) - parseInt(b.key))
+    if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
+    return groups
+  }
+
   if (groupBy.value.startsWith('cf:')) {
     const defId = Number(groupBy.value.slice(3))
     const def = fieldDefsStore.defs.find(d => d.id === defId)
@@ -1093,12 +1264,21 @@ const groupedBooks = computed<BookGroup[]>(() => {
 // ── Dropdown options ──────────────────────────────────────────────────────────
 
 const GROUP_OPTIONS = computed(() => [
-  { value: 'none' as GroupBy,   label: t('library.group_none') },
-  { value: 'author' as GroupBy, label: t('library.group_author') },
-  { value: 'series' as GroupBy, label: t('library.group_series') },
-  { value: 'genre' as GroupBy,  label: t('library.group_genre') },
-  { value: 'status' as GroupBy, label: t('library.group_status') },
-  ...customFieldMetas.value.map(m => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
+  { value: 'none' as GroupBy,      label: t('library.group_none')      },
+  { value: 'author' as GroupBy,    label: t('library.group_author')     },
+  { value: 'series' as GroupBy,    label: t('library.group_series')     },
+  { value: 'genre' as GroupBy,     label: t('library.group_genre')      },
+  { value: 'status' as GroupBy,    label: t('library.group_status')     },
+  { value: 'publisher' as GroupBy, label: t('library.group_publisher')  },
+  { value: 'language' as GroupBy,  label: t('library.group_language')   },
+  { value: 'format' as GroupBy,    label: t('library.group_format')     },
+  { value: 'form' as GroupBy,      label: t('library.group_form')       },
+  { value: 'country' as GroupBy,   label: t('library.group_country')    },
+  { value: 'decade' as GroupBy,    label: t('library.group_decade')     },
+  { value: 'subject' as GroupBy,   label: t('library.group_subject')    },
+  ...customFieldMetas.value
+    .filter(m => m.def.type !== 'date' && m.def.type !== 'integer')
+    .map(m => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
 ])
 
 const SORT_OPTIONS = computed(() => [

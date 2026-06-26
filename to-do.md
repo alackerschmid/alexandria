@@ -2,7 +2,7 @@
 
 ## bugfixes
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
-- favicon not properly displayed on ios (shown as default vue icon)
+- ~~favicon not properly displayed on ios (shown as default vue icon~~)
 - ~~proper capitalization for genres~~
 - only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
@@ -13,10 +13,10 @@
 - properly handle multilingual editions: 
     - intended behaviour: different editions of one book are all grouped by one identifier (different print, format, language etc.)
     - series names are always displayed the user language if possible
-- ~~handle exotic editions (ie infinite jest 30th anniversary edition)
-~~
+- ~~handle exotic editions (ie infinite jest 30th anniversary edition)~~
+
 # batch 2: improve library view
-- sorting needs to depend on group by
+- sorting, tile view need to behave differently if library is grouped (how?) -> small redesign for library view necessary
 - move "delete" to fourth option of reading status
 - adjust layout of detail page:
   - triple column layout:
@@ -40,7 +40,7 @@
 # lower priority UI improvements
 - general legibility / contrast etc. check
 - design uniform view for chip items (dropdown values when selected, genres, ...)
-- re-add library button to stats page
+- ~~re-add library button to stats page~~
 - write some taglines for the stats page
 - ~~sharpen marketing page~~
 - ~~redo home page (typography styled)~~

@@ -44,6 +44,8 @@ cd worker && npx wrangler d1 migrations apply bookscan --remote
 
 ## Architecture
 
+Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages and sets `VITE_API_URL` at build time; `worker/wrangler.toml` configures the Worker (D1 binding, cron, observability, `CORS_ORIGIN`).
+
 Two separate deployments, both triggered by pushing to `main`:
 
 - **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main`
@@ -78,6 +80,13 @@ The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker m
 
 ### Worker (`worker/src/index.ts`)
 Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`.
+
+**Key modules:**
+- `editions.ts` — `resolveEdition` (fetch-or-create a `books` row), `fetchBookMetadata` (Google Books + OpenLibrary merge), `linkWork` (dedup into `works`/`authors`). The central entry point for all ISBN resolution.
+- `library-query.ts` — shared `SCAN_SELECT` (the big JOIN), `OVERRIDE_FIELDS`, `SORT_CLAUSES`. Add new columns here when extending the scan response.
+- `enrichment.ts` — Wikidata SPARQL pipeline; exports `CURRENT_ENRICHMENT_SCHEMA_VERSION`.
+- `sweeper.ts` — cron handler; imported by `index.ts` as the `scheduled` export.
+- `auth.ts` — `authMiddleware` (JWT verify, injects `userId`), `signToken` (HS256, 7-day expiry).
 
 **Public routes** (no auth required):
 
@@ -191,6 +200,16 @@ Tailwind for layout/spacing, Vuetify components for interactive elements. Do not
 
 ### i18n
 All user-visible strings must go through `$t()` / `t()`. Add new strings to both `src/locales/en.json` and `src/locales/de.json`. The `useLocaleStore` store handles locale persistence and updates `i18n.global.locale` reactively. `STATUS_CONFIG` objects in `BookCard` and `BookDetail` are `computed` so labels update on locale change.
+
+## Versioning
+
+Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+- `feat: ...` — new feature → minor version bump
+- `fix: ...` — bug fix → patch bump
+- `feat!:` / `fix!:` — breaking change → major bump
+- `chore:`, `docs:`, `refactor:` — no release
+
+[release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release.
 
 ## Verification
 Always run type-checks after code edits and verify they pass before considering a task complete.
