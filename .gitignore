@@ -13,3 +13,4 @@ Settings.dc.html
 worker/database.sql
 worker/data.sql
 worker/schema.sql
+performance-gains.md

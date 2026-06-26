@@ -1,6 +1,7 @@
 # TO DO
 
 ## bugfixes
+- improve scan performance (see performance-gains.md)
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - ~~favicon not properly displayed on ios (shown as default vue icon~~)
 - ~~proper capitalization for genres~~
@@ -16,6 +17,9 @@
 - ~~handle exotic editions (ie infinite jest 30th anniversary edition)~~
 
 # batch 2: improve library view
+- show only main entries in series count on group view
+- highlight completed series
+- remember groupby filter between page nav
 - sorting, tile view need to behave differently if library is grouped (how?) -> small redesign for library view necessary
 - move "delete" to fourth option of reading status
 - back fill items when in group view so that there's always 4 items per row
@@ -26,6 +30,8 @@
   - col1: cover
   - col2: title, series (more prominent, also display position in series), reading status, author, description, genres, prizes
   - col3: edition stats, your stats (added on, custom fields)
+  - buttons?
+- look at books w/o cover
 - groupby does not play nice with pagination
 - ~~some sort of automated lookup for un-enriched books~~
 - ~~backfill of enrichment for series items (directly on queue?)~~
@@ -44,6 +50,7 @@
 
 # lower priority UI improvements
 - should be able to change reading status in the expanded view in the scnanner
+- more granular loading indicator (current "scnaning now")
 - add "rating" as field, should be asked in the scanner view after selecting "read"
 - show version number + release notes in the footer
 - general legibility / contrast etc. check
@@ -57,6 +64,11 @@
 
 # big picture items
 - proper versioning / releases / patch notes
+- wishlist feature
+- "missing" filter that highlights incomplete series
+- "to sell" marker
+- "dropped" shelf
+- support for books w/o isbn
 - mass import books before prod go-live to prep enrichment (-> how?)
 - bulk editing / import
 - incorporate CV page
