@@ -1,0 +1,23 @@
+DROP TABLE IF EXISTS scans;
+DROP TABLE IF EXISTS users;
+
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE scans (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  isbn TEXT NOT NULL,
+  title TEXT,
+  author TEXT,
+  cover_url TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_scans_user_id ON scans(user_id);
+CREATE UNIQUE INDEX idx_scans_user_isbn ON scans(user_id, isbn);

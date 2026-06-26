@@ -18,11 +18,15 @@
 # batch 2: improve library view
 - sorting, tile view need to behave differently if library is grouped (how?) -> small redesign for library view necessary
 - move "delete" to fourth option of reading status
+- back fill items when in group view so that there's always 4 items per row
+- option to show unowned books (in a series) grayed out
+- group by criteria should be one common component (so home and library stay in sync)
 - adjust layout of detail page:
   - triple column layout:
   - col1: cover
   - col2: title, series (more prominent, also display position in series), reading status, author, description, genres, prizes
   - col3: edition stats, your stats (added on, custom fields)
+- groupby does not play nice with pagination
 - ~~some sort of automated lookup for un-enriched books~~
 - ~~backfill of enrichment for series items (directly on queue?)~~
 - ~~pagination for grid view -> make pagination adjustable~~
@@ -36,9 +40,14 @@
 - allow custom fields to have types (int, str, literal, date) -> not working properly atm
 - make custom fields always editable
 - overhaul edit process
+- edit should allow editing all fields (new ones are missing) (also not the cover url tho)
 
 # lower priority UI improvements
+- should be able to change reading status in the expanded view in the scnanner
+- add "rating" as field, should be asked in the scanner view after selecting "read"
+- show version number + release notes in the footer
 - general legibility / contrast etc. check
+- should be able to manualyl enter title / isbn on mobile too
 - design uniform view for chip items (dropdown values when selected, genres, ...)
 - ~~re-add library button to stats page~~
 - write some taglines for the stats page

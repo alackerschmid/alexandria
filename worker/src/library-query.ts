@@ -79,22 +79,33 @@ export const SCAN_SELECT = `
 
 export async function fetchCustomFields(db: D1Database, userId: number, bookIds: number[]) {
   if (!bookIds.length) return { defs: [], valuesByBook: new Map<number, Map<number, string | null>>() }
-  const placeholders = bookIds.map(() => '?').join(',')
-  const [{ results: defs }, { results: rawValues }] = await Promise.all([
+  
+  const [{ results: defs }] = await Promise.all([
     db.prepare('SELECT id, field_name AS name, field_type AS type FROM user_field_definitions WHERE user_id = ? ORDER BY sort_order')
       .bind(userId)
       .all<{ id: number; name: string; type: string }>(),
-    db.prepare(`SELECT book_id, field_def_id, field_value FROM book_custom_fields WHERE user_id = ? AND book_id IN (${placeholders})`)
-      .bind(userId, ...bookIds)
-      .all<{ book_id: number; field_def_id: number; field_value: string | null }>(),
   ])
+  
   const valuesByBook = new Map<number, Map<number, string | null>>()
-  for (const v of rawValues) {
-    if (!valuesByBook.has(v.book_id)) valuesByBook.set(v.book_id, new Map())
-    valuesByBook.get(v.book_id)!.set(v.field_def_id, v.field_value)
+  
+  // Batch in chunks of 50 to stay under 100 parameters (1 userId + 50 bookIds = 51)
+  const chunkSize = 50
+  for (let i = 0; i < bookIds.length; i += chunkSize) {
+    const chunk = bookIds.slice(i, i + chunkSize)
+    const placeholders = chunk.map(() => '?').join(',')
+    const { results: rawValues } = await db.prepare(
+      `SELECT book_id, field_def_id, field_value FROM book_custom_fields WHERE user_id = ? AND book_id IN (${placeholders})`
+    ).bind(userId, ...chunk).all<{ book_id: number; field_def_id: number; field_value: string | null }>()
+    
+    for (const v of rawValues) {
+      if (!valuesByBook.has(v.book_id)) valuesByBook.set(v.book_id, new Map())
+      valuesByBook.get(v.book_id)!.set(v.field_def_id, v.field_value)
+    }
   }
+  
   return { defs, valuesByBook }
 }
+
 
 export function attachCustomFields(
   row: any,
