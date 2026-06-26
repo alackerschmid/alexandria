@@ -10,3 +10,6 @@ wikidata-series-lookup.md
 Library.dc.html
 Library - Search variants.dc.html
 Settings.dc.html
+worker/database.sql
+worker/data.sql
+worker/schema.sql
