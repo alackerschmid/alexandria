@@ -9,7 +9,7 @@ database_id = "5aa2cac9-de03-4ac0-a3b0-f51c9fe1c272"
 migrations_dir = "migrations"
 
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["*/5 * * * *"]
 
 [observability.logs]
 enabled = true

@@ -455,6 +455,7 @@ const PAGE_SIZE_OPTIONS = [
   { value: '24', label: '24' },
   { value: '48', label: '48' },
   { value: '96', label: '96' },
+  { value: '10000', label: t('library.per_page_all') },
 ]
 
 // ── Autocomplete ──────────────────────────────────────────────────────────────

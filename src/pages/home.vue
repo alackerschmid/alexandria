@@ -249,7 +249,8 @@ const greeting = computed(() => {
     const raw = (authStore.email ?? '').split('@')[0]
     return raw.charAt(0).toUpperCase() + raw.slice(1)
   })()
-  const key = hour < 12 ? 'greeting_morning'
+  const key = hour < 6  ? 'greeting_night'
+    : hour < 12 ? 'greeting_morning'
     : hour < 17 ? 'greeting_afternoon'
     : hour < 22 ? 'greeting_evening'
     : 'greeting_night'

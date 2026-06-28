@@ -126,6 +126,7 @@
     "sort_by": "Sortieren nach",
     "group_by": "Gruppieren nach",
     "per_page": "Pro Seite",
+    "per_page_all": "Alle",
     "group_none": "Keine Gruppierung",
     "group_author": "Autor",
     "group_series": "Reihe",

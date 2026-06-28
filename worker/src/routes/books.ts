@@ -22,9 +22,17 @@ books.get('/guest-lookup', async (c) => {
 })
 
 // Public sample of random catalogued books — powers the marketing preview. No auth.
+// Cached in the Workers edge cache (keyed by limit) so anonymous/bot traffic doesn't
+// re-run the ORDER BY RANDOM() full scan on every hit. A 10-min-stale random sample is
+// fine for a marketing preview.
 books.get('/sample', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') ?? '3'), 12)
   const db = c.env.DB
+
+  const cache = caches.default
+  const cacheKey = new Request(`https://bookscan-cache/sample?limit=${limit}`)
+  const cached = await cache.match(cacheKey)
+  if (cached) return cached
 
   const { results } = await db
     .prepare(
@@ -37,7 +45,10 @@ books.get('/sample', async (c) => {
     .prepare('SELECT COUNT(*) AS n FROM books WHERE title IS NOT NULL')
     .first<{ n: number }>()
 
-  return c.json({ books: results, total: total?.n ?? results.length })
+  const res = c.json({ books: results, total: total?.n ?? results.length })
+  res.headers.set('Cache-Control', 'public, max-age=600')
+  c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()))
+  return res
 })
 
 // ── Protected routes ──────────────────────────────────────────────────────────
