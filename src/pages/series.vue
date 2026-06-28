@@ -96,10 +96,10 @@
 
   <BookDetail
     v-if="detailBook"
-    v-model="detailOpen"
+    :model-value="!!detailIsbn && !!detailBook"
     :book="detailBook"
     :readonly="detailReadonly"
-    @update:model-value="v => { detailOpen = v; if (!v) detailBook = null }"
+    @update:model-value="(v) => { if (!v) closeDetail() }"
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @refreshed="onDetailRefreshed"
@@ -110,6 +110,7 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useApi } from "@/composables/useApi";
+import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useLocaleStore } from "@/stores/locale";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
@@ -136,6 +137,7 @@ interface SeriesResponse {
 const route = useRoute();
 const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
+const { detailIsbn, openDetail, closeDetail } = useDetailRoute();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
@@ -150,17 +152,19 @@ const displayedEntries = computed(() =>
   showSideEntries.value ? entries.value : mainEntries.value
 );
 
-const detailOpen = ref(false);
 const detailBook = ref<BookWithOverrides | null>(null);
 const detailReadonly = ref(false);
 
-async function openEntry(entry: SeriesEntry) {
+function openEntry(entry: SeriesEntry) {
+  if (entry.isbn) openDetail(entry.isbn)
+}
+
+async function loadDetail(entry: SeriesEntry) {
   if (entry.scan_id) {
     const res = await apiFetch(`/api/scans/${entry.scan_id}?locale=${localeStore.locale}`);
     if (!res.ok) return;
     detailBook.value = await res.json() as Book;
     detailReadonly.value = false;
-    detailOpen.value = true;
   } else if (entry.isbn) {
     const res = await apiFetch(`/api/books/lookup?isbn=${entry.isbn}`);
     if (!res.ok) return;
@@ -181,9 +185,15 @@ async function openEntry(entry: SeriesEntry) {
       work_id: raw.work_id,
     };
     detailReadonly.value = true;
-    detailOpen.value = true;
   }
 }
+
+// Drive detail open/close from the URL — handles click, Back/Forward, and deep links
+watch([detailIsbn, entries], ([isbn]) => {
+  if (!isbn) { detailBook.value = null; return }
+  const entry = entries.value.find(e => e.isbn === isbn)
+  if (entry && detailBook.value?.isbn !== isbn) loadDetail(entry)
+}, { immediate: true })
 
 function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
   if (detailBook.value) detailBook.value = { ...detailBook.value, ...updated }

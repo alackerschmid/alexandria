@@ -14,3 +14,4 @@ worker/database.sql
 worker/data.sql
 worker/schema.sql
 performance-gains.md
+worker/data_filtered.sql

@@ -1403,7 +1403,6 @@ onUnmounted(clearPoll);
 
 function goToSeries() {
   if (props.book.series_id == null) return;
-  emit("update:modelValue", false);
   router.push(`/series/${props.book.series_id}`);
 }
 
@@ -1411,7 +1410,6 @@ function filterBy(
   field: "author" | "genre" | "publisher" | "language",
   value: string,
 ) {
-  emit("update:modelValue", false);
   router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
 }
 

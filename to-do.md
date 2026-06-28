@@ -2,8 +2,8 @@
 
 ## bugfixes
 
-- improve scan performance (see performance-gains.md)
-- see if possible to minimize reads from D1 (5M max limit), worker requests (100k)
+- ~~improve scan performance (see performance-gains.md)~~
+- ~~see if possible to minimize reads from D1 (5M max limit), worker requests (100k)~~
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - ~~favicon not properly displayed on ios (shown as default vue icon~~)
 - ~~proper capitalization for genres~~

@@ -353,12 +353,13 @@
     <!-- Book detail dialog -->
     <BookDetail
       v-if="selectedBook"
-      v-model="detailDialog"
+      :model-value="!!detailIsbn && !!selectedBook"
       :book="selectedBook"
       :guest="isGuest"
+      @update:model-value="(v) => { if (!v) closeDetail() }"
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
-      @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
+      @delete="closeDetail(); openDeleteDialog(selectedBook!)"
       @refreshed="handleRefreshed"
     />
 
@@ -397,6 +398,7 @@ import { useGuestStore } from '@/stores/guest'
 import { useLocaleStore } from '@/stores/locale'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
+import { useDetailRoute } from '@/composables/useDetailRoute'
 import { parseTagList } from '@/utils/tags'
 import { languageDisplayFormatter } from '@/utils/language'
 import type { Book, ReadStatus } from '@/types/book'
@@ -420,6 +422,7 @@ const localeStore = useLocaleStore()
 const { apiFetch } = useApi()
 const fieldDefsStore = useFieldDefsStore()
 const libraryDefaultsStore = useLibraryDefaultsStore()
+const { detailIsbn, openDetail: openDetailRoute, closeDetail } = useDetailRoute()
 
 const isGuest = computed(() => !authStore.isAuthenticated)
 
@@ -439,7 +442,6 @@ const deleteDialog = ref(false)
 const bookToDelete = ref<Book | null>(null)
 const deleting = ref(false)
 
-const detailDialog = ref(false)
 const selectedBook = ref<Book | null>(null)
 
 const errorToast = ref(false)
@@ -1362,7 +1364,14 @@ const setStatus = async (book: Book, newStatus: ReadStatus) => {
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 
-const openDetail = (book: Book) => { selectedBook.value = book; detailDialog.value = true }
+const openDetail = (book: Book) => { selectedBook.value = book; openDetailRoute(book.isbn) }
+
+// Resolve selectedBook from the URL (handles Back/Forward and deep links)
+watch([detailIsbn, allBooks], ([isbn]) => {
+  if (!isbn) { selectedBook.value = null; return }
+  if (selectedBook.value?.isbn !== isbn)
+    selectedBook.value = allBooks.value.find(b => b.isbn === isbn) ?? selectedBook.value
+}, { immediate: true })
 
 function handleRefreshed(updated: Partial<Book>) {
   if (!selectedBook.value) return
@@ -1403,11 +1412,14 @@ watch(() => route.query.q, (q) => {
   if (val !== search.value) search.value = val
 }, { immediate: true })
 
-// Keep URL in sync as search changes (e.g. user types in the search box)
+// Keep URL in sync as search changes — preserve the book param if a detail is open
 watch(search, (val) => {
   const current = typeof route.query.q === 'string' ? route.query.q : ''
   if (val === current) return
-  router.replace({ query: val ? { q: val } : {} })
+  const next: Record<string, string> = {}
+  if (val) next.q = val
+  if (route.query.book) next.book = String(route.query.book)
+  router.replace({ query: next })
 })
 
 // ── Init ──────────────────────────────────────────────────────────────────────
