@@ -173,7 +173,7 @@
       <!-- Group by -->
       <div class="flex items-center gap-3">
         <span class="text-[10px] text-text-secondary tracking-[0.22em] uppercase">{{ $t('library.group_by') }}</span>
-        <AppSelect v-model="groupBy" :options="GROUP_OPTIONS" />
+        <AppSelect v-model="groupBy" :options="groupOptions" />
       </div>
 
       <!-- Sort by + View toggle -->
@@ -399,6 +399,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
 import { useDetailRoute } from '@/composables/useDetailRoute'
+import { useGroupDimensions } from '@/composables/useGroupDimensions'
 import { parseTagList } from '@/utils/tags'
 import { languageDisplayFormatter } from '@/utils/language'
 import type { Book, ReadStatus } from '@/types/book'
@@ -423,6 +424,7 @@ const { apiFetch } = useApi()
 const fieldDefsStore = useFieldDefsStore()
 const libraryDefaultsStore = useLibraryDefaultsStore()
 const { detailIsbn, openDetail: openDetailRoute, closeDetail } = useDetailRoute()
+const { groupOptions, customFieldMetas } = useGroupDimensions()
 
 const isGuest = computed(() => !authStore.isAuthenticated)
 
@@ -473,22 +475,8 @@ type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook
 
 // ── Custom-field search/group helpers ──────────────────────────────────────────
 
-interface CustomFieldMeta { def: { id: number; name: string; type: string }; slug: string }
-
 const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award', 'form', 'country', 'year', 'subject', 'location']
 
-// One search/group entry per custom field, each with a collision-free prefix slug.
-const customFieldMetas = computed<CustomFieldMeta[]>(() => {
-  const used = new Set<string>([...BUILTIN_KEYS, 'title', 'isbn'])
-  const metas: CustomFieldMeta[] = []
-  for (const def of fieldDefsStore.defs) {
-    let slug = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '') || `field${def.id}`
-    if (used.has(slug)) slug = `${slug}${def.id}`
-    used.add(slug)
-    metas.push({ def, slug })
-  }
-  return metas
-})
 const customSlugMap = computed(() => new Map(customFieldMetas.value.map(m => [m.slug, m.def])))
 
 function cfIcon(type: string) {
@@ -1252,22 +1240,6 @@ const groupedBooks = computed<BookGroup[]>(() => {
 
 // ── Dropdown options ──────────────────────────────────────────────────────────
 
-const GROUP_OPTIONS = computed(() => [
-  { value: 'none' as GroupBy,      label: t('library.group_none')      },
-  { value: 'author' as GroupBy,    label: t('library.group_author')     },
-  { value: 'series' as GroupBy,    label: t('library.group_series')     },
-  { value: 'genre' as GroupBy,     label: t('library.group_genre')      },
-  { value: 'status' as GroupBy,    label: t('library.group_status')     },
-  { value: 'publisher' as GroupBy, label: t('library.group_publisher')  },
-  { value: 'language' as GroupBy,  label: t('library.group_language')   },
-{ value: 'form' as GroupBy,      label: t('library.group_form')       },
-  { value: 'country' as GroupBy,   label: t('library.group_country')    },
-  { value: 'decade' as GroupBy,    label: t('library.group_decade')     },
-  { value: 'subject' as GroupBy,   label: t('library.group_subject')    },
-  ...customFieldMetas.value
-    .filter(m => m.def.type !== 'date' && m.def.type !== 'integer')
-    .map(m => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
-])
 
 const SORT_OPTIONS = computed(() => [
   { value: 'date_desc' as SortOption,  label: t('library.sort_date_desc') },
