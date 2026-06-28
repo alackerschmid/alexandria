@@ -12,7 +12,7 @@
 - add display names and titles to the DB that the user can edit
 - remove "format" from frontend entirely
 - setting the status on the library view does not remove the book from view when filtered; doing it in the small card view does
-- navigating a page back does not work as intended
+- ~~navigating a page back does not work as intended~~
 
 ## batch 1: making series more robust
 
