@@ -20,8 +20,10 @@ export const SORT_CLAUSES: Record<string, string> = {
 
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
 // The single `?` placeholder (series_names.language) must be bound FIRST, before any WHERE params.
-// `ws` collapses a work's series to its lowest-ordinal one via SQLite's min()/bare-column rule,
-// so a work in multiple series never multiplies scan rows (list view shows the primary series).
+// `ws` is the work's primary (lowest-ordinal) series row, picked per book via a correlated
+// rowid lookup. This keys the work_series read off b.work_id (using idx_work_series_work) so we
+// only touch the handful of rows for books in this result set, instead of GROUP BY-scanning the
+// whole table. A work in multiple series still yields one row (list view shows the primary series).
 export const SCAN_SELECT = `
   SELECT s.id, s.status, s.created_at,
          b.id   AS book_id,
@@ -70,10 +72,12 @@ export const SCAN_SELECT = `
   JOIN books b ON s.book_id = b.id
   LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
   LEFT JOIN works wk ON wk.id = b.work_id
-  LEFT JOIN (
-    SELECT work_id, series_id, MIN(ordinal) AS ordinal
-    FROM work_series GROUP BY work_id
-  ) ws ON ws.work_id = b.work_id
+  LEFT JOIN work_series ws ON ws.rowid = (
+    SELECT w2.rowid FROM work_series w2
+    WHERE w2.work_id = b.work_id
+    ORDER BY w2.ordinal IS NULL, w2.ordinal, w2.series_id
+    LIMIT 1
+  )
   LEFT JOIN series sr ON sr.id = ws.series_id
   LEFT JOIN series_names sn ON sn.series_id = sr.id AND sn.language = ?`
 

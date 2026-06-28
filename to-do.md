@@ -3,6 +3,7 @@
 ## bugfixes
 
 - improve scan performance (see performance-gains.md)
+- see if possible to minimize reads from D1 (5M max limit), worker requests (100k)
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - ~~favicon not properly displayed on ios (shown as default vue icon~~)
 - ~~proper capitalization for genres~~
@@ -37,6 +38,7 @@
 # batch 3: detail page
 
 - metadata in list items is lacking
+- make isbn copyable w/ copy button
 - adjust layout of detail page:
   - triple column layout:
   - col1: cover
@@ -71,11 +73,11 @@
 
 # big picture items
 
-- proper versioning / releases / patch notes
+- ~~proper versioning / releases / patch notes~~
 - wishlist feature
 - "missing" filter that highlights incomplete series
 - "to sell" marker
-- "dropped" shelf
+- "dnf" shelf
 - support for books w/o isbn
 - mass import books before prod go-live to prep enrichment (-> how?)
 - bulk editing / import

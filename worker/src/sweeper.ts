@@ -25,22 +25,40 @@ export async function scheduled(_event: ScheduledController, env: Bindings, _ctx
     for (const book of unlinked) await linkWork(env.DB, book)
   }
 
-  const { results } = await env.DB.prepare(`
+  // Two separate queries so each is served by a partial index (a single OR query can fall
+  // back to a full table scan). The two predicates are disjoint on series_checked_at
+  // (NULL vs NOT NULL), so the result sets never overlap.
+
+  // Q1 — backlog/retry: never-enriched works plus failed ones past their backoff window.
+  // Uses idx_works_unenriched (WHERE series_checked_at IS NULL).
+  const { results: backlog } = await env.DB.prepare(`
     SELECT id FROM works
-    WHERE (
-      series_checked_at IS NULL
+    WHERE series_checked_at IS NULL
       AND ( enrichment_failed_at IS NULL
             OR ( enrichment_attempts < ?
                  AND enrichment_failed_at < datetime('now', '-30 minutes') ) )
-    ) OR (
-      enrichment_schema_version < ?
-      AND series_checked_at IS NOT NULL
-      AND enrichment_failed_at IS NULL
-    )
-    ORDER BY enrichment_schema_version ASC, enrichment_failed_at IS NOT NULL, id
+    ORDER BY enrichment_failed_at IS NOT NULL, id
     LIMIT ?`)
-    .bind(MAX_ATTEMPTS, CURRENT_ENRICHMENT_SCHEMA_VERSION, BATCH_SIZE)
+    .bind(MAX_ATTEMPTS, BATCH_SIZE)
     .all<{ id: number }>()
+
+  // Q2 — schema backfill: already-enriched works missing newer Wikidata columns. Reserve at
+  // least 1 slot so backfill never starves when Q1 persistently fills the batch.
+  // Uses idx_works_schema_backfill.
+  const remaining = Math.max(1, BATCH_SIZE - backlog.length)
+  const backfill = remaining > 0
+    ? (await env.DB.prepare(`
+        SELECT id FROM works
+        WHERE series_checked_at IS NOT NULL
+          AND enrichment_failed_at IS NULL
+          AND enrichment_schema_version < ?
+        ORDER BY enrichment_schema_version, id
+        LIMIT ?`)
+        .bind(CURRENT_ENRICHMENT_SCHEMA_VERSION, remaining)
+        .all<{ id: number }>()).results
+    : []
+
+  const results = [...backlog, ...backfill]
 
   console.log(`[sweeper] ${results.length} work(s) to enrich`)
   for (const [i, w] of results.entries()) {

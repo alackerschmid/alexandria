@@ -68,12 +68,10 @@ function mergeMetadata(primary: BookMetadata, fallback: BookMetadata): BookMetad
 // returns physical_format/edition_name/physical_dimensions, so we consult OpenLibrary even when
 // Google has the book. Returns null if neither source has it.
 export async function fetchBookMetadata(isbn: string, googleApiKey?: string): Promise<BookMetadata | null> {
-  let google: BookMetadata | null = null
-  if (googleApiKey) {
-    try { google = await fetchFromGoogleBooks(isbn, googleApiKey) } catch {}
-  }
-  let openlib: BookMetadata | null = null
-  try { openlib = await fetchFromOpenLibrary(isbn) } catch {}
+  const [google, openlib] = await Promise.all([
+    googleApiKey ? fetchFromGoogleBooks(isbn, googleApiKey).catch(() => null) : Promise.resolve(null),
+    fetchFromOpenLibrary(isbn).catch(() => null),
+  ])
 
   if (!google) return openlib
   if (!openlib) return google
@@ -142,16 +140,17 @@ export async function resolveEdition(db: D1Database, isbn: string, apiKey?: stri
     physical_format: null, edition_name: null, physical_dimensions: null,
   }
 
-  await db.prepare(`INSERT OR IGNORE INTO books
+  book = await db.prepare(`INSERT OR IGNORE INTO books
       (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
        physical_format, edition_name, physical_dimensions)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      RETURNING *`)
     .bind(isbn, meta.title, meta.author, meta.cover_url, meta.language,
           meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher,
           meta.physical_format, meta.edition_name, meta.physical_dimensions)
-    .run()
+    .first<BookRow>()
 
-  book = await db.prepare('SELECT * FROM books WHERE isbn = ?').bind(isbn).first<BookRow>()
+  if (!book) book = await db.prepare('SELECT * FROM books WHERE isbn = ?').bind(isbn).first<BookRow>()
   if (book && !book.work_id) await linkWork(db, book)
   return book
 }

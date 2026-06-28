@@ -72,13 +72,12 @@
 <script lang="ts" setup>
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { BCP47 } from "@/plugins/i18n";
 import type { Book } from "@/types/book";
 
 const props = defineProps<{ book: Book }>();
 defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const seriesBracket = computed(() => {
   if (!props.book.series_name) return "";
@@ -88,11 +87,7 @@ const seriesBracket = computed(() => {
 });
 
 const getYear = computed(() =>
-  new Date(
-    props.book.publish_date ? props.book.publish_date.replace(" ", "T") : "",
-  ).toLocaleDateString(BCP47[locale.value as string] ?? "en-GB", {
-    year: "numeric",
-  }),
+  props.book.publish_date ? String(props.book.publish_date).slice(0, 4) : "",
 );
 
 const STATUS_CONFIG = computed(() => ({
