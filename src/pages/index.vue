@@ -173,14 +173,29 @@
       <!-- Group by -->
       <div class="flex items-center gap-3">
         <span class="text-[10px] text-text-secondary tracking-[0.22em] uppercase">{{ $t('library.group_by') }}</span>
-        <AppSelect v-model="groupBy" :options="GROUP_OPTIONS" />
+        <AppSelect v-model="groupBy" :options="groupOptions" />
       </div>
 
-      <!-- Sort by + View toggle -->
+      <!-- Sort direction + View toggle -->
       <div class="flex items-center gap-4">
-        <div class="flex items-center gap-3">
-          <span class="text-[10px] text-text-secondary tracking-[0.22em] uppercase">{{ $t('library.sort_by') }}</span>
-          <AppSelect v-model="sortBy" :options="SORT_OPTIONS" :min-width="180" />
+        <!-- Sort direction toggle -->
+        <div class="flex items-center gap-2">
+          <button
+            class="transition-colors"
+            :class="sortDirection === 'asc' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+            :title="$t('library.sort_asc')"
+            @click="sortDirection = 'asc'"
+          >
+            <v-icon icon="mdi-sort-ascending" size="18" />
+          </button>
+          <button
+            class="transition-colors"
+            :class="sortDirection === 'desc' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+            :title="$t('library.sort_desc')"
+            @click="sortDirection = 'desc'"
+          >
+            <v-icon icon="mdi-sort-descending" size="18" />
+          </button>
         </div>
 
         <!-- Per page -->
@@ -353,12 +368,13 @@
     <!-- Book detail dialog -->
     <BookDetail
       v-if="selectedBook"
-      v-model="detailDialog"
+      :model-value="!!detailIsbn && !!selectedBook"
       :book="selectedBook"
       :guest="isGuest"
+      @update:model-value="(v) => { if (!v) closeDetail() }"
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
-      @delete="detailDialog = false; openDeleteDialog(selectedBook!)"
+      @delete="closeDetail(); openDeleteDialog(selectedBook!)"
       @refreshed="handleRefreshed"
     />
 
@@ -397,6 +413,8 @@ import { useGuestStore } from '@/stores/guest'
 import { useLocaleStore } from '@/stores/locale'
 import { useApi } from '@/composables/useApi'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
+import { useDetailRoute } from '@/composables/useDetailRoute'
+import { useGroupDimensions } from '@/composables/useGroupDimensions'
 import { parseTagList } from '@/utils/tags'
 import { languageDisplayFormatter } from '@/utils/language'
 import type { Book, ReadStatus } from '@/types/book'
@@ -420,6 +438,8 @@ const localeStore = useLocaleStore()
 const { apiFetch } = useApi()
 const fieldDefsStore = useFieldDefsStore()
 const libraryDefaultsStore = useLibraryDefaultsStore()
+const { detailIsbn, openDetail: openDetailRoute, closeDetail } = useDetailRoute()
+const { groupOptions, customFieldMetas } = useGroupDimensions()
 
 const isGuest = computed(() => !authStore.isAuthenticated)
 
@@ -431,7 +451,7 @@ const error = ref('')
 
 const search = ref('')
 const groupBy = ref<GroupBy>('none')
-const sortBy = ref<SortOption>('date_desc')
+const sortDirection = ref<SortOption>('desc')
 const viewMode = ref<'list' | 'tile'>(libraryDefaultsStore.defaultView)
 const searchRef = ref<HTMLInputElement | null>(null)
 
@@ -439,7 +459,6 @@ const deleteDialog = ref(false)
 const bookToDelete = ref<Book | null>(null)
 const deleting = ref(false)
 
-const detailDialog = ref(false)
 const selectedBook = ref<Book | null>(null)
 
 const errorToast = ref(false)
@@ -471,22 +490,8 @@ type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook
 
 // ── Custom-field search/group helpers ──────────────────────────────────────────
 
-interface CustomFieldMeta { def: { id: number; name: string; type: string }; slug: string }
+const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award', 'form', 'country', 'year', 'subject', 'location']
 
-const BUILTIN_KEYS = ['status', 'author', 'genre', 'series', 'publisher', 'language', 'award', 'format', 'form', 'country', 'year', 'subject', 'location']
-
-// One search/group entry per custom field, each with a collision-free prefix slug.
-const customFieldMetas = computed<CustomFieldMeta[]>(() => {
-  const used = new Set<string>([...BUILTIN_KEYS, 'title', 'isbn'])
-  const metas: CustomFieldMeta[] = []
-  for (const def of fieldDefsStore.defs) {
-    let slug = def.name.toLowerCase().replace(/[^a-z0-9]+/g, '') || `field${def.id}`
-    if (used.has(slug)) slug = `${slug}${def.id}`
-    used.add(slug)
-    metas.push({ def, slug })
-  }
-  return metas
-})
 const customSlugMap = computed(() => new Map(customFieldMetas.value.map(m => [m.slug, m.def])))
 
 function cfIcon(type: string) {
@@ -510,8 +515,7 @@ const PREFIXES = computed(() => [
   { key: 'publisher', icon: 'mdi-domain',               label: t('library.group_publisher')   },
   { key: 'language',  icon: 'mdi-translate',            label: t('library.group_language')    },
   { key: 'award',     icon: 'mdi-trophy-outline',       label: t('library.filter_awards')     },
-  { key: 'format',    icon: 'mdi-book-open-variant',    label: t('library.group_format')      },
-  { key: 'form',      icon: 'mdi-text-box-outline',     label: t('library.group_form')        },
+{ key: 'form',      icon: 'mdi-text-box-outline',     label: t('library.group_form')        },
   { key: 'country',   icon: 'mdi-earth',                label: t('library.group_country')     },
   { key: 'year',      icon: 'mdi-calendar-range',       label: t('library.group_year')        },
   { key: 'subject',   icon: 'mdi-lightbulb-outline',    label: t('library.group_subject')     },
@@ -565,8 +569,7 @@ const facetEntries = computed<SuggestionFacet[]>(() => {
   const publisherLabel = t('library.group_publisher')
   const languageLabel  = t('library.group_language')
   const awardLabel     = t('library.filter_awards')
-  const formatLabel    = t('library.group_format')
-  const formLabel      = t('library.group_form')
+const formLabel      = t('library.group_form')
   const countryLabel   = t('library.group_country')
   const subjectLabel   = t('library.group_subject')
   const locationLabel  = t('library.group_location')
@@ -614,11 +617,7 @@ const facetEntries = computed<SuggestionFacet[]>(() => {
       const k = a.toLowerCase()
       if (!seen.has(`award:${k}`)) { seen.add(`award:${k}`); entries.push({ kind: 'facet', token: `award:${quote(a)}`, icon: 'mdi-trophy-outline', label: a, typeLabel: awardLabel }) }
     }
-    if (b.physical_format) {
-      const k = b.physical_format.toLowerCase()
-      if (!seen.has(`format:${k}`)) { seen.add(`format:${k}`); entries.push({ kind: 'facet', token: `format:${quote(b.physical_format)}`, icon: 'mdi-book-open-variant', label: b.physical_format, typeLabel: formatLabel }) }
-    }
-    if (b.form_of_work) {
+if (b.form_of_work) {
       const k = b.form_of_work.toLowerCase()
       if (!seen.has(`form:${k}`)) { seen.add(`form:${k}`); entries.push({ kind: 'facet', token: `form:${quote(b.form_of_work)}`, icon: 'mdi-text-box-outline', label: b.form_of_work, typeLabel: formLabel }) }
     }
@@ -858,8 +857,7 @@ interface ParsedSearch {
   genre: string
   publisher: string
   language: string
-  format: string
-  form: string
+form: string
   country: string
   year: string
   subject: string
@@ -878,7 +876,6 @@ const parsedSearch = computed<ParsedSearch>(() => {
   let genre = ''
   let publisher = ''
   let language = ''
-  let format = ''
   let form = ''
   let country = ''
   let year = ''
@@ -915,9 +912,6 @@ const parsedSearch = computed<ParsedSearch>(() => {
     } else if (key === 'language' && val) {
       language = val
       tokens.push(part)
-    } else if (key === 'format' && val) {
-      format = val
-      tokens.push(part)
     } else if (key === 'form' && val) {
       form = val
       tokens.push(part)
@@ -942,7 +936,7 @@ const parsedSearch = computed<ParsedSearch>(() => {
     // Known key with no/invalid value (in-progress token like "status:") — silently ignored
   }
 
-  return { status, series, award, author, genre, publisher, language, format, form, country, year, subject, location, custom, text: remaining.join(' ').toLowerCase(), tokens }
+  return { status, series, award, author, genre, publisher, language, form, country, year, subject, location, custom, text: remaining.join(' ').toLowerCase(), tokens }
 })
 
 function removeToken(token: string) {
@@ -958,7 +952,7 @@ const allBooks = computed<Book[]>(() =>
 
 // Pure filter — no sort. Used by groupedBooks series branch (sorted within groups by ordinal).
 const baseFiltered = computed<Book[]>(() => {
-  const { status, series, award, author, genre, publisher, language, format, form, country, year, subject, location, custom, text } = parsedSearch.value
+  const { status, series, award, author, genre, publisher, language, form, country, year, subject, location, custom, text } = parsedSearch.value
   let list = allBooks.value
 
   if (status) {
@@ -985,10 +979,7 @@ const baseFiltered = computed<Book[]>(() => {
   if (language) {
     list = list.filter(b => b.language?.toLowerCase().includes(language))
   }
-  if (format) {
-    list = list.filter(b => b.physical_format?.toLowerCase().includes(format))
-  }
-  if (form) {
+if (form) {
     list = list.filter(b => b.form_of_work?.toLowerCase().includes(form))
   }
   if (country) {
@@ -1029,15 +1020,11 @@ const baseFiltered = computed<Book[]>(() => {
 const filteredBooks = computed<Book[]>(() => sortBooks(baseFiltered.value))
 
 function sortBooks(list: Book[]): Book[] {
-  return [...list].sort((a, b) => {
-    switch (sortBy.value) {
-      case 'title_asc':  return (a.title ?? a.isbn).localeCompare(b.title ?? b.isbn, localeStore.locale)
-      case 'title_desc': return (b.title ?? b.isbn).localeCompare(a.title ?? a.isbn, localeStore.locale)
-      case 'author_asc': return (a.author ?? '').localeCompare(b.author ?? '', localeStore.locale)
-      case 'date_asc':   return a.created_at.localeCompare(b.created_at)
-      default:           return b.created_at.localeCompare(a.created_at)
-    }
-  })
+  return [...list].sort((a, b) =>
+    sortDirection.value === 'asc'
+      ? a.created_at.localeCompare(b.created_at)
+      : b.created_at.localeCompare(a.created_at),
+  )
 }
 
 // ── Pagination ────────────────────────────────────────────────────────────────
@@ -1061,9 +1048,10 @@ const seriesOrderedBooks = computed<Book[]>(() => {
       standalones.push(b)
     }
   }
-  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) =>
-    (a[0].series_name ?? '').localeCompare(b[0].series_name ?? '', localeStore.locale),
-  )
+  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) => {
+    const cmp = (a[0].series_name ?? '').localeCompare(b[0].series_name ?? '', localeStore.locale)
+    return sortDirection.value === 'asc' ? cmp : -cmp
+  })
   const flat: Book[] = []
   for (const [, books] of sortedGroups) {
     books.sort((a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity))
@@ -1080,7 +1068,7 @@ const pagedBooks = computed<Book[]>(() => {
 })
 
 // Reset to page 1 whenever the visible set or view changes.
-watch([filteredBooks, viewMode, sortBy, groupBy, perPage], () => { currentPage.value = 1 })
+watch([filteredBooks, viewMode, sortDirection, groupBy, perPage], () => { currentPage.value = 1 })
 
 function changePage(p: number) {
   currentPage.value = p
@@ -1105,7 +1093,9 @@ const groupedBooks = computed<BookGroup[]>(() => {
   }
 
   if (groupBy.value === 'status') {
-    const order: ReadStatus[] = ['reading', 'unread', 'read']
+    const order: ReadStatus[] = sortDirection.value === 'asc'
+      ? ['reading', 'unread', 'read']
+      : ['read', 'unread', 'reading']
     return order
       .map(s => ({ key: s, label: t(`book.${s}`), books: books.filter(b => b.status === s) }))
       .filter(g => g.books.length)
@@ -1128,7 +1118,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
       }
     }
     const groups = [...map.values()]
-    groups.sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+    groups.sort((a, b) => {
+      const cmp = a.label.localeCompare(b.label, localeStore.locale)
+      return sortDirection.value === 'asc' ? cmp : -cmp
+    })
     if (standalones.length) {
       groups.push({ key: '__standalone__', label: t('library.standalone'), books: standalones })
     }
@@ -1147,7 +1140,8 @@ const groupedBooks = computed<BookGroup[]>(() => {
       .sort((a, b) => {
         if (a.key === '__unknown__') return 1
         if (b.key === '__unknown__') return -1
-        return a.label.localeCompare(b.label, localeStore.locale)
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
       })
   }
 
@@ -1165,16 +1159,19 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([genre, bks]) => ({ key: genre, label: genre, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) {
       groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     }
     return groups
   }
 
-  if (groupBy.value === 'publisher' || groupBy.value === 'language' || groupBy.value === 'format' || groupBy.value === 'form' || groupBy.value === 'subject') {
+  if (groupBy.value === 'publisher' || groupBy.value === 'language' || groupBy.value === 'form' || groupBy.value === 'subject') {
     const fieldMap: Record<string, keyof Book> = {
-      publisher: 'publisher', language: 'language', format: 'physical_format', form: 'form_of_work', subject: 'main_subject',
+      publisher: 'publisher', language: 'language', form: 'form_of_work', subject: 'main_subject',
     }
     const field = fieldMap[groupBy.value]
     const labelFor = groupBy.value === 'language'
@@ -1193,7 +1190,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([val, bks]) => ({ key: val, label: labelFor(val), books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1211,7 +1211,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([c, bks]) => ({ key: c, label: c, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1231,7 +1234,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([label, bks]) => ({ key: label, label, books: bks }))
-      .sort((a, b) => parseInt(a.key) - parseInt(b.key))
+      .sort((a, b) => {
+        const cmp = parseInt(a.key) - parseInt(b.key)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1252,7 +1258,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([val, bks]) => ({ key: val, label: val, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (none.length) {
       groups.push({ key: '__cfnone__', label: t('library.unclassified'), books: none })
     }
@@ -1264,31 +1273,6 @@ const groupedBooks = computed<BookGroup[]>(() => {
 
 // ── Dropdown options ──────────────────────────────────────────────────────────
 
-const GROUP_OPTIONS = computed(() => [
-  { value: 'none' as GroupBy,      label: t('library.group_none')      },
-  { value: 'author' as GroupBy,    label: t('library.group_author')     },
-  { value: 'series' as GroupBy,    label: t('library.group_series')     },
-  { value: 'genre' as GroupBy,     label: t('library.group_genre')      },
-  { value: 'status' as GroupBy,    label: t('library.group_status')     },
-  { value: 'publisher' as GroupBy, label: t('library.group_publisher')  },
-  { value: 'language' as GroupBy,  label: t('library.group_language')   },
-  { value: 'format' as GroupBy,    label: t('library.group_format')     },
-  { value: 'form' as GroupBy,      label: t('library.group_form')       },
-  { value: 'country' as GroupBy,   label: t('library.group_country')    },
-  { value: 'decade' as GroupBy,    label: t('library.group_decade')     },
-  { value: 'subject' as GroupBy,   label: t('library.group_subject')    },
-  ...customFieldMetas.value
-    .filter(m => m.def.type !== 'date' && m.def.type !== 'integer')
-    .map(m => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
-])
-
-const SORT_OPTIONS = computed(() => [
-  { value: 'date_desc' as SortOption,  label: t('library.sort_date_desc') },
-  { value: 'date_asc' as SortOption,   label: t('library.sort_date_asc') },
-  { value: 'title_asc' as SortOption,  label: t('library.sort_title_asc') },
-  { value: 'title_desc' as SortOption, label: t('library.sort_title_desc') },
-  { value: 'author_asc' as SortOption, label: t('library.sort_author_asc') },
-])
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -1362,7 +1346,14 @@ const setStatus = async (book: Book, newStatus: ReadStatus) => {
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 
-const openDetail = (book: Book) => { selectedBook.value = book; detailDialog.value = true }
+const openDetail = (book: Book) => { selectedBook.value = book; openDetailRoute(book.isbn) }
+
+// Resolve selectedBook from the URL (handles Back/Forward and deep links)
+watch([detailIsbn, allBooks], ([isbn]) => {
+  if (!isbn) { selectedBook.value = null; return }
+  if (selectedBook.value?.isbn !== isbn)
+    selectedBook.value = allBooks.value.find(b => b.isbn === isbn) ?? selectedBook.value
+}, { immediate: true })
 
 function handleRefreshed(updated: Partial<Book>) {
   if (!selectedBook.value) return
@@ -1403,11 +1394,14 @@ watch(() => route.query.q, (q) => {
   if (val !== search.value) search.value = val
 }, { immediate: true })
 
-// Keep URL in sync as search changes (e.g. user types in the search box)
+// Keep URL in sync as search changes — preserve the book param if a detail is open
 watch(search, (val) => {
   const current = typeof route.query.q === 'string' ? route.query.q : ''
   if (val === current) return
-  router.replace({ query: val ? { q: val } : {} })
+  const next: Record<string, string> = {}
+  if (val) next.q = val
+  if (route.query.book) next.book = String(route.query.book)
+  router.replace({ query: next })
 })
 
 // ── Init ──────────────────────────────────────────────────────────────────────

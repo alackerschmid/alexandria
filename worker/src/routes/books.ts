@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Env, BookRow } from '../types'
 import { authMiddleware } from '../auth'
-import { resolveEdition, fetchBookMetadata, linkWork } from '../editions'
+import { resolveEdition, fetchBookMetadata, linkWork, searchBooksByTitle } from '../editions'
 import { enrichWork } from '../enrichment'
 import { getBookByIsbn, OVERRIDE_FIELDS, type OverrideField } from '../library-query'
 
@@ -16,9 +16,17 @@ books.get('/guest-lookup', async (c) => {
   const isbn = c.req.query('isbn')
   if (!isbn) return c.json({ error: 'ISBN required' }, 400)
 
-  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY)
+  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, false, true)
   if (!book) return c.json({ notFound: true }, 404)
   return c.json(book)
+})
+
+// Public guest title search — no auth. Mirrors /search for unauthenticated users.
+books.get('/guest-search', async (c) => {
+  const title = c.req.query('title')?.trim()
+  const author = c.req.query('author')?.trim() || undefined
+  if (!title) return c.json({ error: 'Title required' }, 400)
+  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY))
 })
 
 // Public sample of random catalogued books — powers the marketing preview. No auth.
@@ -54,6 +62,15 @@ books.get('/sample', async (c) => {
 // ── Protected routes ──────────────────────────────────────────────────────────
 
 books.use('*', authMiddleware)
+
+// Title search — returns candidate editions from Google Books. No DB writes; the
+// books row is created only when the user selects an edition and it flows through lookup/scan.
+books.get('/search', async (c) => {
+  const title = c.req.query('title')?.trim()
+  const author = c.req.query('author')?.trim() || undefined
+  if (!title) return c.json({ error: 'Title required' }, 400)
+  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY))
+})
 
 // Book metadata lookup — checks DB cache first, then Google Books, then OpenLibrary.
 books.get('/lookup', async (c) => {

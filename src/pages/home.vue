@@ -192,25 +192,28 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
+import { useFieldDefsStore } from '@/stores/fieldDefs'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppToast from '@/components/AppToast.vue'
 import { useApi } from '@/composables/useApi'
+import { useGroupDimensions } from '@/composables/useGroupDimensions'
 import type { CollectionStats } from '@/types/stats'
+import type { GroupBy } from '@/types/library'
 import { languageDisplayFormatter } from '@/utils/language'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const localeStore = useLocaleStore()
+const fieldDefsStore = useFieldDefsStore()
 const { apiFetch } = useApi()
-
-type GlanceMode = 'genre' | 'language' | 'authors' | 'status'
+const { dimensionOptions } = useGroupDimensions()
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
@@ -273,57 +276,95 @@ function secondaryBarColor(): string {
   return themeStore.isDark ? '#5c544e' : '#8a7a6f'
 }
 
+// ── Dimension data helper ─────────────────────────────────────────────────────
+
+const langFmt = computed(() => languageDisplayFormatter(localeStore.locale))
+
+function getBreakdown(mode: GroupBy, stats: CollectionStats): { label: string; count: number }[] {
+  switch (mode) {
+    case 'genre':     return stats.genres
+    case 'language':  return stats.languages.map(l => ({ label: langFmt.value(l.code), count: l.count }))
+    case 'author':    return stats.topAuthors
+    case 'series':    return stats.topSeries
+    case 'publisher': return stats.publishers
+    case 'form':      return stats.forms
+    case 'country':   return stats.countries
+    case 'decade':    return stats.decades
+    case 'subject':   return stats.subjects
+    case 'status':    return []  // handled separately with fixed colors
+    case 'none':      return []
+    default: {
+      const m = (mode as string).match(/^cf:(\d+)$/)
+      if (m) return stats.customFields.find(cf => cf.fieldDefId === Number(m[1]))?.values ?? []
+      return []
+    }
+  }
+}
+
+// ── At a glance ───────────────────────────────────────────────────────────────
+
+const glanceMode = ref<GroupBy>('genre')
+const mostRepMode = ref<GroupBy>('author')
+
+const glanceData = computed(() => {
+  if (!statsData.value) return []
+  const { total, byStatus } = statsData.value
+  const ramp = colorRamp.value
+  const pctOf = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
+  const pctStr = (n: number) => pctOf(n) + '%'
+
+  if (glanceMode.value === 'status') {
+    return [
+      { label: t('book.read'),    color: 'rgb(var(--v-theme-success))', pctWidth: pctStr(byStatus.read),    pctLabel: pctStr(byStatus.read) },
+      { label: t('book.unread'),  color: 'var(--color-text-secondary)', pctWidth: pctStr(byStatus.unread),  pctLabel: pctStr(byStatus.unread) },
+      { label: t('book.reading'), color: 'rgb(var(--v-theme-primary))', pctWidth: pctStr(byStatus.reading), pctLabel: pctStr(byStatus.reading) },
+    ].filter(s => s.pctWidth !== '0%')
+  }
+
+  const top = getBreakdown(glanceMode.value, statsData.value).slice(0, 5)
+  const topTotal = top.reduce((s, a) => s + a.count, 0)
+  const otherCount = total - topTotal
+  const segs = top.map((item, i) => ({
+    label: item.label,
+    color: ramp[i] ?? ramp[ramp.length - 1],
+    pctWidth: pctStr(item.count),
+    pctLabel: pctStr(item.count),
+  }))
+  if (otherCount > 0) segs.push({ label: t('home.glance_other'), color: ramp[5] ?? ramp[4], pctWidth: pctStr(otherCount), pctLabel: pctStr(otherCount) })
+  return segs
+})
+
 // ── Most represented (right column) ──────────────────────────────────────────
 
 const mostRepresentedData = computed(() => {
   if (!statsData.value) return []
-  const { topAuthors, genres, languages, byStatus, total } = statsData.value
+  const { byStatus, total } = statsData.value
   const ramp = colorRamp.value
-
   const barWidth = (count: number, max: number) =>
     max > 0 ? Math.round((count / max) * 100) + '%' : '0%'
 
-  if (mostRepMode.value === 'authors') {
-    const max = topAuthors[0]?.count ?? 1
-    return topAuthors.slice(0, 6).map((a, i) => ({
-      name: a.name,
-      count: a.count,
-      barWidth: barWidth(a.count, max),
-      color: i === 0 ? 'rgb(var(--v-theme-primary))' : secondaryBarColor(),
-    }))
+  if (mostRepMode.value === 'status') {
+    const items = [
+      { label: t('book.read'),    count: byStatus.read,    color: 'rgb(var(--v-theme-success))' },
+      { label: t('book.unread'),  count: byStatus.unread,  color: 'var(--color-text-secondary)' },
+      { label: t('book.reading'), count: byStatus.reading, color: 'rgb(var(--v-theme-primary))' },
+    ].filter(s => s.count > 0)
+    const max = total > 0 ? total : 1
+    return items.map(s => ({ name: s.label, count: s.count, barWidth: barWidth(s.count, max), color: s.color }))
   }
 
-  if (mostRepMode.value === 'genre') {
-    const top = genres.slice(0, 6)
-    const max = top[0]?.count ?? 1
-    return top.map((g, i) => ({
-      name: g.label,
-      count: g.count,
-      barWidth: barWidth(g.count, max),
-      color: ramp[i] ?? ramp[ramp.length - 1],
-    }))
-  }
-
-  if (mostRepMode.value === 'language') {
-    const langLabel = languageDisplayFormatter(localeStore.locale)
-    const top = languages.slice(0, 6)
-    const max = top[0]?.count ?? 1
-    return top.map((l, i) => ({
-      name: langLabel(l.code),
-      count: l.count,
-      barWidth: barWidth(l.count, max),
-      color: ramp[i] ?? ramp[ramp.length - 1],
-    }))
-  }
-
-  // status
-  const items = [
-    { name: t('book.read'),    count: byStatus.read,    color: 'rgb(var(--v-theme-success))' },
-    { name: t('book.unread'),  count: byStatus.unread,  color: 'var(--color-text-secondary)' },
-    { name: t('book.reading'), count: byStatus.reading, color: 'rgb(var(--v-theme-primary))' },
-  ].filter(s => s.count > 0)
-  const max = total > 0 ? total : 1
-  return items.map(s => ({ ...s, barWidth: barWidth(s.count, max) }))
+  const items = getBreakdown(mostRepMode.value, statsData.value).slice(0, 6)
+  const max = items[0]?.count ?? 1
+  return items.map((item, i) => ({
+    name: item.label,
+    count: item.count,
+    barWidth: barWidth(item.count, max),
+    color: mostRepMode.value === 'author' && i === 0
+      ? 'rgb(var(--v-theme-primary))'
+      : mostRepMode.value === 'author'
+        ? secondaryBarColor()
+        : ramp[i] ?? ramp[ramp.length - 1],
+  }))
 })
 
 // ── Stat tiles ────────────────────────────────────────────────────────────────
@@ -369,61 +410,6 @@ const statTiles = computed(() => {
   ]
 })
 
-// ── At a glance ───────────────────────────────────────────────────────────────
-
-const glanceMode = ref<GlanceMode>('genre')
-const mostRepMode = ref<GlanceMode>('authors')
-
-const dimensionOptions = computed(() => [
-  { value: 'genre',    label: t('home.dim_genre') },
-  { value: 'language', label: t('home.dim_language') },
-  { value: 'authors',  label: t('home.dim_authors') },
-  { value: 'status',   label: t('home.dim_status') },
-])
-
-const glanceData = computed(() => {
-  if (!statsData.value) return []
-  const { total, genres, languages, byStatus, topAuthors } = statsData.value
-  const ramp = colorRamp.value
-  const pctOf = (n: number) => total > 0 ? Math.round((n / total) * 100) : 0
-  const pctStr = (n: number) => pctOf(n) + '%'
-
-  if (glanceMode.value === 'authors') {
-    const top = topAuthors.slice(0, 5)
-    const topTotal = top.reduce((s, a) => s + a.count, 0)
-    const otherCount = total - topTotal
-    const segs = top.map((a, i) => ({ label: a.name, color: ramp[i], pctWidth: pctStr(a.count), pctLabel: pctStr(a.count) }))
-    if (otherCount > 0) segs.push({ label: t('home.glance_other'), color: ramp[5] ?? ramp[4], pctWidth: pctStr(otherCount), pctLabel: pctStr(otherCount) })
-    return segs
-  }
-
-  if (glanceMode.value === 'genre') {
-    const top = genres.slice(0, 5)
-    const topTotal = top.reduce((s, g) => s + g.count, 0)
-    const otherCount = total - topTotal
-    const segs = top.map((g, i) => ({ label: g.label, color: ramp[i], pctWidth: pctStr(g.count), pctLabel: pctStr(g.count) }))
-    if (otherCount > 0) segs.push({ label: t('home.glance_other'), color: ramp[5] ?? ramp[4], pctWidth: pctStr(otherCount), pctLabel: pctStr(otherCount) })
-    return segs
-  }
-
-  if (glanceMode.value === 'language') {
-    const langLabel = languageDisplayFormatter(localeStore.locale)
-    const top = languages.slice(0, 5)
-    const topTotal = top.reduce((s, l) => s + l.count, 0)
-    const otherCount = total - topTotal
-    const segs = top.map((l, i) => ({ label: langLabel(l.code), color: ramp[i], pctWidth: pctStr(l.count), pctLabel: pctStr(l.count) }))
-    if (otherCount > 0) segs.push({ label: t('home.glance_other'), color: ramp[5] ?? ramp[4], pctWidth: pctStr(otherCount), pctLabel: pctStr(otherCount) })
-    return segs
-  }
-
-  // status
-  return [
-    { label: t('book.read'),    color: 'rgb(var(--v-theme-success))', pctWidth: pctStr(byStatus.read),    pctLabel: pctStr(byStatus.read) },
-    { label: t('book.unread'),  color: 'var(--color-text-secondary)', pctWidth: pctStr(byStatus.unread),  pctLabel: pctStr(byStatus.unread) },
-    { label: t('book.reading'), color: 'rgb(var(--v-theme-primary))', pctWidth: pctStr(byStatus.reading), pctLabel: pctStr(byStatus.reading) },
-  ].filter(s => s.pctWidth !== '0%')
-})
-
 // ── By the numbers ────────────────────────────────────────────────────────────
 
 function ordinalCentury(n: number): string {
@@ -447,7 +433,7 @@ const trioItems = computed(() => {
 
 const fetchStats = async () => {
   try {
-    const res = await apiFetch('/api/stats')
+    const res = await apiFetch(`/api/stats?locale=${localeStore.locale}`)
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || 'Failed to fetch stats')
     statsData.value = data
@@ -459,7 +445,9 @@ const fetchStats = async () => {
 
 onMounted(async () => {
   loading.value = true
-  await fetchStats()
+  await Promise.all([fetchStats(), fieldDefsStore.load()])
   loading.value = false
 })
+
+watch(() => localeStore.locale, () => fetchStats())
 </script>

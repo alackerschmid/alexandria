@@ -2,17 +2,17 @@
 
 ## bugfixes
 
-- improve scan performance (see performance-gains.md)
-- see if possible to minimize reads from D1 (5M max limit), worker requests (100k)
+- ~~improve scan performance (see performance-gains.md)~~
+- ~~see if possible to minimize reads from D1 (5M max limit), worker requests (100k)~~
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - ~~favicon not properly displayed on ios (shown as default vue icon~~)
 - ~~proper capitalization for genres~~
 - only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
 - add display names and titles to the DB that the user can edit
-- remove "format" from frontend entirely
+- ~~remove "format" from frontend entirely~~
 - setting the status on the library view does not remove the book from view when filtered; doing it in the small card view does
-- navigating a page back does not work as intended
+- ~~navigating a page back does not work as intended~~
 
 ## batch 1: making series more robust
 
@@ -32,7 +32,7 @@
 - move "delete" to fourth option of reading status
 - back fill items when in group view so that there's always 4 items per row
 - option to show unowned books (in a series) grayed out
-- group by criteria should be one common component (so home and library stay in sync)
+- ~~group by criteria should be one common component (so home and library stay in sync)~~
 - groupby does not play nice with pagination
 
 # batch 3: detail page

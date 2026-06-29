@@ -42,10 +42,9 @@ export async function scheduled(_event: ScheduledController, env: Bindings, _ctx
     .bind(MAX_ATTEMPTS, BATCH_SIZE)
     .all<{ id: number }>()
 
-  // Q2 — schema backfill: already-enriched works missing newer Wikidata columns. Reserve at
-  // least 1 slot so backfill never starves when Q1 persistently fills the batch.
+  // Q2 — schema backfill: already-enriched works missing newer Wikidata columns.
   // Uses idx_works_schema_backfill.
-  const remaining = Math.max(1, BATCH_SIZE - backlog.length)
+  const remaining = Math.max(0, BATCH_SIZE - backlog.length)
   const backfill = remaining > 0
     ? (await env.DB.prepare(`
         SELECT id FROM works

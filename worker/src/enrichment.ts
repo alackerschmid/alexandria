@@ -193,6 +193,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
 
 // All member works of a series (for completeness), with ordinals + English titles.
 async function fetchSeriesMembers(seriesQid: string): Promise<{ qid: string; ordinal: number | null; title: string | null }[]> {
+  if (!/^Q\d+$/.test(seriesQid)) { console.warn('[fetchSeriesMembers] invalid QID:', seriesQid); return [] }
   const query = `
     SELECT ?work ?ordinal ?label WHERE {
       ?work p:P179 ?st.
@@ -244,10 +245,12 @@ async function backfillEdition(db: D1Database, workId: number, workQid: string, 
 
   // Set work_id directly (bypasses linkWork, which would mint a competing match-key work).
   await db.prepare(`INSERT OR IGNORE INTO books
-      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher, work_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
+       physical_format, edition_name, physical_dimensions, work_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .bind(isbn, meta.title, meta.author, meta.cover_url, meta.language,
-          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher, workId)
+          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher,
+          meta.physical_format, meta.edition_name, meta.physical_dimensions, workId)
     .run()
   // If the ISBN row already existed unlinked (e.g. an earlier guest lookup), adopt it.
   await db.prepare('UPDATE books SET work_id = ? WHERE isbn = ? AND work_id IS NULL').bind(workId, isbn).run()
@@ -298,6 +301,7 @@ async function populateSeriesMembers(db: D1Database, seriesId: number, seriesQid
 // apiKey (Google Books) is only needed when backfilling a cover edition for an unowned work.
 export async function enrichWork(db: D1Database, workId: number, force = false, apiKey?: string): Promise<void> {
   let canonicalId = workId
+  let merged = false
   try {
     console.log(`[enrichWork] start workId=${workId} force=${force}`)
     const w = await db.prepare('SELECT * FROM works WHERE id = ?').bind(workId).first<WorkRow>()
@@ -349,6 +353,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
           console.log(`[enrichWork] QID ${info.workQid} already on work ${existing.id}, merging ${workId} → ${existing.id}`)
           await mergeWorks(db, workId, existing.id)
           canonicalId = existing.id
+          merged = true
         } else {
           console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
           await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
@@ -383,17 +388,17 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
         enrichment_failed_at      = NULL,
         enrichment_attempts       = 0,
         enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
-        genres                    = ?,
-        original_pub_date         = ?,
-        awards                    = ?,
-        nominations               = ?,
-        main_subject              = ?,
-        form_of_work              = ?,
-        language_of_work          = ?,
-        first_line                = ?,
-        epigraph                  = ?,
-        narrative_locations       = ?,
-        countries_of_origin       = ?
+        genres                    = COALESCE(?, genres),
+        original_pub_date         = COALESCE(?, original_pub_date),
+        awards                    = COALESCE(?, awards),
+        nominations               = COALESCE(?, nominations),
+        main_subject              = COALESCE(?, main_subject),
+        form_of_work              = COALESCE(?, form_of_work),
+        language_of_work          = COALESCE(?, language_of_work),
+        first_line                = COALESCE(?, first_line),
+        epigraph                  = COALESCE(?, epigraph),
+        narrative_locations       = COALESCE(?, narrative_locations),
+        countries_of_origin       = COALESCE(?, countries_of_origin)
       WHERE id = ?`)
       .bind(genresJson, pubDate, awardsJson, nominJson,
             details?.mainSubject ?? null, details?.formOfWork ?? null,
@@ -404,8 +409,10 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
   } catch (e) {
     console.error('[enrichWork] failed for work', workId, e)
-    try {
-      await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(canonicalId).run()
-    } catch {}
+    if (!merged) {
+      try {
+        await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(workId).run()
+      } catch {}
+    }
   }
 }
