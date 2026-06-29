@@ -176,11 +176,26 @@
         <AppSelect v-model="groupBy" :options="groupOptions" />
       </div>
 
-      <!-- Sort by + View toggle -->
+      <!-- Sort direction + View toggle -->
       <div class="flex items-center gap-4">
-        <div class="flex items-center gap-3">
-          <span class="text-[10px] text-text-secondary tracking-[0.22em] uppercase">{{ $t('library.sort_by') }}</span>
-          <AppSelect v-model="sortBy" :options="SORT_OPTIONS" :min-width="180" />
+        <!-- Sort direction toggle -->
+        <div class="flex items-center gap-2">
+          <button
+            class="transition-colors"
+            :class="sortDirection === 'asc' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+            :title="$t('library.sort_asc')"
+            @click="sortDirection = 'asc'"
+          >
+            <v-icon icon="mdi-sort-ascending" size="18" />
+          </button>
+          <button
+            class="transition-colors"
+            :class="sortDirection === 'desc' ? 'text-text-primary' : 'text-text-secondary/40 hover:text-text-secondary'"
+            :title="$t('library.sort_desc')"
+            @click="sortDirection = 'desc'"
+          >
+            <v-icon icon="mdi-sort-descending" size="18" />
+          </button>
         </div>
 
         <!-- Per page -->
@@ -436,7 +451,7 @@ const error = ref('')
 
 const search = ref('')
 const groupBy = ref<GroupBy>('none')
-const sortBy = ref<SortOption>('date_desc')
+const sortDirection = ref<SortOption>('desc')
 const viewMode = ref<'list' | 'tile'>(libraryDefaultsStore.defaultView)
 const searchRef = ref<HTMLInputElement | null>(null)
 
@@ -1005,15 +1020,11 @@ if (form) {
 const filteredBooks = computed<Book[]>(() => sortBooks(baseFiltered.value))
 
 function sortBooks(list: Book[]): Book[] {
-  return [...list].sort((a, b) => {
-    switch (sortBy.value) {
-      case 'title_asc':  return (a.title ?? a.isbn).localeCompare(b.title ?? b.isbn, localeStore.locale)
-      case 'title_desc': return (b.title ?? b.isbn).localeCompare(a.title ?? a.isbn, localeStore.locale)
-      case 'author_asc': return (a.author ?? '').localeCompare(b.author ?? '', localeStore.locale)
-      case 'date_asc':   return a.created_at.localeCompare(b.created_at)
-      default:           return b.created_at.localeCompare(a.created_at)
-    }
-  })
+  return [...list].sort((a, b) =>
+    sortDirection.value === 'asc'
+      ? a.created_at.localeCompare(b.created_at)
+      : b.created_at.localeCompare(a.created_at),
+  )
 }
 
 // ── Pagination ────────────────────────────────────────────────────────────────
@@ -1037,9 +1048,10 @@ const seriesOrderedBooks = computed<Book[]>(() => {
       standalones.push(b)
     }
   }
-  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) =>
-    (a[0].series_name ?? '').localeCompare(b[0].series_name ?? '', localeStore.locale),
-  )
+  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) => {
+    const cmp = (a[0].series_name ?? '').localeCompare(b[0].series_name ?? '', localeStore.locale)
+    return sortDirection.value === 'asc' ? cmp : -cmp
+  })
   const flat: Book[] = []
   for (const [, books] of sortedGroups) {
     books.sort((a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity))
@@ -1056,7 +1068,7 @@ const pagedBooks = computed<Book[]>(() => {
 })
 
 // Reset to page 1 whenever the visible set or view changes.
-watch([filteredBooks, viewMode, sortBy, groupBy, perPage], () => { currentPage.value = 1 })
+watch([filteredBooks, viewMode, sortDirection, groupBy, perPage], () => { currentPage.value = 1 })
 
 function changePage(p: number) {
   currentPage.value = p
@@ -1081,7 +1093,9 @@ const groupedBooks = computed<BookGroup[]>(() => {
   }
 
   if (groupBy.value === 'status') {
-    const order: ReadStatus[] = ['reading', 'unread', 'read']
+    const order: ReadStatus[] = sortDirection.value === 'asc'
+      ? ['reading', 'unread', 'read']
+      : ['read', 'unread', 'reading']
     return order
       .map(s => ({ key: s, label: t(`book.${s}`), books: books.filter(b => b.status === s) }))
       .filter(g => g.books.length)
@@ -1104,7 +1118,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
       }
     }
     const groups = [...map.values()]
-    groups.sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+    groups.sort((a, b) => {
+      const cmp = a.label.localeCompare(b.label, localeStore.locale)
+      return sortDirection.value === 'asc' ? cmp : -cmp
+    })
     if (standalones.length) {
       groups.push({ key: '__standalone__', label: t('library.standalone'), books: standalones })
     }
@@ -1123,7 +1140,8 @@ const groupedBooks = computed<BookGroup[]>(() => {
       .sort((a, b) => {
         if (a.key === '__unknown__') return 1
         if (b.key === '__unknown__') return -1
-        return a.label.localeCompare(b.label, localeStore.locale)
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
       })
   }
 
@@ -1141,7 +1159,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([genre, bks]) => ({ key: genre, label: genre, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) {
       groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     }
@@ -1169,7 +1190,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([val, bks]) => ({ key: val, label: labelFor(val), books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1187,7 +1211,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([c, bks]) => ({ key: c, label: c, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1207,7 +1234,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([label, bks]) => ({ key: label, label, books: bks }))
-      .sort((a, b) => parseInt(a.key) - parseInt(b.key))
+      .sort((a, b) => {
+        const cmp = parseInt(a.key) - parseInt(b.key)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (unclassified.length) groups.push({ key: '__unclassified__', label: t('library.unclassified'), books: unclassified })
     return groups
   }
@@ -1228,7 +1258,10 @@ const groupedBooks = computed<BookGroup[]>(() => {
     }
     const groups = [...map.entries()]
       .map(([val, bks]) => ({ key: val, label: val, books: bks }))
-      .sort((a, b) => a.label.localeCompare(b.label, localeStore.locale))
+      .sort((a, b) => {
+        const cmp = a.label.localeCompare(b.label, localeStore.locale)
+        return sortDirection.value === 'asc' ? cmp : -cmp
+      })
     if (none.length) {
       groups.push({ key: '__cfnone__', label: t('library.unclassified'), books: none })
     }
@@ -1240,14 +1273,6 @@ const groupedBooks = computed<BookGroup[]>(() => {
 
 // ── Dropdown options ──────────────────────────────────────────────────────────
 
-
-const SORT_OPTIONS = computed(() => [
-  { value: 'date_desc' as SortOption,  label: t('library.sort_date_desc') },
-  { value: 'date_asc' as SortOption,   label: t('library.sort_date_asc') },
-  { value: 'title_asc' as SortOption,  label: t('library.sort_title_asc') },
-  { value: 'title_desc' as SortOption, label: t('library.sort_title_desc') },
-  { value: 'author_asc' as SortOption, label: t('library.sort_author_asc') },
-])
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

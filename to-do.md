@@ -32,7 +32,7 @@
 - move "delete" to fourth option of reading status
 - back fill items when in group view so that there's always 4 items per row
 - option to show unowned books (in a series) grayed out
-- group by criteria should be one common component (so home and library stay in sync)
+- ~~group by criteria should be one common component (so home and library stay in sync)~~
 - groupby does not play nice with pagination
 
 # batch 3: detail page

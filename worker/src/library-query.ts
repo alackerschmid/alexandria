@@ -19,12 +19,13 @@ export const SORT_CLAUSES: Record<string, string> = {
 }
 
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
-// The single `?` placeholder (series_names.language) must be bound FIRST, before any WHERE params.
 // `ws` is the work's primary (lowest-ordinal) series row, picked per book via a correlated
 // rowid lookup. This keys the work_series read off b.work_id (using idx_work_series_work) so we
 // only touch the handful of rows for books in this result set, instead of GROUP BY-scanning the
 // whole table. A work in multiple series still yields one row (list view shows the primary series).
-export const SCAN_SELECT = `
+export function buildScanSelect(locale: string): string {
+  const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : 'en'
+  return `
   SELECT s.id, s.status, s.created_at,
          b.id   AS book_id,
          b.isbn,
@@ -79,7 +80,8 @@ export const SCAN_SELECT = `
     LIMIT 1
   )
   LEFT JOIN series sr ON sr.id = ws.series_id
-  LEFT JOIN series_names sn ON sn.series_id = sr.id AND sn.language = ?`
+  LEFT JOIN series_names sn ON sn.series_id = sr.id AND sn.language = '${safeLocale}'`
+}
 
 export async function fetchCustomFields(db: D1Database, userId: number, bookIds: number[]) {
   if (!bookIds.length) return { defs: [], valuesByBook: new Map<number, Map<number, string | null>>() }

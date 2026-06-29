@@ -78,6 +78,63 @@ export async function fetchBookMetadata(isbn: string, googleApiKey?: string): Pr
   return mergeMetadata(google, openlib)
 }
 
+// ── Title search ──────────────────────────────────────────────────────────────
+
+export type EditionCandidate = {
+  isbn: string
+  title: string | null
+  author: string | null
+  cover_url: string | null
+  publish_date: string | null
+  publisher: string | null
+}
+
+export async function searchBooksByTitle(
+  title: string,
+  author: string | undefined,
+  apiKey: string,
+  limit = 20,
+): Promise<EditionCandidate[]> {
+  try {
+    let q = `intitle:"${encodeURIComponent(title)}"`
+    if (author) q += `+inauthor:"${encodeURIComponent(author)}"`
+    const res = await fetch(
+      `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=20&key=${apiKey}`
+    )
+    const data: any = await res.json()
+    if (!Array.isArray(data.items)) return []
+
+    const seen = new Set<string>()
+    const results: EditionCandidate[] = []
+
+    for (const item of data.items) {
+      if (results.length >= limit) break
+      const info = item.volumeInfo
+      if (!info) continue
+
+      const identifiers: Array<{ type: string; identifier: string }> = info.industryIdentifiers ?? []
+      const isbn13 = identifiers.find(i => i.type === 'ISBN_13')?.identifier
+      const isbn10 = identifiers.find(i => i.type === 'ISBN_10')?.identifier
+      const isbn = isbn13 ?? isbn10
+      if (!isbn || seen.has(isbn)) continue
+      seen.add(isbn)
+
+      results.push({
+        isbn,
+        title: info.title ?? null,
+        author: info.authors?.join(', ') ?? null,
+        cover_url: info.imageLinks?.thumbnail?.replace('http://', 'https://') ?? null,
+        publish_date: info.publishedDate ?? null,
+        publisher: info.publisher ?? null,
+      })
+    }
+
+    return results
+  } catch {
+    return []
+  }
+}
+
 export function normalizeStr(s: string | null | undefined): string {
   return (s ?? '')
     .toLowerCase()
@@ -125,10 +182,10 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
 // Centralizes the fetch-metadata → INSERT → re-SELECT flow shared by lookup/guest-lookup/scans.
 // When metadata isn't found: returns null unless allowEmpty (POST /api/scans needs a row to
 // exist so an offline-queued scan never fails just because the book couldn't be resolved).
-export async function resolveEdition(db: D1Database, isbn: string, apiKey?: string, allowEmpty = false): Promise<BookRow | null> {
+export async function resolveEdition(db: D1Database, isbn: string, apiKey?: string, allowEmpty = false, skipLinkWork = false): Promise<BookRow | null> {
   let book = await db.prepare('SELECT * FROM books WHERE isbn = ?').bind(isbn).first<BookRow>()
   if (book) {
-    if (!book.work_id) await linkWork(db, book)
+    if (!book.work_id && !skipLinkWork) await linkWork(db, book)
     return book
   }
 
@@ -151,6 +208,6 @@ export async function resolveEdition(db: D1Database, isbn: string, apiKey?: stri
     .first<BookRow>()
 
   if (!book) book = await db.prepare('SELECT * FROM books WHERE isbn = ?').bind(isbn).first<BookRow>()
-  if (book && !book.work_id) await linkWork(db, book)
+  if (book && !book.work_id && !skipLinkWork) await linkWork(db, book)
   return book
 }

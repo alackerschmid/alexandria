@@ -78,7 +78,7 @@ fields.patch('/:id', async (c) => {
     if (!result.meta.changes) return c.json({ error: 'Not found' }, 404)
 
     const updated = await c.env.DB
-      .prepare('SELECT id, field_name AS name, field_type AS type, required FROM user_field_definitions WHERE id = ?')
+      .prepare('SELECT id, field_name AS name, field_type AS type, field_options AS options, sort_order, required FROM user_field_definitions WHERE id = ?')
       .bind(id)
       .first()
     return c.json(updated)
@@ -90,11 +90,16 @@ fields.patch('/:id', async (c) => {
 
 fields.delete('/:id', async (c) => {
   const userId = c.get('userId')
-  const result = await c.env.DB
-    .prepare('DELETE FROM user_field_definitions WHERE id = ? AND user_id = ?')
-    .bind(c.req.param('id'), userId)
-    .run()
-  if (!result.meta.changes) return c.json({ error: 'Not found' }, 404)
+  const id = c.req.param('id')
+  const owned = await c.env.DB
+    .prepare('SELECT 1 FROM user_field_definitions WHERE id = ? AND user_id = ?')
+    .bind(id, userId)
+    .first()
+  if (!owned) return c.json({ error: 'Not found' }, 404)
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM book_custom_fields WHERE field_def_id = ? AND user_id = ?').bind(id, userId),
+    c.env.DB.prepare('DELETE FROM user_field_definitions WHERE id = ? AND user_id = ?').bind(id, userId),
+  ])
   return c.json({ ok: true })
 })
 

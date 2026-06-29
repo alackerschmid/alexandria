@@ -3,7 +3,7 @@ import type { Env } from '../types'
 import { authMiddleware } from '../auth'
 import { resolveEdition } from '../editions'
 import { enrichWork } from '../enrichment'
-import { SORT_CLAUSES, SCAN_SELECT, fetchCustomFields, attachCustomFields, VALID_STATUSES } from '../library-query'
+import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES } from '../library-query'
 
 const scans = new Hono<Env>()
 
@@ -17,8 +17,8 @@ scans.get('/', async (c) => {
   const orderClause = SORT_CLAUSES[c.req.query('sort') ?? ''] ?? SORT_CLAUSES.date_desc
 
   const { results } = await c.env.DB
-    .prepare(`${SCAN_SELECT} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
-    .bind(locale, userId, limit, offset)
+    .prepare(`${buildScanSelect(locale)} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`)
+    .bind(userId, limit, offset)
     .all<any>()
 
   const bookIds = results.map((r: any) => r.book_id as number)
@@ -30,8 +30,7 @@ scans.get('/', async (c) => {
 scans.post('/', async (c) => {
   const { isbn, status } = await c.req.json<{ isbn: string; status?: string }>()
   if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
-  const VALID_STATUSES = ['unread', 'reading', 'read']
-  const initialStatus = VALID_STATUSES.includes(status ?? '') ? status : 'unread'
+  const initialStatus = (VALID_STATUSES as readonly string[]).includes(status ?? '') ? status : 'unread'
 
   const userId = c.get('userId')
   const db = c.env.DB
@@ -61,8 +60,8 @@ scans.post('/', async (c) => {
   if (book.work_id) c.executionCtx.waitUntil(enrichWork(db, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY))
 
   const saved = await db
-    .prepare(`${SCAN_SELECT} WHERE s.id = ?`)
-    .bind(locale, result.meta.last_row_id)
+    .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)
+    .bind(result.meta.last_row_id)
     .first<any>()
 
   const { defs, valuesByBook } = await fetchCustomFields(db, userId, saved ? [saved.book_id] : [])
@@ -75,8 +74,8 @@ scans.get('/:id', async (c) => {
   const userId = c.get('userId')
   const locale = c.req.query('locale') ?? 'en'
   const scan = await c.env.DB
-    .prepare(`${SCAN_SELECT} WHERE s.id = ? AND s.user_id = ?`)
-    .bind(locale, c.req.param('id'), userId)
+    .prepare(`${buildScanSelect(locale)} WHERE s.id = ? AND s.user_id = ?`)
+    .bind(c.req.param('id'), userId)
     .first<any>()
   if (!scan) return c.json({ error: 'Not found' }, 404)
   const { defs, valuesByBook } = await fetchCustomFields(c.env.DB, userId, [scan.book_id])
