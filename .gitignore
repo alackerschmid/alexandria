@@ -7,12 +7,8 @@ worker/.dev.vars
 .wrangler
 look-at-the-current-soft-crescent.md
 wikidata-series-lookup.md
-Library.dc.html
 Library - Search variants.dc.html
 Settings.dc.html
-worker/database.sql
-worker/data.sql
-worker/schema.sql
+worker/*.sql
 performance-gains.md
-worker/data_filtered.sql
 library-rework.md

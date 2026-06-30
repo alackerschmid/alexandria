@@ -86,11 +86,10 @@ export function buildScanSelect(locale: string): string {
 export async function fetchCustomFields(db: D1Database, userId: number, bookIds: number[]) {
   if (!bookIds.length) return { defs: [], valuesByBook: new Map<number, Map<number, string | null>>() }
   
-  const [{ results: defs }] = await Promise.all([
-    db.prepare('SELECT id, field_name AS name, field_type AS type FROM user_field_definitions WHERE user_id = ? ORDER BY sort_order')
-      .bind(userId)
-      .all<{ id: number; name: string; type: string }>(),
-  ])
+  const { results: defs } = await db
+    .prepare('SELECT id, field_name AS name, field_type AS type FROM user_field_definitions WHERE user_id = ? ORDER BY sort_order')
+    .bind(userId)
+    .all<{ id: number; name: string; type: string }>()
   
   const valuesByBook = new Map<number, Map<number, string | null>>()
   
@@ -113,6 +112,19 @@ export async function fetchCustomFields(db: D1Database, userId: number, bookIds:
 }
 
 
+const jsonOrNull = (v: string | null | undefined) => (v ? JSON.parse(v) : null)
+export const titleCase = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
+
+export function parseTagArray(raw: string | null): string[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string' && v !== '') : []
+  } catch {
+    return []
+  }
+}
+
 export function attachCustomFields(
   row: any,
   defs: { id: number; name: string; type: string }[],
@@ -122,11 +134,11 @@ export function attachCustomFields(
   const bookVals = valuesByBook.get(book_id)
   return {
     ...rest,
-    genres:              rest.genres              ? (JSON.parse(rest.genres) as string[]).map(g => g.replace(/\b\w/g, c => c.toUpperCase())) : null,
-    awards:              rest.awards              ? JSON.parse(rest.awards)              : null,
-    nominations:         rest.nominations         ? JSON.parse(rest.nominations)         : null,
-    narrative_locations: rest.narrative_locations ? JSON.parse(rest.narrative_locations) : null,
-    countries_of_origin: rest.countries_of_origin ? JSON.parse(rest.countries_of_origin) : null,
+    genres:              rest.genres              ? (jsonOrNull(rest.genres) as string[]).map(titleCase) : null,
+    awards:              jsonOrNull(rest.awards),
+    nominations:         jsonOrNull(rest.nominations),
+    narrative_locations: jsonOrNull(rest.narrative_locations),
+    countries_of_origin: jsonOrNull(rest.countries_of_origin),
     custom_field_values: defs.map(d => ({ field_def_id: d.id, value: bookVals?.get(d.id) ?? null })),
   }
 }

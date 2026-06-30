@@ -7,6 +7,9 @@
   --color-charcoal-light: #ffffff;
   --color-charcoal-border: #e2ddd8;
   --color-orange-neon: #ff6600;
+  /* Search bar: a warm, slightly recessed surface */
+  --color-search-bg: #f6f4ef;
+  --color-search-border: #e2ddd8;
   --color-text-primary: #0f0f0f;
   --color-text-secondary: #7a736e;
 
@@ -35,9 +38,11 @@
 
 /* Dark theme overrides — applied via data-theme="dark" on <html> */
 [data-theme="dark"] {
-  --color-charcoal: #111110;
+  --color-charcoal: #0a0a09;
   --color-charcoal-light: #1c1b19;
   --color-charcoal-border: #2e2b28;
+  --color-search-bg: #16150f;
+  --color-search-border: #232220;
   --color-text-primary: #f0ede8;
   --color-text-secondary: #8a8078;
 }

@@ -89,7 +89,6 @@
     "preview_count": "Titel",
     "preview_more": "…und zwar alle"
   },
-
   "library": {
     "section": "Bibliothek",
     "heading": "Deine Bücher.",
@@ -116,8 +115,24 @@
     "sort_asc": "Aufsteigend",
     "sort_desc": "Absteigend",
     "group_by": "Gruppieren nach",
+    "more": "Mehr",
+    "group_sheet_hint": "Tippe die aktive Gruppe erneut an, um die Sortierrichtung umzukehren.",
     "per_page": "Pro Seite",
     "per_page_all": "Alle",
+    "display": "Anzeige",
+    "display_options": "Anzeigeoptionen",
+    "display_series_hint": "Serienoptionen gelten beim Gruppieren nach Serie.",
+    "main_entries_only": "Nur Hauptbände",
+    "main_entries_only_sub": "Zählt ganzzahlige Bände, ohne Novellen & Nebengeschichten",
+    "highlight_complete": "Vollständige Serien hervorheben",
+    "highlight_complete_sub": "Serien hervorheben, die du komplett besitzt",
+    "show_unowned": "Fehlende Bände anzeigen",
+    "show_unowned_sub": "Fehlende Serienbände ausgegraut anzeigen",
+    "show_all": "+ Alle anzeigen ({n})",
+    "collapse": "— Einklappen",
+    "complete": "✓ Komplett",
+    "unowned": "Fehlt",
+    "novella": "Nov",
     "group_none": "Hinzugefügt am",
     "group_author": "Autor",
     "group_series": "Reihe",
@@ -331,7 +346,7 @@
     "isbn_label": "ISBN",
     "looking_up": "Wird gesucht…",
     "look_up": "Buch suchen",
-    "use_camera": "Stattdessen Kamera verwenden",
+    "use_camera": "Zurück zur Kamera",
     "point_at_barcode": "Auf Barcode richten",
     "no_metadata": "Keine Metadaten gefunden — nur ISBN wird gespeichert",
     "unknown_book": "Unbekanntes Buch",
@@ -375,6 +390,8 @@
     "search": "Suchen",
     "searching": "Suche läuft…",
     "no_results": "Keine Ausgaben gefunden",
-    "search_error": "Suche fehlgeschlagen – bitte erneut versuchen"
+    "search_error": "Suche fehlgeschlagen – bitte erneut versuchen",
+    "search_results": "Suchergebnisse",
+    "publisher_optional": "Verlag (optional)"
   }
 }

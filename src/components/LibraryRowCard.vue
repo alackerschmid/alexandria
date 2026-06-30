@@ -13,8 +13,14 @@
         :alt="book.title || book.isbn"
         class="w-full h-full object-cover"
       />
-      <div v-else class="absolute inset-0 flex items-end justify-center pb-1">
-        <v-icon icon="mdi-book-outline" size="14" color="primary" />
+      <div
+        v-else
+        class="absolute inset-0 flex items-center justify-center"
+        :style="{ background: tint }"
+      >
+        <span class="font-heading font-bold text-sm" style="color: rgba(236,233,227,0.3)">
+          {{ glyph }}
+        </span>
       </div>
       <!-- orange left spine accent -->
       <div class="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-neon" />
@@ -73,11 +79,15 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Book } from "@/types/book";
+import { tintFor, initials } from "@/utils/cover";
 
 const props = defineProps<{ book: Book }>();
 defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
 const { t } = useI18n();
+
+const tint = computed(() => tintFor(props.book.title || props.book.isbn));
+const glyph = computed(() => initials(props.book.title || props.book.isbn));
 
 const seriesBracket = computed(() => {
   if (!props.book.series_name) return "";

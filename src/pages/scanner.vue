@@ -105,6 +105,8 @@
               >
                 {{ $t("scanner.isbn_heading") }}
               </h1>
+
+              <!-- Switch to title search -->
               <div class="flex items-start gap-2.5 mb-12">
                 <v-icon
                   :icon="
@@ -157,7 +159,11 @@
                 :disabled="scanState === 'detecting'"
                 class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
               >
-                {{ scanState === "detecting" ? $t("scanner.looking_up") : $t("scanner.look_up") }}
+                {{
+                  scanState === "detecting"
+                    ? $t("scanner.looking_up")
+                    : $t("scanner.look_up")
+                }}
               </button>
 
               <!-- Looking up indicator (shown while a title-search candidate is being resolved) -->
@@ -165,22 +171,20 @@
                 <div
                   v-if="scanState === 'detecting'"
                   class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max"
-                  style="background: rgba(17,17,16,0.88); border: 1px solid rgba(255,102,0,0.55)"
+                  style="
+                    background: rgba(17, 17, 16, 0.88);
+                    border: 1px solid rgba(255, 102, 0, 0.55);
+                  "
                 >
-                  <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
-                  <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">{{ $t("scanner.looking_up") }}</span>
+                  <span
+                    class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
+                  />
+                  <span
+                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+                    >{{ $t("scanner.looking_up") }}</span
+                  >
                 </div>
               </Transition>
-
-              <!-- Switch to title search -->
-              <button
-                type="button"
-                class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-                @click="manualSubMode = 'title'"
-              >
-                <v-icon icon="mdi-magnify" size="14" />
-                {{ $t("scanner.search_by_title_instead") }}
-              </button>
 
               <!-- Desktop: optional webcam fallback -->
               <button
@@ -203,13 +207,18 @@
                 <v-icon icon="mdi-camera-outline" size="14" />
                 {{ $t("scanner.back_to_camera") }}
               </button>
+              <button
+                type="button"
+                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+                @click="manualSubMode = 'title'"
+              >
+                <v-icon icon="mdi-magnify" size="14" />
+                {{ $t("scanner.search_by_title_instead") }}
+              </button>
             </form>
 
             <!-- Title search sub-mode -->
-            <div
-              v-else
-              class="w-full max-w-md mx-auto md:mx-0 pb-12"
-            >
+            <div v-else class="w-full max-w-md mx-auto md:mx-0 pb-12">
               <p
                 class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
               >
@@ -221,7 +230,11 @@
                 {{ $t("scanner.search_heading") }}
               </h1>
               <div class="flex items-start gap-2.5 mb-10">
-                <v-icon icon="mdi-text-search" size="15" class="text-text-secondary/70 mt-0.5 shrink-0" />
+                <v-icon
+                  icon="mdi-text-search"
+                  size="15"
+                  class="text-text-secondary/70 mt-0.5 shrink-0"
+                />
                 <p class="text-sm text-text-secondary leading-relaxed">
                   {{ $t("scanner.search_hint") }}
                 </p>
@@ -230,7 +243,9 @@
               <form @submit.prevent="submitTitleSearch">
                 <!-- Title input -->
                 <div class="border-b mb-8 pb-2 border-charcoal-border">
-                  <label class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary">
+                  <label
+                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  >
                     {{ $t("scanner.title_label") }}
                   </label>
                   <input
@@ -242,14 +257,31 @@
                 </div>
 
                 <!-- Author input (optional) -->
-                <div class="border-b mb-10 pb-2 border-charcoal-border">
-                  <label class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary">
+                <div class="border-b mb-8 pb-2 border-charcoal-border">
+                  <label
+                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  >
                     {{ $t("scanner.author_label") }}
                   </label>
                   <input
                     v-model="authorQuery"
                     type="text"
                     :placeholder="$t('scanner.author_optional')"
+                    class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border"
+                  />
+                </div>
+
+                <!-- Publisher input (optional) -->
+                <div class="border-b mb-10 pb-2 border-charcoal-border">
+                  <label
+                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  >
+                    {{ $t("detail.publisher") }}
+                  </label>
+                  <input
+                    v-model="publisherQuery"
+                    type="text"
+                    :placeholder="$t('scanner.publisher_optional')"
                     class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border"
                   />
                 </div>
@@ -271,7 +303,7 @@
               <button
                 type="button"
                 class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-                @click="manualSubMode = 'isbn'; searchResults = []; searchState = 'idle'"
+                @click="closeSearchResults(); manualSubMode = 'isbn'"
               >
                 <v-icon icon="mdi-barcode" size="14" />
                 {{ $t("scanner.enter_isbn_instead") }}
@@ -288,162 +320,202 @@
                 {{ $t("scanner.back_to_camera") }}
               </button>
 
-              <!-- Search results -->
+              <!-- Searching / empty / error feedback (inline, no results yet) -->
               <div class="mt-8">
-                <!-- Searching indicator -->
                 <div
                   v-if="searchState === 'searching'"
                   class="flex items-center gap-2.5 px-5 py-2.5 w-max"
-                  style="background: rgba(17,17,16,0.88); border: 1px solid rgba(255,102,0,0.55)"
+                  style="
+                    background: rgba(17, 17, 16, 0.88);
+                    border: 1px solid rgba(255, 102, 0, 0.55);
+                  "
                 >
-                  <span class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0" />
-                  <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">
+                  <span
+                    class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
+                  />
+                  <span
+                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+                  >
                     {{ $t("scanner.searching") }}
                   </span>
                 </div>
-
-                <!-- Empty / error -->
-                <p v-else-if="searchState === 'empty'" class="text-sm text-text-secondary/60">
+                <p
+                  v-else-if="searchState === 'empty'"
+                  class="text-sm text-text-secondary/60"
+                >
                   {{ $t("scanner.no_results") }}
                 </p>
-                <p v-else-if="searchState === 'error'" class="text-sm text-error">
+                <p
+                  v-else-if="searchState === 'error'"
+                  class="text-sm text-error"
+                >
                   {{ $t("scanner.search_error") }}
                 </p>
-
-                <!-- Results list -->
-                <div v-else-if="searchResults.length" class="max-h-[50vh] overflow-y-auto -mx-2">
-                  <button
-                    v-for="candidate in searchResults"
-                    :key="candidate.isbn"
-                    type="button"
-                    class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
-                    @click="selectCandidate(candidate)"
-                  >
-                    <!-- Cover thumbnail -->
-                    <div
-                      class="w-9 h-14 shrink-0 relative overflow-hidden"
-                      style="background: #232220; border: 1px solid #2e2b28"
-                    >
-                      <img
-                        v-if="candidate.cover_url"
-                        :src="candidate.cover_url"
-                        class="absolute inset-0 w-full h-full object-cover"
-                      />
-                      <div
-                        v-else
-                        class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
-                      />
-                    </div>
-                    <!-- Metadata -->
-                    <div class="flex-1 min-w-0">
-                      <p class="font-heading font-bold text-sm text-text-primary leading-snug truncate">
-                        {{ candidate.title || candidate.isbn }}
-                      </p>
-                      <p class="text-[11px] text-text-secondary mt-0.5 truncate">
-                        {{ candidate.author }}
-                      </p>
-                      <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
-                        {{ [candidate.publish_date?.slice(0, 4), candidate.publisher].filter(Boolean).join(" · ") }}
-                      </p>
-                      <span
-                        v-if="libraryBooks.has(candidate.isbn)"
-                        class="inline-block text-[9px] tracking-[0.15em] uppercase mt-1.5 text-warning"
-                      >
-                        {{ $t("scanner.in_library") }}
-                      </span>
-                    </div>
-                  </button>
-                </div>
               </div>
             </div>
           </div>
 
-          <!-- Desktop: live session list -->
+          <!-- Desktop: search results or live session list -->
           <div
             v-if="mdAndUp"
-            class="w-105 shrink-0 flex flex-col px-10 pt-24 pb-8"
+            class="flex-1 flex flex-col px-10 pt-24 pb-8 max-w-lg"
           >
-            <div class="flex justify-between items-baseline mb-1">
-              <span
-                class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
-              >
-                {{ $t("scanner.added_session") }}
-              </span>
-              <span class="font-mono text-[11px] text-orange-neon">
-                {{ sessionBooks.length }}
-              </span>
-            </div>
-
-            <div class="flex-1 min-h-0 overflow-y-auto">
-              <p
-                v-if="!sessionBooks.length"
-                class="text-xs text-text-secondary/60 mt-6"
-              >
-                {{ $t("scanner.point_at_barcode") }}
-              </p>
-              <div
-                v-for="b in sessionBooks"
-                :key="b.isbn"
-                class="flex gap-3.5 items-start py-4 border-b border-charcoal-border"
-              >
-                <div
-                  class="w-9 h-14 shrink-0 relative overflow-hidden"
-                  style="background: #232220; border: 1px solid #2e2b28"
+            <!-- Search results panel -->
+            <template v-if="showSearchResults">
+              <div class="flex justify-between items-baseline mb-1">
+                <span
+                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
                 >
-                  <img
-                    v-if="b.coverUrl"
-                    :src="b.coverUrl"
-                    class="absolute inset-0 w-full h-full object-cover"
-                  />
+                  {{ $t("scanner.add_label") }}
+                </span>
+                <button
+                  class="text-text-secondary/55 hover:text-text-primary transition-colors"
+                  @click="closeSearchResults"
+                >
+                  <v-icon icon="mdi-close" size="16" />
+                </button>
+              </div>
+              <p
+                class="font-heading font-black text-lg text-text-primary leading-tight mb-4"
+              >
+                {{ $t("scanner.search_results") }}
+              </p>
+              <div class="flex-1 min-h-0 overflow-y-auto -mx-2">
+                <button
+                  v-for="candidate in searchResults"
+                  :key="candidate.isbn"
+                  type="button"
+                  class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
+                  @click="selectCandidate(candidate)"
+                >
                   <div
-                    v-else
-                    class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
-                  />
-                </div>
-                <div class="flex-1 min-w-0">
-                  <p
-                    class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                    class="w-9 h-14 shrink-0 relative overflow-hidden"
+                    style="background: #232220; border: 1px solid #2e2b28"
                   >
-                    {{ b.title }}
-                  </p>
-                  <p class="text-[11px] text-text-secondary mt-0.5 truncate">
-                    {{ b.author }}
-                  </p>
-                  <span
-                    class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase mt-2"
-                    :style="{ color: STATUS_COLORS[b.status] }"
-                  >
-                    <span
-                      class="w-1.5 h-1.5 rounded-full"
-                      :style="{ background: STATUS_COLORS[b.status] }"
+                    <img
+                      v-if="candidate.cover_url"
+                      :src="candidate.cover_url"
+                      class="absolute inset-0 w-full h-full object-cover"
                     />
-                    {{ statusLabels[b.status] }}
-                  </span>
-                </div>
-                <div class="flex flex-col items-end gap-1.5 shrink-0">
-                  <span
-                    class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
+                    <div
+                      v-else
+                      class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                    />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p
+                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                    >
+                      {{ candidate.title || candidate.isbn }}
+                    </p>
+                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                      {{ candidate.author }}
+                    </p>
+                    <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
+                      {{
+                        [
+                          candidate.publish_date?.slice(0, 4),
+                          candidate.publisher,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")
+                      }}
+                    </p>
+                    <span
+                      v-if="libraryBooks.has(candidate.isbn)"
+                      class="inline-block text-[9px] tracking-[0.15em] uppercase mt-1.5 text-warning"
+                    >
+                      {{ $t("scanner.in_library") }}
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </template>
+
+            <!-- Session list -->
+            <template v-else>
+              <div class="flex justify-between items-baseline mb-1">
+                <span
+                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
+                >
+                  {{ $t("scanner.added_session") }}
+                </span>
+                <span class="font-mono text-[11px] text-orange-neon">
+                  {{ sessionBooks.length }}
+                </span>
+              </div>
+
+              <div class="flex-1 min-h-0 overflow-y-auto">
+                <p
+                  v-if="!sessionBooks.length"
+                  class="text-xs text-text-secondary/60 mt-6"
+                >
+                  {{ $t("scanner.point_at_barcode") }}
+                </p>
+                <div
+                  v-for="b in sessionBooks"
+                  :key="b.isbn"
+                  class="flex gap-3.5 items-start py-4 border-b border-charcoal-border"
+                >
+                  <div
+                    class="w-9 h-14 shrink-0 relative overflow-hidden"
+                    style="background: #232220; border: 1px solid #2e2b28"
                   >
-                    {{ sessionTime(b.addedAt) }}
-                  </span>
-                  <button
-                    class="text-text-secondary/45 hover:text-error transition-colors"
-                    :title="$t('scanner.remove')"
-                    @click="removeSessionBook(b)"
-                  >
-                    <v-icon icon="mdi-delete-outline" size="15" />
-                  </button>
+                    <img
+                      v-if="b.coverUrl"
+                      :src="b.coverUrl"
+                      class="absolute inset-0 w-full h-full object-cover"
+                    />
+                    <div
+                      v-else
+                      class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                    />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <p
+                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                    >
+                      {{ b.title }}
+                    </p>
+                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                      {{ b.author }}
+                    </p>
+                    <span
+                      class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase mt-2"
+                      :style="{ color: STATUS_COLORS[b.status] }"
+                    >
+                      <span
+                        class="w-1.5 h-1.5 rounded-full"
+                        :style="{ background: STATUS_COLORS[b.status] }"
+                      />
+                      {{ statusLabels[b.status] }}
+                    </span>
+                  </div>
+                  <div class="flex flex-col items-end gap-1.5 shrink-0">
+                    <span
+                      class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
+                    >
+                      {{ sessionTime(b.addedAt) }}
+                    </span>
+                    <button
+                      class="text-text-secondary/45 hover:text-error transition-colors"
+                      :title="$t('scanner.remove')"
+                      @click="removeSessionBook(b)"
+                    >
+                      <v-icon icon="mdi-delete-outline" size="15" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <button
-              v-if="sessionBooks.length"
-              class="shrink-0 mt-4 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
-              @click="router.push('/library')"
-            >
-              {{ $t("scanner.done_library") }}
-            </button>
+              <button
+                v-if="sessionBooks.length"
+                class="shrink-0 mt-4 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                @click="router.push('/library')"
+              >
+                {{ $t("scanner.done_library") }}
+              </button>
+            </template>
           </div>
         </div>
       </Transition>
@@ -959,6 +1031,91 @@
         </div>
       </Transition>
 
+      <!-- ── Search results sheet (mobile only — desktop uses the sidebar) ──── -->
+      <Transition name="slide-up">
+        <div
+          v-if="showSearchResults && !mdAndUp"
+          class="absolute bottom-0 left-0 right-0 z-50"
+        >
+          <div
+            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[80vh]"
+          >
+            <!-- Header -->
+            <div
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+            >
+              <button
+                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                @click="closeSearchResults"
+              >
+                <v-icon icon="mdi-chevron-down" size="20" />
+              </button>
+              <div class="min-w-0">
+                <p
+                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
+                >
+                  {{ $t("scanner.add_label") }}
+                </p>
+                <p
+                  class="font-heading font-black text-lg text-text-primary leading-tight"
+                >
+                  {{ $t("scanner.search_results") }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Results list -->
+            <div class="flex-1 min-h-0 overflow-y-auto">
+              <button
+                v-for="candidate in searchResults"
+                :key="candidate.isbn"
+                type="button"
+                class="flex gap-3.5 items-start w-full text-left px-4 md:px-6 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
+                @click="selectCandidate(candidate)"
+              >
+                <div
+                  class="w-9 h-14 shrink-0 relative overflow-hidden"
+                  style="background: #232220; border: 1px solid #2e2b28"
+                >
+                  <img
+                    v-if="candidate.cover_url"
+                    :src="candidate.cover_url"
+                    class="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div
+                    v-else
+                    class="absolute left-0 top-0 bottom-0 w-0.75 bg-orange-neon"
+                  />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <p
+                    class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                  >
+                    {{ candidate.title || candidate.isbn }}
+                  </p>
+                  <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                    {{ candidate.author }}
+                  </p>
+                  <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
+                    {{
+                      [candidate.publish_date?.slice(0, 4), candidate.publisher]
+                        .filter(Boolean)
+                        .join(" · ")
+                    }}
+                  </p>
+                  <span
+                    v-if="libraryBooks.has(candidate.isbn)"
+                    class="inline-block text-[9px] tracking-[0.15em] uppercase mt-1.5 text-warning"
+                  >
+                    {{ $t("scanner.in_library") }}
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
       <!-- Toast -->
       <AppToast
         v-model="toast"
@@ -1154,15 +1311,17 @@ type ManualSubMode = "isbn" | "title";
 const manualSubMode = ref<ManualSubMode>("isbn");
 const titleQuery = ref("");
 const authorQuery = ref("");
+const publisherQuery = ref("");
 const searchResults = ref<EditionCandidate[]>([]);
 const searchState = ref<"idle" | "searching" | "empty" | "error">("idle");
+const showSearchResults = ref(false);
 
 // 'hidden' = too short to judge, 'valid' = 10 or 13 digits, 'invalid' = wrong length
-const isbnState = computed<'hidden' | 'valid' | 'invalid'>(() => {
+const isbnState = computed<"hidden" | "valid" | "invalid">(() => {
   const len = manualIsbn.value.length;
-  if (len < 10) return 'hidden';
-  if (len === 10 || len === 13) return 'valid';
-  return 'invalid';
+  if (len < 10) return "hidden";
+  if (len === 10 || len === 13) return "valid";
+  return "invalid";
 });
 // Desktop opts into the camera explicitly; mobile starts it automatically.
 const cameraActive = ref(false);
@@ -1171,7 +1330,10 @@ const manualEntryInput = ref<HTMLInputElement | null>(null);
 // The manual-entry screen is the primary view when the camera failed, or on
 // desktop until the user explicitly chooses to use a webcam.
 const manualMode = computed(
-  () => cameraFailed.value || manualOverride.value || (mdAndUp.value && !cameraActive.value),
+  () =>
+    cameraFailed.value ||
+    manualOverride.value ||
+    (mdAndUp.value && !cameraActive.value),
 );
 
 const focusManualEntry = () => {
@@ -1224,6 +1386,13 @@ const backToCamera = () => {
   nextTick(startScanner);
 };
 
+function closeSearchResults() {
+  showSearchResults.value = false;
+  searchResults.value = [];
+  searchState.value = "idle";
+  publisherQuery.value = "";
+}
+
 // Title search: submit a title (+ optional author) to the backend and populate results.
 const submitTitleSearch = async () => {
   const title = titleQuery.value.trim();
@@ -1233,6 +1402,8 @@ const submitTitleSearch = async () => {
   try {
     const qs = new URLSearchParams({ title });
     if (authorQuery.value.trim()) qs.set("author", authorQuery.value.trim());
+    if (publisherQuery.value.trim())
+      qs.set("publisher", publisherQuery.value.trim());
     const endpoint = isGuest.value
       ? `${API_BASE}/api/books/guest-search?${qs}`
       : `${API_BASE}/api/books/search?${qs}`;
@@ -1240,10 +1411,14 @@ const submitTitleSearch = async () => {
       ? {}
       : { Authorization: `Bearer ${authStore.token}` };
     const res = await fetch(endpoint, { headers });
-    if (!res.ok) { searchState.value = "error"; return; }
+    if (!res.ok) {
+      searchState.value = "error";
+      return;
+    }
     const data: EditionCandidate[] = await res.json();
     searchResults.value = data;
     searchState.value = data.length ? "idle" : "empty";
+    if (data.length) showSearchResults.value = true;
   } catch {
     searchState.value = "error";
   }
@@ -1256,6 +1431,7 @@ const selectCandidate = async (candidate: EditionCandidate) => {
   if (scanState.value !== "scanning") return;
   const isbn = candidate.isbn.toUpperCase();
 
+  showSearchResults.value = false;
   manualSubMode.value = "isbn";
   searchResults.value = [];
   searchState.value = "idle";
@@ -1383,7 +1559,10 @@ async function postScan(
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
   const res = await apiFetch(`/api/scans`, {
     method: "POST",
-    body: JSON.stringify({ isbn: book.isbn, status: libraryDefaultsStore.defaultScanStatus }),
+    body: JSON.stringify({
+      isbn: book.isbn,
+      status: libraryDefaultsStore.defaultScanStatus,
+    }),
   });
   if (res.status === 409) return { result: "duplicate" };
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
@@ -1404,7 +1583,10 @@ async function drainQueue() {
     try {
       const res = await apiFetch(`/api/scans`, {
         method: "POST",
-        body: JSON.stringify({ isbn: book.isbn, status: libraryDefaultsStore.defaultScanStatus }),
+        body: JSON.stringify({
+          isbn: book.isbn,
+          status: libraryDefaultsStore.defaultScanStatus,
+        }),
       });
       if (res.status === 401) {
         authExpired = true;
@@ -1635,8 +1817,8 @@ const startScanner = () => {
 };
 
 onMounted(() => {
-  document.documentElement.style.overflow = 'hidden';
-  document.body.style.overflow = 'hidden';
+  document.documentElement.style.overflow = "hidden";
+  document.body.style.overflow = "hidden";
   drainQueue();
   loadLibraryIsbns();
   window.addEventListener("online", drainQueue);
@@ -1649,8 +1831,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  document.documentElement.style.overflow = '';
-  document.body.style.overflow = '';
+  document.documentElement.style.overflow = "";
+  document.body.style.overflow = "";
   window.removeEventListener("online", drainQueue);
   Quagga.offDetected(onQuaggaDetected);
   if (scannerStarted) Quagga.stop();

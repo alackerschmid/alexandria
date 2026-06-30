@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
+import { parseTagArray } from '../library-query'
 
 const fields = new Hono<Env>()
 
@@ -103,16 +104,6 @@ fields.delete('/:id', async (c) => {
   return c.json({ ok: true })
 })
 
-// Parse a stored field_value into a flat list of tag strings (tags are stored as JSON arrays).
-function parseTags(raw: string | null): string[] {
-  if (!raw) return []
-  try {
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string' && v !== '') : []
-  } catch {
-    return []
-  }
-}
 
 async function userOwnsField(db: D1Database, userId: number, id: number): Promise<boolean> {
   const row = await db
@@ -134,7 +125,7 @@ fields.get('/:id/values', async (c) => {
     .all<{ field_value: string }>()
 
   const distinct = new Set<string>()
-  for (const r of results) for (const t of parseTags(r.field_value)) distinct.add(t)
+  for (const r of results) for (const t of parseTagArray(r.field_value)) distinct.add(t)
   return c.json([...distinct].sort((a, b) => a.localeCompare(b)))
 })
 
@@ -153,7 +144,7 @@ fields.delete('/:id/values', async (c) => {
 
   const updates = []
   for (const r of results) {
-    const tags = parseTags(r.field_value)
+    const tags = parseTagArray(r.field_value)
     if (!tags.includes(value)) continue
     const remaining = tags.filter(t => t !== value)
     updates.push(

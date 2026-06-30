@@ -33,7 +33,7 @@ export default createVuetify({
       'editorial-dark': {
         dark: true,
         colors: {
-          background: '#111110',
+          background: '#0a0a09',
           surface: '#1c1b19',
           primary: '#ff6600',
           'on-primary': '#ffffff',
