@@ -1,6 +1,16 @@
 // Shared book display formatters — keep title/author fallbacks and date parsing in one place.
 import { BCP47 } from '@/plugins/i18n'
 import type { Book } from '@/types/book'
+import type { SortOption } from '@/types/library'
+
+/** Stable sort by acquisition date: `asc` oldest-first, `desc` newest-first. */
+export function sortByCreatedAt(list: Book[], dir: SortOption): Book[] {
+  return [...list].sort((a, b) =>
+    dir === 'asc'
+      ? a.created_at.localeCompare(b.created_at)
+      : b.created_at.localeCompare(a.created_at),
+  )
+}
 
 /** Title with ISBN fallback when a book has no catalogued title. */
 export function displayTitle(book: Pick<Book, 'title' | 'isbn'>): string {

@@ -769,11 +769,16 @@ import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useApi } from "@/composables/useApi";
 import { useScanStatus } from "@/composables/useScanStatus";
+import {
+  useLibrarySearch,
+  cfIcon,
+  type SuggestionFacet,
+} from "@/composables/useLibrarySearch";
+import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
-import { parseTagList } from "@/utils/tags";
-import { languageDisplayFormatter } from "@/utils/language";
+import { sortByCreatedAt } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 import type { GroupBy, SortOption } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
@@ -827,6 +832,26 @@ const sortDirection = computed({
 });
 const viewMode = ref<"list" | "tile">(libraryDefaultsStore.defaultView);
 const searchRef = ref<HTMLInputElement | null>(null);
+
+// ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
+const allBooks = computed<Book[]>(() =>
+  isGuest.value ? guestStore.scans : serverBooks.value,
+);
+
+const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
+  useLibrarySearch({ books: allBooks, search, customFieldMetas });
+
+// Filtered and sorted — used by tile view and all non-series groupings.
+const filteredBooks = computed<Book[]>(() =>
+  sortByCreatedAt(baseFiltered.value, sortDirection.value),
+);
+
+const { allGroups } = useLibraryGrouping({
+  baseFiltered,
+  filteredBooks,
+  groupBy,
+  sortDirection,
+});
 
 // ── Display settings (persisted) ───────────────────────────────────────────────
 const mainOnly = computed({
@@ -937,13 +962,6 @@ type SuggestionPrefix = {
   label: string;
   typeLabel: string;
 };
-type SuggestionFacet = {
-  kind: "facet";
-  token: string;
-  icon: string;
-  label: string;
-  typeLabel: string;
-};
 type SuggestionBook = {
   kind: "book";
   book: Book;
@@ -954,45 +972,7 @@ type SuggestionBook = {
 };
 type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook;
 
-// ── Custom-field search/group helpers ──────────────────────────────────────────
-
-const BUILTIN_KEYS = [
-  "status",
-  "author",
-  "genre",
-  "series",
-  "publisher",
-  "language",
-  "award",
-  "form",
-  "country",
-  "year",
-  "subject",
-  "location",
-];
-
-const customSlugMap = computed(
-  () => new Map(customFieldMetas.value.map((m) => [m.slug, m.def])),
-);
-
-function cfIcon(type: string) {
-  switch (type) {
-    case "tag":
-      return "mdi-tag-multiple-outline";
-    case "date":
-      return "mdi-calendar-outline";
-    case "integer":
-      return "mdi-numeric";
-    default:
-      return "mdi-form-textbox";
-  }
-}
-
-function bookCustomValue(b: Book, defId: number): string | null {
-  return (
-    b.custom_field_values?.find((v) => v.field_def_id === defId)?.value ?? null
-  );
-}
+// ── Autocomplete prefix chips ───────────────────────────────────────────────────
 
 const PREFIXES = computed(() => [
   {
@@ -1036,19 +1016,8 @@ const PREFIXES = computed(() => [
     .map((m) => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),
 ]);
 
-function quote(v: string) {
-  return /\s/.test(v) ? `"${v}"` : v;
-}
-
 // ── Search highlight overlay ───────────────────────────────────────────────────
 
-const knownKeys = computed(
-  () =>
-    new Set<string>([
-      ...BUILTIN_KEYS,
-      ...customFieldMetas.value.map((m) => m.slug),
-    ]),
-);
 const HIGHLIGHT_PATTERN = computed(
   () => `((?:${[...knownKeys.value].join("|")}):)("(?:[^"]*)"?|\\S*)`,
 );
@@ -1090,216 +1059,6 @@ const searchSegments = computed<SearchSegment[]>(() => {
 });
 
 const searchScrollLeft = ref(0);
-
-const langFmt = computed(() => languageDisplayFormatter(localeStore.locale));
-
-const facetEntries = computed<SuggestionFacet[]>(() => {
-  const pool = baseFiltered.value;
-  const statusLabel = t("library.filter_status");
-  const authorLabel = t("library.group_author");
-  const genreLabel = t("library.group_genre");
-  const seriesLabel = t("library.group_series");
-
-  const publisherLabel = t("library.group_publisher");
-  const languageLabel = t("library.group_language");
-  const awardLabel = t("library.filter_awards");
-  const formLabel = t("library.group_form");
-  const countryLabel = t("library.group_country");
-  const subjectLabel = t("library.group_subject");
-  const locationLabel = t("library.group_location");
-
-  const entries: SuggestionFacet[] = [];
-
-  // Only suggest statuses that actually exist in the current filtered pool
-  const presentStatuses = new Set(pool.map((b) => b.status));
-  for (const [val, label] of [
-    ["read", t("book.read")],
-    ["reading", t("book.reading")],
-    ["unread", t("book.unread")],
-  ] as [string, string][]) {
-    if (presentStatuses.has(val as "read" | "reading" | "unread"))
-      entries.push({
-        kind: "facet",
-        token: `status:${val}`,
-        icon: "mdi-progress-check",
-        label,
-        typeLabel: statusLabel,
-      });
-  }
-
-  // Resolve a book's custom-field value entries to their meta in one lookup,
-  // avoiding a per-field scan of custom_field_values for every book.
-  const metaByDefId = new Map(customFieldMetas.value.map((m) => [m.def.id, m]));
-
-  const seen = new Set<string>();
-  for (const b of pool) {
-    if (b.author) {
-      const k = b.author.toLowerCase();
-      if (!seen.has(`author:${k}`)) {
-        seen.add(`author:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `author:${quote(b.author)}`,
-          icon: "mdi-account-outline",
-          label: b.author,
-          typeLabel: authorLabel,
-        });
-      }
-    }
-    for (const g of b.genres ?? []) {
-      const k = g.toLowerCase();
-      if (!seen.has(`genre:${k}`)) {
-        seen.add(`genre:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `genre:${quote(g)}`,
-          icon: "mdi-tag-outline",
-          label: g,
-          typeLabel: genreLabel,
-        });
-      }
-    }
-    if (b.series_name) {
-      const k = b.series_name.toLowerCase();
-      if (!seen.has(`series:${k}`)) {
-        seen.add(`series:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `series:${quote(b.series_name)}`,
-          icon: "mdi-bookshelf",
-          label: b.series_name,
-          typeLabel: seriesLabel,
-        });
-      }
-    }
-    if (b.publisher) {
-      const k = b.publisher.toLowerCase();
-      if (!seen.has(`publisher:${k}`)) {
-        seen.add(`publisher:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `publisher:${quote(b.publisher)}`,
-          icon: "mdi-domain",
-          label: b.publisher,
-          typeLabel: publisherLabel,
-        });
-      }
-    }
-    if (b.language) {
-      const k = b.language.toLowerCase();
-      if (!seen.has(`language:${k}`)) {
-        seen.add(`language:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `language:${quote(b.language)}`,
-          icon: "mdi-translate",
-          label: langFmt.value(b.language),
-          typeLabel: languageLabel,
-        });
-      }
-    }
-    for (const a of b.awards ?? []) {
-      const k = a.toLowerCase();
-      if (!seen.has(`award:${k}`)) {
-        seen.add(`award:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `award:${quote(a)}`,
-          icon: "mdi-trophy-outline",
-          label: a,
-          typeLabel: awardLabel,
-        });
-      }
-    }
-    for (const a of b.nominations ?? []) {
-      const k = a.toLowerCase();
-      if (!seen.has(`award:${k}`)) {
-        seen.add(`award:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `award:${quote(a)}`,
-          icon: "mdi-trophy-outline",
-          label: a,
-          typeLabel: awardLabel,
-        });
-      }
-    }
-    if (b.form_of_work) {
-      const k = b.form_of_work.toLowerCase();
-      if (!seen.has(`form:${k}`)) {
-        seen.add(`form:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `form:${quote(b.form_of_work)}`,
-          icon: "mdi-text-box-outline",
-          label: b.form_of_work,
-          typeLabel: formLabel,
-        });
-      }
-    }
-    for (const c of b.countries_of_origin ?? []) {
-      const k = c.toLowerCase();
-      if (!seen.has(`country:${k}`)) {
-        seen.add(`country:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `country:${quote(c)}`,
-          icon: "mdi-earth",
-          label: c,
-          typeLabel: countryLabel,
-        });
-      }
-    }
-    if (b.main_subject) {
-      const k = b.main_subject.toLowerCase();
-      if (!seen.has(`subject:${k}`)) {
-        seen.add(`subject:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `subject:${quote(b.main_subject)}`,
-          icon: "mdi-lightbulb-outline",
-          label: b.main_subject,
-          typeLabel: subjectLabel,
-        });
-      }
-    }
-    for (const loc of b.narrative_locations ?? []) {
-      const k = loc.toLowerCase();
-      if (!seen.has(`location:${k}`)) {
-        seen.add(`location:${k}`);
-        entries.push({
-          kind: "facet",
-          token: `location:${quote(loc)}`,
-          icon: "mdi-map-marker-outline",
-          label: loc,
-          typeLabel: locationLabel,
-        });
-      }
-    }
-    for (const cf of b.custom_field_values ?? []) {
-      if (cf.value == null) continue;
-      const meta = metaByDefId.get(cf.field_def_id);
-      if (!meta || meta.def.type === "date" || meta.def.type === "integer")
-        continue;
-      const vals =
-        meta.def.type === "tag" ? parseTagList(cf.value) : [cf.value];
-      for (const v of vals) {
-        const k = `${meta.slug}:${v.toLowerCase()}`;
-        if (!seen.has(k)) {
-          seen.add(k);
-          entries.push({
-            kind: "facet",
-            token: `${meta.slug}:${quote(v)}`,
-            icon: cfIcon(meta.def.type),
-            label: v,
-            typeLabel: meta.def.name,
-          });
-        }
-      }
-    }
-  }
-  return entries;
-});
 
 // The trailing chunk the user is currently typing (after the last complete token)
 const searchFragment = computed(() => {
@@ -1544,241 +1303,6 @@ watch(suggestions, () => {
   activeIndex.value = -1;
 });
 
-// ── Parsed search ─────────────────────────────────────────────────────────────
-// Supports structured tokens: status:X  series:X  award:X  author:"X"  genre:"X"  publisher:"X"  language:X
-// Remaining words are free-text matched against title/author/isbn.
-
-function tokenize(s: string): string[] {
-  return s.match(/\S+:"[^"]*"|"[^"]*"|\S+/g) ?? [];
-}
-
-interface ParsedSearch {
-  status: ReadStatus | null;
-  series: string;
-  award: string;
-  author: string;
-  genre: string;
-  publisher: string;
-  language: string;
-  form: string;
-  country: string;
-  year: string;
-  subject: string;
-  location: string;
-  custom: Record<string, string>; // custom-field slug → search value
-  text: string;
-  tokens: string[]; // the structured parts only, for the active-token pills
-}
-
-const parsedSearch = computed<ParsedSearch>(() => {
-  const parts = tokenize(search.value.trim());
-  let status: ReadStatus | null = null;
-  let series = "";
-  let award = "";
-  let author = "";
-  let genre = "";
-  let publisher = "";
-  let language = "";
-  let form = "";
-  let country = "";
-  let year = "";
-  let subject = "";
-  let location = "";
-  const custom: Record<string, string> = {};
-  const remaining: string[] = [];
-  const tokens: string[] = [];
-
-  for (const part of parts) {
-    const colon = part.indexOf(":");
-    if (colon === -1) {
-      remaining.push(part);
-      continue;
-    }
-    const key = part.slice(0, colon).toLowerCase();
-    const rawVal = part.slice(colon + 1);
-    const val = rawVal.replace(/^"|"$/g, "").toLowerCase();
-    if (
-      key === "status" &&
-      (val === "unread" || val === "reading" || val === "read")
-    ) {
-      status = val as ReadStatus;
-      tokens.push(part.toLowerCase());
-    } else if (key === "series" && val) {
-      series = val;
-      tokens.push(part.toLowerCase());
-    } else if (key === "award" && val) {
-      award = val;
-      tokens.push(part.toLowerCase());
-    } else if (key === "author" && val) {
-      author = val;
-      tokens.push(part);
-    } else if (key === "genre" && val) {
-      genre = val;
-      tokens.push(part);
-    } else if (key === "publisher" && val) {
-      publisher = val;
-      tokens.push(part);
-    } else if (key === "language" && val) {
-      language = val;
-      tokens.push(part);
-    } else if (key === "form" && val) {
-      form = val;
-      tokens.push(part);
-    } else if (key === "country" && val) {
-      country = val;
-      tokens.push(part);
-    } else if (key === "year" && val) {
-      year = val;
-      tokens.push(part);
-    } else if (key === "subject" && val) {
-      subject = val;
-      tokens.push(part);
-    } else if (key === "location" && val) {
-      location = val;
-      tokens.push(part);
-    } else if (customSlugMap.value.has(key) && val) {
-      custom[key] = val;
-      tokens.push(part);
-    } else if (!knownKeys.value.has(key)) {
-      remaining.push(part);
-    }
-    // Known key with no/invalid value (in-progress token like "status:") — silently ignored
-  }
-
-  return {
-    status,
-    series,
-    award,
-    author,
-    genre,
-    publisher,
-    language,
-    form,
-    country,
-    year,
-    subject,
-    location,
-    custom,
-    text: remaining.join(" ").toLowerCase(),
-    tokens,
-  };
-});
-
-function removeToken(token: string) {
-  const lower = token.toLowerCase();
-  search.value = tokenize(search.value.trim())
-    .filter((p) => p.toLowerCase() !== lower)
-    .join(" ");
-}
-
-// ── Computed ──────────────────────────────────────────────────────────────────
-
-const allBooks = computed<Book[]>(() =>
-  isGuest.value ? guestStore.scans : serverBooks.value,
-);
-
-// Pure filter — no sort. Used by groupedBooks series branch (sorted within groups by ordinal).
-const baseFiltered = computed<Book[]>(() => {
-  const {
-    status,
-    series,
-    award,
-    author,
-    genre,
-    publisher,
-    language,
-    form,
-    country,
-    year,
-    subject,
-    location,
-    custom,
-    text,
-  } = parsedSearch.value;
-  let list = allBooks.value;
-
-  if (status) {
-    list = list.filter((b) => b.status === status);
-  }
-  if (series) {
-    list = list.filter((b) => b.series_name?.toLowerCase().includes(series));
-  }
-  if (award) {
-    list = list.filter(
-      (b) =>
-        b.awards?.some((a) => a.toLowerCase().includes(award)) ||
-        b.nominations?.some((n) => n.toLowerCase().includes(award)),
-    );
-  }
-  if (author) {
-    list = list.filter((b) => b.author?.toLowerCase().includes(author));
-  }
-  if (genre) {
-    list = list.filter((b) =>
-      b.genres?.some((g) => g.toLowerCase().includes(genre)),
-    );
-  }
-  if (publisher) {
-    list = list.filter((b) => b.publisher?.toLowerCase().includes(publisher));
-  }
-  if (language) {
-    list = list.filter((b) => b.language?.toLowerCase().includes(language));
-  }
-  if (form) {
-    list = list.filter((b) => b.form_of_work?.toLowerCase().includes(form));
-  }
-  if (country) {
-    list = list.filter((b) =>
-      b.countries_of_origin?.some((c) => c.toLowerCase().includes(country)),
-    );
-  }
-  if (year) {
-    list = list.filter((b) =>
-      b.original_pub_date?.toLowerCase().includes(year),
-    );
-  }
-  if (subject) {
-    list = list.filter((b) => b.main_subject?.toLowerCase().includes(subject));
-  }
-  if (location) {
-    list = list.filter((b) =>
-      b.narrative_locations?.some((l) => l.toLowerCase().includes(location)),
-    );
-  }
-  for (const [slug, val] of Object.entries(custom)) {
-    const def = customSlugMap.value.get(slug);
-    if (!def) continue;
-    list = list.filter((b) => {
-      const raw = bookCustomValue(b, def.id);
-      if (!raw) return false;
-      return def.type === "tag"
-        ? parseTagList(raw).some((tg) => tg.toLowerCase().includes(val))
-        : raw.toLowerCase().includes(val);
-    });
-  }
-  if (text) {
-    list = list.filter(
-      (b) =>
-        b.title?.toLowerCase().includes(text) ||
-        b.author?.toLowerCase().includes(text) ||
-        b.isbn.includes(text),
-    );
-  }
-
-  return list;
-});
-
-// Filtered and sorted — used by tile view and all non-series groupings.
-const filteredBooks = computed<Book[]>(() => sortBooks(baseFiltered.value));
-
-function sortBooks(list: Book[]): Book[] {
-  return [...list].sort((a, b) =>
-    sortDirection.value === "asc"
-      ? a.created_at.localeCompare(b.created_at)
-      : b.created_at.localeCompare(a.created_at),
-  );
-}
-
 // ── Pagination ────────────────────────────────────────────────────────────────
 
 const currentPage = ref(1);
@@ -1797,37 +1321,6 @@ const totalPages = computed(() =>
   Math.max(1, Math.ceil(paginatedCount.value / pageSize.value)),
 );
 
-// Flat series-ordered list for the series groupBy pagination source.
-const seriesOrderedBooks = computed<Book[]>(() => {
-  if (groupBy.value !== "series") return [];
-  const seriesMap = new Map<number, Book[]>();
-  const standalones: Book[] = [];
-  for (const b of baseFiltered.value) {
-    if (b.series_id != null) {
-      if (!seriesMap.has(b.series_id)) seriesMap.set(b.series_id, []);
-      seriesMap.get(b.series_id)!.push(b);
-    } else {
-      standalones.push(b);
-    }
-  }
-  const sortedGroups = [...seriesMap.entries()].sort(([, a], [, b]) => {
-    const cmp = (a[0].series_name ?? "").localeCompare(
-      b[0].series_name ?? "",
-      localeStore.locale,
-    );
-    return sortDirection.value === "asc" ? cmp : -cmp;
-  });
-  const flat: Book[] = [];
-  for (const [, books] of sortedGroups) {
-    books.sort(
-      (a, b) => (a.series_ordinal ?? Infinity) - (b.series_ordinal ?? Infinity),
-    );
-    flat.push(...books);
-  }
-  flat.push(...sortBooks(standalones));
-  return flat;
-});
-
 // Flat (ungrouped) book pagination.
 const pagedBooks = computed<Book[]>(() => {
   const start = (currentPage.value - 1) * pageSize.value;
@@ -1843,259 +1336,6 @@ function changePage(p: number) {
   currentPage.value = p;
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
-
-// ── Grouped books ─────────────────────────────────────────────────────────────
-
-interface BookGroup {
-  key: string;
-  label: string;
-  books: Book[];
-  seriesId?: number | null;
-  seriesTotal?: number | null;
-}
-
-// All groups over the full filtered set (not paginated — paging happens by group below).
-const allGroups = computed<BookGroup[]>(() => {
-  const books =
-    groupBy.value === "series" ? seriesOrderedBooks.value : filteredBooks.value;
-
-  if (groupBy.value === "none") {
-    return [{ key: "__all__", label: "", books }];
-  }
-
-  if (groupBy.value === "status") {
-    const order: ReadStatus[] =
-      sortDirection.value === "asc"
-        ? ["reading", "unread", "read"]
-        : ["read", "unread", "reading"];
-    return order
-      .map((s) => ({
-        key: s,
-        label: t(`book.${s}`),
-        books: books.filter((b) => b.status === s),
-      }))
-      .filter((g) => g.books.length);
-  }
-
-  if (groupBy.value === "series") {
-    // pagedBooks for series comes from seriesOrderedBooks (already ordinal-sorted).
-    const map = new Map<number, BookGroup>();
-    const standalones: Book[] = [];
-    for (const b of books) {
-      if (b.series_id != null) {
-        let g = map.get(b.series_id);
-        if (!g) {
-          g = {
-            key: String(b.series_id),
-            label: b.series_name || t("detail.series"),
-            books: [],
-            seriesId: b.series_id,
-            seriesTotal: b.series_total ?? null,
-          };
-          map.set(b.series_id, g);
-        }
-        g.books.push(b);
-      } else {
-        standalones.push(b);
-      }
-    }
-    const groups = [...map.values()];
-    groups.sort((a, b) => {
-      const cmp = a.label.localeCompare(b.label, localeStore.locale);
-      return sortDirection.value === "asc" ? cmp : -cmp;
-    });
-    if (standalones.length) {
-      groups.push({
-        key: "__standalone__",
-        label: t("library.standalone"),
-        books: standalones,
-      });
-    }
-    return groups;
-  }
-
-  if (groupBy.value === "author") {
-    const map = new Map<string, Book[]>();
-    for (const b of books) {
-      const key = b.author || "__unknown__";
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(b);
-    }
-    return [...map.entries()]
-      .map(([key, bks]) => ({
-        key,
-        label: key === "__unknown__" ? t("book.unknown_author") : key,
-        books: bks,
-      }))
-      .sort((a, b) => {
-        if (a.key === "__unknown__") return 1;
-        if (b.key === "__unknown__") return -1;
-        const cmp = a.label.localeCompare(b.label, localeStore.locale);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-  }
-
-  if (groupBy.value === "genre") {
-    const map = new Map<string, Book[]>();
-    const unclassified: Book[] = [];
-    for (const b of books) {
-      const g = b.genres?.[0];
-      if (g) {
-        if (!map.has(g)) map.set(g, []);
-        map.get(g)!.push(b);
-      } else {
-        unclassified.push(b);
-      }
-    }
-    const groups = [...map.entries()]
-      .map(([genre, bks]) => ({ key: genre, label: genre, books: bks }))
-      .sort((a, b) => {
-        const cmp = a.label.localeCompare(b.label, localeStore.locale);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-    if (unclassified.length) {
-      groups.push({
-        key: "__unclassified__",
-        label: t("library.unclassified"),
-        books: unclassified,
-      });
-    }
-    return groups;
-  }
-
-  if (
-    groupBy.value === "publisher" ||
-    groupBy.value === "language" ||
-    groupBy.value === "form" ||
-    groupBy.value === "subject"
-  ) {
-    const fieldMap: Record<string, keyof Book> = {
-      publisher: "publisher",
-      language: "language",
-      form: "form_of_work",
-      subject: "main_subject",
-    };
-    const field = fieldMap[groupBy.value];
-    const labelFor =
-      groupBy.value === "language" ? langFmt.value : (v: string) => v;
-    const map = new Map<string, Book[]>();
-    const unclassified: Book[] = [];
-    for (const b of books) {
-      const val = b[field] as string | null | undefined;
-      if (val) {
-        if (!map.has(val)) map.set(val, []);
-        map.get(val)!.push(b);
-      } else {
-        unclassified.push(b);
-      }
-    }
-    const groups = [...map.entries()]
-      .map(([val, bks]) => ({ key: val, label: labelFor(val), books: bks }))
-      .sort((a, b) => {
-        const cmp = a.label.localeCompare(b.label, localeStore.locale);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-    if (unclassified.length)
-      groups.push({
-        key: "__unclassified__",
-        label: t("library.unclassified"),
-        books: unclassified,
-      });
-    return groups;
-  }
-
-  if (groupBy.value === "country") {
-    const map = new Map<string, Book[]>();
-    const unclassified: Book[] = [];
-    for (const b of books) {
-      const vals = b.countries_of_origin;
-      if (!vals?.length) {
-        unclassified.push(b);
-        continue;
-      }
-      for (const c of vals) {
-        if (!map.has(c)) map.set(c, []);
-        map.get(c)!.push(b);
-      }
-    }
-    const groups = [...map.entries()]
-      .map(([c, bks]) => ({ key: c, label: c, books: bks }))
-      .sort((a, b) => {
-        const cmp = a.label.localeCompare(b.label, localeStore.locale);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-    if (unclassified.length)
-      groups.push({
-        key: "__unclassified__",
-        label: t("library.unclassified"),
-        books: unclassified,
-      });
-    return groups;
-  }
-
-  if (groupBy.value === "decade") {
-    const map = new Map<string, Book[]>();
-    const unclassified: Book[] = [];
-    for (const b of books) {
-      const year = parseInt(b.original_pub_date ?? "");
-      if (!isNaN(year)) {
-        const label = `${Math.floor(year / 10) * 10}s`;
-        if (!map.has(label)) map.set(label, []);
-        map.get(label)!.push(b);
-      } else {
-        unclassified.push(b);
-      }
-    }
-    const groups = [...map.entries()]
-      .map(([label, bks]) => ({ key: label, label, books: bks }))
-      .sort((a, b) => {
-        const cmp = parseInt(a.key) - parseInt(b.key);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-    if (unclassified.length)
-      groups.push({
-        key: "__unclassified__",
-        label: t("library.unclassified"),
-        books: unclassified,
-      });
-    return groups;
-  }
-
-  if (groupBy.value.startsWith("cf:")) {
-    const defId = Number(groupBy.value.slice(3));
-    const def = fieldDefsStore.defs.find((d) => d.id === defId);
-    const map = new Map<string, Book[]>();
-    const none: Book[] = [];
-    for (const b of books) {
-      const raw = bookCustomValue(b, defId);
-      const vals = def?.type === "tag" ? parseTagList(raw) : raw ? [raw] : [];
-      if (!vals.length) {
-        none.push(b);
-        continue;
-      }
-      for (const v of vals) {
-        if (!map.has(v)) map.set(v, []);
-        map.get(v)!.push(b);
-      }
-    }
-    const groups = [...map.entries()]
-      .map(([val, bks]) => ({ key: val, label: val, books: bks }))
-      .sort((a, b) => {
-        const cmp = a.label.localeCompare(b.label, localeStore.locale);
-        return sortDirection.value === "asc" ? cmp : -cmp;
-      });
-    if (none.length) {
-      groups.push({
-        key: "__cfnone__",
-        label: t("library.unclassified"),
-        books: none,
-      });
-    }
-    return groups;
-  }
-
-  return [{ key: "__all__", label: "", books }];
-});
 
 // ── Shelf enrichment (counts, completeness, unowned reveal) ─────────────────────
 
