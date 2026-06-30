@@ -109,32 +109,12 @@
             </span>
 
             <!-- enrichment indicator -->
-            <div
-              v-if="
-                !guest &&
-                !readonly &&
-                book.enrichment_status &&
-                book.enrichment_status !== 'done'
-              "
-              class="flex items-center gap-1 mt-1.5"
-              :class="
-                book.enrichment_status === 'failed'
-                  ? 'text-error/60'
-                  : 'text-text-secondary/30'
-              "
-            >
-              <v-icon
-                :icon="
-                  book.enrichment_status === 'failed'
-                    ? 'mdi-alert-circle-outline'
-                    : 'mdi-progress-clock'
-                "
-                size="10"
-              />
-              <span class="text-[9px] tracking-[0.15em] uppercase">
-                {{ $t(`detail.enrichment_${book.enrichment_status}`) }}
-              </span>
-            </div>
+            <EnrichmentBadge
+              class="mt-1.5"
+              :status="book.enrichment_status"
+              :guest="guest"
+              :readonly="readonly"
+            />
           </div>
         </div>
 
@@ -394,32 +374,13 @@
                 </div>
 
                 <!-- enrichment status (full view) -->
-                <div
-                  v-if="
-                    !guest &&
-                    !readonly &&
-                    book.enrichment_status &&
-                    book.enrichment_status !== 'done'
-                  "
-                  class="flex items-center gap-1.5 mb-6 -mt-4"
-                  :class="
-                    book.enrichment_status === 'failed'
-                      ? 'text-error/60'
-                      : 'text-text-secondary/30'
-                  "
-                >
-                  <v-icon
-                    :icon="
-                      book.enrichment_status === 'failed'
-                        ? 'mdi-alert-circle-outline'
-                        : 'mdi-progress-clock'
-                    "
-                    size="11"
-                  />
-                  <span class="text-[9px] tracking-[0.15em] uppercase">
-                    {{ $t(`detail.enrichment_${book.enrichment_status}`) }}
-                  </span>
-                </div>
+                <EnrichmentBadge
+                  class="mb-6 -mt-4"
+                  :status="book.enrichment_status"
+                  :guest="guest"
+                  :readonly="readonly"
+                  :icon-size="11"
+                />
 
                 <!-- status segmented control -->
                 <div v-if="!readonly" class="mb-10">
@@ -1206,7 +1167,7 @@ export interface WorkEdition {
 </script>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, computed, onMounted, onUnmounted } from "vue";
+import { ref, reactive, watch, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
@@ -1215,7 +1176,9 @@ import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
 import { useBookStatus } from "@/composables/useBookStatus";
+import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { bookYear, formatPublishDate as formatDate } from "@/utils/book-display";
+import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import type { ReadStatus } from "@/types/book";
 
 const props = defineProps<{
@@ -1315,55 +1278,14 @@ async function loadOtherEditions() {
 
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
-const POLL_DELAYS = [5_000, 8_000, 12_000, 15_000, 20_000];
-let pollTimer: ReturnType<typeof setTimeout> | null = null;
-
-function clearPoll() {
-  if (pollTimer !== null) {
-    clearTimeout(pollTimer);
-    pollTimer = null;
-  }
-}
-
-async function pollOnce(attempt: number) {
-  if (
-    !props.modelValue ||
-    props.guest ||
-    props.book.enrichment_status !== "pending"
-  )
-    return;
-  try {
-    const res = await apiFetch(
-      `/api/scans/${props.book.id}?locale=${localeStore.locale}`,
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.enrichment_status !== "pending") {
-        emit("refreshed", data);
-        return;
-      }
-    }
-  } catch {}
-  if (attempt + 1 < POLL_DELAYS.length && props.modelValue) {
-    pollTimer = setTimeout(
-      () => pollOnce(attempt + 1),
-      POLL_DELAYS[attempt + 1],
-    );
-  }
-}
-
-function startEnrichmentPoll() {
-  clearPoll();
-  if (
-    props.guest ||
-    props.readonly ||
-    props.book.enrichment_status !== "pending"
-  )
-    return;
-  pollTimer = setTimeout(() => pollOnce(0), POLL_DELAYS[0]);
-}
-
-onUnmounted(clearPoll);
+const { startEnrichmentPoll, clearPoll } = useEnrichmentPoll({
+  isOpen: () => props.modelValue,
+  scanId: () => props.book.id,
+  status: () => props.book.enrichment_status,
+  guest: () => !!props.guest,
+  readonly: () => !!props.readonly,
+  onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
+});
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 
