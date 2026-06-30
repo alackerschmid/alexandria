@@ -12,3 +12,4 @@ Settings.dc.html
 worker/*.sql
 performance-gains.md
 library-rework.md
+worker/schema.sql

@@ -603,14 +603,21 @@
 
           <!-- List shelf -->
           <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <LibraryRowCard
-              v-for="entry in shelfVisible(group)"
-              :key="entry.key"
-              :book="entry.book!"
-              @cycle-status="cycleStatus(entry.book!)"
-              @delete="openDeleteDialog(entry.book!)"
-              @select="openDetail(entry.book!)"
-            />
+            <template v-for="entry in shelfVisible(group)" :key="entry.key">
+              <LibraryRowCard
+                v-if="entry.book"
+                :book="entry.book"
+                @cycle-status="cycleStatus(entry.book)"
+                @delete="openDeleteDialog(entry.book)"
+                @select="openDetail(entry.book)"
+              />
+              <LibraryGhostRow
+                v-else
+                :title="entry.title"
+                :ordinal="entry.ordinal"
+                @select="onEntrySelect(entry)"
+              />
+            </template>
           </div>
         </div>
       </div>
@@ -773,6 +780,7 @@ import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import LibraryRowCard from "@/components/LibraryRowCard.vue";
 import LibraryCoverCard from "@/components/LibraryCoverCard.vue";
+import LibraryGhostRow from "@/components/LibraryGhostRow.vue";
 import LibraryDisplaySettings from "@/components/LibraryDisplaySettings.vue";
 import LibraryGroupTabs from "@/components/LibraryGroupTabs.vue";
 import AppSelect from "@/components/AppSelect.vue";
@@ -807,8 +815,14 @@ const loading = ref(false);
 const error = ref("");
 
 const search = ref("");
-const groupBy = ref<GroupBy>("none");
-const sortDirection = ref<SortOption>("desc");
+const groupBy = computed({
+  get: () => libraryDefaultsStore.groupBy,
+  set: (v) => libraryDefaultsStore.setGroupBy(v),
+});
+const sortDirection = computed({
+  get: () => libraryDefaultsStore.sortDirection,
+  set: (v) => libraryDefaultsStore.setSortDirection(v),
+});
 const viewMode = ref<"list" | "tile">(libraryDefaultsStore.defaultView);
 const searchRef = ref<HTMLInputElement | null>(null);
 
@@ -2101,8 +2115,7 @@ interface ShelfGroup {
   seriesId?: number | null;
   complete: boolean;
   countLabel: string;
-  entries: ShelfEntry[]; // tile shelves; respects "show unowned"
-  ownedBooks: Book[]; // list shelves; always owned-only
+  entries: ShelfEntry[];
 }
 
 const bookById = computed(() => {
@@ -2136,9 +2149,8 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
       const denom = mainOnly.value ? mainMembers.length : members.length;
       const numer = mainOnly.value ? ownedMain : ownedTotal;
       const complete = highlightComplete.value && denom > 0 && numer === denom;
-      const visible = showUnowned.value
-        ? members
-        : members.filter((e) => e.owned);
+      const pool = mainOnly.value ? mainMembers : members;
+      const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
       const entries: ShelfEntry[] = visible.map((e) => {
         const book =
           e.scan_id != null ? bookById.value.get(e.scan_id) : undefined;
@@ -2161,7 +2173,6 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
         complete,
         countLabel: `${numer} / ${denom}`,
         entries,
-        ownedBooks: g.books,
       };
     }
     // Series fallback (membership not loaded yet) — owned-only against series_total.
@@ -2176,7 +2187,6 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
         complete,
         countLabel: `${g.books.length} / ${total}`,
         entries: g.books.map((b) => bookToEntry(b)),
-        ownedBooks: g.books,
       };
     }
     // Non-series groups (author/genre/standalone/…): plain count.
@@ -2187,7 +2197,6 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
       complete: false,
       countLabel: String(g.books.length),
       entries: g.books.map((b) => bookToEntry(b)),
-      ownedBooks: g.books,
     };
   }),
 );
@@ -2198,15 +2207,11 @@ const pagedGroups = computed<ShelfGroup[]>(() => {
 });
 
 // Collapsed shelves show one row; expanded show everything.
-const shelfVisible = (g: ShelfGroup): ShelfEntry[] => {
-  const list =
-    viewMode.value === "tile"
-      ? g.entries
-      : g.ownedBooks.map((b) => bookToEntry(b));
-  return expanded.value[g.key] ? list : list.slice(0, shelfRowSize.value);
-};
-const shelfTotal = (g: ShelfGroup): number =>
-  viewMode.value === "tile" ? g.entries.length : g.ownedBooks.length;
+const shelfVisible = (g: ShelfGroup): ShelfEntry[] =>
+  expanded.value[g.key]
+    ? g.entries
+    : g.entries.slice(0, shelfRowSize.value);
+const shelfTotal = (g: ShelfGroup): number => g.entries.length;
 const shelfHasMore = (g: ShelfGroup): boolean =>
   shelfTotal(g) > shelfRowSize.value;
 
