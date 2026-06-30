@@ -13,6 +13,27 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
     parseInt(localStorage.getItem('defaultPageSize') ?? '24', 10) || 24,
   )
 
+  const boolFrom = (key: string, fallback: boolean) => {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === 'true'
+  }
+  const mainOnly = ref<boolean>(boolFrom('libMainOnly', true))
+  const highlightComplete = ref<boolean>(boolFrom('libHighlightComplete', true))
+  const showUnowned = ref<boolean>(boolFrom('libShowUnowned', false))
+
+  function setMainOnly(v: boolean) {
+    mainOnly.value = v
+    localStorage.setItem('libMainOnly', String(v))
+  }
+  function setHighlightComplete(v: boolean) {
+    highlightComplete.value = v
+    localStorage.setItem('libHighlightComplete', String(v))
+  }
+  function setShowUnowned(v: boolean) {
+    showUnowned.value = v
+    localStorage.setItem('libShowUnowned', String(v))
+  }
+
   function setView(v: 'list' | 'tile') {
     defaultView.value = v
     localStorage.setItem('defaultView', v)
@@ -28,5 +49,9 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
     localStorage.setItem('defaultPageSize', String(n))
   }
 
-  return { defaultView, defaultScanStatus, defaultPageSize, setView, setStatus, setPageSize }
+  return {
+    defaultView, defaultScanStatus, defaultPageSize,
+    mainOnly, highlightComplete, showUnowned,
+    setView, setStatus, setPageSize, setMainOnly, setHighlightComplete, setShowUnowned,
+  }
 })

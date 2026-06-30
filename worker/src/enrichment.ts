@@ -374,11 +374,12 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     // Give unowned/placeholder works a real edition (cover + ISBN) so the series view renders them.
     if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
 
-    const genresJson     = details?.genres.length             ? JSON.stringify(details.genres)             : null
-    const awardsJson     = details?.awards.length              ? JSON.stringify(details.awards)             : null
-    const nominJson      = details?.nominations.length         ? JSON.stringify(details.nominations)        : null
-    const narLocsJson    = details?.narrativeLocations.length  ? JSON.stringify(details.narrativeLocations) : null
-    const countriesJson  = details?.countriesOfOrigin.length   ? JSON.stringify(details.countriesOfOrigin)  : null
+    const arrToJson = (a: string[] | undefined) => a?.length ? JSON.stringify(a) : null
+    const genresJson    = arrToJson(details?.genres)
+    const awardsJson    = arrToJson(details?.awards)
+    const nominJson     = arrToJson(details?.nominations)
+    const narLocsJson   = arrToJson(details?.narrativeLocations)
+    const countriesJson = arrToJson(details?.countriesOfOrigin)
     const pubDate        = details?.originalPubDate ?? null
     console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
 

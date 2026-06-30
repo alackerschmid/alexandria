@@ -25,8 +25,9 @@ books.get('/guest-lookup', async (c) => {
 books.get('/guest-search', async (c) => {
   const title = c.req.query('title')?.trim()
   const author = c.req.query('author')?.trim() || undefined
+  const publisher = c.req.query('publisher')?.trim() || undefined
   if (!title) return c.json({ error: 'Title required' }, 400)
-  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY))
+  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY, 20, publisher))
 })
 
 // Public sample of random catalogued books — powers the marketing preview. No auth.
@@ -42,16 +43,17 @@ books.get('/sample', async (c) => {
   const cached = await cache.match(cacheKey)
   if (cached) return cached
 
-  const { results } = await db
-    .prepare(
-      'SELECT title, author, cover_url FROM books WHERE title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?'
-    )
-    .bind(limit)
-    .all<{ title: string, author: string | null, cover_url: string | null }>()
-
-  const total = await db
-    .prepare('SELECT COUNT(*) AS n FROM books WHERE title IS NOT NULL')
-    .first<{ n: number }>()
+  const [{ results }, total] = await Promise.all([
+    db
+      .prepare(
+        'SELECT title, author, cover_url FROM books WHERE title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?'
+      )
+      .bind(limit)
+      .all<{ title: string, author: string | null, cover_url: string | null }>(),
+    db
+      .prepare('SELECT COUNT(*) AS n FROM books WHERE title IS NOT NULL')
+      .first<{ n: number }>(),
+  ])
 
   const res = c.json({ books: results, total: total?.n ?? results.length })
   res.headers.set('Cache-Control', 'public, max-age=600')
@@ -68,8 +70,9 @@ books.use('*', authMiddleware)
 books.get('/search', async (c) => {
   const title = c.req.query('title')?.trim()
   const author = c.req.query('author')?.trim() || undefined
+  const publisher = c.req.query('publisher')?.trim() || undefined
   if (!title) return c.json({ error: 'Title required' }, 400)
-  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY))
+  return c.json(await searchBooksByTitle(title, author, c.env.GOOGLE_BOOKS_API_KEY, 20, publisher))
 })
 
 // Book metadata lookup — checks DB cache first, then Google Books, then OpenLibrary.

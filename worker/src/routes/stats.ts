@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
+import { titleCase, parseTagArray } from '../library-query'
 
 const stats = new Hono<Env>()
 stats.use('*', authMiddleware)
@@ -37,14 +38,6 @@ function extractYear(r: RawRow): number | null {
   return null
 }
 
-function parseTagArray(raw: string): string[] {
-  try {
-    const arr = JSON.parse(raw)
-    return Array.isArray(arr) ? arr.filter((v): v is string => typeof v === 'string' && v !== '') : []
-  } catch {
-    return []
-  }
-}
 
 function topCounts(map: Map<string, number>, limit: number): { label: string; count: number }[] {
   return [...map.entries()]
@@ -137,7 +130,7 @@ stats.get('/', async (c) => {
     if (!Array.isArray(parsed) || parsed.length === 0) { uncategorizedGenreCount++; continue }
     for (const g of parsed) {
       if (typeof g === 'string') {
-        const label = g.replace(/\b\w/g, ch => ch.toUpperCase())
+        const label = titleCase(g)
         genreCounts.set(label, (genreCounts.get(label) ?? 0) + 1)
       }
     }

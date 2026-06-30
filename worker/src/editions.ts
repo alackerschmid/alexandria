@@ -94,10 +94,12 @@ export async function searchBooksByTitle(
   author: string | undefined,
   apiKey: string,
   limit = 20,
+  publisher?: string,
 ): Promise<EditionCandidate[]> {
   try {
     let q = `intitle:"${encodeURIComponent(title)}"`
     if (author) q += `+inauthor:"${encodeURIComponent(author)}"`
+    if (publisher) q += `+inpublisher:"${encodeURIComponent(publisher)}"`
     const res = await fetch(
       `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=20&key=${apiKey}`
     )

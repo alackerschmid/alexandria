@@ -26,7 +26,7 @@
     "limit_body": "Create a free account to save unlimited books.",
     "sign_in": "Sign in",
     "register": "Create account"
-  },  
+  },
   "home": {
     "welcome": "Welcome back",
     "greeting_morning": "Good morning, {name}.",
@@ -89,7 +89,6 @@
     "preview_count": "titles",
     "preview_more": "...all of them"
   },
-
   "library": {
     "empty_body": "No books in your library yet. Scan a book to get started.",
     "section": "Library",
@@ -117,8 +116,24 @@
     "sort_asc": "Ascending",
     "sort_desc": "Descending",
     "group_by": "Group by",
+    "more": "More",
+    "group_sheet_hint": "Tap the active group again to flip sort direction.",
     "per_page": "Per page",
     "per_page_all": "All",
+    "display": "Display",
+    "display_options": "Display options",
+    "display_series_hint": "Series options apply when grouping by series.",
+    "main_entries_only": "Main entries only",
+    "main_entries_only_sub": "Counts whole-numbered books, ignoring novellas & side-stories",
+    "highlight_complete": "Highlight completed series",
+    "highlight_complete_sub": "Accent series you own in full",
+    "show_unowned": "Show unowned books",
+    "show_unowned_sub": "Reveal missing series entries, greyed out",
+    "show_all": "+ Show all ({n})",
+    "collapse": "— Collapse",
+    "complete": "✓ Complete",
+    "unowned": "Unowned",
+    "novella": "Nov",
     "group_none": "Added on",
     "group_author": "Author",
     "group_series": "Series",
@@ -331,7 +346,7 @@
     "isbn_label": "ISBN",
     "looking_up": "Looking up…",
     "look_up": "Look up book",
-    "use_camera": "Use camera instead",
+    "use_camera": "Back to camera",
     "point_at_barcode": "Point at a barcode",
     "no_metadata": "No metadata found — ISBN only will be saved",
     "unknown_book": "Unknown book",
@@ -375,6 +390,8 @@
     "search": "Search",
     "searching": "Searching…",
     "no_results": "No editions found",
-    "search_error": "Search failed — try again"
+    "search_error": "Search failed — try again",
+    "search_results": "Search results",
+    "publisher_optional": "Publisher (optional)"
   }
 }
