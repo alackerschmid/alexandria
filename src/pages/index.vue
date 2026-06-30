@@ -768,6 +768,7 @@ import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useApi } from "@/composables/useApi";
+import { useScanStatus } from "@/composables/useScanStatus";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
@@ -797,6 +798,7 @@ const themeStore = useThemeStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
 const { apiFetch } = useApi();
+const { setStatus: applyStatus, cycleStatus: applyCycle } = useScanStatus();
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const {
@@ -2264,53 +2266,15 @@ const fetchMemberships = async () => {
 
 // ── Status cycling ────────────────────────────────────────────────────────────
 
-const NEXT_STATUS: Record<ReadStatus, ReadStatus> = {
-  unread: "reading",
-  reading: "read",
-  read: "unread",
+const notifyStatusError = () => {
+  errorMessage.value = t("library.error_update_status");
+  errorToast.value = true;
 };
 
-const cycleStatus = async (book: Book) => {
-  if (isGuest.value) {
-    guestStore.cycleStatus(book.isbn);
-    return;
-  }
-  const newStatus = NEXT_STATUS[book.status];
-  const prev = book.status;
-  book.status = newStatus;
-  try {
-    const res = await apiFetch(`/api/scans/${book.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: newStatus }),
-    });
-    if (!res.ok) throw new Error();
-  } catch {
-    book.status = prev;
-    errorMessage.value = t("library.error_update_status");
-    errorToast.value = true;
-  }
-};
+const cycleStatus = (book: Book) => applyCycle(book).catch(notifyStatusError);
 
-const setStatus = async (book: Book, newStatus: ReadStatus) => {
-  if (book.status === newStatus) return;
-  if (isGuest.value) {
-    guestStore.setStatus(book.isbn, newStatus);
-    return;
-  }
-  const prev = book.status;
-  book.status = newStatus;
-  try {
-    const res = await apiFetch(`/api/scans/${book.id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status: newStatus }),
-    });
-    if (!res.ok) throw new Error();
-  } catch {
-    book.status = prev;
-    errorMessage.value = t("library.error_update_status");
-    errorToast.value = true;
-  }
-};
+const setStatus = (book: Book, newStatus: ReadStatus) =>
+  applyStatus(book, newStatus).catch(notifyStatusError);
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 

@@ -89,7 +89,7 @@
             <button
               v-if="!readonly"
               class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase font-medium transition-colors"
-              :class="STATUS_CONFIG[book.status].class"
+              :class="STATUS_CONFIG[book.status].textClass"
               @click="$emit('cycle-status')"
             >
               <span
@@ -1208,13 +1208,14 @@ export interface WorkEdition {
 <script lang="ts" setup>
 import { ref, reactive, watch, computed, onMounted, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
-import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { parseTagList } from "@/utils/tags";
 import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
+import { useBookStatus } from "@/composables/useBookStatus";
+import { bookYear, formatPublishDate as formatDate } from "@/utils/book-display";
 import type { ReadStatus } from "@/types/book";
 
 const props = defineProps<{
@@ -1232,8 +1233,8 @@ const emit = defineEmits<{
   refreshed: [updated: Partial<BookWithOverrides>];
 }>();
 
-const { t } = useI18n();
 const { apiFetch } = useApi();
+const { statusConfig: STATUS_CONFIG, statusOptions: STATUS_OPTIONS } = useBookStatus();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
@@ -1251,11 +1252,7 @@ function expand() {
 
 // ── Computed helpers ──────────────────────────────────────────────────────────
 
-const publishYear = computed(() => {
-  const d = props.book.publish_date || props.book.original_pub_date;
-  if (!d) return "—";
-  return String(d).slice(0, 4);
-});
+const publishYear = computed(() => bookYear(props.book) || "—");
 
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 
@@ -1271,26 +1268,8 @@ const formattedAdded = computed(() => {
 
 // ── Formatting ────────────────────────────────────────────────────────────────
 
-function formatPublishDate(date: string | null | undefined): string {
-  if (!date) return "";
-  const loc = BCP47[localeStore.locale] ?? "en-GB";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [y, m, d] = date.split("-").map(Number);
-    return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(loc, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }
-  if (/^\d{4}-\d{2}$/.test(date)) {
-    const [y, m] = date.split("-").map(Number);
-    return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(loc, {
-      year: "numeric",
-      month: "long",
-    });
-  }
-  return date;
-}
+const formatPublishDate = (date: string | null | undefined) =>
+  formatDate(date, localeStore.locale);
 
 // ── Edit state ────────────────────────────────────────────────────────────────
 
@@ -1716,47 +1695,4 @@ const refresh = async () => {
   }
 };
 
-// ── Status config ─────────────────────────────────────────────────────────────
-
-const STATUS_CONFIG = computed(() => ({
-  unread: {
-    label: t("book.unread"),
-    icon: "mdi-circle-outline",
-    class: "text-text-secondary/40 hover:text-text-secondary",
-    dotClass: "bg-text-secondary/40",
-  },
-  reading: {
-    label: t("book.reading"),
-    icon: "mdi-book-open-outline",
-    class: "text-orange-neon",
-    dotClass: "bg-orange-neon",
-  },
-  read: {
-    label: t("book.read"),
-    icon: "mdi-check-circle-outline",
-    class: "text-[#22c55e]",
-    dotClass: "bg-[#22c55e]",
-  },
-}));
-
-const STATUS_OPTIONS = computed(() => [
-  {
-    status: "unread" as ReadStatus,
-    label: t("book.unread"),
-    dotClass: "bg-text-secondary/40",
-    activeClass: "text-text-secondary",
-  },
-  {
-    status: "reading" as ReadStatus,
-    label: t("book.reading"),
-    dotClass: "bg-orange-neon",
-    activeClass: "text-orange-neon",
-  },
-  {
-    status: "read" as ReadStatus,
-    label: t("book.read"),
-    dotClass: "bg-[#22c55e]",
-    activeClass: "text-[#22c55e]",
-  },
-]);
 </script>

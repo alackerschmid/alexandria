@@ -10,7 +10,7 @@
       <img
         v-if="book.cover_url"
         :src="book.cover_url"
-        :alt="book.title || book.isbn"
+        :alt="displayTitle(book)"
         class="w-full h-full object-cover"
       />
       <div
@@ -31,25 +31,25 @@
       <div
         class="font-heading text-sm font-bold text-text-primary leading-snug line-clamp-2"
       >
-        {{ book.title || book.isbn
+        {{ displayTitle(book)
         }}<span v-if="seriesBracket" class="font-normal text-text-secondary">{{
           seriesBracket
         }}</span>
       </div>
       <div class="text-[11px] text-text-secondary">
-        {{ book.author || $t("book.unknown_author") }}
+        {{ displayAuthor(book, t) }}
       </div>
       <div class="flex items-center justify-between gap-2 mt-auto pt-2">
         <button
           class="flex items-center gap-1 text-[10px] tracking-[0.12em] uppercase transition-colors"
-          :class="STATUS_CONFIG[book.status].class"
+          :class="statusConfig[book.status].textClass"
           @click.stop="$emit('cycle-status')"
         >
           <span
             class="w-1.5 h-1.5 rounded-full shrink-0"
-            :class="STATUS_CONFIG[book.status].dotClass"
+            :class="statusConfig[book.status].dotClass"
           />
-          {{ STATUS_CONFIG[book.status].label }}
+          {{ statusConfig[book.status].label }}
         </button>
         <span
           class="font-mono text-[9px] text-text-secondary/50 tracking-wide whitespace-nowrap"
@@ -80,14 +80,17 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Book } from "@/types/book";
 import { tintFor, initials } from "@/utils/cover";
+import { displayTitle, displayAuthor } from "@/utils/book-display";
+import { useBookStatus } from "@/composables/useBookStatus";
 
 const props = defineProps<{ book: Book }>();
 defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
 const { t } = useI18n();
+const { statusConfig } = useBookStatus();
 
-const tint = computed(() => tintFor(props.book.title || props.book.isbn));
-const glyph = computed(() => initials(props.book.title || props.book.isbn));
+const tint = computed(() => tintFor(displayTitle(props.book)));
+const glyph = computed(() => initials(displayTitle(props.book)));
 
 const seriesBracket = computed(() => {
   if (!props.book.series_name) return "";
@@ -99,22 +102,4 @@ const seriesBracket = computed(() => {
 const getYear = computed(() =>
   props.book.publish_date ? String(props.book.publish_date).slice(0, 4) : "",
 );
-
-const STATUS_CONFIG = computed(() => ({
-  unread: {
-    label: t("book.unread"),
-    class: "text-text-secondary/50 hover:text-text-secondary",
-    dotClass: "bg-text-secondary/30",
-  },
-  reading: {
-    label: t("book.reading"),
-    class: "text-orange-neon",
-    dotClass: "bg-orange-neon",
-  },
-  read: {
-    label: t("book.read"),
-    class: "text-[#22c55e]",
-    dotClass: "bg-[#22c55e]",
-  },
-}));
 </script>

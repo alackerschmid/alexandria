@@ -398,11 +398,11 @@
                     </p>
                     <span
                       class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase mt-2"
-                      :style="{ color: STATUS_COLORS[b.status] }"
+                      :style="{ color: STATUS_META[b.status].color }"
                     >
                       <span
                         class="w-1.5 h-1.5 rounded-full"
-                        :style="{ background: STATUS_COLORS[b.status] }"
+                        :style="{ background: STATUS_META[b.status].color }"
                       />
                       {{ statusLabels[b.status] }}
                     </span>
@@ -687,12 +687,12 @@
                 </span>
                 <span
                   class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
-                  :style="{ color: STATUS_COLORS[detectedBook.currentStatus] }"
+                  :style="{ color: STATUS_META[detectedBook.currentStatus].color }"
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full"
                     :style="{
-                      background: STATUS_COLORS[detectedBook.currentStatus],
+                      background: STATUS_META[detectedBook.currentStatus].color,
                     }"
                   />
                   {{ statusLabels[detectedBook.currentStatus] }}
@@ -744,14 +744,14 @@
                   class="flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] tracking-[0.14em] uppercase transition-colors"
                   :style="
                     selectedStatus === s
-                      ? `border: 1px solid ${STATUS_COLORS[s]}; background: ${STATUS_TINT[s]}; color: #f0ede8`
+                      ? `border: 1px solid ${STATUS_META[s].color}; background: ${STATUS_META[s].tint}; color: #f0ede8`
                       : 'border: 1px solid #2e2b28; color: #8a8078'
                   "
                   @click="selectedStatus = s"
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full"
-                    :style="{ background: STATUS_COLORS[s] }"
+                    :style="{ background: STATUS_META[s].color }"
                   />
                   {{ statusLabels[s] }}
                 </button>
@@ -878,11 +878,11 @@
                       <div class="flex items-center gap-3 mt-2.5">
                         <span
                           class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
-                          :style="{ color: STATUS_COLORS[b.status] }"
+                          :style="{ color: STATUS_META[b.status].color }"
                         >
                           <span
                             class="w-1.5 h-1.5 rounded-full"
-                            :style="{ background: STATUS_COLORS[b.status] }"
+                            :style="{ background: STATUS_META[b.status].color }"
                           />
                           {{ statusLabels[b.status] }}
                         </span>
@@ -1045,6 +1045,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
+import { useBookStatus, STATUS_META, STATUS_ORDER } from "@/composables/useBookStatus";
 import type { ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
@@ -1056,6 +1057,7 @@ const guestStore = useGuestStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const { mdAndUp } = useDisplay();
 const { apiFetch } = useApi();
+const { statusLabels } = useBookStatus();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -1064,24 +1066,6 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 // Set to false to keep the camera UI even when Quagga fails (useful for testing
 // the camera overlay on desktop without triggering manual-entry fallback).
 const FALLBACK_TO_MANUAL_ON_CAMERA_FAIL = false;
-
-// ── Status presentation ─────────────────────────────────────────────────────────
-const STATUS_ORDER: ReadStatus[] = ["unread", "reading", "read"];
-const STATUS_COLORS: Record<ReadStatus, string> = {
-  unread: "#8a8078",
-  reading: "#ff6600",
-  read: "#22c55e",
-};
-const STATUS_TINT: Record<ReadStatus, string> = {
-  unread: "rgba(138,128,120,0.12)",
-  reading: "rgba(255,102,0,0.10)",
-  read: "rgba(34,197,94,0.10)",
-};
-const statusLabels = computed<Record<ReadStatus, string>>(() => ({
-  unread: t("book.unread"),
-  reading: t("book.reading"),
-  read: t("book.read"),
-}));
 
 // ── State machine ─────────────────────────────────────────────────────────────
 
