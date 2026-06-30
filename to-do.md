@@ -4,7 +4,7 @@
 
 - reset search fields in manual search after entry
 - adjust tooltip below scanner
-- go back to title search after title search success 
+- go back to title search after title search success
 - "show unowned" does not work in list view
 - "show only main" does not seem to work at all
 - groupby filter does not persist across refresh / nav
@@ -16,6 +16,8 @@
 
 ## batch 1: making series more robust
 
+- incorporate librarything search for related ISBNs (<https://www.librarything.com/developer/documentation/thingapis>) (You can make only one request per second on an API.)
+- look at <https://isbndb.com>
 - properly handle multilingual editions:
   - intended behaviour: different editions of one book are all grouped by one identifier (different print, format, language etc.)
   - series names are always displayed the user language if possible
