@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { ReadStatus } from '@/types/book'
+import type { GroupBy, SortOption } from '@/types/library'
 
 export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
   const defaultView = ref<'list' | 'tile'>(
@@ -21,6 +22,13 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
   const highlightComplete = ref<boolean>(boolFrom('libHighlightComplete', true))
   const showUnowned = ref<boolean>(boolFrom('libShowUnowned', false))
 
+  const groupBy = ref<GroupBy>(
+    (localStorage.getItem('libGroupBy') as GroupBy) || 'none',
+  )
+  const sortDirection = ref<SortOption>(
+    (localStorage.getItem('libSortDirection') as SortOption) || 'desc',
+  )
+
   function setMainOnly(v: boolean) {
     mainOnly.value = v
     localStorage.setItem('libMainOnly', String(v))
@@ -32,6 +40,14 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
   function setShowUnowned(v: boolean) {
     showUnowned.value = v
     localStorage.setItem('libShowUnowned', String(v))
+  }
+  function setGroupBy(v: GroupBy) {
+    groupBy.value = v
+    localStorage.setItem('libGroupBy', v)
+  }
+  function setSortDirection(v: SortOption) {
+    sortDirection.value = v
+    localStorage.setItem('libSortDirection', v)
   }
 
   function setView(v: 'list' | 'tile') {
@@ -51,7 +67,8 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
 
   return {
     defaultView, defaultScanStatus, defaultPageSize,
-    mainOnly, highlightComplete, showUnowned,
+    mainOnly, highlightComplete, showUnowned, groupBy, sortDirection,
     setView, setStatus, setPageSize, setMainOnly, setHighlightComplete, setShowUnowned,
+    setGroupBy, setSortDirection,
   }
 })

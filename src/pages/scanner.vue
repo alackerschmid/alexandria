@@ -85,11 +85,10 @@
           <div
             class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-charcoal-border"
           >
-            <!-- ISBN sub-mode -->
+            <!-- Unified entry form -->
             <form
-              v-if="manualSubMode === 'isbn'"
               class="w-full max-w-md mx-auto md:mx-0 pb-12"
-              @submit.prevent="submitManualIsbn"
+              @submit.prevent="submitManual"
             >
               <p
                 class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
@@ -103,29 +102,22 @@
               <h1
                 class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
               >
-                {{ $t("scanner.isbn_heading") }}
+                {{ $t("scanner.manual_heading") }}
               </h1>
-
-              <!-- Switch to title search -->
-              <div class="flex items-start gap-2.5 mb-12">
+              <div class="flex items-start gap-2.5 mb-10">
                 <v-icon
-                  :icon="
-                    cameraFailed ? 'mdi-camera-off-outline' : 'mdi-barcode'
-                  "
+                  icon="mdi-book-search-outline"
                   size="15"
                   class="text-text-secondary/70 mt-0.5 shrink-0"
                 />
                 <p class="text-sm text-text-secondary leading-relaxed">
-                  {{
-                    cameraFailed
-                      ? $t("scanner.camera_unavailable")
-                      : $t("scanner.barcode_hint")
-                  }}
+                  {{ $t("scanner.manual_hint") }}
                 </p>
               </div>
 
+              <!-- ISBN -->
               <div
-                class="border-b mb-12 pb-2 transition-colors"
+                class="border-b mb-8 pb-2 transition-colors"
                 :class="{
                   'border-charcoal-border': isbnState === 'hidden',
                   'border-success': isbnState === 'valid',
@@ -154,22 +146,76 @@
                 />
               </div>
 
+              <!-- OR divider -->
+              <div class="flex items-center gap-3 mb-8">
+                <div class="flex-1 border-t border-charcoal-border" />
+                <span
+                  class="text-[10px] text-text-secondary tracking-[0.2em] uppercase"
+                  >{{ $t("scanner.or") }}</span
+                >
+                <div class="flex-1 border-t border-charcoal-border" />
+              </div>
+
+              <!-- Title -->
+              <div class="border-b mb-6 pb-2 border-charcoal-border">
+                <label
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                >
+                  {{ $t("scanner.title_label") }}
+                </label>
+                <input
+                  v-model="titleQuery"
+                  type="text"
+                  :placeholder="$t('scanner.title_label')"
+                  :disabled="scanState === 'detecting'"
+                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                />
+              </div>
+
+              <!-- Author (optional) -->
+              <div class="border-b mb-6 pb-2 border-charcoal-border">
+                <label
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                >
+                  {{ $t("scanner.author_label") }}
+                </label>
+                <input
+                  v-model="authorQuery"
+                  type="text"
+                  :placeholder="$t('scanner.author_optional')"
+                  :disabled="scanState === 'detecting'"
+                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                />
+              </div>
+
+              <!-- Publisher (optional) -->
+              <div class="border-b mb-10 pb-2 border-charcoal-border">
+                <label
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                >
+                  {{ $t("detail.publisher") }}
+                </label>
+                <input
+                  v-model="publisherQuery"
+                  type="text"
+                  :placeholder="$t('scanner.publisher_optional')"
+                  :disabled="scanState === 'detecting'"
+                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                />
+              </div>
+
               <button
                 type="submit"
-                :disabled="scanState === 'detecting'"
+                :disabled="!canSubmit"
                 class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
               >
-                {{
-                  scanState === "detecting"
-                    ? $t("scanner.looking_up")
-                    : $t("scanner.look_up")
-                }}
+                {{ submitLabel }}
               </button>
 
-              <!-- Looking up indicator (shown while a title-search candidate is being resolved) -->
+              <!-- Status feedback -->
               <Transition name="fade">
                 <div
-                  v-if="scanState === 'detecting'"
+                  v-if="scanState === 'detecting' || searchState === 'searching'"
                   class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max"
                   style="
                     background: rgba(17, 17, 16, 0.88);
@@ -179,18 +225,33 @@
                   <span
                     class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
                   />
-                  <span
-                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
-                    >{{ $t("scanner.looking_up") }}</span
-                  >
+                  <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">
+                    {{
+                      scanState === "detecting"
+                        ? $t("scanner.looking_up")
+                        : $t("scanner.searching")
+                    }}
+                  </span>
                 </div>
               </Transition>
+              <p
+                v-if="searchState === 'empty'"
+                class="mt-4 text-sm text-text-secondary/60"
+              >
+                {{ $t("scanner.no_results") }}
+              </p>
+              <p
+                v-else-if="searchState === 'error'"
+                class="mt-4 text-sm text-error"
+              >
+                {{ $t("scanner.search_error") }}
+              </p>
 
               <!-- Desktop: optional webcam fallback -->
               <button
                 v-if="mdAndUp && !cameraFailed"
                 type="button"
-                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+                class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
                 @click="useCamera"
               >
                 <v-icon icon="mdi-camera-outline" size="14" />
@@ -207,152 +268,7 @@
                 <v-icon icon="mdi-camera-outline" size="14" />
                 {{ $t("scanner.back_to_camera") }}
               </button>
-              <button
-                type="button"
-                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-                @click="manualSubMode = 'title'"
-              >
-                <v-icon icon="mdi-magnify" size="14" />
-                {{ $t("scanner.search_by_title_instead") }}
-              </button>
             </form>
-
-            <!-- Title search sub-mode -->
-            <div v-else class="w-full max-w-md mx-auto md:mx-0 pb-12">
-              <p
-                class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
-              >
-                {{ $t("scanner.add_label") }}
-              </p>
-              <h1
-                class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
-              >
-                {{ $t("scanner.search_heading") }}
-              </h1>
-              <div class="flex items-start gap-2.5 mb-10">
-                <v-icon
-                  icon="mdi-text-search"
-                  size="15"
-                  class="text-text-secondary/70 mt-0.5 shrink-0"
-                />
-                <p class="text-sm text-text-secondary leading-relaxed">
-                  {{ $t("scanner.search_hint") }}
-                </p>
-              </div>
-
-              <form @submit.prevent="submitTitleSearch">
-                <!-- Title input -->
-                <div class="border-b mb-8 pb-2 border-charcoal-border">
-                  <label
-                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
-                  >
-                    {{ $t("scanner.title_label") }}
-                  </label>
-                  <input
-                    v-model="titleQuery"
-                    type="text"
-                    :placeholder="$t('scanner.title_label')"
-                    class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border"
-                  />
-                </div>
-
-                <!-- Author input (optional) -->
-                <div class="border-b mb-8 pb-2 border-charcoal-border">
-                  <label
-                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
-                  >
-                    {{ $t("scanner.author_label") }}
-                  </label>
-                  <input
-                    v-model="authorQuery"
-                    type="text"
-                    :placeholder="$t('scanner.author_optional')"
-                    class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border"
-                  />
-                </div>
-
-                <!-- Publisher input (optional) -->
-                <div class="border-b mb-10 pb-2 border-charcoal-border">
-                  <label
-                    class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
-                  >
-                    {{ $t("detail.publisher") }}
-                  </label>
-                  <input
-                    v-model="publisherQuery"
-                    type="text"
-                    :placeholder="$t('scanner.publisher_optional')"
-                    class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  :disabled="!titleQuery.trim() || searchState === 'searching'"
-                  class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
-                >
-                  {{
-                    searchState === "searching"
-                      ? $t("scanner.searching")
-                      : $t("scanner.search")
-                  }}
-                </button>
-              </form>
-
-              <!-- Back to ISBN -->
-              <button
-                type="button"
-                class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-                @click="closeSearchResults(); manualSubMode = 'isbn'"
-              >
-                <v-icon icon="mdi-barcode" size="14" />
-                {{ $t("scanner.enter_isbn_instead") }}
-              </button>
-
-              <!-- Mobile: back to camera -->
-              <button
-                v-if="!mdAndUp && manualOverride"
-                type="button"
-                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
-                @click="backToCamera"
-              >
-                <v-icon icon="mdi-camera-outline" size="14" />
-                {{ $t("scanner.back_to_camera") }}
-              </button>
-
-              <!-- Searching / empty / error feedback (inline, no results yet) -->
-              <div class="mt-8">
-                <div
-                  v-if="searchState === 'searching'"
-                  class="flex items-center gap-2.5 px-5 py-2.5 w-max"
-                  style="
-                    background: rgba(17, 17, 16, 0.88);
-                    border: 1px solid rgba(255, 102, 0, 0.55);
-                  "
-                >
-                  <span
-                    class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
-                  />
-                  <span
-                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
-                  >
-                    {{ $t("scanner.searching") }}
-                  </span>
-                </div>
-                <p
-                  v-else-if="searchState === 'empty'"
-                  class="text-sm text-text-secondary/60"
-                >
-                  {{ $t("scanner.no_results") }}
-                </p>
-                <p
-                  v-else-if="searchState === 'error'"
-                  class="text-sm text-error"
-                >
-                  {{ $t("scanner.search_error") }}
-                </p>
-              </div>
-            </div>
           </div>
 
           <!-- Desktop: search results or live session list -->
@@ -567,15 +483,17 @@
             class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
           />
 
-          <!-- Guide text — anchored below the frame -->
-          <div
-            v-if="scanState === 'scanning'"
-            class="absolute top-full left-1/2 -translate-x-1/2 mt-6 whitespace-nowrap pointer-events-none"
+          <!-- Manual entry button — anchored below the frame -->
+          <button
+            v-if="scanState === 'scanning' && !mdAndUp"
+            class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2 whitespace-nowrap pointer-events-auto"
+            @click="enterManualEntry"
           >
-            <span class="text-[10px] tracking-[0.25em] uppercase text-white/40">
-              {{ $t("scanner.point_at_barcode") }}
+            <v-icon icon="mdi-keyboard-outline" size="15" class="text-white/60" />
+            <span class="text-[11px] tracking-[0.2em] uppercase text-white/60">
+              {{ $t("scanner.enter_isbn_manually") }}
             </span>
-          </div>
+          </button>
 
           <!-- "Looking up" pill — anchored below the frame -->
           <Transition name="fade">
@@ -598,22 +516,6 @@
           </Transition>
         </div>
       </div>
-
-      <!-- ── Mobile "Enter ISBN manually" button (camera view only) ────────────── -->
-      <Transition name="fade">
-        <button
-          v-if="!manualMode && !mdAndUp && scanState === 'scanning'"
-          class="absolute inset-x-0 z-25 flex items-center justify-center gap-2 py-3.5 pointer-events-auto"
-          :class="sessionBooks.length ? 'bottom-30' : 'bottom-6'"
-          style="background: transparent"
-          @click="enterManualEntry"
-        >
-          <v-icon icon="mdi-keyboard-outline" size="15" class="text-white/60" />
-          <span class="text-[11px] tracking-[0.2em] uppercase text-white/60">
-            {{ $t("scanner.enter_isbn_manually") }}
-          </span>
-        </button>
-      </Transition>
 
       <!-- ── Session shelf peek (mobile camera view) ──────────────────────────── -->
       <Transition name="fade">
@@ -1307,8 +1209,6 @@ const cameraFailed = ref(false);
 // existing manual-entry screen. Desktop doesn't need this — it defaults to manual.
 const manualOverride = ref(false);
 
-type ManualSubMode = "isbn" | "title";
-const manualSubMode = ref<ManualSubMode>("isbn");
 const titleQuery = ref("");
 const authorQuery = ref("");
 const publisherQuery = ref("");
@@ -1323,6 +1223,38 @@ const isbnState = computed<"hidden" | "valid" | "invalid">(() => {
   if (len === 10 || len === 13) return "valid";
   return "invalid";
 });
+
+const canSubmit = computed(
+  () =>
+    (isbnState.value === "valid" || titleQuery.value.trim() !== "") &&
+    scanState.value !== "detecting" &&
+    searchState.value !== "searching",
+);
+
+const submitLabel = computed(() => {
+  if (scanState.value === "detecting") return t("scanner.looking_up");
+  if (searchState.value === "searching") return t("scanner.searching");
+  if (isbnState.value === "valid") return t("scanner.look_up");
+  return t("scanner.search");
+});
+
+function clearManualFields() {
+  manualIsbn.value = "";
+  titleQuery.value = "";
+  authorQuery.value = "";
+  publisherQuery.value = "";
+  searchState.value = "idle";
+  showSearchResults.value = false;
+  searchResults.value = [];
+}
+
+function submitManual() {
+  if (isbnState.value === "valid") {
+    submitManualIsbn();
+  } else if (titleQuery.value.trim()) {
+    submitTitleSearch();
+  }
+}
 // Desktop opts into the camera explicitly; mobile starts it automatically.
 const cameraActive = ref(false);
 const manualEntryInput = ref<HTMLInputElement | null>(null);
@@ -1369,7 +1301,6 @@ const useCamera = () => {
 // Mobile: open the manual-entry screen from the camera view.
 const enterManualEntry = () => {
   manualOverride.value = true;
-  manualSubMode.value = "isbn";
   if (scannerStarted) {
     Quagga.stop();
     scannerStarted = false;
@@ -1380,9 +1311,7 @@ const enterManualEntry = () => {
 // Mobile: return to the live camera from the manual-entry screen.
 const backToCamera = () => {
   manualOverride.value = false;
-  manualSubMode.value = "isbn";
-  searchResults.value = [];
-  searchState.value = "idle";
+  clearManualFields();
   nextTick(startScanner);
 };
 
@@ -1390,7 +1319,6 @@ function closeSearchResults() {
   showSearchResults.value = false;
   searchResults.value = [];
   searchState.value = "idle";
-  publisherQuery.value = "";
 }
 
 // Title search: submit a title (+ optional author) to the backend and populate results.
@@ -1432,7 +1360,6 @@ const selectCandidate = async (candidate: EditionCandidate) => {
   const isbn = candidate.isbn.toUpperCase();
 
   showSearchResults.value = false;
-  manualSubMode.value = "isbn";
   searchResults.value = [];
   searchState.value = "idle";
 
@@ -1645,6 +1572,7 @@ const saveBook = async () => {
       recordSession(book, status);
     }
     detectedBook.value = null;
+    clearManualFields();
     scanState.value = "scanning";
     return;
   }
@@ -1676,12 +1604,14 @@ const saveBook = async () => {
   }
 
   detectedBook.value = null;
+  clearManualFields();
   scanState.value = "scanning";
 };
 
 const scanAgain = () => {
   detectedBook.value = null;
   selectedStatus.value = "read";
+  clearManualFields();
   scanState.value = "scanning";
 };
 
