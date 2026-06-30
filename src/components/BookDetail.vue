@@ -764,349 +764,27 @@
                 </div>
 
                 <!-- other editions -->
-                <div v-if="otherEditions.length" class="mb-8">
-                  <div
-                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                  >
-                    {{ $t("detail.other_editions") }}
-                  </div>
-                  <div class="flex flex-col gap-2">
-                    <div
-                      v-for="ed in otherEditions"
-                      :key="ed.isbn"
-                      class="flex items-center gap-3"
-                    >
-                      <img
-                        v-if="ed.cover_url"
-                        :src="ed.cover_url"
-                        class="w-8 h-12 object-cover shrink-0"
-                      />
-                      <div
-                        v-else
-                        class="w-8 h-12 bg-charcoal border border-charcoal-border flex items-center justify-center shrink-0"
-                      >
-                        <v-icon
-                          icon="mdi-book-outline"
-                          size="14"
-                          color="primary"
-                        />
-                      </div>
-                      <div class="min-w-0 flex-1">
-                        <div class="text-xs text-text-primary truncate">
-                          {{ ed.title || ed.isbn }}
-                        </div>
-                        <div
-                          class="text-[10px] text-text-secondary/60 flex items-center gap-2"
-                        >
-                          <span v-if="ed.language">{{
-                            langDisplay(ed.language)
-                          }}</span>
-                          <span
-                            v-if="ed.scan_id"
-                            class="text-orange-neon tracking-[0.15em] uppercase"
-                          >
-                            {{ $t("detail.edition_in_library") }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <OtherEditions :book="book" />
 
                 <!-- custom fields (always editable) -->
-                <div
-                  v-if="!readonly && !guest && fieldDefsStore.defs.length"
-                  class="mb-8 pt-8 border-t border-charcoal-border"
-                >
-                  <div
-                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
-                  >
-                    {{ $t("detail.custom_fields") }}
-                  </div>
-
-                  <div class="flex flex-col gap-4 max-w-md">
-                    <div
-                      v-for="def in fieldDefsStore.defs"
-                      :key="def.id"
-                      class="flex items-start gap-2"
-                    >
-                      <div class="flex-1 min-w-0">
-                        <label
-                          class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block"
-                          >{{ def.name }}</label
-                        >
-
-                        <!-- tag: multi-value combobox with global-delete suggestions -->
-                        <v-combobox
-                          v-if="def.type === 'tag'"
-                          :model-value="
-                            (customFieldValues[def.id] as string[]) ?? []
-                          "
-                          :items="fieldDefsStore.tagValues[def.id] ?? []"
-                          multiple
-                          chips
-                          closable-chips
-                          density="compact"
-                          variant="outlined"
-                          hide-details
-                          :placeholder="$t('detail.tag_add')"
-                          @update:model-value="onTagChange(def.id, $event)"
-                          @update:menu="
-                            (open: boolean) => onTagMenu(def.id, open)
-                          "
-                        >
-                          <template #item="{ props: itemProps }">
-                            <v-list-item v-bind="itemProps">
-                              <template #append>
-                                <button
-                                  class="ml-2 shrink-0 transition-colors"
-                                  :class="
-                                    confirmingTag ===
-                                    `${def.id}:${itemProps.title}`
-                                      ? 'text-error'
-                                      : 'text-text-secondary/40 hover:text-error'
-                                  "
-                                  :title="
-                                    confirmingTag ===
-                                    `${def.id}:${itemProps.title}`
-                                      ? $t('detail.tag_delete_confirm', {
-                                          tag: itemProps.title,
-                                        })
-                                      : $t('detail.tag_delete')
-                                  "
-                                  @click.stop="
-                                    confirmDeleteTag(
-                                      def.id,
-                                      String(itemProps.title),
-                                    )
-                                  "
-                                >
-                                  <v-icon
-                                    :icon="
-                                      confirmingTag ===
-                                      `${def.id}:${itemProps.title}`
-                                        ? 'mdi-delete'
-                                        : 'mdi-close'
-                                    "
-                                    size="14"
-                                  />
-                                </button>
-                              </template>
-                            </v-list-item>
-                          </template>
-                        </v-combobox>
-
-                        <!-- date -->
-                        <input
-                          v-else-if="def.type === 'date'"
-                          type="date"
-                          :value="(customFieldValues[def.id] as string) ?? ''"
-                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @change="
-                            onValueChange(
-                              def.id,
-                              ($event.target as HTMLInputElement).value,
-                            )
-                          "
-                        />
-
-                        <!-- integer -->
-                        <input
-                          v-else-if="def.type === 'integer'"
-                          type="number"
-                          :value="(customFieldValues[def.id] as string) ?? ''"
-                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @input="
-                            setLocalValue(
-                              def.id,
-                              ($event.target as HTMLInputElement).value,
-                            )
-                          "
-                          @blur="saveCustomFields"
-                          @keyup.enter="
-                            ($event.target as HTMLInputElement).blur()
-                          "
-                        />
-
-                        <!-- text / select -->
-                        <input
-                          v-else
-                          type="text"
-                          :value="(customFieldValues[def.id] as string) ?? ''"
-                          :placeholder="$t('detail.custom_field_value')"
-                          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                          @input="
-                            setLocalValue(
-                              def.id,
-                              ($event.target as HTMLInputElement).value,
-                            )
-                          "
-                          @blur="saveCustomFields"
-                          @keyup.enter="
-                            ($event.target as HTMLInputElement).blur()
-                          "
-                        />
-                      </div>
-
-                      <!-- delete field definition (removes the field from all books) -->
-                      <button
-                        class="shrink-0 transition-colors pt-7"
-                        :class="
-                          confirmingDeleteId === def.id
-                            ? 'text-error'
-                            : 'text-text-secondary/30 hover:text-text-secondary/60'
-                        "
-                        :title="
-                          confirmingDeleteId === def.id
-                            ? $t('detail.custom_field_confirm_delete')
-                            : $t('detail.custom_field_delete')
-                        "
-                        @click="deleteFieldDefinition(def.id)"
-                        @blur="confirmingDeleteId = null"
-                      >
-                        <v-icon
-                          :icon="
-                            confirmingDeleteId === def.id
-                              ? 'mdi-delete'
-                              : 'mdi-delete-outline'
-                          "
-                          size="16"
-                        />
-                      </button>
-                    </div>
-
-                    <!-- add field -->
-                    <!-- <div v-if="addingField" class="flex gap-2 items-center">
-                      <input
-                        v-model="newFieldName"
-                        :placeholder="$t('detail.custom_field_name')"
-                        class="flex-1 bg-charcoal border border-orange-neon text-xs text-text-primary px-3 py-2 outline-none"
-                        @keyup.enter="createFieldDefinition"
-                        @keyup.escape="addingField = false; newFieldName = ''"
-                      />
-                      <button class="text-orange-neon hover:text-orange-neon/70 transition-colors shrink-0" @click="createFieldDefinition">
-                        <v-icon icon="mdi-check" size="16" />
-                      </button>
-                      <button class="text-text-secondary/40 hover:text-text-secondary/70 transition-colors shrink-0" @click="addingField = false; newFieldName = ''">
-                        <v-icon icon="mdi-close" size="16" />
-                      </button>
-                    </div>
-                    <button
-                      v-else
-                      class="flex items-center gap-1 text-[10px] tracking-[0.15em] uppercase text-text-secondary/60 hover:text-orange-neon transition-colors"
-                      @click="addingField = true"
-                    >
-                      <v-icon icon="mdi-plus" size="14" />
-                      {{ $t('detail.add_custom_field') }}
-                    </button> -->
-                  </div>
-
-                  <p
-                    v-if="cfError"
-                    class="text-[10px] text-error tracking-widest uppercase mt-3"
-                  >
-                    {{ $t("detail.edit_error") }}
-                  </p>
-                </div>
+                <CustomFieldsPanel
+                  v-if="!readonly && !guest"
+                  :book="book"
+                  :guest="guest"
+                  :readonly="readonly"
+                  @refreshed="$emit('refreshed', $event)"
+                />
               </div>
             </div>
           </template>
 
           <!-- edit mode -->
-          <template v-else>
-            <div class="max-w-lg mx-auto px-6 py-10">
-              <!-- title -->
-              <input
-                v-model="form.title"
-                class="w-full bg-transparent font-heading text-xl font-bold text-text-primary leading-snug mb-2 border-b border-charcoal-border pb-1 outline-none focus:border-orange-neon"
-                :placeholder="book.isbn"
-              />
-              <div class="text-sm text-text-secondary/60 mb-6">
-                {{ book.author || $t("book.unknown_author") }}
-              </div>
-
-              <div class="flex flex-col gap-4">
-                <div>
-                  <label
-                    class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                  >
-                    {{ $t("detail.description") }}
-                  </label>
-                  <textarea
-                    v-model="form.description"
-                    rows="4"
-                    class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 resize-none outline-none focus:border-orange-neon"
-                  />
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                  <div>
-                    <label
-                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                    >
-                      {{ $t("detail.publisher") }}
-                    </label>
-                    <input
-                      v-model="form.publisher"
-                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                    >
-                      {{ $t("detail.language") }}
-                    </label>
-                    <input
-                      v-model="form.language"
-                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                    >
-                      {{ $t("detail.published") }}
-                    </label>
-                    <input
-                      v-model="form.publish_date"
-                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                    />
-                  </div>
-                  <div>
-                    <label
-                      class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                    >
-                      {{ $t("detail.pages") }}
-                    </label>
-                    <input
-                      v-model.number="form.number_of_pages_median"
-                      type="number"
-                      min="1"
-                      class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label
-                    class="text-[10px] text-text-secondary/60 tracking-[0.2em] uppercase mb-1 block"
-                  >
-                    {{ $t("detail.cover_url") }}
-                  </label>
-                  <input
-                    v-model="form.cover_url"
-                    class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
-                  />
-                </div>
-
-                <p
-                  v-if="saveError"
-                  class="text-[10px] text-error tracking-widest uppercase"
-                >
-                  {{ $t("detail.edit_error") }}
-                </p>
-              </div>
-            </div>
-          </template>
+          <BookEditForm
+            v-else
+            v-model:form="form"
+            :book="book"
+            :save-error="saveError"
+          />
         </div>
 
         <!-- edit mode footer -->
@@ -1156,14 +834,6 @@ export interface BookWithOverrides extends Book {
   publisher_overridden?: number;
   custom_field_values?: CustomFieldValue[] | null;
 }
-
-export interface WorkEdition {
-  isbn: string;
-  title: string | null;
-  language: string | null;
-  cover_url: string | null;
-  scan_id: number | null;
-}
 </script>
 
 <script lang="ts" setup>
@@ -1171,7 +841,6 @@ import { ref, reactive, watch, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import { parseTagList } from "@/utils/tags";
 import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
@@ -1179,6 +848,9 @@ import { useBookStatus } from "@/composables/useBookStatus";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { bookYear, formatPublishDate as formatDate } from "@/utils/book-display";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
+import OtherEditions from "@/components/book-detail/OtherEditions.vue";
+import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
+import BookEditForm from "@/components/book-detail/BookEditForm.vue";
 import type { ReadStatus } from "@/types/book";
 
 const props = defineProps<{
@@ -1241,13 +913,6 @@ const refreshing = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const saveError = ref(false);
-// Per-field model: a string for text/integer/select/date, a string[] for tag.
-const customFieldValues = ref<Record<number, string | string[]>>({});
-const cfError = ref(false);
-const confirmingTag = ref<string | null>(null); // `${defId}:${value}` awaiting delete-confirm
-const addingField = ref(false);
-const newFieldName = ref("");
-const confirmingDeleteId = ref<number | null>(null);
 
 const form = reactive({
   title: "",
@@ -1258,23 +923,6 @@ const form = reactive({
   description: "",
   publisher: "",
 });
-
-// ── Other editions ────────────────────────────────────────────────────────────
-
-const otherEditions = ref<WorkEdition[]>([]);
-
-async function loadOtherEditions() {
-  otherEditions.value = [];
-  if (!props.book.work_id) return;
-  try {
-    const res = await apiFetch(`/api/works/${props.book.work_id}/editions`);
-    if (!res.ok) return;
-    const editions = (await res.json()) as WorkEdition[];
-    otherEditions.value = editions.filter((e) => e.isbn !== props.book.isbn);
-  } catch {
-    otherEditions.value = [];
-  }
-}
 
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
@@ -1309,10 +957,7 @@ watch(
     mode.value = "card";
     descriptionExpanded.value = false;
     editing.value = false;
-    if (props.modelValue) {
-      loadOtherEditions();
-      startEnrichmentPoll();
-    }
+    if (props.modelValue) startEnrichmentPoll();
   },
 );
 
@@ -1324,7 +969,6 @@ watch(
       editing.value = false;
       clearPoll();
     } else {
-      loadOtherEditions();
       startEnrichmentPoll();
     }
   },
@@ -1333,144 +977,6 @@ watch(
 onMounted(() => {
   if (!props.guest && !props.readonly) fieldDefsStore.load();
 });
-
-// ── Custom field helpers ──────────────────────────────────────────────────────
-
-function valueFromBook(def: { id: number; type: string }): string | string[] {
-  const raw =
-    props.book.custom_field_values?.find((v) => v.field_def_id === def.id)
-      ?.value ?? null;
-  return def.type === "tag" ? parseTagList(raw) : (raw ?? "");
-}
-
-// Reconcile the local editor model with the current schema, preserving values the
-// user may be editing. Existing in-shape entries are kept; only new/removed fields
-// (or a field whose type changed) are (re)derived from the saved book values.
-function reconcileCustomFields() {
-  const next: Record<number, string | string[]> = {};
-  for (const def of fieldDefsStore.defs) {
-    const existing = customFieldValues.value[def.id];
-    const inShape =
-      def.type === "tag"
-        ? Array.isArray(existing)
-        : typeof existing === "string";
-    next[def.id] = inShape ? existing : valueFromBook(def);
-  }
-  customFieldValues.value = next;
-}
-
-// Full reset only when the book identity changes — so an external refresh of the
-// *same* book (e.g. enrichment poll) can't clobber unsaved in-progress edits.
-watch(
-  () => props.book.isbn,
-  () => {
-    customFieldValues.value = {};
-    reconcileCustomFields();
-  },
-  { immediate: true },
-);
-// Schema changes (definitions loaded / field added / removed) only add or drop keys.
-watch(() => fieldDefsStore.defs, reconcileCustomFields, { deep: true });
-
-function setLocalValue(id: number, value: string) {
-  customFieldValues.value = { ...customFieldValues.value, [id]: value };
-}
-
-function onValueChange(id: number, value: string) {
-  setLocalValue(id, value);
-  saveCustomFields();
-}
-
-function onTagChange(id: number, value: unknown) {
-  const arr = (Array.isArray(value) ? value : [])
-    .map((v) => String(v).trim())
-    .filter(Boolean);
-  const unique = [...new Set(arr)];
-  customFieldValues.value = { ...customFieldValues.value, [id]: unique };
-  for (const tag of unique) fieldDefsStore.addTagValueLocal(id, tag);
-  saveCustomFields();
-}
-
-function onTagMenu(id: number, open: boolean) {
-  if (open) fieldDefsStore.loadTagValues(id);
-  else confirmingTag.value = null;
-}
-
-async function confirmDeleteTag(id: number, value: string) {
-  const key = `${id}:${value}`;
-  if (confirmingTag.value !== key) {
-    confirmingTag.value = key;
-    return;
-  }
-  confirmingTag.value = null;
-  const res = await fieldDefsStore.deleteTagValueEverywhere(id, value);
-  if (!res.ok) {
-    cfError.value = true;
-    return;
-  }
-  // Server stripped the tag from every book (including this one) — reflect it locally.
-  const current = customFieldValues.value[id];
-  if (Array.isArray(current) && current.includes(value)) {
-    customFieldValues.value = {
-      ...customFieldValues.value,
-      [id]: current.filter((v) => v !== value),
-    };
-    emitCustomFieldsRefreshed();
-  }
-}
-
-// Serialize the local model into the API value list (tag arrays → JSON; empty → "").
-function customFieldsPayload() {
-  return fieldDefsStore.defs.map((def) => {
-    const v = customFieldValues.value[def.id];
-    let value = "";
-    if (def.type === "tag") {
-      const arr = (Array.isArray(v) ? v : [])
-        .map((s) => String(s).trim())
-        .filter(Boolean);
-      value = arr.length ? JSON.stringify(arr) : "";
-    } else if (typeof v === "string") {
-      value = v;
-    }
-    return { field_def_id: def.id, value };
-  });
-}
-
-function emitCustomFieldsRefreshed() {
-  const custom_field_values = customFieldsPayload().map((v) => ({
-    field_def_id: v.field_def_id,
-    value: v.value || null,
-  }));
-  emit("refreshed", { custom_field_values });
-}
-
-// Auto-saves are chained so they apply in call order. The endpoint replaces all
-// values at once, so overlapping requests arriving out of order could otherwise
-// drop a field; each queued save also rebuilds its payload from the latest model.
-let saveQueue: Promise<void> = Promise.resolve();
-
-function saveCustomFields() {
-  saveQueue = saveQueue.then(doSaveCustomFields);
-  return saveQueue;
-}
-
-async function doSaveCustomFields() {
-  if (props.readonly || props.guest) return;
-  cfError.value = false;
-  try {
-    const res = await apiFetch("/api/books/custom-fields", {
-      method: "PATCH",
-      body: JSON.stringify({
-        isbn: props.book.isbn,
-        values: customFieldsPayload(),
-      }),
-    });
-    if (!res.ok) throw new Error();
-    emitCustomFieldsRefreshed();
-  } catch {
-    cfError.value = true;
-  }
-}
 
 function enterEdit() {
   form.title = props.book.title ?? "";
@@ -1482,48 +988,6 @@ function enterEdit() {
   form.publisher = props.book.publisher ?? "";
   saveError.value = false;
   editing.value = true;
-}
-
-async function createFieldDefinition() {
-  const name = newFieldName.value.trim();
-  if (!name) return;
-  try {
-    const res = await apiFetch("/api/field-definitions", {
-      method: "POST",
-      body: JSON.stringify({ name, type: "text" }),
-    });
-    if (!res.ok) throw new Error();
-    const def = (await res.json()) as {
-      id: number;
-      name: string;
-      type: string;
-    };
-    customFieldValues.value = { ...customFieldValues.value, [def.id]: "" };
-    newFieldName.value = "";
-    addingField.value = false;
-    fieldDefsStore.add(def);
-  } catch {
-    cfError.value = true;
-  }
-}
-
-async function deleteFieldDefinition(id: number) {
-  if (confirmingDeleteId.value !== id) {
-    confirmingDeleteId.value = id;
-    return;
-  }
-  try {
-    const res = await apiFetch(`/api/field-definitions/${id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) throw new Error();
-    const { [id]: _, ...rest } = customFieldValues.value;
-    customFieldValues.value = rest;
-    confirmingDeleteId.value = null;
-    fieldDefsStore.remove(id);
-  } catch {
-    cfError.value = true;
-  }
 }
 
 async function save() {
