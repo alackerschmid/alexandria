@@ -1,16 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { NEXT_STATUS } from '@/composables/useBookStatus'
 import type { Book, ReadStatus } from '@/types/book'
 
 const STORAGE_KEY = 'guest_scans'
 const MAX_GUEST_SCANS = 3
 const API_BASE = import.meta.env.VITE_API_URL || ''
-
-const NEXT_STATUS: Record<ReadStatus, ReadStatus> = {
-  unread: 'reading',
-  reading: 'read',
-  read: 'unread',
-}
 
 function load(): Book[] {
   try {

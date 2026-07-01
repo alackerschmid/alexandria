@@ -117,6 +117,7 @@ import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 import type { Book, ReadStatus } from "@/types/book";
+import { NEXT_STATUS } from "@/composables/useBookStatus";
 
 interface SeriesEntry {
   work_id: number;
@@ -199,7 +200,6 @@ function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
   if (detailBook.value) detailBook.value = { ...detailBook.value, ...updated }
 }
 
-const NEXT_STATUS: Record<ReadStatus, ReadStatus> = { unread: 'reading', reading: 'read', read: 'unread' }
 
 async function updateDetailStatus(newStatus: ReadStatus) {
   if (!detailBook.value || detailReadonly.value) return

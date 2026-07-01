@@ -69,6 +69,7 @@
 import { computed } from 'vue'
 import type { ReadStatus } from '@/types/book'
 import { tintFor, initials } from '@/utils/cover'
+import { STATUS_META } from '@/composables/useBookStatus'
 
 const props = defineProps<{
   title: string | null
@@ -85,9 +86,5 @@ const tint = computed(() => tintFor(props.title || ''))
 const glyph = computed(() => initials(props.title || '?'))
 const isNovella = computed(() => props.ordinal != null && !Number.isInteger(props.ordinal))
 
-const statusColor = computed(() => {
-  if (props.status === 'reading') return 'rgb(var(--v-theme-primary))'
-  if (props.status === 'read') return 'rgb(var(--v-theme-success))'
-  return 'rgba(138,128,120,0.45)'
-})
+const statusColor = computed(() => STATUS_META[props.status ?? 'unread'].themeColor)
 </script>

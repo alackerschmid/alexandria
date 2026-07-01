@@ -203,6 +203,8 @@ import AppSelect from '@/components/AppSelect.vue'
 import AppToast from '@/components/AppToast.vue'
 import { useApi } from '@/composables/useApi'
 import { useGroupDimensions } from '@/composables/useGroupDimensions'
+import { STATUS_META } from '@/composables/useBookStatus'
+import { BCP47 } from '@/plugins/i18n'
 import type { CollectionStats } from '@/types/stats'
 import type { GroupBy } from '@/types/library'
 import { languageDisplayFormatter } from '@/utils/language'
@@ -261,7 +263,7 @@ const greeting = computed(() => {
 })
 
 const metaLine = computed(() => {
-  const locale = localeStore.locale === 'de' ? 'de-DE' : 'en-GB'
+  const locale = BCP47[localeStore.locale] ?? 'en-GB'
   const dateStr = new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })
   return t('home.meta', { date: dateStr, count: (statsData.value?.total ?? 0).toLocaleString() })
 })
@@ -315,9 +317,9 @@ const glanceData = computed(() => {
 
   if (glanceMode.value === 'status') {
     return [
-      { label: t('book.read'),    color: 'rgb(var(--v-theme-success))', pctWidth: pctStr(byStatus.read),    pctLabel: pctStr(byStatus.read) },
-      { label: t('book.unread'),  color: 'var(--color-text-secondary)', pctWidth: pctStr(byStatus.unread),  pctLabel: pctStr(byStatus.unread) },
-      { label: t('book.reading'), color: 'rgb(var(--v-theme-primary))', pctWidth: pctStr(byStatus.reading), pctLabel: pctStr(byStatus.reading) },
+      { label: t('book.read'),    color: STATUS_META.read.themeColor,    pctWidth: pctStr(byStatus.read),    pctLabel: pctStr(byStatus.read) },
+      { label: t('book.unread'),  color: STATUS_META.unread.themeColor,  pctWidth: pctStr(byStatus.unread),  pctLabel: pctStr(byStatus.unread) },
+      { label: t('book.reading'), color: STATUS_META.reading.themeColor, pctWidth: pctStr(byStatus.reading), pctLabel: pctStr(byStatus.reading) },
     ].filter(s => s.pctWidth !== '0%')
   }
 
@@ -345,9 +347,9 @@ const mostRepresentedData = computed(() => {
 
   if (mostRepMode.value === 'status') {
     const items = [
-      { label: t('book.read'),    count: byStatus.read,    color: 'rgb(var(--v-theme-success))' },
-      { label: t('book.unread'),  count: byStatus.unread,  color: 'var(--color-text-secondary)' },
-      { label: t('book.reading'), count: byStatus.reading, color: 'rgb(var(--v-theme-primary))' },
+      { label: t('book.read'),    count: byStatus.read,    color: STATUS_META.read.themeColor },
+      { label: t('book.unread'),  count: byStatus.unread,  color: STATUS_META.unread.themeColor },
+      { label: t('book.reading'), count: byStatus.reading, color: STATUS_META.reading.themeColor },
     ].filter(s => s.count > 0)
     const max = total > 0 ? total : 1
     return items.map(s => ({ name: s.label, count: s.count, barWidth: barWidth(s.count, max), color: s.color }))
@@ -389,7 +391,7 @@ const statTiles = computed(() => {
       value: byStatus.read.toLocaleString(),
       pctLabel: pctOf(byStatus.read) + '%',
       barWidth: Math.max(pctOf(byStatus.read), byStatus.read > 0 ? 4 : 0) + '%',
-      color: 'rgb(var(--v-theme-success))',
+      color: STATUS_META.read.themeColor,
     },
     {
       key: 'unread',
@@ -397,7 +399,7 @@ const statTiles = computed(() => {
       value: byStatus.unread.toLocaleString(),
       pctLabel: pctOf(byStatus.unread) + '%',
       barWidth: pctOf(byStatus.unread) + '%',
-      color: 'var(--color-text-secondary)',
+      color: STATUS_META.unread.themeColor,
     },
     {
       key: 'reading',
@@ -405,7 +407,7 @@ const statTiles = computed(() => {
       value: byStatus.reading.toLocaleString(),
       pctLabel: pctOf(byStatus.reading) + '%',
       barWidth: Math.max(pctOf(byStatus.reading), byStatus.reading > 0 ? 4 : 0) + '%',
-      color: 'rgb(var(--v-theme-primary))',
+      color: STATUS_META.reading.themeColor,
     },
   ]
 })

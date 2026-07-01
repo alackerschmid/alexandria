@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
-import { resolveEdition } from '../editions'
+import { resolveEdition, materializeEdition } from '../editions'
 import { enrichWork } from '../enrichment'
 import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES } from '../library-query'
 
@@ -98,6 +98,62 @@ scans.patch('/:id', async (c) => {
   }
 
   return c.json({ id: Number(c.req.param('id')), status })
+})
+
+// Switch a scan to a different edition (ISBN) of the same work. Reading status and custom
+// field values follow the scan to the new edition; per-user metadata overrides are dropped
+// (they corrected the old edition's metadata and don't necessarily apply to the new one).
+scans.patch('/:id/edition', async (c) => {
+  const userId = c.get('userId')
+  const scanId = c.req.param('id')
+  const db = c.env.DB
+  const locale = c.req.query('locale') ?? 'en'
+  const { isbn } = await c.req.json<{ isbn: string }>()
+  if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
+
+  const scan = await db.prepare('SELECT book_id FROM scans WHERE id = ? AND user_id = ?')
+    .bind(scanId, userId)
+    .first<{ book_id: number }>()
+  if (!scan) return c.json({ error: 'Book not found' }, 404)
+
+  const currentBook = await db.prepare('SELECT work_id, isbn FROM books WHERE id = ?')
+    .bind(scan.book_id)
+    .first<{ work_id: number | null; isbn: string }>()
+  if (!currentBook?.work_id) return c.json({ error: 'This book has no known editions' }, 400)
+  const workId = currentBook.work_id
+
+  if (isbn === currentBook.isbn) {
+    const unchanged = await db.prepare(`${buildScanSelect(locale)} WHERE s.id = ?`).bind(scanId).first<any>()
+    const { defs, valuesByBook } = await fetchCustomFields(db, userId, unchanged ? [unchanged.book_id] : [])
+    return c.json(unchanged ? attachCustomFields(unchanged, defs, valuesByBook) : {})
+  }
+
+  // Validate the target ISBN actually belongs to this work (either already materialized,
+  // or a candidate discovered via LibraryThing) — prevents repointing to an arbitrary book.
+  const isKnownEdition = await db.prepare(`
+    SELECT 1 FROM books WHERE isbn = ? AND work_id = ?
+    UNION SELECT 1 FROM work_edition_isbns WHERE isbn = ? AND work_id = ?`)
+    .bind(isbn, workId, isbn, workId)
+    .first()
+  if (!isKnownEdition) return c.json({ error: 'ISBN is not a known edition of this book' }, 400)
+
+  const targetBook = await materializeEdition(db, isbn, workId, c.env.GOOGLE_BOOKS_API_KEY)
+  if (!targetBook) return c.json({ error: 'Failed to resolve target edition' }, 500)
+
+  const alreadyOwned = await db.prepare('SELECT id FROM scans WHERE user_id = ? AND book_id = ? AND id != ?')
+    .bind(userId, targetBook.id, scanId)
+    .first()
+  if (alreadyOwned) return c.json({ error: 'You already have this edition in your library' }, 409)
+
+  await db.batch([
+    db.prepare('UPDATE scans SET book_id = ? WHERE id = ? AND user_id = ?').bind(targetBook.id, scanId, userId),
+    db.prepare('UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?').bind(targetBook.id, userId, scan.book_id),
+    db.prepare('DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?').bind(userId, scan.book_id),
+  ])
+
+  const updated = await db.prepare(`${buildScanSelect(locale)} WHERE s.id = ?`).bind(scanId).first<any>()
+  const { defs, valuesByBook } = await fetchCustomFields(db, userId, updated ? [updated.book_id] : [])
+  return c.json(updated ? attachCustomFields(updated, defs, valuesByBook) : {})
 })
 
 scans.delete('/:id', async (c) => {

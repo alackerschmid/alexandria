@@ -29,7 +29,7 @@
           <span class="text-[7px]">▾</span>
         </button>
       </template>
-      <div class="bg-[#1a1917] border border-charcoal-border shadow-xl py-1 min-w-[200px]">
+      <div class="bg-charcoal-light border border-charcoal-border shadow-xl py-1 min-w-[200px]">
         <button
           v-for="opt in overflowOptions"
           :key="opt.value"

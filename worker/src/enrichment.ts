@@ -1,5 +1,5 @@
 import type { WorkRow, WorkDetails, SeriesHit } from './types'
-import { splitAuthors, fetchBookMetadata } from './editions'
+import { splitAuthors, materializeEdition } from './editions'
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -240,20 +240,8 @@ async function backfillEdition(db: D1Database, workId: number, workQid: string, 
   const isbn = await fetchWorkEditionIsbn(workQid)
   if (!isbn) { console.log(`[backfillEdition] no ISBN for ${workQid} (work ${workId})`); return }
 
-  const meta = await fetchBookMetadata(isbn, apiKey)
-  if (!meta) { console.log(`[backfillEdition] no metadata for ISBN ${isbn}`); return }
-
-  // Set work_id directly (bypasses linkWork, which would mint a competing match-key work).
-  await db.prepare(`INSERT OR IGNORE INTO books
-      (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
-       physical_format, edition_name, physical_dimensions, work_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .bind(isbn, meta.title, meta.author, meta.cover_url, meta.language,
-          meta.publish_date, meta.number_of_pages_median, meta.description, meta.publisher,
-          meta.physical_format, meta.edition_name, meta.physical_dimensions, workId)
-    .run()
-  // If the ISBN row already existed unlinked (e.g. an earlier guest lookup), adopt it.
-  await db.prepare('UPDATE books SET work_id = ? WHERE isbn = ? AND work_id IS NULL').bind(workId, isbn).run()
+  const book = await materializeEdition(db, isbn, workId, apiKey)
+  if (!book) { console.log(`[backfillEdition] no metadata for ISBN ${isbn}`); return }
   console.log(`[backfillEdition] linked ISBN ${isbn} to work ${workId}`)
 }
 
@@ -383,23 +371,26 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     const pubDate        = details?.originalPubDate ?? null
     console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
 
+    // force=true (manual refresh): overwrite unconditionally so stale values can be cleared.
+    // force=false (sweeper backfill): COALESCE preserves existing values when Wikidata returns null.
+    const coalesce = (col: string) => force ? '?' : `COALESCE(?, ${col})`
     const updateResult = await db.prepare(`
       UPDATE works SET
         series_checked_at         = datetime('now'),
         enrichment_failed_at      = NULL,
         enrichment_attempts       = 0,
         enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
-        genres                    = COALESCE(?, genres),
-        original_pub_date         = COALESCE(?, original_pub_date),
-        awards                    = COALESCE(?, awards),
-        nominations               = COALESCE(?, nominations),
-        main_subject              = COALESCE(?, main_subject),
-        form_of_work              = COALESCE(?, form_of_work),
-        language_of_work          = COALESCE(?, language_of_work),
-        first_line                = COALESCE(?, first_line),
-        epigraph                  = COALESCE(?, epigraph),
-        narrative_locations       = COALESCE(?, narrative_locations),
-        countries_of_origin       = COALESCE(?, countries_of_origin)
+        genres                    = ${coalesce('genres')},
+        original_pub_date         = ${coalesce('original_pub_date')},
+        awards                    = ${coalesce('awards')},
+        nominations               = ${coalesce('nominations')},
+        main_subject              = ${coalesce('main_subject')},
+        form_of_work              = ${coalesce('form_of_work')},
+        language_of_work          = ${coalesce('language_of_work')},
+        first_line                = ${coalesce('first_line')},
+        epigraph                  = ${coalesce('epigraph')},
+        narrative_locations       = ${coalesce('narrative_locations')},
+        countries_of_origin       = ${coalesce('countries_of_origin')}
       WHERE id = ?`)
       .bind(genresJson, pubDate, awardsJson, nominJson,
             details?.mainSubject ?? null, details?.formOfWork ?? null,
@@ -410,10 +401,9 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
   } catch (e) {
     console.error('[enrichWork] failed for work', workId, e)
-    if (!merged) {
-      try {
-        await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(workId).run()
-      } catch {}
-    }
+    const failTarget = merged ? canonicalId : workId
+    try {
+      await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(failTarget).run()
+    } catch {}
   }
 }
