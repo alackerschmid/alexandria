@@ -764,7 +764,22 @@
                 </div>
 
                 <!-- other editions -->
-                <OtherEditions :book="book" />
+                <div v-if="book.work_id" class="mb-8">
+                  <button
+                    class="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+                    @click="editionsDialogOpen = true"
+                  >
+                    <v-icon icon="mdi-book-multiple-outline" size="14" />
+                    {{ $t("detail.view_editions") }}
+                  </button>
+                </div>
+                <EditionsDialog
+                  v-model="editionsDialogOpen"
+                  :book="book"
+                  :guest="guest"
+                  :readonly="readonly"
+                  @refreshed="$emit('refreshed', $event)"
+                />
 
                 <!-- custom fields (always editable) -->
                 <CustomFieldsPanel
@@ -848,7 +863,7 @@ import { useBookStatus } from "@/composables/useBookStatus";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { bookYear, formatPublishDate as formatDate } from "@/utils/book-display";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
-import OtherEditions from "@/components/book-detail/OtherEditions.vue";
+import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
 import BookEditForm from "@/components/book-detail/BookEditForm.vue";
 import type { ReadStatus } from "@/types/book";
@@ -880,6 +895,7 @@ const langDisplay = computed(() =>
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
 const mode = ref<"card" | "full">("card");
+const editionsDialogOpen = ref(false);
 
 function expand() {
   mode.value = "full";

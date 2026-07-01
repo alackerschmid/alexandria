@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
+import { fetchOpenLibraryEditions } from '../editions'
 
 export const works = new Hono<Env>()
 export const series = new Hono<Env>()
@@ -8,18 +9,103 @@ export const series = new Hono<Env>()
 works.use('*', authMiddleware)
 series.use('*', authMiddleware)
 
-// Other editions of the same work; scan_id != null marks the ones the user owns.
-works.get('/:workId/editions', async (c) => {
-  const userId = c.get('userId')
-  const { results } = await c.env.DB.prepare(`
+type EditionRow = {
+  isbn: string
+  title: string | null
+  language: string | null
+  cover_url: string | null
+  scan_id: number | null
+  materialized: boolean
+}
+
+async function loadEditions(db: D1Database, userId: number, workId: string) {
+  const { results: materialized } = await db.prepare(`
     SELECT b.isbn, b.title, b.language, b.cover_url, s.id AS scan_id
     FROM books b
     LEFT JOIN scans s ON s.book_id = b.id AND s.user_id = ?
     WHERE b.work_id = ?
     ORDER BY b.language`)
-    .bind(userId, c.req.param('workId'))
-    .all()
-  return c.json(results)
+    .bind(userId, workId)
+    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null; scan_id: number | null }>()
+
+  const { results: candidates } = await db.prepare(`
+    SELECT wei.isbn, wei.title, wei.language, wei.cover_url
+    FROM work_edition_isbns wei
+    WHERE wei.work_id = ? AND NOT EXISTS (SELECT 1 FROM books b WHERE b.isbn = wei.isbn)
+    ORDER BY wei.isbn`)
+    .bind(workId)
+    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null }>()
+
+  const editions: EditionRow[] = [
+    ...materialized.map(r => ({ ...r, materialized: true })),
+    ...candidates.map(r => ({ ...r, scan_id: null, materialized: false })),
+  ]
+
+  const work = await db.prepare('SELECT editions_checked_at FROM works WHERE id = ?')
+    .bind(workId)
+    .first<{ editions_checked_at: string | null }>()
+
+  return { searched: !!work?.editions_checked_at, editions }
+}
+
+// Other editions of the same work; scan_id != null marks the ones the user owns.
+// materialized:false rows are candidate ISBNs from an OpenLibrary discovery run
+// that haven't been fetched into `books` yet (see POST .../editions/discover).
+works.get('/:workId/editions', async (c) => {
+  const userId = c.get('userId')
+  const result = await loadEditions(c.env.DB, userId, c.req.param('workId'))
+  return c.json(result)
+})
+
+// User-triggered discovery of related editions via OpenLibrary's works/editions.json.
+// Idempotent: once works.editions_checked_at is set, subsequent calls are a no-op (returns the
+// existing list), so this is never called in a loop and stays polite to OpenLibrary.
+works.post('/:workId/editions/discover', async (c) => {
+  const userId = c.get('userId')
+  const workId = c.req.param('workId')
+  const db = c.env.DB
+
+  const work = await db.prepare('SELECT editions_checked_at FROM works WHERE id = ?')
+    .bind(workId)
+    .first<{ editions_checked_at: string | null }>()
+  if (!work) return c.json({ error: 'Work not found' }, 404)
+
+  let discoveryFailed = false
+
+  if (!work.editions_checked_at) {
+    const seed = await db.prepare(`
+      SELECT b.isbn FROM books b
+      LEFT JOIN scans s ON s.book_id = b.id AND s.user_id = ?
+      WHERE b.work_id = ?
+      ORDER BY s.id IS NULL LIMIT 1`)
+      .bind(userId, workId)
+      .first<{ isbn: string }>()
+
+    // related is null when the OpenLibrary lookup itself failed (network/timeout/non-2xx) —
+    // distinct from a successful call that found zero results. Only a successful call (found
+    // something or confirmed nothing) marks the work as searched; a failure leaves it retryable.
+    const related = seed ? await fetchOpenLibraryEditions(seed.isbn) : []
+    if (related === null) {
+      discoveryFailed = true
+    } else {
+      if (related.length) {
+        const { results: existingBooks } = await db.prepare('SELECT isbn FROM books WHERE work_id = ?').bind(workId).all<{ isbn: string }>()
+        const known = new Set(existingBooks.map(b => b.isbn))
+        const newEditions = related.filter(e => !known.has(e.isbn))
+
+        if (newEditions.length) {
+          await db.batch(newEditions.map(e =>
+            db.prepare('INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, source) VALUES (?, ?, ?, ?, ?, ?)')
+              .bind(workId, e.isbn, e.title, e.language, e.cover_url, 'openlibrary')))
+        }
+      }
+
+      await db.prepare("UPDATE works SET editions_checked_at = datetime('now') WHERE id = ?").bind(workId).run()
+    }
+  }
+
+  const result = await loadEditions(db, userId, workId)
+  return c.json({ ...result, discoveryFailed })
 })
 
 // Bulk membership: every entry of every series the user owns ≥1 book in.

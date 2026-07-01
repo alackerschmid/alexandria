@@ -2,9 +2,9 @@
 
 ## bugfixes
 
-- reset search fields in manual search after entry
-- adjust tooltip below scanner
-- go back to title search after title search success
+- ~~reset search fields in manual search after entry~~
+- ~~adjust tooltip below scanner~~
+- ~~go back to title search after title search success~~
 - ~~"show unowned" does not work in list view~~
 - "~~show only main" does not seem to work at all~~
 - ~~groupby filter does not persist across refresh / nav~~
@@ -24,10 +24,9 @@
 
 ## batch 2: improve library view
 
-- make compartmentalization pass ("STATUS_CONFIG composable extraction — spans LibraryRowCard, BookDetail, and scanner.vue; worth doing but needs a broader discussion since BookDetail is large.
-  Search/grouping composable extraction — parsedSearch/allGroups in index.vue are good candidates but are 600+ line extractions; architectural decision.")
+- ~~make compartmentalization pass ("STATUS_CONFIG composable extraction — spans LibraryRowCard, BookDetail, and scanner.vue; worth doing but needs a broader discussion since BookDetail is large. Search/grouping composable extraction — parsedSearch/allGroups in index.vue are good candidates but are 600+ line extractions; architectural decision.")~~
 - move "delete" to fourth option of reading status
-- back fill items when in group view so that there's always 4 items per row
+- ~~back fill items when in group view so that there's always 4 items per row~~
 
 ## batch 3: detail page
 
