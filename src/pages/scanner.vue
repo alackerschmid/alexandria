@@ -1340,7 +1340,7 @@ const submitTitleSearch = async () => {
 // onBarcodeDetected, which has camera-specific guards (sessionScanned) that would silently
 // no-op if the user had previously looked at this book in the same session.
 const selectCandidate = async (candidate: EditionCandidate) => {
-  if (scanState.value !== "scanning") return;
+  if (scanState.value !== "scanning" && scanState.value !== "preview") return;
   const isbn = candidate.isbn.toUpperCase();
 
   showSearchResults.value = false;

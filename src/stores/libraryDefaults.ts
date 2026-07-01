@@ -22,9 +22,11 @@ export const useLibraryDefaultsStore = defineStore('libraryDefaults', () => {
   const highlightComplete = ref<boolean>(boolFrom('libHighlightComplete', true))
   const showUnowned = ref<boolean>(boolFrom('libShowUnowned', false))
 
-  const groupBy = ref<GroupBy>(
-    (localStorage.getItem('libGroupBy') as GroupBy) || 'none',
-  )
+  const VALID_GROUP_BY: GroupBy[] = ['none', 'author', 'series', 'genre', 'status', 'publisher', 'language', 'form', 'country', 'decade', 'subject']
+  const rawGroupBy = localStorage.getItem('libGroupBy') ?? 'none'
+  const isValidGroupBy = (v: string): v is GroupBy =>
+    (VALID_GROUP_BY as string[]).includes(v) || /^cf:\d+$/.test(v)
+  const groupBy = ref<GroupBy>(isValidGroupBy(rawGroupBy) ? rawGroupBy : 'none')
   const sortDirection = ref<SortOption>(
     (localStorage.getItem('libSortDirection') as SortOption) || 'desc',
   )
