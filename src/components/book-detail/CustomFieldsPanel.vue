@@ -21,55 +21,22 @@
             >{{ def.name }}</label
           >
 
-          <!-- tag: multi-value combobox with global-delete suggestions -->
-          <v-combobox
+          <!-- tag: multi-value input with global-delete suggestions -->
+          <TagInput
             v-if="def.type === 'tag'"
             :model-value="(customFieldValues[def.id] as string[]) ?? []"
-            :items="fieldDefsStore.tagValues[def.id] ?? []"
-            multiple
-            chips
-            closable-chips
-            density="compact"
-            variant="outlined"
-            hide-details
+            :suggestions="fieldDefsStore.tagValues[def.id] ?? []"
             :placeholder="$t('detail.tag_add')"
+            :confirming-value="confirmingValueFor(def.id)"
+            :delete-title="$t('detail.tag_delete')"
+            :delete-confirm-title="
+              (tag: string) => $t('detail.tag_delete_confirm', { tag })
+            "
             @update:model-value="onTagChange(def.id, $event)"
-            @update:menu="(open: boolean) => onTagMenu(def.id, open)"
-          >
-            <template #item="{ props: itemProps }">
-              <v-list-item v-bind="itemProps">
-                <template #append>
-                  <button
-                    class="ml-2 shrink-0 transition-colors"
-                    :class="
-                      confirmingTag === `${def.id}:${itemProps.title}`
-                        ? 'text-error'
-                        : 'text-text-secondary/40 hover:text-error'
-                    "
-                    :title="
-                      confirmingTag === `${def.id}:${itemProps.title}`
-                        ? $t('detail.tag_delete_confirm', {
-                            tag: itemProps.title,
-                          })
-                        : $t('detail.tag_delete')
-                    "
-                    @click.stop="
-                      confirmDeleteTag(def.id, String(itemProps.title))
-                    "
-                  >
-                    <v-icon
-                      :icon="
-                        confirmingTag === `${def.id}:${itemProps.title}`
-                          ? 'mdi-delete'
-                          : 'mdi-close'
-                      "
-                      size="14"
-                    />
-                  </button>
-                </template>
-              </v-list-item>
-            </template>
-          </v-combobox>
+            @open="onTagOpen(def.id)"
+            @close="confirmingTag = null"
+            @delete-suggestion="confirmDeleteTag(def.id, $event)"
+          />
 
           <!-- date -->
           <input
@@ -154,6 +121,7 @@ import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { parseTagList } from "@/utils/tags";
 import type { Book } from "@/types/book";
 import type { CustomFieldValue } from "@/components/BookDetail.vue";
+import TagInput from "@/components/book-detail/TagInput.vue";
 
 const props = defineProps<{
   book: Book;
@@ -229,9 +197,14 @@ function onTagChange(id: number, value: unknown) {
   saveCustomFields();
 }
 
-function onTagMenu(id: number, open: boolean) {
-  if (open) fieldDefsStore.loadTagValues(id);
-  else confirmingTag.value = null;
+function onTagOpen(id: number) {
+  fieldDefsStore.loadTagValues(id);
+}
+
+function confirmingValueFor(id: number): string | null {
+  if (!confirmingTag.value) return null;
+  const [defId, ...rest] = confirmingTag.value.split(":");
+  return Number(defId) === id ? rest.join(":") : null;
 }
 
 async function confirmDeleteTag(id: number, value: string) {
