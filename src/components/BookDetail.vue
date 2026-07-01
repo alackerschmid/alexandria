@@ -276,9 +276,9 @@
             <div
               class="w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10 py-10 md:py-14 flex flex-col md:flex-row items-start gap-10 lg:gap-14"
             >
-              <!-- cover column (desktop only, sticky) -->
+              <!-- cover column (desktop only) -->
               <div
-                class="hidden md:flex md:w-56 lg:w-64 shrink-0 flex-col items-center sticky top-0 self-start pt-2"
+                class="hidden md:flex md:w-56 lg:w-64 shrink-0 flex-col items-center pt-2"
               >
                 <div class="w-48 h-72 relative">
                   <img
@@ -308,10 +308,13 @@
                   </div>
                 </div>
 
+                <!-- edition details (desktop) -->
+                <EditionDetails :book="book" class="w-full mt-6" />
+
                 <!-- other editions -->
                 <button
                   v-if="book.work_id"
-                  class="mt-6 flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+                  class="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-text-secondary hover:text-text-primary transition-colors"
                   @click="editionsDialogOpen = true"
                 >
                   <v-icon icon="mdi-book-multiple-outline" size="14" />
@@ -378,38 +381,6 @@
                     :icon-size="11"
                   />
 
-                  <!-- status segmented control -->
-                  <div v-if="!readonly" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("library.filter_status") }}
-                    </div>
-                    <div class="flex max-w-xs border border-charcoal-border">
-                      <button
-                        v-for="opt in STATUS_OPTIONS"
-                        :key="opt.status"
-                        class="flex-1 flex items-center justify-center gap-2 py-3 text-[11px] tracking-[0.14em] uppercase font-medium transition-all border-r border-charcoal-border last:border-r-0"
-                        :class="
-                          book.status === opt.status
-                            ? `bg-orange-neon/10 ${opt.activeClass}`
-                            : 'text-text-secondary/50 hover:text-text-secondary'
-                        "
-                        @click="$emit('set-status', opt.status)"
-                      >
-                        <span
-                          class="w-1.5 h-1.5 rounded-full shrink-0"
-                          :class="
-                            book.status === opt.status
-                              ? opt.dotClass
-                              : 'bg-charcoal-border'
-                          "
-                        />
-                        {{ opt.label }}
-                      </button>
-                    </div>
-                  </div>
-
                   <!-- synopsis -->
                   <div v-if="book.description" class="mb-10">
                     <div
@@ -473,157 +444,8 @@
                     </p>
                   </div>
 
-                  <!-- edition -->
-                  <div class="pt-8 border-t border-charcoal-border mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
-                    >
-                      {{ $t("detail.edition") }}
-                    </div>
-                    <div
-                      v-if="book.publisher"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
-                      >
-                        {{ $t("detail.publisher") }}
-                        <span
-                          v-if="book.publisher_overridden"
-                          class="w-1 h-1 rounded-full bg-orange-neon"
-                        />
-                      </span>
-                      <button
-                        class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors text-right truncate"
-                        @click="filterBy('publisher', book.publisher!)"
-                      >
-                        {{ book.publisher }}
-                      </button>
-                    </div>
-                    <div
-                      v-if="book.language"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
-                      >
-                        {{ $t("detail.language") }}
-                        <span
-                          v-if="book.language_overridden"
-                          class="w-1 h-1 rounded-full bg-orange-neon"
-                        />
-                      </span>
-                      <button
-                        class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors"
-                        @click="filterBy('language', book.language!)"
-                      >
-                        {{ langDisplay(book.language) }}
-                      </button>
-                    </div>
-                    <div
-                      v-if="book.publish_date"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
-                      >
-                        {{ $t("detail.published") }}
-                        <span
-                          v-if="book.publish_date_overridden"
-                          class="w-1 h-1 rounded-full bg-orange-neon"
-                        />
-                      </span>
-                      <span
-                        class="font-mono text-xs text-text-primary text-right"
-                        >{{ formatPublishDate(book.publish_date) }}</span
-                      >
-                    </div>
-                    <div
-                      v-if="book.number_of_pages_median"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
-                      >
-                        {{ $t("detail.pages") }}
-                        <span
-                          v-if="book.pages_overridden"
-                          class="w-1 h-1 rounded-full bg-orange-neon"
-                        />
-                      </span>
-                      <span class="font-mono text-xs text-text-primary">{{
-                        book.number_of_pages_median
-                      }}</span>
-                    </div>
-                    <div
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-                        >{{ $t("detail.isbn") }}</span
-                      >
-                      <span class="flex items-center gap-2">
-                        <span
-                          class="font-mono text-xs text-text-primary text-right"
-                          >{{ book.isbn }}</span
-                        >
-                        <button
-                          class="shrink-0 transition-colors"
-                          :class="
-                            isbnCopied
-                              ? 'text-success'
-                              : 'text-text-secondary/40 hover:text-text-secondary'
-                          "
-                          :title="$t('detail.copy_isbn')"
-                          :aria-label="$t('detail.copy_isbn')"
-                          @click="copyIsbn"
-                        >
-                          <v-icon
-                            :icon="isbnCopied ? 'mdi-check' : 'mdi-content-copy'"
-                            size="13"
-                          />
-                        </button>
-                      </span>
-                    </div>
-                    <div
-                      v-if="book.original_pub_date"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-                        >{{ $t("detail.original_pub_date") }}</span
-                      >
-                      <span class="font-mono text-xs text-text-primary">{{
-                        book.original_pub_date
-                      }}</span>
-                    </div>
-                    <div
-                      v-if="book.edition_name"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-                        >{{ $t("detail.edition_name") }}</span
-                      >
-                      <span
-                        class="font-mono text-xs text-text-primary text-right"
-                        >{{ book.edition_name }}</span
-                      >
-                    </div>
-                    <div
-                      v-if="book.physical_dimensions"
-                      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-                    >
-                      <span
-                        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-                        >{{ $t("detail.physical_dimensions") }}</span
-                      >
-                      <span
-                        class="font-mono text-xs text-text-primary text-right"
-                        >{{ book.physical_dimensions }}</span
-                      >
-                    </div>
-                  </div>
+                  <!-- edition details (mobile only; desktop shows this under the cover) -->
+                  <EditionDetails :book="book" class="md:hidden" />
 
                   <EditionsDialog
                     v-model="editionsDialogOpen"
@@ -642,6 +464,46 @@
                     class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-5"
                   >
                     {{ $t("detail.your_record") }}
+                  </div>
+
+                  <!-- status picker -->
+                  <div
+                    v-if="!readonly"
+                    class="pb-4 border-b border-charcoal-border/50"
+                  >
+                    <div
+                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-3"
+                    >
+                      {{ $t("library.filter_status") }}
+                    </div>
+                    <div
+                      class="relative flex w-full rounded-full p-1"
+                      style="background: rgba(255, 255, 255, 0.045)"
+                    >
+                      <div
+                        class="absolute top-1 bottom-1 rounded-full transition-[left] duration-200 ease-out"
+                        :style="statusThumbStyle"
+                      />
+                      <button
+                        v-for="s in STATUS_ORDER"
+                        :key="s"
+                        type="button"
+                        class="relative z-10 flex-1 py-2 text-[10px] tracking-[0.13em] uppercase font-semibold transition-colors"
+                        :class="
+                          book.status !== s
+                            ? 'text-text-secondary/60 hover:text-text-secondary'
+                            : ''
+                        "
+                        :style="
+                          book.status === s
+                            ? { color: STATUS_META[s].color }
+                            : ''
+                        "
+                        @click="$emit('set-status', s)"
+                      >
+                        {{ statusLabels[s] }}
+                      </button>
+                    </div>
                   </div>
 
                   <div class="pb-4 border-b border-charcoal-border/50">
@@ -753,7 +615,10 @@
                         />
                       </span>
                     </button>
-                    <div v-if="recognitionExpanded" class="mt-3 flex flex-col gap-3">
+                    <div
+                      v-if="recognitionExpanded"
+                      class="mt-3 flex flex-col gap-3"
+                    >
                       <div v-if="book.awards?.length">
                         <div
                           class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
@@ -853,14 +718,18 @@ import { ref, reactive, watch, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
-import { useBookStatus } from "@/composables/useBookStatus";
+import {
+  useBookStatus,
+  STATUS_ORDER,
+  STATUS_META,
+} from "@/composables/useBookStatus";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
-import { bookYear, formatPublishDate as formatDate } from "@/utils/book-display";
+import { bookYear } from "@/utils/book-display";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
+import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
 import BookEditForm from "@/components/book-detail/BookEditForm.vue";
 import type { ReadStatus } from "@/types/book";
@@ -881,13 +750,10 @@ const emit = defineEmits<{
 }>();
 
 const { apiFetch } = useApi();
-const { statusConfig: STATUS_CONFIG, statusOptions: STATUS_OPTIONS } = useBookStatus();
+const { statusConfig: STATUS_CONFIG, statusLabels } = useBookStatus();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
-const langDisplay = computed(() =>
-  languageDisplayFormatter(localeStore.locale),
-);
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
@@ -902,6 +768,17 @@ function expand() {
 
 const publishYear = computed(() => bookYear(props.book) || "—");
 
+const statusThumbStyle = computed(() => {
+  const index = STATUS_ORDER.indexOf(props.book.status);
+  const meta = STATUS_META[props.book.status];
+  return {
+    left: `calc(4px + ${index} * (100% - 8px) / 3)`,
+    width: `calc((100% - 8px) / 3)`,
+    background: meta.tint,
+    border: `1px solid ${meta.color}`,
+  };
+});
+
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 
 const formattedAdded = computed(() => {
@@ -914,16 +791,10 @@ const formattedAdded = computed(() => {
   });
 });
 
-// ── Formatting ────────────────────────────────────────────────────────────────
-
-const formatPublishDate = (date: string | null | undefined) =>
-  formatDate(date, localeStore.locale);
-
 // ── Edit state ────────────────────────────────────────────────────────────────
 
 const descriptionExpanded = ref(false);
 const refreshing = ref(false);
-const isbnCopied = ref(false);
 const recognitionExpanded = ref(false);
 const editing = ref(false);
 const saving = ref(false);
@@ -957,17 +828,8 @@ function goToSeries() {
   router.push(`/series/${props.book.series_id}`);
 }
 
-function filterBy(
-  field: "author" | "genre" | "publisher" | "language",
-  value: string,
-) {
+function filterBy(field: "author" | "genre", value: string) {
   router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
-}
-
-async function copyIsbn() {
-  await navigator.clipboard.writeText(props.book.isbn);
-  isbnCopied.value = true;
-  setTimeout(() => (isbnCopied.value = false), 1500);
 }
 
 // ── Watchers ──────────────────────────────────────────────────────────────────
@@ -1102,5 +964,4 @@ const refresh = async () => {
     refreshing.value = false;
   }
 };
-
 </script>

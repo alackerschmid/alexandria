@@ -16,7 +16,7 @@
 
 ## batch 1: making series more robust
 
-- incorporate librarything search for related ISBNs (<https://www.librarything.com/developer/documentation/thingapis>) (You can make only one request per second on an API.)
+- ~~incorporate librarything search for related ISBNs (<https://www.librarything.com/developer/documentation/thingapis>) (You can make only one request per second on an API.)~~
 - look at <https://isbndb.com>
 - properly handle multilingual editions:
   - intended behaviour: different editions of one book are all grouped by one identifier (different print, format, language etc.)
@@ -31,13 +31,6 @@
 ## batch 3: detail page
 
 - metadata in list items is lacking
-- make isbn copyable w/ copy button
-- adjust layout of detail page:
-  - triple column layout:
-  - col1: cover
-  - col2: title, series (more prominent, also display position in series), reading status, author, description, genres, prizes
-  - col3: edition stats, your stats (added on, custom fields)
-  - buttons?
 - look at books w/o cover
 - edit should allow editing all fields (new ones are missing) (also not the cover url tho)
 - overhaul edit process
