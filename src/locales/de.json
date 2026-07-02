@@ -76,6 +76,8 @@
     "total_pages_read": "Gelesene Seiten",
     "authors_label": "Autoren",
     "genres_label": "Genres",
+    "decade_genre_line": "In den {decade} hast du hauptsächlich {genre} ({count} von {total}) gelesen.",
+    "translation_ratio": "Prozentsatz an übersetzten Büchern",
     "time_just_now": "Gerade eben",
     "time_hours_ago": "Vor {n}h",
     "time_yesterday": "Gestern",
