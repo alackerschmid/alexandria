@@ -6,9 +6,6 @@ add confirmation for switch
 
 ## bugfixes
 
-- ~~bar chart on home page doesnt adhere to accent styling~~
-- ~~modify buttons on setting page to adhere to black font~~
-- "find more editions" call doesnt show metadata
 - veirfy switch edition logic
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - only display "series lookup pending" if it is actually pending
@@ -25,11 +22,7 @@ add confirmation for switch
 
 ## batch 2: improve library view
 
-- improve navigation on mobile (no fixed header usw)
-- ~~make compartmentalization pass ("STATUS_CONFIG composable extraction — spans LibraryRowCard, BookDetail, and scanner.vue; worth doing but needs a broader discussion since BookDetail is large. Search/grouping composable extraction — parsedSearch/allGroups in index.vue are good candidates but are 600+ line extractions; architectural decision.")~~
 - move "delete" to fourth option of reading status
-- ~~back fill items when in group view so that there's always 4 items per row~~
-- ~~remove delete button~~
 
 ## batch 3: detail page
 
@@ -46,17 +39,14 @@ add confirmation for switch
 - add "rating" as field, should be asked in the scanner view after selecting "read"
 - show version number + release notes in the footer
 - general legibility / contrast etc. check
-- ~~should be able to manualyl enter title / isbn on mobile too~~
 - design uniform view for chip items (dropdown values when selected, genres, ...)
-- write some taglines for the stats page
+- write some taglines for the stats page, implement dynamic stats taglines
 
 ## big picture items
 
 - wishlist feature
 - "missing" filter that highlights incomplete series
 - "to sell" marker
-- "dnf" shelf
-- ~~support for books w/o isbn~~
 - mass import books before prod go-live to prep enrichment (-> how?)
 - bulk editing / import
 - incorporate CV page

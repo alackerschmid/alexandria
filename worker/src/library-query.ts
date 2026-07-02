@@ -143,4 +143,4 @@ export function attachCustomFields(
   }
 }
 
-export const VALID_STATUSES = ['unread', 'reading', 'read'] as const
+export const VALID_STATUSES = ['unread', 'reading', 'read', 'dnf'] as const

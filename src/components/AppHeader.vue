@@ -38,19 +38,6 @@
             role="menu"
             :style="{ background: themeStore.isDark ? '#1c1b19' : '#f5f2ed', minWidth: '180px' }"
           >
-            <!-- Primary nav: mirrored here since the header nav is desktop-only -->
-            <template v-if="authStore.isAuthenticated">
-              <router-link
-                v-for="link in navLinks"
-                :key="link.to"
-                :to="link.to"
-                role="menuitem"
-                class="md:hidden w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
-              >
-                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ link.label }}</span>
-              </router-link>
-              <div class="md:hidden border-t border-charcoal-border my-1" />
-            </template>
             <button
               role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
@@ -67,16 +54,7 @@
               <v-icon icon="mdi-translate" size="14" class="text-text-secondary shrink-0" />
               <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ localeStore.locale === 'en' ? 'Deutsch' : 'English' }}</span>
             </button>
-            <button
-              v-if="authStore.isAuthenticated"
-              role="menuitem"
-              class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
-              @click="router.push('/settings')"
-            >
-              <v-icon icon="mdi-cog-outline" size="14" class="text-text-secondary shrink-0" />
-              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('settings.nav_label') }}</span>
-            </button>
-            <div class="border-t border-charcoal-border my-1" />
+            <div v-if="authStore.isAuthenticated" class="border-t border-charcoal-border my-1" />
             <button
               v-if="authStore.isAuthenticated"
               role="menuitem"
@@ -118,6 +96,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
+import { useNavLinks } from '@/composables/useNavLinks'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -125,6 +104,7 @@ const router = useRouter()
 const authStore = useAuthStore()
 const themeStore = useThemeStore()
 const localeStore = useLocaleStore()
+const { navLinks } = useNavLinks()
 
 // "G" for guests; otherwise the first name's initial, falling back to the email.
 const userInitial = computed(() => {
@@ -132,10 +112,4 @@ const userInitial = computed(() => {
   const source = authStore.firstname || authStore.email || ''
   return source.charAt(0).toUpperCase()
 })
-
-const navLinks = computed(() => [
-  { name: 'dashboard', to: '/home', label: t('home.nav_home') },
-  { name: 'library',   to: '/library', label: t('home.nav_library') },
-  { name: 'scanner',   to: '/scanner', label: t('home.nav_scan') },
-])
 </script>

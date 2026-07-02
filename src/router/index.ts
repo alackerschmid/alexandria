@@ -13,6 +13,13 @@ import Login from '@/pages/login.vue'
 import Scanner from '@/pages/scanner.vue'
 import { useAuthStore, WELCOME_SEEN_KEY } from '@/stores/auth'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** Show the persistent mobile bottom tab bar (Home / Scan / Settings) on this route. */
+    mobileNav?: boolean
+  }
+}
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -25,11 +32,13 @@ const router = createRouter({
       path: '/home',
       name: 'dashboard',
       component: Home,
+      meta: { mobileNav: true },
     },
     {
       path: '/library',
       name: 'library',
       component: Index,
+      meta: { mobileNav: true },
     },
     {
       path: '/scanner',
@@ -50,11 +59,13 @@ const router = createRouter({
       path: '/series/:id',
       name: 'series',
       component: () => import('@/pages/series.vue'),
+      meta: { mobileNav: true },
     },
     {
       path: '/settings',
       name: 'settings',
       component: () => import('@/pages/settings.vue'),
+      meta: { mobileNav: true },
     },
     {
       path: '/privacy',

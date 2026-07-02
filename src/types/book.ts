@@ -1,4 +1,4 @@
-export type ReadStatus = 'unread' | 'reading' | 'read'
+export type ReadStatus = 'unread' | 'reading' | 'read' | 'dnf'
 
 export interface Book {
   id: number

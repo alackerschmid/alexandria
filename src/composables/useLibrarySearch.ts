@@ -4,12 +4,13 @@ import { useLocaleStore } from '@/stores/locale'
 import { parseTagList } from '@/utils/tags'
 import { bookCustomValue } from '@/utils/custom-fields'
 import { languageDisplayFormatter } from '@/utils/language'
+import { STATUS_ORDER } from '@/composables/useBookStatus'
 import type { Book, ReadStatus } from '@/types/book'
 import type { CustomFieldMeta } from '@/composables/useGroupDimensions'
 
 // Structured search keys with first-class handling (status:, author:, genre:, …).
 // Custom-field slugs are appended at runtime.
-const STATUS_VALUES = new Set<ReadStatus>(['unread', 'reading', 'read'])
+const STATUS_VALUES = new Set<ReadStatus>(STATUS_ORDER)
 
 const BUILTIN_KEYS = [
   'status',
@@ -84,8 +85,11 @@ export function useLibrarySearch(options: {
   books: ComputedRef<Book[]> | Ref<Book[]>
   search: Ref<string>
   customFieldMetas: ComputedRef<CustomFieldMeta[]>
+  /** Resolves the status used for `status:` filtering — lets callers freeze a book's
+   *  bucket membership after an in-place status edit instead of using the live value. */
+  statusOf?: (b: Book) => ReadStatus
 }) {
-  const { books, search, customFieldMetas } = options
+  const { books, search, customFieldMetas, statusOf = (b: Book) => b.status } = options
   const { t } = useI18n()
   const localeStore = useLocaleStore()
   const langFmt = computed(() => languageDisplayFormatter(localeStore.locale))
@@ -227,7 +231,7 @@ export function useLibrarySearch(options: {
     let list = books.value
 
     if (status) {
-      list = list.filter(b => b.status === status)
+      list = list.filter(b => statusOf(b) === status)
     }
     if (series) {
       list = list.filter(b => b.series_name?.toLowerCase().includes(series))
@@ -319,7 +323,7 @@ export function useLibrarySearch(options: {
     const entries: SuggestionFacet[] = []
 
     // Only suggest statuses that actually exist in the current filtered pool
-    const presentStatuses = new Set(pool.map(b => b.status))
+    const presentStatuses = new Set(pool.map(statusOf))
     for (const [val, label] of [
       ['read', t('book.read')],
       ['reading', t('book.reading')],

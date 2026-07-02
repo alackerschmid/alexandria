@@ -4,6 +4,41 @@
       {{ $t('library.display_options') }}
     </p>
 
+    <div
+      v-if="showViewRow"
+      class="flex items-center justify-between gap-5 w-full border-b border-charcoal-border py-3.5"
+    >
+      <span class="text-xs text-text-primary">{{ $t('library.view_label') }}</span>
+      <div class="flex">
+        <button
+          class="flex items-center gap-1.5 h-8 px-3.5 border -ml-px first:ml-0 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors"
+          :class="
+            viewMode === 'list'
+              ? 'border-charcoal-border text-orange-neon bg-charcoal'
+              : 'border-charcoal-border text-text-secondary'
+          "
+          :aria-pressed="viewMode === 'list'"
+          @click="viewMode = 'list'"
+        >
+          <v-icon icon="mdi-view-list" size="14" />
+          {{ $t('settings.defaults.view_list') }}
+        </button>
+        <button
+          class="flex items-center gap-1.5 h-8 px-3.5 border -ml-px first:ml-0 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors"
+          :class="
+            viewMode === 'tile'
+              ? 'border-charcoal-border text-orange-neon bg-charcoal'
+              : 'border-charcoal-border text-text-secondary'
+          "
+          :aria-pressed="viewMode === 'tile'"
+          @click="viewMode = 'tile'"
+        >
+          <v-icon icon="mdi-view-grid" size="14" />
+          {{ $t('settings.defaults.view_tile') }}
+        </button>
+      </div>
+    </div>
+
     <button
       v-if="seriesContext"
       class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
@@ -52,8 +87,11 @@
 const mainOnly = defineModel<boolean>('mainOnly', { required: true })
 const highlightComplete = defineModel<boolean>('highlightComplete', { required: true })
 const showUnowned = defineModel<boolean>('showUnowned', { required: true })
+const viewMode = defineModel<'list' | 'tile'>('viewMode')
 
-defineProps<{ seriesContext: boolean }>()
+withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {
+  showViewRow: false,
+})
 
 const track = (on: boolean) =>
   `shrink-0 w-9 h-5 rounded-full relative transition-colors ${on ? 'bg-orange-neon' : 'bg-charcoal-border'}`

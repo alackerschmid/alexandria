@@ -5,15 +5,19 @@
         <router-view />
       </div>
     </v-main>
+    <MobileTabBar v-if="route.meta.mobileNav" />
   </v-app>
 </template>
 
 <script lang="ts" setup>
 import { watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { useThemeStore } from '@/stores/theme'
 import { useAccentStore } from '@/stores/accent'
+import MobileTabBar from '@/components/MobileTabBar.vue'
 
+const route = useRoute()
 const vuetifyTheme = useTheme()
 const themeStore = useThemeStore()
 const accentStore = useAccentStore()

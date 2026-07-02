@@ -90,7 +90,7 @@
               class="absolute inset-0 flex items-center pointer-events-none overflow-hidden"
             >
               <div
-                class="whitespace-pre text-sm md:text-base"
+                class="whitespace-pre text-base"
                 :style="{ transform: `translateX(-${searchScrollLeft}px)` }"
               >
                 <template v-for="(seg, i) in searchSegments" :key="i">
@@ -111,9 +111,13 @@
               :aria-expanded="searchFocused"
               aria-autocomplete="list"
               aria-controls="library-search-listbox"
-              :aria-activedescendant="searchFocused && activeIndex >= 0 ? `library-search-option-${activeIndex}` : undefined"
+              :aria-activedescendant="
+                searchFocused && activeIndex >= 0
+                  ? `library-search-option-${activeIndex}`
+                  : undefined
+              "
               :placeholder="$t('library.search_placeholder_smart')"
-              class="relative w-full bg-transparent text-transparent caret-text-primary text-sm md:text-base outline-none focus-ring-none placeholder:text-text-secondary/40"
+              class="relative w-full bg-transparent text-transparent caret-text-primary text-base outline-none focus-ring-none placeholder:text-text-secondary/40"
               :class="{ 'token-selecting': tokenSelecting }"
               @focus="searchFocused = true"
               @blur="onSearchBlur"
@@ -369,62 +373,73 @@
       </div>
     </div>
 
-    <!-- ── Mobile control bar: group trigger + view + display (one line) ─────── -->
+    <!-- ── Mobile control bar: sticky, quick search + group trigger + display ── -->
     <div
-      class="md:hidden flex items-center gap-2.5 px-6 py-4 border-b border-charcoal-border shrink-0"
+      class="md:hidden sticky top-0 z-25 bg-charcoal border-b border-charcoal-border shrink-0"
     >
-      <button
-        class="flex items-center gap-2.5 flex-1 min-w-0 bg-charcoal-light border border-charcoal-border px-3.5 py-3 text-left"
-        @click="groupSheetOpen = true"
-      >
-        <span
-          class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary/70 shrink-0"
-          >{{ $t("library.group_by") }}</span
-        >
-        <span
-          class="flex-1 min-w-0 truncate font-mono text-xs text-text-primary"
-          >{{ currentGroupLabel }}</span
-        >
-        <span class="text-orange-neon text-sm shrink-0">{{
-          sortDirection === "asc" ? "↑" : "↓"
-        }}</span>
-        <span class="text-text-secondary/60 text-[9px] shrink-0">▼</span>
-      </button>
-      <div class="flex shrink-0">
+      <div class="flex items-center gap-2.5 px-6 py-3">
         <button
-          class="flex items-center justify-center w-8.5 h-8.5 border -ml-px first:ml-0 transition-colors"
+          class="flex items-center justify-center w-8.5 h-8.5 border transition-colors shrink-0"
           :class="
-            viewMode === 'list'
-              ? 'border-charcoal-border text-orange-neon bg-charcoal'
+            mobileSearchOpen
+              ? 'border-orange-neon text-orange-neon bg-orange-neon/10'
               : 'border-charcoal-border text-text-secondary'
           "
-          :aria-label="$t('library.view_list')"
-          :aria-pressed="viewMode === 'list'"
-          @click="viewMode = 'list'"
+          :aria-label="$t('library.search_field_label')"
+          :aria-pressed="mobileSearchOpen"
+          @click="mobileSearchOpen = !mobileSearchOpen"
         >
-          <v-icon icon="mdi-view-list" size="16" />
+          <v-icon icon="mdi-magnify" size="16" />
         </button>
         <button
-          class="flex items-center justify-center w-8.5 h-8.5 border -ml-px first:ml-0 transition-colors"
-          :class="
-            viewMode === 'tile'
-              ? 'border-charcoal-border text-orange-neon bg-charcoal'
-              : 'border-charcoal-border text-text-secondary'
-          "
-          :aria-label="$t('library.view_tile')"
-          :aria-pressed="viewMode === 'tile'"
-          @click="viewMode = 'tile'"
+          class="flex items-center gap-2.5 flex-1 min-w-0 bg-charcoal-light border border-charcoal-border px-3.5 py-3 text-left"
+          @click="groupSheetOpen = true"
         >
-          <v-icon icon="mdi-view-grid" size="16" />
+          <span
+            class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary/70 shrink-0"
+            >{{ $t("library.group_by") }}</span
+          >
+          <span
+            class="flex-1 min-w-0 truncate font-mono text-xs text-text-primary"
+            >{{ currentGroupLabel }}</span
+          >
+          <span class="text-orange-neon text-sm shrink-0">{{
+            sortDirection === "asc" ? "↑" : "↓"
+          }}</span>
+          <span class="text-text-secondary/60 text-[9px] shrink-0">▼</span>
+        </button>
+        <button
+          class="flex items-center justify-center w-8.5 h-8.5 border border-charcoal-border text-text-secondary shrink-0"
+          :aria-label="$t('library.display')"
+          @click="displayMenu = true"
+        >
+          <v-icon icon="mdi-cog-outline" size="16" />
         </button>
       </div>
-      <button
-        class="flex items-center justify-center w-8.5 h-8.5 border border-charcoal-border text-text-secondary shrink-0"
-        :aria-label="$t('library.display')"
-        @click="displayMenu = true"
-      >
-        <v-icon icon="mdi-cog-outline" size="16" />
-      </button>
+
+      <!-- Quick search: expands inline, shares the hero search state -->
+      <div v-if="mobileSearchOpen" class="flex items-center gap-2.5 px-6 pb-3">
+        <div
+          class="flex items-center gap-2.5 flex-1 min-w-0 bg-search-bg border border-orange-neon px-3.5 py-2.5"
+        >
+          <v-icon icon="mdi-magnify" size="14" color="primary" />
+          <input
+            v-model="search"
+            type="text"
+            :aria-label="$t('library.search_field_label')"
+            :placeholder="$t('library.search_placeholder_smart')"
+            class="flex-1 min-w-0 bg-transparent text-text-primary text-xs outline-none placeholder:text-text-secondary/40"
+          />
+          <button
+            v-if="search"
+            class="text-text-secondary hover:text-text-primary transition-colors shrink-0"
+            :aria-label="$t('library.clear_search')"
+            @click="search = ''"
+          >
+            <v-icon icon="mdi-close" size="13" />
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Mobile group picker bottom sheet -->
@@ -487,6 +502,8 @@
           v-model:main-only="mainOnly"
           v-model:highlight-complete="highlightComplete"
           v-model:show-unowned="showUnowned"
+          v-model:view-mode="viewMode"
+          show-view-row
           :series-context="seriesContext"
         >
           <template #extra>
@@ -574,7 +591,9 @@
               <span
                 v-else
                 class="font-heading text-2xl font-bold min-w-0 truncate"
-                :class="group.complete ? 'text-orange-neon' : 'text-text-primary'"
+                :class="
+                  group.complete ? 'text-orange-neon' : 'text-text-primary'
+                "
               >
                 {{ group.label }}
               </span>
@@ -664,7 +683,7 @@
       <!-- Tile -->
       <div
         v-if="viewMode === 'tile'"
-        class="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4"
+        class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4"
       >
         <LibraryCoverCard
           v-for="book in pagedBooks"
@@ -702,21 +721,6 @@
 
     <AppFooter class="mt-auto" />
 
-    <!-- Mobile scan FAB -->
-    <button
-      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 md:hidden flex items-center justify-center gap-2 rounded-full py-4 text-[10px] font-bold tracking-[0.25em] uppercase"
-      style="
-        background: rgb(var(--v-theme-primary));
-        color: #111110;
-        min-width: 58vw;
-        box-shadow: 0 4px 28px rgba(255, 102, 0, 0.3);
-      "
-      @click="$router.push('/scanner')"
-    >
-      <v-icon icon="mdi-camera" size="15" style="color: #111110" />
-      {{ $t("home.start_scanning") }}
-    </button>
-
     <!-- Book detail dialog -->
     <BookDetail
       v-if="selectedBook"
@@ -751,14 +755,16 @@
               title: bookToDelete?.title || bookToDelete?.isbn,
             })
           }}
-          <p v-if="deleteFailed" class="text-error mt-2">{{ $t("library.error_delete") }}</p>
+          <p v-if="deleteFailed" class="text-error mt-2">
+            {{ $t("library.error_delete") }}
+          </p>
         </v-card-text>
         <v-card-actions class="px-4 pb-4 gap-2">
           <v-spacer />
           <v-btn
             variant="text"
             size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
+            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary px-1.5"
             @click="deleteDialog = false"
           >
             {{ $t("library.cancel") }}
@@ -768,7 +774,7 @@
             size="small"
             color="error"
             rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase"
+            class="text-[10px] tracking-[0.2em] uppercase px-1.5"
             :loading="deleting"
             @click="confirmDelete"
           >
@@ -859,7 +865,10 @@ const sortDirection = computed({
   get: () => libraryDefaultsStore.sortDirection,
   set: (v) => libraryDefaultsStore.setSortDirection(v),
 });
-const viewMode = ref<"list" | "tile">(libraryDefaultsStore.defaultView);
+const viewMode = computed({
+  get: () => libraryDefaultsStore.defaultView,
+  set: (v) => libraryDefaultsStore.setView(v),
+});
 const searchRef = ref<HTMLInputElement | null>(null);
 
 // ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
@@ -867,8 +876,22 @@ const allBooks = computed<Book[]>(() =>
   isGuest.value ? guestStore.scans : serverBooks.value,
 );
 
+// Status used at the moment a book was last placed into the current filtered/grouped
+// view. Cycling a book's status in-place pins its old bucket here so it doesn't jump
+// or vanish out from under the user; cleared whenever the view is re-filtered.
+const statusOverrides = ref(new Map<number, ReadStatus>());
+const statusOf = (b: Book): ReadStatus =>
+  statusOverrides.value.get(b.id) ?? b.status;
+function pinStatus(book: Book) {
+  if (!statusOverrides.value.has(book.id))
+    statusOverrides.value.set(book.id, book.status);
+}
+watch([search, groupBy, sortDirection], () => {
+  statusOverrides.value.clear();
+});
+
 const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
-  useLibrarySearch({ books: allBooks, search, customFieldMetas });
+  useLibrarySearch({ books: allBooks, search, customFieldMetas, statusOf });
 
 // Filtered and sorted — used by tile view and all non-series groupings.
 const filteredBooks = computed<Book[]>(() =>
@@ -880,6 +903,7 @@ const { allGroups } = useLibraryGrouping({
   filteredBooks,
   groupBy,
   sortDirection,
+  statusOf,
 });
 
 // ── Display settings (persisted) ───────────────────────────────────────────────
@@ -898,6 +922,7 @@ const showUnowned = computed({
 const displayMenu = ref(false);
 const displayMenuDesktop = ref(false);
 const groupSheetOpen = ref(false);
+const mobileSearchOpen = ref(false);
 
 const currentGroupLabel = computed(
   () => groupOptions.value.find((o) => o.value === groupBy.value)?.label ?? "",
@@ -944,7 +969,7 @@ const coverPerRow = computed(() => {
   if (display.lgAndUp.value) return 7;
   if (display.mdAndUp.value) return 6;
   if (display.smAndUp.value) return 5;
-  return 3;
+  return 4;
 });
 const listPerRow = computed(() =>
   display.xlAndUp.value ? 4 : display.mdAndUp.value ? 2 : 1,
@@ -1497,13 +1522,15 @@ const pagedGroups = computed<ShelfGroup[]>(() => {
 });
 
 // Collapsed shelves show one row; expanded show everything.
+// While a search is active, always show all matches — no collapsing.
+const hasActiveSearch = computed(() => search.value.trim().length > 0);
 const shelfVisible = (g: ShelfGroup): ShelfEntry[] =>
-  expanded.value[g.key]
+  hasActiveSearch.value || expanded.value[g.key]
     ? g.entries
     : g.entries.slice(0, shelfRowSize.value);
 const shelfTotal = (g: ShelfGroup): number => g.entries.length;
 const shelfHasMore = (g: ShelfGroup): boolean =>
-  shelfTotal(g) > shelfRowSize.value;
+  !hasActiveSearch.value && shelfTotal(g) > shelfRowSize.value;
 
 function onEntrySelect(entry: ShelfEntry) {
   if (entry.book) openDetail(entry.book);
@@ -1534,6 +1561,7 @@ const fetchBooks = async () => {
     if (!res.ok) throw new Error(data.error || "Failed to fetch books");
     if (seq !== fetchSeq) return;
     serverBooks.value = data;
+    statusOverrides.value.clear();
   } catch (err: any) {
     if (seq !== fetchSeq) return;
     error.value = err.message;
@@ -1559,10 +1587,15 @@ const notifyStatusError = () => {
   errorToast.value = true;
 };
 
-const cycleStatus = (book: Book) => applyCycle(book).catch(notifyStatusError);
+const cycleStatus = (book: Book) => {
+  pinStatus(book);
+  return applyCycle(book).catch(notifyStatusError);
+};
 
-const setStatus = (book: Book, newStatus: ReadStatus) =>
-  applyStatus(book, newStatus).catch(notifyStatusError);
+const setStatus = (book: Book, newStatus: ReadStatus) => {
+  pinStatus(book);
+  return applyStatus(book, newStatus).catch(notifyStatusError);
+};
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 
@@ -1594,17 +1627,23 @@ function handleRefreshed(updated: Partial<Book>) {
   if (idx !== -1) serverBooks.value[idx] = merged;
 }
 
-const { deleteDialog, bookToDelete, deleting, deleteFailed, openDeleteDialog, confirmDelete } =
-  useDeleteScan({
-    onDeleted: (book) => {
-      serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
-    },
-    onGuestDelete: (book) => {
-      if (!isGuest.value) return false;
-      guestStore.removeScan(book.isbn!);
-      return true;
-    },
-  });
+const {
+  deleteDialog,
+  bookToDelete,
+  deleting,
+  deleteFailed,
+  openDeleteDialog,
+  confirmDelete,
+} = useDeleteScan({
+  onDeleted: (book) => {
+    serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
+  },
+  onGuestDelete: (book) => {
+    if (!isGuest.value) return false;
+    guestStore.removeScan(book.isbn!);
+    return true;
+  },
+});
 
 // ── URL ↔ search sync ─────────────────────────────────────────────────────────
 

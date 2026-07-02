@@ -81,8 +81,11 @@ export function useLibraryGrouping(options: {
   filteredBooks: ComputedRef<Book[]>
   groupBy: ComputedRef<GroupBy>
   sortDirection: ComputedRef<SortOption>
+  /** Resolves the status used for the "group by status" bucket — lets callers freeze
+   *  a book's shelf after an in-place status edit instead of using the live value. */
+  statusOf?: (b: Book) => ReadStatus
 }) {
-  const { baseFiltered, filteredBooks, groupBy, sortDirection } = options
+  const { baseFiltered, filteredBooks, groupBy, sortDirection, statusOf = (b: Book) => b.status } = options
   const { t } = useI18n()
   const localeStore = useLocaleStore()
   const fieldDefsStore = useFieldDefsStore()
@@ -137,13 +140,13 @@ export function useLibraryGrouping(options: {
     if (gb === 'status') {
       const order: ReadStatus[] =
         dir === 'asc'
-          ? ['reading', 'unread', 'read']
-          : ['read', 'unread', 'reading']
+          ? ['reading', 'unread', 'read', 'dnf']
+          : ['dnf', 'read', 'unread', 'reading']
       return order
         .map(s => ({
           key: s,
           label: t(`book.${s}`),
-          books: books.filter(b => b.status === s),
+          books: books.filter(b => statusOf(b) === s),
         }))
         .filter(g => g.books.length)
     }
