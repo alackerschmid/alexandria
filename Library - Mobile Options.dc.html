@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;0,900;1,500;1,700&family=Roboto:wght@400;500;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;}
+body{margin:0;background:#161513;font-family:'Roboto',system-ui,sans-serif;}
+.dv-turn{padding:44px 48px 60px;}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 8px;}
+.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#ff6600;color:#161513;border-radius:4px;text-decoration:none;}
+.dv-tname{font:600 14px/1.2 'Roboto',sans-serif;color:#f0ede8;}
+.dv-tsub{font:400 12px/1.5 'Roboto',sans-serif;color:rgba(240,237,232,.5);margin:0 0 26px;max-width:640px;}
+.dv-opts{display:flex;flex-wrap:wrap;gap:36px;align-items:flex-start;}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:12px;scroll-margin-top:16px;}
+.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(255,255,255,.1);color:#f0ede8;border-radius:5px;text-decoration:none;}
+.dv-olabel{display:flex;flex-direction:column;gap:4px;font:400 11.5px/1.45 'Roboto',sans-serif;color:rgba(240,237,232,.55);max-width:390px;}
+.dv-olabel b{color:#f0ede8;font-weight:700;font-size:13px;font-family:'Playfair Display',serif;}
+.dv-card{background:#0a0a09;border:1px solid #2e2b28;border-radius:26px;box-shadow:0 30px 70px -20px rgba(0,0,0,.7);overflow:hidden;}
+.dv-next{margin:30px 0 0;font:12px/1.6 'Roboto',sans-serif;color:rgba(240,237,232,.5);max-width:960px;}
+.dv-next a{color:#ff6600;}
+@keyframes sheetUp{from{transform:translateY(100%);}to{transform:translateY(0);}}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.phscroll::-webkit-scrollbar{width:0;height:0;}
+</style>
+</helmet>
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Building on <a class="dv-oid" href="#1c">1c</a> — view toggle moved into Display, plus nav placement</span></div>
+<p class="dv-tsub">All three: list/tile now lives as a "View" row inside the Display sheet (freeing the compact bar down to search + group + display), and view mode now also applies to grouped shelves. Each explores a different home for Home/Settings access, which today is buried inside the header's avatar menu.</p>
+<div class="dv-opts">
+<div class="dv-opt" id="2a" data-screen-label="Mobile Library — Bottom tab bar">
+<div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a><b>Bottom tab bar</b>Classic persistent nav: Home / Library / Settings, with Scan raised as the center action. Most discoverable, costs a fixed strip of screen.</div>
+<div class="dv-card">{{ phoneD }}</div>
+</div>
+<div class="dv-opt" id="2b" data-screen-label="Mobile Library — Header nav icons">
+<div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a><b>Header nav icons</b>Home and Settings become one-tap icon buttons next to the avatar — no menu, no added chrome at the bottom. Lightest-touch change.</div>
+<div class="dv-card">{{ phoneE }}</div>
+</div>
+<div class="dv-opt" id="2c" data-screen-label="Mobile Library — Floating nav dock">
+<div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a><b>Floating nav dock</b>A small pill with Home/Settings hovers just above the Scan FAB — quick reach without a permanent bar eating shelf space.</div>
+<div class="dv-card">{{ phoneF }}</div>
+</div>
+</div>
+<p class="dv-next">Try next: "make <a href="#2b">2b</a> the direction, but keep the raised scan button from <a href="#2a">2a</a>" · "try a nav drawer instead" · "apply this to the tablet/desktop header too"</p>
+</section>
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Mobile Library — rebuilt from production, scroll-usability variants</span></div>
+<p class="dv-tsub">Same data, copy and controls as the live app's mobile view. Each option only changes what stays reachable while you scroll a shelf-heavy library. Scroll inside a phone to compare.</p>
+<div class="dv-opts">
+<div class="dv-opt" id="1a" data-screen-label="Mobile Library — Baseline">
+<div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a><b>Baseline</b>Matches production exactly — header, hero and controls all scroll away together.</div>
+<div class="dv-card">{{ phoneA }}</div>
+</div>
+<div class="dv-opt" id="1b" data-screen-label="Mobile Library — Sticky control bar">
+<div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a><b>Sticky control bar</b>The Group / view / display row pins to the top once it reaches it, so switching shelves never needs a scroll back up.</div>
+<div class="dv-card">{{ phoneB }}</div>
+</div>
+<div class="dv-opt" id="1c" data-screen-label="Mobile Library — Sticky compact bar + quick search">
+<div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a><b>Sticky compact bar + quick search</b>A slimmer pinned bar adds a one-tap search shortcut next to group/view/display — the two things you reach for most while browsing.</div>
+<div class="dv-card">{{ phoneC }}</div>
+</div>
+</div>
+<p class="dv-next">Try next: "make <a href="#1b">1b</a> the base and add the search shortcut from <a href="#1c">1c</a>" · "show the ungrouped flat grid instead of series shelves" · "apply the winning bar to desktop too"</p>
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const mk = () => ({
+      groupBy: 'series', sortDir: 'asc', viewMode: 'tile',
+      groupSheet: false, displaySheet: false, searchOpen: false,
+      mainOnly: true, highlightComplete: true, showUnowned: false,
+      expanded: {},
+    });
+    this.state = { a: mk(), b: mk(), c: mk(), d: mk(), e: mk(), f: mk() };
+  }
+
+  setOpt(opt, patch) {
+    this.setState(s => {
+      const cur = s[opt];
+      const delta = typeof patch === 'function' ? patch(cur) : patch;
+      return { [opt]: { ...cur, ...delta } };
+    });
+  }
+  toggleOpt(opt, key) { this.setOpt(opt, cur => ({ [key]: !cur[key] })); }
+  toggleExpand(opt, name) { this.setOpt(opt, cur => ({ expanded: { ...cur.expanded, [name]: !cur.expanded[name] } })); }
+  selectGroupMobile(opt, v) {
+    this.setOpt(opt, cur => {
+      if (cur.groupBy === v) return { sortDir: cur.sortDir === 'asc' ? 'desc' : 'asc' };
+      return { groupBy: v, sortDir: v === 'none' ? 'desc' : 'asc', groupSheet: false };
+    });
+  }
+
+  // ---------- data (matches production's shape: series/author/genre/status/year) ----------
+  data() {
+    const s = (name, author, genre, books) => ({ name, author, genre, books });
+    return [
+      s('The Dresden Files', 'Jim Butcher', 'Urban Fantasy', [
+        ['Storm Front',1,1,'read',2000], ['Fool Moon',2,1,'read',2001], ['Grave Peril',3,1,'read',2001],
+        ['Summer Knight',4,1,'read',2002], ['Death Masks',5,1,'reading',2003], ['Blood Rites',6,0,'unread',2004],
+        ['Dead Beat',7,0,'unread',2005], ['Backup',10.5,1,'read',2008], ['Side Jobs',12.5,1,'read',2010],
+        ['Cold Days',14,0,'unread',2012], ['Peace Talks',16,1,'read',2020], ['Battle Ground',17,1,'read',2020],
+      ]),
+      s('The Wheel of Time', 'Robert Jordan', 'Epic Fantasy', [
+        ['New Spring',0,1,'read',2004], ['The Eye of the World',1,1,'read',1990], ['The Great Hunt',2,1,'read',1990],
+        ['The Dragon Reborn',3,1,'read',1991], ['The Shadow Rising',4,0,'unread',1992], ['The Fires of Heaven',5,0,'unread',1993],
+        ['Lord of Chaos',6,0,'unread',1994], ['A Crown of Swords',7,1,'reading',1996], ['A Memory of Light',14,0,'unread',2013],
+      ]),
+      s('Machineries of Empire', 'Yoon Ha Lee', 'Science Fiction', [
+        ['Ninefox Gambit',1,1,'read',2016], ['Raven Stratagem',2,1,'read',2017], ['Revenant Gun',3,1,'read',2018],
+      ]),
+      s('Ilium / Olympos', 'Dan Simmons', 'Science Fiction', [
+        ['Ilium',1,1,'read',2003], ['Olympos',2,1,'read',2005],
+      ]),
+      s('Hyperion Cantos', 'Dan Simmons', 'Science Fiction', [
+        ['Hyperion',1,0,'unread',1989], ['The Fall of Hyperion',2,0,'unread',1990],
+        ['Endymion',3,1,'read',1996], ['The Rise of Endymion',4,1,'read',1997],
+      ]),
+      s('The Broken Earth', 'N.K. Jemisin', 'Fantasy', [
+        ['The Fifth Season',1,1,'read',2015], ['The Obelisk Gate',2,1,'read',2016], ['The Stone Sky',3,1,'read',2017],
+      ]),
+      s('Standalone', null, 'Various', [
+        ['Good Omens',null,1,'read',1990,'Neil Gaiman & Terry Pratchett'],
+        ['Frankenstein',null,1,'read',1818,'Mary Shelley'],
+        ['The Prince',null,1,'read',1532,'Niccolò Machiavelli'],
+        ['Klara and the Sun',null,1,'reading',2021,'Kazuo Ishiguro'],
+        ['Piranesi',null,1,'read',2020,'Susanna Clarke'],
+        ['The Road',null,1,'read',2006,'Cormac McCarthy'],
+      ]),
+    ].map(g => ({
+      ...g,
+      books: g.books.map(([t, n, owned, status, yr, auth]) => ({
+        t, n, owned: !!owned, status, yr, author: auth || g.author, series: g.name, genre: g.genre,
+      })),
+    }));
+  }
+
+  ownedTotalCount() { return [].concat(...this.data().map(g => g.books)).filter(b => b.owned).length; }
+
+  groupOptions() {
+    return [
+      ['none', 'Added on'], ['author', 'Author'], ['series', 'Series'], ['genre', 'Genre'], ['status', 'Status'],
+      ['publisher', 'Publisher'], ['language', 'Language'], ['form', 'Book type'], ['country', 'Country of origin'],
+      ['decade', 'Decade'], ['subject', 'Subject'],
+    ];
+  }
+  hashOf(t) { let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0; return h; }
+  groupKey(b, key) {
+    const h = this.hashOf(b.t);
+    if (key === 'author') return b.author;
+    if (key === 'genre') return b.genre;
+    if (key === 'decade') return (Math.floor(b.yr / 10) * 10) + 's';
+    if (key === 'publisher') return ['Tor', 'Orbit', 'Gollancz', 'Head of Zeus'][h % 4];
+    if (key === 'language') return h % 6 === 0 ? 'German' : 'English';
+    if (key === 'form') return ['Novel', 'Novella', 'Short story collection'][h % 3];
+    if (key === 'country') return ['United States', 'United Kingdom', 'Various'][h % 3];
+    if (key === 'subject') return ['War & conflict', 'Coming of age', 'Politics & power', 'Identity', 'Exploration'][h % 5];
+    return b.genre;
+  }
+
+  initials(t) {
+    const w = t.replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean);
+    return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase();
+  }
+  tint(t) {
+    const tints = ['#3a352f','#2c3640','#3d2f37','#2f3a33','#3a3a2c','#332f3c','#3c322b','#2a3640','#383036'];
+    let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    return tints[h % tints.length];
+  }
+
+  // ---------- shared atoms ----------
+  header(R, showNavIcons) {
+    const navIcons = showNavIcons ? R('div', { key: 'navi', style: { display: 'flex', gap: '8px' } }, [
+      this.headerIconBtn(R, 'home', '⌂'),
+      this.headerIconBtn(R, 'settings', '⚙'),
+    ]) : null;
+    return R('div', { key: 'header', style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 22px', borderBottom: '1px solid #2e2b28', flexShrink: 0 } }, [
+      R('div', { key: 'brand', style: { color: '#ff6600', fontSize: '9px', letterSpacing: '0.28em', textTransform: 'uppercase', fontWeight: 700, fontFamily: "'Roboto Mono',monospace", lineHeight: 1.5, maxWidth: '150px' } }, 'The Library of Alexandria'),
+      R('div', { key: 'right', style: { display: 'flex', alignItems: 'center', gap: '10px' } }, [
+        navIcons,
+        R('div', { key: 'avatar', style: { width: '32px', height: '32px', borderRadius: '50%', border: '1px solid #2e2b28', background: '#1c1b19', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Roboto Mono',monospace", fontSize: '11px', color: '#f0ede8', flexShrink: 0 } }, 'A'),
+      ].filter(Boolean)),
+    ]);
+  }
+  headerIconBtn(R, key, glyph) {
+    return R('button', { key, style: { appearance: 'none', cursor: 'pointer', width: '32px', height: '32px', borderRadius: '50%', border: '1px solid #2e2b28', background: '#1c1b19', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8a8078', fontSize: '14px' } }, glyph);
+  }
+  hero(R) {
+    return R('div', { key: 'hero', style: { padding: '20px 22px 18px', borderBottom: '1px solid #2e2b28' } }, [
+      R('div', { key: 'h', style: { display: 'flex', alignItems: 'baseline', gap: '10px', marginBottom: '16px', flexWrap: 'wrap' } }, [
+        R('h1', { key: 't', style: { margin: 0, fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '34px', lineHeight: 0.98, color: '#f3f0ea' } }, 'Your Books.'),
+        R('span', { key: 'c', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '11px', color: 'rgba(138,128,120,0.7)', letterSpacing: '0.06em' } }, this.ownedTotalCount() + ' titles'),
+      ]),
+      R('div', { key: 'search', style: { display: 'flex', alignItems: 'center', gap: '12px', background: '#16150f', border: '1px solid #232220', padding: '15px 18px' } }, [
+        R('span', { key: 'i', style: { color: '#ff6600', fontSize: '15px', lineHeight: 1 } }, '⌕'),
+        R('span', { key: 'ph', style: { flex: 1, minWidth: 0, color: 'rgba(138,128,120,0.55)', fontSize: '13.5px', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' } }, 'Search by title, author, ISBN — or type a prefix'),
+      ]),
+    ]);
+  }
+  footerEl(R) {
+    return R('div', { key: 'footer', style: { textAlign: 'center', padding: '28px 22px 0', fontFamily: "'Roboto Mono',monospace", fontSize: '9px', letterSpacing: '0.06em', color: '#46403a', lineHeight: 1.8 } }, 'The Library of Alexandria · Book data via Wikidata, OpenLibrary & Google Books');
+  }
+  fab(R, bottom) {
+    const b = bottom == null ? 22 : bottom;
+    return R('button', { key: 'fab', style: { position: 'absolute', bottom: b + 'px', left: '50%', transform: 'translateX(-50%)', zIndex: 30, border: 'none', cursor: 'pointer', borderRadius: '999px', padding: '15px 34px', background: '#ff6600', color: '#111110', fontSize: '10px', fontWeight: 700, letterSpacing: '0.22em', textTransform: 'uppercase', boxShadow: '0 8px 28px rgba(255,102,0,0.35)', whiteSpace: 'nowrap' } }, 'Scan a book');
+  }
+  tabBar(R) {
+    const item = (icon, label, active) => R('div', { key: label, style: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1 } }, [
+      R('span', { key: 'i', style: { fontSize: '17px', color: active ? '#ff6600' : '#6f6760' } }, icon),
+      R('span', { key: 'l', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '8px', letterSpacing: '0.12em', textTransform: 'uppercase', color: active ? '#ff6600' : '#6f6760' } }, label),
+    ]);
+    return R('div', { key: 'tabbar', style: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 30, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-around', padding: '10px 10px 22px', background: 'rgba(10,10,9,0.96)', backdropFilter: 'blur(10px)', borderTop: '1px solid #2e2b28' } }, [
+      item('⌂', 'Home', false),
+      R('button', { key: 'scan', style: { appearance: 'none', cursor: 'pointer', border: 'none', width: '148px', height: '52px', borderRadius: '999px', background: '#ff6600', color: '#111110', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', marginTop: '-26px', boxShadow: '0 8px 22px rgba(255,102,0,0.4)', flexShrink: 0 } }, 'Scan a book'),
+      item('⚙', 'Settings', false),
+    ]);
+  }
+  navDock(R) {
+    return R('div', { key: 'dock', style: { position: 'absolute', bottom: '86px', left: '50%', transform: 'translateX(-50%)', zIndex: 29, display: 'flex', gap: '2px', background: '#1c1b19', border: '1px solid #2e2b28', borderRadius: '999px', padding: '4px', boxShadow: '0 10px 24px rgba(0,0,0,0.4)' } }, [
+      this.dockBtn(R, 'home', '⌂', 'Home'),
+      this.dockBtn(R, 'settings', '⚙', 'Settings'),
+    ]);
+  }
+  dockBtn(R, key, icon, label) {
+    return R('button', { key, style: { appearance: 'none', cursor: 'pointer', border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', borderRadius: '999px', color: '#cbc4ba', fontSize: '12px' } }, [
+      R('span', { key: 'i', style: { fontSize: '13px' } }, icon),
+      R('span', { key: 'l', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '9px', letterSpacing: '0.1em', textTransform: 'uppercase' } }, label),
+    ]);
+  }
+
+  cover(R, b) {
+    const SC = { read: '#22c55e', reading: '#ff6600', unread: 'rgba(138,128,120,0.6)' };
+    const ghost = !b.owned;
+    const novella = b.n != null && !Number.isInteger(b.n);
+    const face = ghost
+      ? R('div', { style: { position: 'absolute', inset: 0, background: '#2a2825', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+          R('span', { style: { fontSize: '20px', color: 'rgba(236,233,227,0.3)' } }, '⌸'))
+      : R('div', { style: { position: 'absolute', inset: 0, background: this.tint(b.t), display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+          R('span', { style: { fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '22px', color: 'rgba(236,233,227,0.22)' } }, this.initials(b.t)));
+    return R('div', { key: b.t, style: { minWidth: 0 } }, [
+      R('div', { key: 'c', style: { position: 'relative', width: '100%', aspectRatio: '2 / 3', overflow: 'hidden', background: '#1c1b19', marginBottom: '6px' } }, [
+        face,
+        b.owned ? R('span', { key: 'd', style: { position: 'absolute', top: '6px', right: '6px', width: '6px', height: '6px', borderRadius: '50%', background: SC[b.status], boxShadow: '0 0 0 2px rgba(0,0,0,0.4)' } }) : null,
+        novella ? R('span', { key: 'nv', style: { position: 'absolute', bottom: '5px', left: '5px', fontFamily: "'Roboto Mono',monospace", fontSize: '7px', letterSpacing: '0.1em', color: '#cbc4ba', background: 'rgba(0,0,0,0.55)', padding: '1px 4px' } }, 'Nov') : null,
+      ]),
+      R('div', { key: 't', style: { fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '10px', lineHeight: 1.3, color: ghost ? '#8a8078' : '#f0ede8', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } },
+        b.t, b.n != null ? R('span', { style: { color: 'rgba(138,128,120,0.7)', fontWeight: 400 } }, ' #' + b.n) : null),
+      ghost
+        ? R('div', { key: 'u', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '8px', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(138,128,120,0.5)', marginTop: '2px' } }, 'Unowned')
+        : (b.author ? R('div', { key: 'a', style: { fontSize: '9px', color: 'rgba(138,128,120,0.7)', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }, b.author) : null),
+    ]);
+  }
+  rowCard(R, b) {
+    const SC = { read: '#22c55e', reading: '#ff6600', unread: 'rgba(138,128,120,0.5)' };
+    const SL = { read: 'Read', reading: 'Reading', unread: 'Unread' };
+    return R('div', { key: b.t, style: { display: 'flex', gap: '12px', border: '1px solid #2e2b28', padding: '14px', alignItems: 'flex-start' } }, [
+      R('div', { key: 'c', style: { width: '40px', height: '60px', flexShrink: 0, position: 'relative', overflow: 'hidden', background: this.tint(b.t) } }, [
+        R('span', { style: { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '13px', color: 'rgba(236,233,227,0.3)' } }, this.initials(b.t)),
+        R('div', { style: { position: 'absolute', left: 0, top: 0, bottom: 0, width: '2px', background: '#ff6600' } }),
+      ]),
+      R('div', { key: 'm', style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+        R('div', { key: 't', style: { fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '14px', lineHeight: 1.25, color: '#f0ede8', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' } },
+          b.t, (b.series && b.series !== 'Standalone') ? R('span', { style: { color: '#8a8078', fontWeight: 400 } }, '  (' + b.series + (b.n != null ? ' #' + b.n : '') + ')') : null),
+        R('div', { key: 'a', style: { fontSize: '11px', color: '#8a8078' } }, b.author),
+        R('div', { key: 's', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginTop: '6px' } }, [
+          R('span', { key: 'p', style: { display: 'inline-flex', alignItems: 'center', gap: '5px', color: SC[b.status], fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase' } },
+            R('span', { style: { width: '6px', height: '6px', borderRadius: '50%', background: SC[b.status] } }), SL[b.status]),
+          R('span', { key: 'y', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '9px', color: 'rgba(138,128,120,0.6)' } }, b.yr),
+        ]),
+      ]),
+    ]);
+  }
+  ghostRow(R, b) {
+    return R('div', { key: b.t, style: { display: 'flex', gap: '12px', border: '1px dashed #2e2b28', padding: '14px', alignItems: 'flex-start', opacity: 0.55 } }, [
+      R('div', { key: 'c', style: { width: '40px', height: '60px', flexShrink: 0, background: '#161512', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+        R('span', { style: { fontSize: '15px', color: 'rgba(236,233,227,0.3)' } }, '⌸')),
+      R('div', { key: 'm', style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '4px' } }, [
+        R('div', { key: 't', style: { fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '14px', lineHeight: 1.25, color: '#8a8078' } }, b.t, b.n != null ? R('span', { style: { fontWeight: 400 } }, ' #' + b.n) : null),
+        R('div', { key: 'u', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(138,128,120,0.6)', marginTop: '4px' } }, 'Unowned'),
+      ]),
+    ]);
+  }
+
+  // ---------- control bar (one function, three modes) ----------
+  controlBar(R, opt, mode, opts) {
+    const st = this.state[opt];
+    const compact = mode === 'stickyCompact';
+    const sticky = mode === 'stickyBar' || mode === 'stickyCompact';
+    const showViewToggle = !opts || opts.showViewToggle !== false;
+    const groupLabel = (this.groupOptions().find(o => o[0] === st.groupBy) || [null, '—'])[1];
+
+    const groupTrigger = R('button', { key: 'g', onClick: () => this.setOpt(opt, { groupSheet: true }), style: { appearance: 'none', font: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: compact ? '8px' : '10px', flex: 1, minWidth: 0, background: '#1c1b19', border: '1px solid #2e2b28', padding: compact ? '8px 12px' : '12px 14px', textAlign: 'left' } }, [
+      R('span', { key: 'k', style: { fontFamily: "'Roboto Mono',monospace", fontSize: compact ? '8px' : '9px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#5e564f', flexShrink: 0 } }, 'Group'),
+      R('span', { key: 'v', style: { flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: "'Roboto Mono',monospace", fontSize: compact ? '11px' : '12px', color: '#f0ede8' } }, groupLabel),
+      R('span', { key: 'd', style: { color: '#ff6600', fontSize: compact ? '12px' : '14px', lineHeight: 1, flexShrink: 0 } }, st.sortDir === 'asc' ? '↑' : '↓'),
+      R('span', { key: 'c', style: { color: '#5e564f', fontSize: '8px', flexShrink: 0 } }, '▼'),
+    ]);
+
+    const iconBtn = (key, active, onClick, icon) => R('button', { key, onClick, style: { appearance: 'none', font: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', width: compact ? '30px' : '34px', height: compact ? '30px' : '34px', cursor: 'pointer', border: '1px solid ' + (active ? '#403a33' : '#2e2b28'), background: active ? '#1c1b14' : 'transparent', color: active ? '#ff6600' : '#8a8078', fontSize: compact ? '13px' : '15px', marginLeft: '-1px', flexShrink: 0 } }, icon);
+
+    const grouped = st.groupBy !== 'none';
+    const viewToggle = R('div', { key: 'vt', style: { display: 'flex', flexShrink: 0 } }, [
+      iconBtn('l', !grouped && st.viewMode === 'list', () => this.setOpt(opt, { groupBy: 'none', viewMode: 'list' }), '≣'),
+      iconBtn('t', !grouped && st.viewMode === 'tile', () => this.setOpt(opt, { groupBy: 'none', viewMode: 'tile' }), '▦'),
+    ]);
+
+    const displayBtn = R('button', { key: 'disp', onClick: () => this.setOpt(opt, { displaySheet: true }), style: { appearance: 'none', font: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', width: compact ? '30px' : '34px', height: compact ? '30px' : '34px', cursor: 'pointer', border: '1px solid #2e2b28', background: 'transparent', color: '#8a8078', fontSize: compact ? '13px' : '15px', flexShrink: 0 } }, '⚙');
+
+    const searchIcon = mode === 'stickyCompact' ? R('button', { key: 'sic', onClick: () => this.setOpt(opt, cur => ({ searchOpen: !cur.searchOpen })), style: { appearance: 'none', font: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', cursor: 'pointer', border: '1px solid ' + (st.searchOpen ? '#ff6600' : '#2e2b28'), background: st.searchOpen ? 'rgba(255,102,0,0.1)' : 'transparent', color: st.searchOpen ? '#ff6600' : '#8a8078', fontSize: '13px', flexShrink: 0 } }, '⌕') : null;
+
+    const row = R('div', { key: 'row', style: { display: 'flex', alignItems: 'center', gap: compact ? '8px' : '10px', padding: compact ? '10px 22px' : '14px 22px' } }, [searchIcon, groupTrigger, showViewToggle ? viewToggle : null, displayBtn].filter(Boolean));
+
+    const searchExpand = (mode === 'stickyCompact' && st.searchOpen) ? R('div', { key: 'sx', style: { display: 'flex', alignItems: 'center', gap: '10px', padding: '0 22px 10px', background: '#0a0a09' } },
+      R('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flex: 1, background: '#16150f', border: '1px solid #ff6600', padding: '10px 14px' } }, [
+        R('span', { key: 'i', style: { color: '#ff6600', fontSize: '13px' } }, '⌕'),
+        R('span', { key: 'ph', style: { flex: 1, color: 'rgba(138,128,120,0.6)', fontSize: '12.5px' } }, 'Search by title, author, ISBN…'),
+        R('button', { key: 'x', onClick: () => this.setOpt(opt, { searchOpen: false }), style: { appearance: 'none', background: 'transparent', border: 'none', color: '#8a8078', fontSize: '13px', cursor: 'pointer' } }, '✕'),
+      ])
+    ) : null;
+
+    const wrapperStyle = { borderBottom: '1px solid #2e2b28', background: '#0a0a09' };
+    if (sticky) { wrapperStyle.position = 'sticky'; wrapperStyle.top = '0px'; wrapperStyle.zIndex = 25; wrapperStyle.boxShadow = '0 12px 24px -12px rgba(0,0,0,0.6)'; }
+
+    return R('div', { key: 'ctrl', style: wrapperStyle }, [row, searchExpand].filter(Boolean));
+  }
+
+  // ---------- sheets ----------
+  groupSheetEl(R, opt) {
+    const st = this.state[opt];
+    const rows = this.groupOptions().map(([v, l]) => {
+      const active = st.groupBy === v;
+      return R('button', { key: v, onClick: () => this.selectGroupMobile(opt, v), style: { appearance: 'none', font: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', borderBottom: '1px solid #201f1c', padding: '14px 2px' } }, [
+        R('span', { key: 'l', style: { fontSize: '14px', color: active ? '#f0ede8' : '#8a8078' } }, l),
+        active ? R('span', { key: 'd', style: { display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#ff6600', fontFamily: "'Roboto Mono',monospace", fontSize: '10px', letterSpacing: '0.1em' } }, [R('span', { key: 'w', style: { fontSize: '13px', lineHeight: 1 } }, st.sortDir === 'asc' ? '↑' : '↓'), R('span', { key: 'wl' }, st.sortDir === 'asc' ? 'ASC' : 'DESC')]) : null,
+      ]);
+    });
+    return R('div', { key: 'gsheet', style: { position: 'absolute', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' } }, [
+      R('div', { key: 'scrim', onClick: () => this.setOpt(opt, { groupSheet: false }), style: { position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', animation: 'fadeIn .15s ease' } }),
+      R('div', { key: 'sheet', style: { position: 'relative', width: '100%', maxHeight: '72%', overflowY: 'auto', background: '#16150f', borderTop: '1px solid #2e2b28', borderTopLeftRadius: '16px', borderTopRightRadius: '16px', padding: '10px 22px 26px', animation: 'sheetUp .22s cubic-bezier(.2,.8,.2,1)' } }, [
+        R('div', { key: 'grip', style: { width: '38px', height: '4px', borderRadius: '4px', background: '#3a352f', margin: '0 auto 14px' } }),
+        R('div', { key: 'h', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '4px' } }, [
+          R('span', { key: 't', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '10px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#8a8078' } }, 'Group by'),
+          R('button', { key: 'x', onClick: () => this.setOpt(opt, { groupSheet: false }), style: { appearance: 'none', background: 'transparent', border: 'none', color: '#6f6760', fontSize: '18px', cursor: 'pointer' } }, '✕'),
+        ]),
+        R('p', { key: 'hint', style: { fontSize: '10px', color: '#6f6760', padding: '4px 0 6px', lineHeight: 1.4, margin: 0 } }, 'Tap the active group again to flip sort direction.'),
+        ...rows,
+      ]),
+    ]);
+  }
+  switchRow(R, opt, label, sub, key) {
+    const on = this.state[opt][key];
+    return R('button', { key, onClick: () => this.toggleOpt(opt, key), style: { appearance: 'none', font: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', width: '100%', textAlign: 'left', cursor: 'pointer', background: 'transparent', border: 'none', borderBottom: '1px solid #201f1c', padding: '14px 2px' } }, [
+      R('div', { key: 't', style: { minWidth: 0 } }, [
+        R('div', { key: 'a', style: { fontSize: '13px', color: '#f0ede8' } }, label),
+        R('div', { key: 'b', style: { fontSize: '10px', color: '#6f6760', marginTop: '3px', lineHeight: 1.35 } }, sub),
+      ]),
+      R('div', { key: 's', style: { flexShrink: 0, width: '36px', height: '20px', borderRadius: '20px', background: on ? '#ff6600' : '#2a2825', position: 'relative', transition: 'background .15s' } },
+        R('div', { style: { position: 'absolute', top: '2px', left: on ? '18px' : '2px', width: '16px', height: '16px', borderRadius: '50%', background: '#0a0a09', transition: 'left .15s' } })),
+    ]);
+  }
+  viewRow(R, opt) {
+    const st = this.state[opt];
+    const seg = (val, label, icon) => {
+      const active = st.viewMode === val;
+      return R('button', { key: val, onClick: () => this.setOpt(opt, { viewMode: val }), style: { appearance: 'none', font: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', height: '32px', padding: '0 14px', border: '1px solid ' + (active ? '#403a33' : '#2e2b28'), background: active ? '#1c1b14' : 'transparent', color: active ? '#ff6600' : '#8a8078', fontFamily: "'Roboto Mono',monospace", fontSize: '10px', letterSpacing: '0.12em', textTransform: 'uppercase', marginLeft: '-1px' } }, [
+        R('span', { key: 'i', style: { fontSize: '12px', lineHeight: 1 } }, icon),
+        R('span', { key: 'l' }, label),
+      ]);
+    };
+    return R('div', { key: 'viewrow', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', width: '100%', padding: '14px 2px', borderBottom: '1px solid #201f1c' } }, [
+      R('span', { key: 'l', style: { fontSize: '13px', color: '#f0ede8' } }, 'View'),
+      R('div', { key: 'seg', style: { display: 'flex' } }, [seg('list', 'List', '≣'), seg('tile', 'Tile', '▦')]),
+    ]);
+  }
+  displaySheetEl(R, opt, opts) {
+    const st = this.state[opt];
+    const seriesCtx = st.groupBy === 'series';
+    const rows = [];
+    if (opts && opts.showViewRow) rows.push(this.viewRow(R, opt));
+    if (seriesCtx) rows.push(this.switchRow(R, opt, 'Main entries only', 'Counts whole-numbered books, ignoring novellas & side-stories', 'mainOnly'));
+    if (seriesCtx) rows.push(this.switchRow(R, opt, 'Highlight completed series', 'Accent series you own in full', 'highlightComplete'));
+    if (seriesCtx) rows.push(this.switchRow(R, opt, 'Show unowned books', 'Reveal missing series entries, greyed out', 'showUnowned'));
+    const hint = !seriesCtx ? R('p', { key: 'hint', style: { fontSize: '11px', color: '#6f6760', padding: '14px 2px', lineHeight: 1.5, margin: 0 } }, 'Series options apply when grouping by series.') : null;
+    const perPageRow = R('div', { key: 'pp', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '16px', marginTop: '4px', borderTop: '1px solid #201f1c' } }, [
+      R('span', { key: 'l', style: { fontSize: '12px', color: '#f0ede8' } }, 'Per page'),
+      R('span', { key: 'v', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '12px', color: '#ff6600', border: '1px solid #2e2b28', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '6px' } }, ['24 ', R('span', { key: 'c', style: { fontSize: '8px', color: '#5e564f' } }, '▼')]),
+    ]);
+    return R('div', { key: 'dsheet', style: { position: 'absolute', inset: 0, zIndex: 50, display: 'flex', justifyContent: 'center', alignItems: 'flex-end' } }, [
+      R('div', { key: 'scrim', onClick: () => this.setOpt(opt, { displaySheet: false }), style: { position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', animation: 'fadeIn .15s ease' } }),
+      R('div', { key: 'sheet', style: { position: 'relative', width: '100%', maxHeight: '80%', overflowY: 'auto', background: '#16150f', borderTop: '1px solid #2e2b28', borderTopLeftRadius: '16px', borderTopRightRadius: '16px', padding: '10px 22px 26px', animation: 'sheetUp .22s cubic-bezier(.2,.8,.2,1)' } }, [
+        R('div', { key: 'grip', style: { width: '38px', height: '4px', borderRadius: '4px', background: '#3a352f', margin: '0 auto 14px' } }),
+        R('div', { key: 'h', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '6px' } }, [
+          R('span', { key: 't', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '9px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#5e564f' } }, 'Display options'),
+          R('button', { key: 'x', onClick: () => this.setOpt(opt, { displaySheet: false }), style: { appearance: 'none', background: 'transparent', border: 'none', color: '#6f6760', fontSize: '18px', cursor: 'pointer' } }, '✕'),
+        ]),
+        ...rows, hint, perPageRow,
+      ].filter(Boolean)),
+    ]);
+  }
+
+  // ---------- grouped / flat views ----------
+  groupedView(R, opt) {
+    const st = this.state[opt];
+    const key = st.groupBy;
+    let groups;
+    if (key === 'series') {
+      groups = this.data();
+    } else if (key === 'status') {
+      const order = st.sortDir === 'asc' ? ['reading', 'unread', 'read'] : ['read', 'unread', 'reading'];
+      const flat = [].concat(...this.data().map(g => g.books)).filter(b => b.owned);
+      const labels = { reading: 'Reading', unread: 'Unread', read: 'Read' };
+      groups = order.map(stt => ({ name: labels[stt], books: flat.filter(b => b.status === stt) })).filter(g => g.books.length);
+    } else {
+      const flat = [].concat(...this.data().map(g => g.books)).filter(b => b.owned);
+      const m = new Map();
+      flat.forEach(b => { const k = this.groupKey(b, key); if (!m.has(k)) m.set(k, []); m.get(k).push(b); });
+      groups = [...m.entries()].map(([name, books]) => ({ name, books }));
+      const dir = st.sortDir === 'desc' ? -1 : 1;
+      groups.sort((a, b) => dir * a.name.localeCompare(b.name));
+    }
+
+    const gd = groups.map(g => {
+      const all = g.books;
+      const isSeries = key === 'series' && g.name !== 'Standalone';
+      const mainTotal = all.filter(b => b.n != null && Number.isInteger(b.n)).length;
+      const total = all.length;
+      const ownedMain = all.filter(b => b.owned && b.n != null && Number.isInteger(b.n)).length;
+      const ownedTotal = all.filter(b => b.owned).length;
+      const complete = st.highlightComplete && isSeries && (st.mainOnly ? (ownedMain === mainTotal && mainTotal > 0) : (ownedTotal === total && total > 0));
+      const dir = st.sortDir === 'desc' ? -1 : 1;
+      const display = (isSeries && st.showUnowned ? all.slice() : all.filter(b => b.owned)).sort((a, b) => dir * ((a.n ?? 1e9) - (b.n ?? 1e9)));
+      const countLabel = isSeries ? (st.mainOnly ? ownedMain + ' / ' + mainTotal : ownedTotal + ' / ' + total) : String(ownedTotal);
+      return { name: g.name, isSeries, complete, display, countLabel };
+    }).filter(g => g.display.length);
+
+    gd.forEach(g => {
+      const expanded = !!st.expanded[g.name];
+      g.visible = expanded ? g.display : g.display.slice(0, 3);
+      g.hasMore = g.display.length > 3;
+      g.expanded = expanded;
+    });
+
+    return R('div', { key: 'gv' }, gd.map(g => {
+      const head = R('div', { key: 'h' + g.name, style: { display: 'flex', alignItems: 'baseline', gap: '10px', padding: '0 0 14px', flexWrap: 'wrap' } }, [
+        R('span', { key: 'n', style: { fontFamily: "'Playfair Display',serif", fontWeight: 700, fontSize: '19px', lineHeight: 1.1, color: g.complete ? '#ffb98a' : '#f0ede8' } }, g.name),
+        R('span', { key: 'c', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '10px', color: 'rgba(138,128,120,0.7)' } }, g.countLabel),
+        g.complete ? R('span', { key: 'b', style: { fontFamily: "'Roboto Mono',monospace", fontSize: '8px', letterSpacing: '0.16em', color: '#ff6600', border: '1px solid rgba(255,102,0,0.4)', background: 'rgba(255,102,0,0.1)', padding: '2px 6px' } }, '✓ Complete') : null,
+        R('span', { key: 'sp', style: { flex: 1, minWidth: '12px', height: '1px', background: g.complete ? 'rgba(255,102,0,0.25)' : '#232220' } }),
+        g.hasMore ? R('button', { key: 'e', onClick: () => this.toggleExpand(opt, g.name), style: { appearance: 'none', font: 'inherit', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: "'Roboto Mono',monospace", fontSize: '9px', letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8a8078', whiteSpace: 'nowrap' } }, g.expanded ? '— Collapse' : '+ Show all (' + g.display.length + ')') : null,
+      ]);
+      const body = st.viewMode === 'list'
+        ? R('div', { key: 'b' + g.name, style: { display: 'flex', flexDirection: 'column', gap: '10px' } }, g.visible.map(b => b.owned ? this.rowCard(R, b) : this.ghostRow(R, b)))
+        : R('div', { key: 'b' + g.name, style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' } }, g.visible.map(b => this.cover(R, b)));
+      return R('div', { key: g.name, style: { marginBottom: '32px', paddingLeft: g.complete ? '12px' : '0', borderLeft: g.complete ? '2px solid rgba(255,102,0,0.55)' : 'none' } }, [head, body]);
+    }));
+  }
+  flatBooks(opt) {
+    const st = this.state[opt];
+    const flat = [].concat(...this.data().map(g => g.books)).filter(b => b.owned);
+    const dir = st.sortDir === 'desc' ? -1 : 1;
+    flat.sort((a, b) => dir * (a.yr - b.yr));
+    return flat;
+  }
+  tileView(R, opt) { return R('div', { key: 'tile', style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' } }, this.flatBooks(opt).map(b => this.cover(R, b))); }
+  listView(R, opt) { return R('div', { key: 'list', style: { display: 'flex', flexDirection: 'column', gap: '10px' } }, this.flatBooks(opt).map(b => this.rowCard(R, b))); }
+
+  // ---------- phone assembly ----------
+  phone(R, opt, mode) {
+    const st = this.state[opt];
+    const content = st.groupBy === 'none' ? (st.viewMode === 'list' ? this.listView(R, opt) : this.tileView(R, opt)) : this.groupedView(R, opt);
+    return R('div', { style: { width: '390px', height: '844px', position: 'relative', background: '#0a0a09', fontFamily: "'Roboto',system-ui,sans-serif", color: '#f0ede8' } }, [
+      R('div', { key: 'scroll', className: 'phscroll', style: { position: 'relative', height: '100%', overflowY: 'auto', overflowX: 'hidden' } }, [
+        this.header(R),
+        this.hero(R),
+        this.controlBar(R, opt, mode),
+        R('div', { key: 'content', style: { padding: '20px 22px 0' } }, content),
+        this.footerEl(R),
+        R('div', { key: 'spacer', style: { height: '108px' } }),
+      ]),
+      this.fab(R),
+      st.groupSheet ? this.groupSheetEl(R, opt) : null,
+      st.displaySheet ? this.displaySheetEl(R, opt) : null,
+    ].filter(Boolean));
+  }
+
+  // ---------- turn-2 phone assembly: 1c base, view toggle moved into Display, + nav exploration ----------
+  phone2(R, opt, navMode) {
+    const st = this.state[opt];
+    const content = st.groupBy === 'none' ? (st.viewMode === 'list' ? this.listView(R, opt) : this.tileView(R, opt)) : this.groupedView(R, opt);
+    const spacerHeight = navMode === 'tabbar' ? 96 : (navMode === 'dock' ? 156 : 108);
+    const kids = [
+      R('div', { key: 'scroll', className: 'phscroll', style: { position: 'relative', height: '100%', overflowY: 'auto', overflowX: 'hidden' } }, [
+        this.header(R, navMode === 'headerIcons'),
+        this.hero(R),
+        this.controlBar(R, opt, 'stickyCompact', { showViewToggle: false }),
+        R('div', { key: 'content', style: { padding: '20px 22px 0' } }, content),
+        this.footerEl(R),
+        R('div', { key: 'spacer', style: { height: spacerHeight + 'px' } }),
+      ]),
+    ];
+    if (navMode === 'tabbar') kids.push(this.tabBar(R));
+    else kids.push(this.fab(R, navMode === 'dock' ? 78 : 22));
+    if (navMode === 'dock') kids.push(this.navDock(R));
+    kids.push(st.groupSheet ? this.groupSheetEl(R, opt) : null);
+    kids.push(st.displaySheet ? this.displaySheetEl(R, opt, { showViewRow: true }) : null);
+    return R('div', { style: { width: '390px', height: '844px', position: 'relative', background: '#0a0a09', fontFamily: "'Roboto',system-ui,sans-serif", color: '#f0ede8' } }, kids.filter(Boolean));
+  }
+
+  renderVals() {
+    const R = React.createElement;
+    return {
+      phoneA: this.phone(R, 'a', 'baseline'),
+      phoneB: this.phone(R, 'b', 'stickyBar'),
+      phoneC: this.phone(R, 'c', 'stickyCompact'),
+      phoneD: this.phone2(R, 'd', 'tabbar'),
+      phoneE: this.phone2(R, 'e', 'headerIcons'),
+      phoneF: this.phone2(R, 'f', 'dock'),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

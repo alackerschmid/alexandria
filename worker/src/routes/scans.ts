@@ -85,7 +85,7 @@ scans.get('/:id', async (c) => {
 scans.patch('/:id', async (c) => {
   const { status } = await c.req.json()
   if (!VALID_STATUSES.includes(status)) {
-    return c.json({ error: 'status must be one of: unread, reading, read' }, 400)
+    return c.json({ error: 'status must be one of: unread, reading, read, dnf' }, 400)
   }
 
   const result = await c.env.DB

@@ -36,7 +36,7 @@
       </aside>
 
       <!-- ── Main content ──────────────────────────────────────────────────── -->
-      <main class="flex-1 min-w-0 px-6 md:px-12 py-8 md:py-10 overflow-y-auto">
+      <main class="flex-1 min-w-0 px-6 md:px-12 pt-8 md:pt-10 pb-28 md:pb-10 overflow-y-auto">
         <div class="max-w-[720px] flex flex-col gap-14">
           <!-- Mobile heading -->
           <div class="md:hidden">

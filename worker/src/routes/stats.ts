@@ -97,10 +97,11 @@ stats.get('/', async (c) => {
   const rows = results
 
   // Status counts
-  const byStatus = { read: 0, reading: 0, unread: 0 }
+  const byStatus = { read: 0, reading: 0, unread: 0, dnf: 0 }
   for (const r of rows) {
     if (r.status === 'read') byStatus.read++
     else if (r.status === 'reading') byStatus.reading++
+    else if (r.status === 'dnf') byStatus.dnf++
     else byStatus.unread++
   }
 
@@ -110,6 +111,7 @@ stats.get('/', async (c) => {
     if (r.author) authorCounts.set(r.author, (authorCounts.get(r.author) ?? 0) + 1)
   }
   const topAuthors = topCounts(authorCounts, 6)
+  const authorCount = authorCounts.size
 
   // Languages
   const langCounts = new Map<string, number>()
@@ -136,6 +138,7 @@ stats.get('/', async (c) => {
     }
   }
   const genres = topCounts(genreCounts, 15)
+  const genreCount = genreCounts.size
 
   // Publishers
   const publisherCounts = new Map<string, number>()
@@ -174,20 +177,14 @@ stats.get('/', async (c) => {
     ? Math.round(pageNums.reduce((a, b) => a + b, 0) / pageNums.length)
     : null
 
+  // Total pages read
+  const readPageNums = rows.filter(r => r.status === 'read' && r.pages != null && r.pages > 0).map(r => r.pages as number)
+  const totalPagesRead = readPageNums.length > 0 ? readPageNums.reduce((a, b) => a + b, 0) : null
+
   // Publication year stats
   const years = rows.map(extractYear).filter((y): y is number => y !== null).sort((a, b) => a - b)
   const yearKnownCount = years.length
   const medianYear = yearKnownCount > 0 ? years[Math.floor(yearKnownCount / 2)] : null
-
-  let richestCentury: number | null = null
-  if (years.length > 0) {
-    const centuryCounts = new Map<number, number>()
-    for (const y of years) {
-      const century = Math.floor(y / 100) + 1
-      centuryCounts.set(century, (centuryCounts.get(century) ?? 0) + 1)
-    }
-    richestCentury = [...centuryCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-  }
 
   // Decades (sorted by count DESC)
   const decadeCounts = new Map<string, number>()
@@ -227,6 +224,7 @@ stats.get('/', async (c) => {
     languages,
     languageCount: languages.length,
     topAuthors,
+    authorCount,
     publishers,
     forms,
     subjects,
@@ -235,9 +233,10 @@ stats.get('/', async (c) => {
     topSeries,
     customFields,
     avgPages,
+    totalPagesRead,
     medianYear,
-    richestCentury,
     yearKnownCount,
+    genreCount,
   })
 })
 

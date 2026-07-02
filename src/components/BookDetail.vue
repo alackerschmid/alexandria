@@ -810,9 +810,10 @@ const publishYear = computed(() => bookYear(props.book) || "—");
 const statusThumbStyle = computed(() => {
   const index = STATUS_ORDER.indexOf(props.book.status);
   const meta = STATUS_META[props.book.status];
+  const n = STATUS_ORDER.length;
   return {
-    left: `calc(4px + ${index} * (100% - 8px) / 3)`,
-    width: `calc((100% - 8px) / 3)`,
+    left: `calc(4px + ${index} * (100% - 8px) / ${n})`,
+    width: `calc((100% - 8px) / ${n})`,
     background: meta.tint,
     border: `1px solid ${meta.color}`,
   };

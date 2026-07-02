@@ -102,7 +102,7 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`.
 - `PATCH /api/books/override` — write per-user field overrides to `book_overrides`; body `{ isbn, changes: { field: value } }`
 - `GET /api/scans` — paginated list (`limit`/`offset`/`sort`); returns merged rows with `*_overridden` boolean flags
 - `POST /api/scans` — save a scan by ISBN; resolves book metadata automatically
-- `PATCH /api/scans/:id` — update status (`unread` | `reading` | `read`)
+- `PATCH /api/scans/:id` — update status (`unread` | `reading` | `read` | `dnf`)
 - `DELETE /api/scans/:id` — remove a scan and its associated `book_overrides`
 
 Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Optional: `CORS_ORIGIN` (defaults to `*`). Local dev uses `worker/.dev.vars`.
