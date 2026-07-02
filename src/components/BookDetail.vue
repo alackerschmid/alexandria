@@ -161,17 +161,17 @@
               {{ $t("detail.pages") }}
             </div>
           </div>
-          <div class="py-4 px-3 text-center overflow-hidden">
+          <div class="py-4 px-3 text-center overflow-hidden min-w-0">
             <button
               v-if="book.genres?.length"
-              class="font-heading font-bold text-xl text-text-primary leading-none truncate hover:text-orange-neon transition-colors"
+              class="block w-full font-heading font-bold text-xl text-text-primary leading-none truncate hover:text-orange-neon transition-colors"
               @click="filterBy('genre', book.genres[0])"
             >
               {{ firstGenre }}
             </button>
             <div
               v-else
-              class="font-heading font-bold text-xl text-text-primary leading-none truncate"
+              class="block w-full font-heading font-bold text-xl text-text-primary leading-none truncate"
             >
               {{ firstGenre }}
             </div>
@@ -530,9 +530,13 @@
                     >
                       {{ $t("detail.form_of_work") }}
                     </div>
-                    <div class="text-sm text-text-primary">
+                    <button
+                      class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
+                      :aria-label="$t('detail.filter_by', { field: $t('detail.form_of_work'), value: book.form_of_work })"
+                      @click="filterBy('form', book.form_of_work!)"
+                    >
                       {{ book.form_of_work }}
-                    </div>
+                    </button>
                   </div>
                   <div
                     v-if="book.language_of_work"
@@ -543,9 +547,13 @@
                     >
                       {{ $t("detail.language_of_work") }}
                     </div>
-                    <div class="text-sm text-text-primary">
+                    <button
+                      class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
+                      :aria-label="$t('detail.filter_by', { field: $t('detail.language_of_work'), value: book.language_of_work })"
+                      @click="filterBy('original_language', book.language_of_work!)"
+                    >
                       {{ book.language_of_work }}
-                    </div>
+                    </button>
                   </div>
                   <div
                     v-if="book.main_subject"
@@ -569,8 +577,20 @@
                     >
                       {{ $t("detail.narrative_locations") }}
                     </div>
-                    <div class="text-sm text-text-primary">
-                      {{ book.narrative_locations!.join(" · ") }}
+                    <div class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+                      <template
+                        v-for="(loc, i) in book.narrative_locations"
+                        :key="loc"
+                      >
+                        <button
+                          class="hover:text-orange-neon transition-colors"
+                          :aria-label="$t('detail.filter_by', { field: $t('detail.narrative_locations'), value: loc })"
+                          @click="filterBy('location', loc)"
+                        >{{ loc }}</button><span
+                          v-if="i < book.narrative_locations!.length - 1"
+                          class="text-text-secondary/40"
+                        >·</span>
+                      </template>
                     </div>
                   </div>
                   <div
@@ -582,8 +602,20 @@
                     >
                       {{ $t("detail.countries_of_origin") }}
                     </div>
-                    <div class="text-sm text-text-primary">
-                      {{ book.countries_of_origin!.join(" · ") }}
+                    <div class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+                      <template
+                        v-for="(c, i) in book.countries_of_origin"
+                        :key="c"
+                      >
+                        <button
+                          class="hover:text-orange-neon transition-colors"
+                          :aria-label="$t('detail.filter_by', { field: $t('detail.countries_of_origin'), value: c })"
+                          @click="filterBy('country', c)"
+                        >{{ c }}</button><span
+                          v-if="i < book.countries_of_origin!.length - 1"
+                          class="text-text-secondary/40"
+                        >·</span>
+                      </template>
                     </div>
                   </div>
 
@@ -629,8 +661,17 @@
                         >
                           {{ $t("detail.awards") }}
                         </div>
-                        <div class="text-sm text-text-primary leading-relaxed">
-                          {{ book.awards!.join(" · ") }}
+                        <div class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5">
+                          <template v-for="(a, i) in book.awards" :key="a">
+                            <button
+                              class="hover:text-orange-neon transition-colors text-left"
+                              :aria-label="$t('detail.filter_by', { field: $t('detail.awards'), value: a })"
+                              @click="filterBy('award', a)"
+                            >{{ a }}</button><span
+                              v-if="i < book.awards!.length - 1"
+                              class="text-text-secondary/40"
+                            >·</span>
+                          </template>
                         </div>
                       </div>
                       <div v-if="book.nominations?.length">
@@ -639,8 +680,17 @@
                         >
                           {{ $t("detail.nominations") }}
                         </div>
-                        <div class="text-sm text-text-primary leading-relaxed">
-                          {{ book.nominations!.join(" · ") }}
+                        <div class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5">
+                          <template v-for="(a, i) in book.nominations" :key="a">
+                            <button
+                              class="hover:text-orange-neon transition-colors text-left"
+                              :aria-label="$t('detail.filter_by', { field: $t('detail.nominations'), value: a })"
+                              @click="filterBy('award', a)"
+                            >{{ a }}</button><span
+                              v-if="i < book.nominations!.length - 1"
+                              class="text-text-secondary/40"
+                            >·</span>
+                          </template>
                         </div>
                       </div>
                     </div>
@@ -833,7 +883,17 @@ function goToSeries() {
   router.push(`/series/${props.book.series_id}`);
 }
 
-function filterBy(field: "author" | "genre", value: string) {
+function filterBy(
+  field:
+    | "author"
+    | "genre"
+    | "form"
+    | "original_language"
+    | "location"
+    | "country"
+    | "award",
+  value: string,
+) {
   router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
 }
 

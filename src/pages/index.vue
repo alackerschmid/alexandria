@@ -636,7 +636,6 @@
                 v-if="entry.book"
                 :book="entry.book"
                 @cycle-status="cycleStatus(entry.book)"
-                @delete="openDeleteDialog(entry.book)"
                 @select="openDetail(entry.book)"
               />
               <LibraryGhostRow
@@ -687,7 +686,6 @@
           :key="book.id"
           :book="book"
           @cycle-status="cycleStatus(book)"
-          @delete="openDeleteDialog(book)"
           @select="openDetail(book)"
         />
       </div>
@@ -981,6 +979,8 @@ const PAGE_SIZE_OPTIONS = [
 const searchFocused = ref(false);
 const activeIndex = ref(-1);
 const tokenSelecting = ref(false);
+const showAllPrefixes = ref(false);
+const CORE_PREFIX_KEYS = new Set(["status", "author", "genre", "series"]);
 
 type SuggestionPrefix = {
   kind: "prefix";
@@ -997,7 +997,18 @@ type SuggestionBook = {
   typeLabel: string;
   token: "";
 };
-type Suggestion = SuggestionPrefix | SuggestionFacet | SuggestionBook;
+type SuggestionExpand = {
+  kind: "expand";
+  token: string;
+  icon: string;
+  label: string;
+  typeLabel: string;
+};
+type Suggestion =
+  | SuggestionPrefix
+  | SuggestionFacet
+  | SuggestionBook
+  | SuggestionExpand;
 
 // ── Autocomplete prefix chips ───────────────────────────────────────────────────
 
@@ -1116,14 +1127,28 @@ const suggestions = computed<Suggestion[]>(() => {
   const titleLabel = t("library.facet_title");
 
   if (!frag) {
-    // Empty/idle → show prefix chips
-    return PREFIXES.value.map((p) => ({
+    // Empty/idle → show prefix chips, collapsed to the core set until expanded
+    const list = showAllPrefixes.value
+      ? PREFIXES.value
+      : PREFIXES.value.filter((p) => CORE_PREFIX_KEYS.has(p.key));
+    const chips: Suggestion[] = list.map((p) => ({
       kind: "prefix" as const,
       token: `${p.key}:`,
       icon: p.icon,
       label: p.label,
       typeLabel: p.label,
     }));
+    if (!showAllPrefixes.value) {
+      const remaining = PREFIXES.value.length - CORE_PREFIX_KEYS.size;
+      chips.push({
+        kind: "expand",
+        token: t("library.search_show_more", { n: remaining }),
+        icon: "mdi-dots-horizontal",
+        label: t("library.search_show_more", { n: remaining }),
+        typeLabel: "",
+      });
+    }
+    return chips;
   }
 
   const results: Suggestion[] = [];
@@ -1203,6 +1228,10 @@ function applySuggestion(s: Suggestion) {
   if (s.kind === "book") {
     openDetail(s.book);
     searchFocused.value = false;
+    return;
+  }
+  if (s.kind === "expand") {
+    showAllPrefixes.value = true;
     return;
   }
   const head = search.value.slice(
@@ -1315,6 +1344,11 @@ function onSearchKeydown(e: KeyboardEvent) {
 // Reset activeIndex when suggestions change
 watch(suggestions, () => {
   activeIndex.value = -1;
+});
+
+// Collapse the idle prefix chips back down once the user starts typing again
+watch(searchFragment, (frag) => {
+  if (frag) showAllPrefixes.value = false;
 });
 
 // ── Pagination ────────────────────────────────────────────────────────────────

@@ -68,19 +68,6 @@
         </span>
       </div>
     </div>
-
-    <!-- Delete -->
-    <v-btn
-      icon="mdi-delete-outline"
-      variant="text"
-      color="primary"
-      size="x-small"
-      :aria-label="t('library.delete_book')"
-      class="shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity"
-      @click.stop="$emit('delete')"
-      @keydown.enter.stop
-      @keydown.space.stop
-    />
   </article>
 </template>
 
@@ -93,7 +80,7 @@ import { displayTitle, displayAuthor } from "@/utils/book-display";
 import { useBookStatus } from "@/composables/useBookStatus";
 
 const props = defineProps<{ book: Book }>();
-const emit = defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
+const emit = defineEmits<{ "cycle-status": []; select: [] }>();
 
 const { t } = useI18n();
 const { statusConfig } = useBookStatus();

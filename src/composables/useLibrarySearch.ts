@@ -9,7 +9,7 @@ import type { CustomFieldMeta } from '@/composables/useGroupDimensions'
 
 // Structured search keys with first-class handling (status:, author:, genre:, …).
 // Custom-field slugs are appended at runtime.
-const STATUS_VALUES: ReadStatus[] = ['unread', 'reading', 'read']
+const STATUS_VALUES = new Set<ReadStatus>(['unread', 'reading', 'read'])
 
 const BUILTIN_KEYS = [
   'status',
@@ -18,6 +18,7 @@ const BUILTIN_KEYS = [
   'series',
   'publisher',
   'language',
+  'original_language',
   'award',
   'form',
   'country',
@@ -34,6 +35,7 @@ export interface ParsedSearch {
   genre: string
   publisher: string
   language: string
+  original_language: string
   form: string
   country: string
   year: string
@@ -109,6 +111,7 @@ export function useLibrarySearch(options: {
     let genre = ''
     let publisher = ''
     let language = ''
+    let originalLanguage = ''
     let form = ''
     let country = ''
     let year = ''
@@ -127,7 +130,7 @@ export function useLibrarySearch(options: {
       const key = part.slice(0, colon).toLowerCase()
       const rawVal = part.slice(colon + 1)
       const val = rawVal.replace(/^"|"$/g, '').toLowerCase()
-      if (key === 'status' && STATUS_VALUES.includes(val as ReadStatus)) {
+      if (key === 'status' && STATUS_VALUES.has(val as ReadStatus)) {
         status = val as ReadStatus
         tokens.push(part.toLowerCase())
       } else if (key === 'series' && val) {
@@ -147,6 +150,9 @@ export function useLibrarySearch(options: {
         tokens.push(part)
       } else if (key === 'language' && val) {
         language = val
+        tokens.push(part)
+      } else if (key === 'original_language' && val) {
+        originalLanguage = val
         tokens.push(part)
       } else if (key === 'form' && val) {
         form = val
@@ -180,6 +186,7 @@ export function useLibrarySearch(options: {
       genre,
       publisher,
       language,
+      original_language: originalLanguage,
       form,
       country,
       year,
@@ -208,6 +215,7 @@ export function useLibrarySearch(options: {
       genre,
       publisher,
       language,
+      original_language: originalLanguage,
       form,
       country,
       year,
@@ -244,6 +252,11 @@ export function useLibrarySearch(options: {
     }
     if (language) {
       list = list.filter(b => b.language?.toLowerCase().includes(language))
+    }
+    if (originalLanguage) {
+      list = list.filter(b =>
+        b.language_of_work?.toLowerCase().includes(originalLanguage),
+      )
     }
     if (form) {
       list = list.filter(b => b.form_of_work?.toLowerCase().includes(form))
@@ -296,6 +309,7 @@ export function useLibrarySearch(options: {
 
     const publisherLabel = t('library.group_publisher')
     const languageLabel = t('library.group_language')
+    const originalLanguageLabel = t('library.group_original_language')
     const awardLabel = t('library.filter_awards')
     const formLabel = t('library.group_form')
     const countryLabel = t('library.group_country')
@@ -326,150 +340,36 @@ export function useLibrarySearch(options: {
     const metaByDefId = new Map(customFieldMetas.value.map(m => [m.def.id, m]))
 
     const seen = new Set<string>()
+    function pushFacet(
+      prefix: string,
+      value: string,
+      icon: string,
+      typeLabel: string,
+      label: string = value,
+    ) {
+      const k = `${prefix}:${value.toLowerCase()}`
+      if (seen.has(k)) return
+      seen.add(k)
+      entries.push({ kind: 'facet', token: `${prefix}:${quote(value)}`, icon, label, typeLabel })
+    }
+
     for (const b of pool) {
-      if (b.author) {
-        const k = b.author.toLowerCase()
-        if (!seen.has(`author:${k}`)) {
-          seen.add(`author:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `author:${quote(b.author)}`,
-            icon: 'mdi-account-outline',
-            label: b.author,
-            typeLabel: authorLabel,
-          })
-        }
-      }
-      for (const g of b.genres ?? []) {
-        const k = g.toLowerCase()
-        if (!seen.has(`genre:${k}`)) {
-          seen.add(`genre:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `genre:${quote(g)}`,
-            icon: 'mdi-tag-outline',
-            label: g,
-            typeLabel: genreLabel,
-          })
-        }
-      }
-      if (b.series_name) {
-        const k = b.series_name.toLowerCase()
-        if (!seen.has(`series:${k}`)) {
-          seen.add(`series:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `series:${quote(b.series_name)}`,
-            icon: 'mdi-bookshelf',
-            label: b.series_name,
-            typeLabel: seriesLabel,
-          })
-        }
-      }
-      if (b.publisher) {
-        const k = b.publisher.toLowerCase()
-        if (!seen.has(`publisher:${k}`)) {
-          seen.add(`publisher:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `publisher:${quote(b.publisher)}`,
-            icon: 'mdi-domain',
-            label: b.publisher,
-            typeLabel: publisherLabel,
-          })
-        }
-      }
-      if (b.language) {
-        const k = b.language.toLowerCase()
-        if (!seen.has(`language:${k}`)) {
-          seen.add(`language:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `language:${quote(b.language)}`,
-            icon: 'mdi-translate',
-            label: langFmt.value(b.language),
-            typeLabel: languageLabel,
-          })
-        }
-      }
-      for (const a of b.awards ?? []) {
-        const k = a.toLowerCase()
-        if (!seen.has(`award:${k}`)) {
-          seen.add(`award:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `award:${quote(a)}`,
-            icon: 'mdi-trophy-outline',
-            label: a,
-            typeLabel: awardLabel,
-          })
-        }
-      }
-      for (const a of b.nominations ?? []) {
-        const k = a.toLowerCase()
-        if (!seen.has(`award:${k}`)) {
-          seen.add(`award:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `award:${quote(a)}`,
-            icon: 'mdi-trophy-outline',
-            label: a,
-            typeLabel: awardLabel,
-          })
-        }
-      }
-      if (b.form_of_work) {
-        const k = b.form_of_work.toLowerCase()
-        if (!seen.has(`form:${k}`)) {
-          seen.add(`form:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `form:${quote(b.form_of_work)}`,
-            icon: 'mdi-text-box-outline',
-            label: b.form_of_work,
-            typeLabel: formLabel,
-          })
-        }
-      }
-      for (const c of b.countries_of_origin ?? []) {
-        const k = c.toLowerCase()
-        if (!seen.has(`country:${k}`)) {
-          seen.add(`country:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `country:${quote(c)}`,
-            icon: 'mdi-earth',
-            label: c,
-            typeLabel: countryLabel,
-          })
-        }
-      }
-      if (b.main_subject) {
-        const k = b.main_subject.toLowerCase()
-        if (!seen.has(`subject:${k}`)) {
-          seen.add(`subject:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `subject:${quote(b.main_subject)}`,
-            icon: 'mdi-lightbulb-outline',
-            label: b.main_subject,
-            typeLabel: subjectLabel,
-          })
-        }
-      }
-      for (const loc of b.narrative_locations ?? []) {
-        const k = loc.toLowerCase()
-        if (!seen.has(`location:${k}`)) {
-          seen.add(`location:${k}`)
-          entries.push({
-            kind: 'facet',
-            token: `location:${quote(loc)}`,
-            icon: 'mdi-map-marker-outline',
-            label: loc,
-            typeLabel: locationLabel,
-          })
-        }
-      }
+      if (b.author) pushFacet('author', b.author, 'mdi-account-outline', authorLabel)
+      for (const g of b.genres ?? []) pushFacet('genre', g, 'mdi-tag-outline', genreLabel)
+      if (b.series_name) pushFacet('series', b.series_name, 'mdi-bookshelf', seriesLabel)
+      if (b.publisher) pushFacet('publisher', b.publisher, 'mdi-domain', publisherLabel)
+      if (b.language)
+        pushFacet('language', b.language, 'mdi-translate', languageLabel, langFmt.value(b.language))
+      if (b.language_of_work)
+        pushFacet('original_language', b.language_of_work, 'mdi-translate-variant', originalLanguageLabel)
+      for (const a of b.awards ?? []) pushFacet('award', a, 'mdi-trophy-outline', awardLabel)
+      for (const a of b.nominations ?? []) pushFacet('award', a, 'mdi-trophy-outline', awardLabel)
+      if (b.form_of_work) pushFacet('form', b.form_of_work, 'mdi-text-box-outline', formLabel)
+      for (const c of b.countries_of_origin ?? []) pushFacet('country', c, 'mdi-earth', countryLabel)
+      if (b.main_subject) pushFacet('subject', b.main_subject, 'mdi-lightbulb-outline', subjectLabel)
+      for (const loc of b.narrative_locations ?? [])
+        pushFacet('location', loc, 'mdi-map-marker-outline', locationLabel)
+
       for (const cf of b.custom_field_values ?? []) {
         if (cf.value == null) continue
         const meta = metaByDefId.get(cf.field_def_id)

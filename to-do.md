@@ -7,7 +7,7 @@ add confirmation for switch
 ## bugfixes
 
 - ~~bar chart on home page doesnt adhere to accent styling~~
-- modify buttons on setting page to adhere to black font
+- ~~modify buttons on setting page to adhere to black font~~
 - "find more editions" call doesnt show metadata
 - veirfy switch edition logic
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
@@ -29,7 +29,7 @@ add confirmation for switch
 - ~~make compartmentalization pass ("STATUS_CONFIG composable extraction — spans LibraryRowCard, BookDetail, and scanner.vue; worth doing but needs a broader discussion since BookDetail is large. Search/grouping composable extraction — parsedSearch/allGroups in index.vue are good candidates but are 600+ line extractions; architectural decision.")~~
 - move "delete" to fourth option of reading status
 - ~~back fill items when in group view so that there's always 4 items per row~~
-- remove delete button
+- ~~remove delete button~~
 
 ## batch 3: detail page
 
@@ -56,7 +56,7 @@ add confirmation for switch
 - "missing" filter that highlights incomplete series
 - "to sell" marker
 - "dnf" shelf
-- support for books w/o isbn
+- ~~support for books w/o isbn~~
 - mass import books before prod go-live to prep enrichment (-> how?)
 - bulk editing / import
 - incorporate CV page
