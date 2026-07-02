@@ -185,6 +185,8 @@ export type OpenLibraryEdition = {
   title: string | null
   language: string | null
   cover_url: string | null
+  publish_date: string | null
+  publisher: string | null
 }
 
 // Given an ISBN, resolves its OpenLibrary work and returns every edition OpenLibrary knows for
@@ -224,6 +226,8 @@ export async function fetchOpenLibraryEditions(isbn: string): Promise<OpenLibrar
         title: e.title ?? null,
         language: mapLanguageCode(e.languages?.[0]?.key),
         cover_url: e.covers?.[0] ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg` : null,
+        publish_date: e.publish_date ?? null,
+        publisher: e.publishers?.[0] ?? null,
       })
     }
     return out

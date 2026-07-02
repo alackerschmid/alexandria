@@ -17,15 +17,7 @@
         :alt="displayTitle(book)"
         class="w-full h-full object-cover"
       />
-      <div
-        v-else
-        class="absolute inset-0 flex items-center justify-center"
-        :style="{ background: tint }"
-      >
-        <span class="font-heading font-bold text-sm" style="color: rgba(236,233,227,0.3)">
-          {{ glyph }}
-        </span>
-      </div>
+      <PlaceholderCover v-else :title="displayTitle(book)" text-class="text-sm" :icon-size="10" />
       <!-- orange left spine accent -->
       <div class="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-neon" />
     </div>
@@ -75,9 +67,9 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Book } from "@/types/book";
-import { tintFor, initials } from "@/utils/cover";
 import { displayTitle, displayAuthor } from "@/utils/book-display";
 import { useBookStatus } from "@/composables/useBookStatus";
+import PlaceholderCover from "@/components/PlaceholderCover.vue";
 
 const props = defineProps<{ book: Book }>();
 const emit = defineEmits<{ "cycle-status": []; select: [] }>();
@@ -88,9 +80,6 @@ const { statusConfig } = useBookStatus();
 function onKeydownSelect() {
   emit("select");
 }
-
-const tint = computed(() => tintFor(displayTitle(props.book)));
-const glyph = computed(() => initials(displayTitle(props.book)));
 
 const seriesBracket = computed(() => {
   if (!props.book.series_name) return "";

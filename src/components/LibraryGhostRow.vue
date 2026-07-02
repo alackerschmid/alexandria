@@ -7,11 +7,9 @@
     @keydown.enter="$emit('select')"
     @keydown.space.prevent="$emit('select')"
   >
-    <!-- Ghost spine -->
-    <div
-      class="w-10 h-15 shrink-0 flex items-center justify-center bg-charcoal-light border border-dashed border-charcoal-border"
-    >
-      <v-icon icon="mdi-book-outline" size="16" class="text-text-secondary/50" />
+    <!-- Ghost cover -->
+    <div class="w-10 h-15 shrink-0 relative overflow-hidden">
+      <PlaceholderCover :title="title" ghost text-class="text-xs" :icon-size="16" show-missing-indicator />
     </div>
 
     <!-- Text -->
@@ -38,6 +36,7 @@
 
 <script lang="ts" setup>
 import { computed } from 'vue'
+import PlaceholderCover from '@/components/PlaceholderCover.vue'
 
 const props = defineProps<{
   title: string | null

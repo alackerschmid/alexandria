@@ -86,11 +86,14 @@
             :alt="entry.title || $t('series.untitled')"
             class="w-9 h-13 object-cover shrink-0"
           />
-          <div
-            v-else
-            class="w-9 h-13 bg-charcoal-light border border-charcoal-border flex items-center justify-center shrink-0"
-          >
-            <v-icon icon="mdi-book-outline" size="16" color="primary" />
+          <div v-else class="w-9 h-13 relative overflow-hidden shrink-0">
+            <PlaceholderCover
+              :title="entry.title"
+              :ghost="!entry.owned"
+              :show-missing-indicator="!entry.owned"
+              text-class="text-xs"
+              :icon-size="14"
+            />
           </div>
           <div class="min-w-0 flex-1">
             <div class="text-sm text-text-primary truncate">
@@ -172,6 +175,7 @@ import BookDetail from "@/components/BookDetail.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 import type { Book, ReadStatus } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
+import PlaceholderCover from "@/components/PlaceholderCover.vue";
 
 interface SeriesEntry {
   work_id: number;

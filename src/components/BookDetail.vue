@@ -20,18 +20,12 @@
               :alt="book.title || book.isbn"
               class="w-full h-full object-cover"
             />
-            <div
+            <PlaceholderCover
               v-else
-              class="relative w-full h-full bg-charcoal border border-charcoal-border flex flex-col p-3 overflow-hidden"
-            >
-              <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-neon" />
-              <div class="flex-1" />
-              <div
-                class="font-heading font-bold text-xs text-text-primary leading-tight pl-2 line-clamp-4"
-              >
-                {{ book.title || book.isbn }}
-              </div>
-            </div>
+              :title="book.title || book.isbn"
+              text-class="text-2xl"
+              :icon-size="18"
+            />
           </div>
 
           <!-- meta -->
@@ -291,26 +285,13 @@
                     :alt="book.title || book.isbn"
                     class="w-full h-full object-cover shadow-2xl"
                   />
-                  <div
+                  <PlaceholderCover
                     v-else
-                    class="relative w-full h-full bg-charcoal-light border border-charcoal-border flex flex-col p-6 overflow-hidden shadow-2xl"
-                  >
-                    <div
-                      class="absolute left-0 top-0 bottom-0 w-2 bg-orange-neon"
-                    />
-                    <div class="flex-1" />
-                    <div
-                      class="font-heading font-bold text-2xl text-text-primary leading-tight pl-3"
-                    >
-                      {{ book.title || book.isbn }}
-                    </div>
-                    <div
-                      v-if="book.author"
-                      class="text-sm text-text-secondary mt-3 pl-3"
-                    >
-                      {{ book.author }}
-                    </div>
-                  </div>
+                    :title="book.title || book.isbn"
+                    text-class="text-5xl"
+                    :icon-size="28"
+                    class="shadow-2xl"
+                  />
                 </div>
 
                 <!-- edition details (desktop) -->
@@ -768,7 +749,7 @@ export interface BookWithOverrides extends Book {
 </script>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, computed, onMounted } from "vue";
+import { ref, watch, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
@@ -785,7 +766,10 @@ import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
-import BookEditForm from "@/components/book-detail/BookEditForm.vue";
+import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import BookEditForm, {
+  type EditForm,
+} from "@/components/book-detail/BookEditForm.vue";
 import OverrideDot from "@/components/OverrideDot.vue";
 import type { ReadStatus } from "@/types/book";
 
@@ -855,12 +839,12 @@ const editing = ref(false);
 const saving = ref(false);
 const saveError = ref(false);
 
-const form = reactive({
+const form = ref<EditForm>({
   title: "",
   cover_url: "",
   language: "",
   publish_date: "",
-  number_of_pages_median: null as number | null,
+  number_of_pages_median: null,
   description: "",
   publisher: "",
 });
@@ -928,13 +912,13 @@ onMounted(() => {
 });
 
 function enterEdit() {
-  form.title = props.book.title ?? "";
-  form.cover_url = props.book.cover_url ?? "";
-  form.language = props.book.language ?? "";
-  form.publish_date = props.book.publish_date ?? "";
-  form.number_of_pages_median = props.book.number_of_pages_median ?? null;
-  form.description = props.book.description ?? "";
-  form.publisher = props.book.publisher ?? "";
+  form.value.title = props.book.title ?? "";
+  form.value.cover_url = props.book.cover_url ?? "";
+  form.value.language = props.book.language ?? "";
+  form.value.publish_date = props.book.publish_date ?? "";
+  form.value.number_of_pages_median = props.book.number_of_pages_median ?? null;
+  form.value.description = props.book.description ?? "";
+  form.value.publisher = props.book.publisher ?? "";
   saveError.value = false;
   editing.value = true;
 }
@@ -945,21 +929,22 @@ async function save() {
   const on = (v: number | null | undefined) => v ?? null;
 
   const changes: Record<string, string | number | null> = {};
-  if (s(form.title) !== o(props.book.title)) changes.title = s(form.title);
-  if (s(form.cover_url) !== o(props.book.cover_url))
-    changes.cover_url = s(form.cover_url);
-  if (s(form.language) !== o(props.book.language))
-    changes.language = s(form.language);
-  if (s(form.publish_date) !== o(props.book.publish_date))
-    changes.publish_date = s(form.publish_date);
-  if (s(form.description) !== o(props.book.description))
-    changes.description = s(form.description);
-  if (s(form.publisher) !== o(props.book.publisher))
-    changes.publisher = s(form.publisher);
+  if (s(form.value.title) !== o(props.book.title))
+    changes.title = s(form.value.title);
+  if (s(form.value.cover_url) !== o(props.book.cover_url))
+    changes.cover_url = s(form.value.cover_url);
+  if (s(form.value.language) !== o(props.book.language))
+    changes.language = s(form.value.language);
+  if (s(form.value.publish_date) !== o(props.book.publish_date))
+    changes.publish_date = s(form.value.publish_date);
+  if (s(form.value.description) !== o(props.book.description))
+    changes.description = s(form.value.description);
+  if (s(form.value.publisher) !== o(props.book.publisher))
+    changes.publisher = s(form.value.publisher);
 
   const newPages =
-    form.number_of_pages_median && form.number_of_pages_median > 0
-      ? form.number_of_pages_median
+    form.value.number_of_pages_median && form.value.number_of_pages_median > 0
+      ? form.value.number_of_pages_median
       : null;
   if (newPages !== on(props.book.number_of_pages_median))
     changes.number_of_pages_median = newPages;

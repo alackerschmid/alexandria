@@ -31,16 +31,16 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
     .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null; publish_date: string | null; publisher: string | null; scan_id: number | null }>()
 
   const { results: candidates } = await db.prepare(`
-    SELECT wei.isbn, wei.title, wei.language, wei.cover_url
+    SELECT wei.isbn, wei.title, wei.language, wei.cover_url, wei.publish_date, wei.publisher
     FROM work_edition_isbns wei
     WHERE wei.work_id = ? AND NOT EXISTS (SELECT 1 FROM books b WHERE b.isbn = wei.isbn)
     ORDER BY wei.isbn`)
     .bind(workId)
-    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null }>()
+    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null; publish_date: string | null; publisher: string | null }>()
 
   const editions: EditionRow[] = [
     ...materialized.map(r => ({ ...r, materialized: true })),
-    ...candidates.map(r => ({ ...r, publish_date: null, publisher: null, scan_id: null, materialized: false })),
+    ...candidates.map(r => ({ ...r, scan_id: null, materialized: false })),
   ]
 
   const work = await db.prepare('SELECT editions_checked_at FROM works WHERE id = ?')
@@ -97,8 +97,8 @@ works.post('/:workId/editions/discover', async (c) => {
 
         if (newEditions.length) {
           await db.batch(newEditions.map(e =>
-            db.prepare('INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, source) VALUES (?, ?, ?, ?, ?, ?)')
-              .bind(workId, e.isbn, e.title, e.language, e.cover_url, 'openlibrary')))
+            db.prepare('INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+              .bind(workId, e.isbn, e.title, e.language, e.cover_url, e.publish_date, e.publisher, 'openlibrary')))
         }
       }
 

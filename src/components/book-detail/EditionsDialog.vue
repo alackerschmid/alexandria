@@ -86,18 +86,13 @@
                     :alt="ed.title || ed.isbn"
                     class="w-full h-full object-cover"
                   />
-                  <div
+                  <PlaceholderCover
                     v-else
-                    class="relative w-full h-full bg-charcoal flex flex-col p-3 overflow-hidden"
-                  >
-                    <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-neon" />
-                    <div class="flex-1" />
-                    <div
-                      class="font-heading font-bold text-xs text-text-primary leading-tight pl-2 line-clamp-4"
-                    >
-                      {{ ed.title || ed.isbn }}
-                    </div>
-                  </div>
+                    :title="ed.title || ed.isbn"
+                    text-class="text-[28px]"
+                    :icon-size="26"
+                    show-missing-indicator
+                  />
                   <div
                     v-if="switchingIsbn === ed.isbn"
                     class="absolute inset-0 bg-black/50 flex items-center justify-center"
@@ -190,6 +185,7 @@ import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
 import type { Book } from "@/types/book";
+import PlaceholderCover from "@/components/PlaceholderCover.vue";
 
 interface WorkEdition {
   isbn: string;

@@ -9,35 +9,23 @@
     @keydown.space.prevent="$emit('select')"
   >
     <div class="relative aspect-2/3 overflow-hidden bg-charcoal-light mb-1.5">
-      <!-- Unowned ghost -->
-      <div
-        v-if="!owned"
-        class="absolute inset-0 flex flex-col items-center justify-center gap-2 border border-dashed border-charcoal-border"
-      >
-        <v-icon icon="mdi-book-outline" size="18" class="text-text-secondary/50" />
-        <span class="font-mono text-[8px] tracking-[0.14em] text-text-secondary/60 uppercase">
-          {{ $t('library.unowned') }}
-        </span>
-      </div>
-
-      <!-- Owned with cover image -->
+      <!-- Cover image -->
       <img
-        v-else-if="coverUrl"
+        v-if="coverUrl"
         :src="coverUrl"
         :alt="title || $t('series.untitled')"
         class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
       />
 
-      <!-- Owned, no cover → tint + initials -->
-      <div
+      <!-- No cover found -->
+      <PlaceholderCover
         v-else
-        class="absolute inset-0 flex items-center justify-center"
-        :style="{ background: tint }"
-      >
-        <span class="font-heading font-bold text-[30px]" style="color: rgba(236,233,227,0.22)">
-          {{ glyph }}
-        </span>
-      </div>
+        :title="title"
+        :ghost="!owned"
+        text-class="text-[30px]"
+        :icon-size="28"
+        :show-missing-indicator="!owned"
+      />
 
       <!-- Status dot (owned only) -->
       <div
@@ -68,15 +56,21 @@
       }}<span v-if="ordinal != null" class="font-normal text-text-secondary/70">
         #{{ ordinal }}</span>
     </p>
-    <p v-if="author" class="text-[9px] text-text-secondary/70 mt-0.5 truncate">{{ author }}</p>
+    <p
+      v-if="!owned"
+      class="font-mono text-[8px] tracking-[0.14em] text-text-secondary/50 uppercase mt-0.5"
+    >
+      {{ $t('library.unowned') }}
+    </p>
+    <p v-else-if="author" class="text-[9px] text-text-secondary/70 mt-0.5 truncate">{{ author }}</p>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { computed } from 'vue'
 import type { ReadStatus } from '@/types/book'
-import { tintFor, initials } from '@/utils/cover'
 import { STATUS_META, useBookStatus } from '@/composables/useBookStatus'
+import PlaceholderCover from '@/components/PlaceholderCover.vue'
 
 const props = defineProps<{
   title: string | null
@@ -91,8 +85,6 @@ defineEmits<{ select: [] }>()
 
 const { statusConfig } = useBookStatus()
 
-const tint = computed(() => tintFor(props.title || ''))
-const glyph = computed(() => initials(props.title || '?'))
 const isNovella = computed(() => props.ordinal != null && !Number.isInteger(props.ordinal))
 const statusLabel = computed(() => statusConfig.value[props.status ?? 'unread'].label)
 
