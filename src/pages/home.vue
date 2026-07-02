@@ -86,6 +86,20 @@
       v-else-if="statsData"
       class="flex-1 md:min-h-0 overflow-y-auto px-6 md:px-14 pb-28 md:pb-8 flex flex-col gap-5"
     >
+      <!-- Random first line spotlight -->
+      <div v-if="randomQuote" class="shrink-0">
+        <p
+          class="font-mono text-[15px] md:text-[17px] text-text-primary leading-snug"
+        >
+          "{{ randomQuote.firstLine }}"
+        </p>
+        <p
+          class="font-mono text-[10px] tracking-[0.15em] uppercase text-text-secondary mt-1.5"
+        >
+          — {{ randomQuote.title }}
+        </p>
+      </div>
+
       <!-- Stat tiles: 2×3 mobile, 5-col desktop -->
       <div
         class="grid grid-cols-2 md:grid-cols-5 border-t border-l border-charcoal-border shrink-0"
@@ -288,6 +302,59 @@
               </div>
             </div>
           </div>
+          <!-- Translation ratio -->
+          <div
+            v-if="statsData.translationRatio"
+            class="mt-5 pt-2 border-t border-charcoal-border"
+          >
+            <div class="flex items-baseline justify-between">
+              <span
+                class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary"
+                >{{ $t("home.translation_ratio") }}</span
+              >
+              <span class="flex items-baseline gap-1.5">
+                <span
+                  class="font-heading font-black text-[28px] leading-none text-text-primary"
+                  >{{ statsData.translationRatio.pct }}</span
+                >
+                <span
+                  class="font-heading font-bold text-[14px] text-orange-neon"
+                  >%</span
+                >
+              </span>
+            </div>
+            <div class="h-[3px] bg-charcoal-border relative mt-2">
+              <div
+                class="absolute left-0 top-0 bottom-0"
+                :style="{
+                  width: statsData.translationRatio.pct + '%',
+                  background: 'rgb(var(--v-theme-primary))',
+                }"
+              ></div>
+            </div>
+          </div>
+
+          <!-- Decade × genre rotator -->
+          <div
+            v-if="currentDecadeGenre"
+            class="mt-5 pt-4 border-t border-charcoal-border"
+          >
+            <transition name="fade" mode="out-in">
+              <p
+                :key="currentDecadeGenre.decade"
+                class="text-[13px] text-text-secondary leading-snug"
+              >
+                {{
+                  $t("home.decade_genre_line", {
+                    decade: currentDecadeGenre.decade,
+                    genre: currentDecadeGenre.genre,
+                    count: currentDecadeGenre.count,
+                    total: currentDecadeGenre.total_count,
+                  })
+                }}
+              </p>
+            </transition>
+          </div>
         </div>
       </div>
     </div>
@@ -351,7 +418,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
@@ -383,6 +450,7 @@ const statsData = ref<CollectionStats | null>(null);
 const loading = ref(false);
 const errorToast = ref(false);
 const errorMessage = ref("");
+const randomQuote = ref<{ title: string; firstLine: string } | null>(null);
 
 // ── First-name onboarding ─────────────────────────────────────────────────────
 
@@ -682,6 +750,17 @@ const statTiles = computed(() => {
   ];
 });
 
+// ── Decade × genre rotator ──────────────────────────────────────────────────────
+
+const decadeGenreIndex = ref(0);
+let decadeGenreTimer: ReturnType<typeof setInterval> | undefined;
+
+const currentDecadeGenre = computed(() => {
+  const list = statsData.value?.decadeGenres ?? [];
+  if (list.length === 0) return null;
+  return list[decadeGenreIndex.value % list.length];
+});
+
 // ── By the numbers ────────────────────────────────────────────────────────────
 
 const trioItems = computed(() => {
@@ -730,6 +809,10 @@ const fetchStats = async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch stats");
     statsData.value = data;
+    // Only set once per page load — locale-triggered refetches shouldn't change the quote.
+    if (randomQuote.value === null && data.randomFirstLine) {
+      randomQuote.value = data.randomFirstLine;
+    }
   } catch (err: any) {
     errorMessage.value = err.message;
     errorToast.value = true;
@@ -740,6 +823,13 @@ onMounted(async () => {
   loading.value = true;
   await Promise.all([fetchStats(), fieldDefsStore.load()]);
   loading.value = false;
+  decadeGenreTimer = setInterval(() => {
+    decadeGenreIndex.value++;
+  }, 15000);
+});
+
+onUnmounted(() => {
+  if (decadeGenreTimer) clearInterval(decadeGenreTimer);
 });
 
 watch(
@@ -747,3 +837,14 @@ watch(
   () => fetchStats(),
 );
 </script>
+
+<style scoped>
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>
