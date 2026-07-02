@@ -276,8 +276,8 @@ const metaLine = computed(() => {
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
 const colorRamp = computed<string[]>(() => themeStore.isDark
-  ? ['#ff6600', '#b8afa6', '#8a8078', '#5c544e', '#3a3631', '#2a2724']
-  : ['#ff6600', '#8a7a70', '#5c5249', '#3d3631', '#2a2421', '#c9c3bb'])
+  ? ['rgb(var(--v-theme-primary))', '#b8afa6', '#8a8078', '#5c544e', '#3a3631', '#2a2724']
+  : ['rgb(var(--v-theme-primary))', '#8a7a70', '#5c5249', '#3d3631', '#2a2421', '#c9c3bb'])
 
 function secondaryBarColor(): string {
   return themeStore.isDark ? '#5c544e' : '#8a7a6f'

@@ -65,6 +65,16 @@
   outline: none;
 }
 
+/* Vuetify's own .v-btn--variant-flat/-elevated rules set text color from
+   on-surface, which wins the cascade over the .bg-primary utility's on-primary
+   color at equal (single-class) specificity. on-surface flips light/dark with
+   the theme, so accent-colored buttons silently lose their black text in dark
+   mode. Pin it back with a higher-specificity rule. */
+.v-btn--variant-flat.bg-primary,
+.v-btn--variant-elevated.bg-primary {
+  color: rgb(var(--v-theme-on-primary));
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

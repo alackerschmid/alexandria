@@ -6,7 +6,7 @@ add confirmation for switch
 
 ## bugfixes
 
-- bar chart on home page doesnt adhere to accent styling
+- ~~bar chart on home page doesnt adhere to accent styling~~
 - modify buttons on setting page to adhere to black font
 - "find more editions" call doesnt show metadata
 - veirfy switch edition logic

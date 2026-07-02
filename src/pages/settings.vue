@@ -262,7 +262,7 @@
                 <input
                   :value="def.name"
                   type="text"
-                  class="bg-transparent border-none text-[14px] text-text-primary py-3 w-full"
+                  class="bg-transparent border-0 border-b border-transparent text-[14px] text-text-primary pt-3 pb-2 mb-2 w-[calc(100%-1rem)] focus-ring-none transition-colors focus-visible:border-orange-neon"
                   @blur="onFieldNameBlur(def, $event)"
                   @keydown.enter="($event.target as HTMLInputElement).blur()"
                 />
@@ -331,7 +331,7 @@
                   v-model="newFieldName"
                   type="text"
                   :placeholder="$t('settings.fields.new_placeholder')"
-                  class="bg-transparent border-none text-[14px] text-text-primary py-3 w-full placeholder:text-text-secondary/30"
+                  class="bg-transparent border-0 border-b border-transparent text-[14px] text-text-primary pt-3 pb-2 mb-1 w-[calc(100%-1rem)] placeholder:text-text-secondary/30 focus-ring-none transition-colors focus-visible:border-orange-neon"
                   @keydown.enter="confirmAddField"
                   @keydown.escape="
                     addingField = false;
