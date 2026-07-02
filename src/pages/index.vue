@@ -106,8 +106,14 @@
               ref="searchRef"
               v-model="search"
               type="text"
+              role="combobox"
+              :aria-label="$t('library.search_field_label')"
+              :aria-expanded="searchFocused"
+              aria-autocomplete="list"
+              aria-controls="library-search-listbox"
+              :aria-activedescendant="searchFocused && activeIndex >= 0 ? `library-search-option-${activeIndex}` : undefined"
               :placeholder="$t('library.search_placeholder_smart')"
-              class="relative w-full bg-transparent text-transparent caret-text-primary text-sm md:text-base outline-none placeholder:text-text-secondary/40"
+              class="relative w-full bg-transparent text-transparent caret-text-primary text-sm md:text-base outline-none focus-ring-none placeholder:text-text-secondary/40"
               :class="{ 'token-selecting': tokenSelecting }"
               @focus="searchFocused = true"
               @blur="onSearchBlur"
@@ -122,6 +128,7 @@
           <button
             v-if="search"
             class="text-text-secondary hover:text-text-primary transition-colors shrink-0"
+            :aria-label="$t('library.clear_search')"
             @mousedown.prevent
             @click.stop="
               search = '';
@@ -142,6 +149,8 @@
         <v-slide-y-transition>
           <div
             v-if="searchFocused"
+            id="library-search-listbox"
+            role="listbox"
             class="absolute top-full left-0 right-0 mt-3 bg-charcoal-light border border-charcoal-border shadow-[0_28px_64px_-18px_rgba(0,0,0,0.85)] overflow-hidden"
             @mousedown.prevent
           >
@@ -165,7 +174,10 @@
             >
               <button
                 v-for="(s, i) in suggestions"
+                :id="`library-search-option-${i}`"
                 :key="s.token"
+                role="option"
+                :aria-selected="i === activeIndex"
                 class="flex items-center gap-2 px-3 py-2 border bg-charcoal-light transition-colors"
                 :class="
                   i === activeIndex
@@ -186,7 +198,10 @@
             <template v-else>
               <div
                 v-for="(s, i) in suggestions"
+                :id="`library-search-option-${i}`"
                 :key="i"
+                role="option"
+                :aria-selected="i === activeIndex"
                 class="flex items-center gap-3.5 px-[18px] py-[13px] cursor-pointer border-b border-charcoal-border/30 transition-colors"
                 :class="
                   i === activeIndex
@@ -219,7 +234,7 @@
               class="flex items-center gap-4 px-[18px] py-[11px] bg-charcoal/80"
             >
               <span class="font-mono text-[10px] text-text-secondary/60"
-                ><span class="text-text-secondary">↑↓ ⇥</span>
+                ><span class="text-text-secondary">↑↓</span>
                 {{ $t("library.kbd_navigate") }}</span
               >
               <span class="font-mono text-[10px] text-text-secondary/60"
@@ -252,6 +267,7 @@
           {{ tok }}
           <button
             class="text-text-secondary/60 hover:text-text-primary ml-1"
+            :aria-label="$t('library.remove_filter', { token: tok })"
             @click="removeToken(tok)"
           >
             ×
@@ -330,6 +346,8 @@
                 ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
                 : 'border-charcoal-border text-text-secondary hover:text-text-primary'
             "
+            :aria-label="$t('library.view_list')"
+            :aria-pressed="viewMode === 'list'"
             @click="viewMode = 'list'"
           >
             <v-icon icon="mdi-view-list" size="16" />
@@ -341,6 +359,8 @@
                 ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
                 : 'border-charcoal-border text-text-secondary hover:text-text-primary'
             "
+            :aria-label="$t('library.view_tile')"
+            :aria-pressed="viewMode === 'tile'"
             @click="viewMode = 'tile'"
           >
             <v-icon icon="mdi-view-grid" size="16" />
@@ -378,6 +398,8 @@
               ? 'border-charcoal-border text-orange-neon bg-charcoal'
               : 'border-charcoal-border text-text-secondary'
           "
+          :aria-label="$t('library.view_list')"
+          :aria-pressed="viewMode === 'list'"
           @click="viewMode = 'list'"
         >
           <v-icon icon="mdi-view-list" size="16" />
@@ -389,6 +411,8 @@
               ? 'border-charcoal-border text-orange-neon bg-charcoal'
               : 'border-charcoal-border text-text-secondary'
           "
+          :aria-label="$t('library.view_tile')"
+          :aria-pressed="viewMode === 'tile'"
           @click="viewMode = 'tile'"
         >
           <v-icon icon="mdi-view-grid" size="16" />
@@ -396,6 +420,7 @@
       </div>
       <button
         class="flex items-center justify-center w-8.5 h-8.5 border border-charcoal-border text-text-secondary shrink-0"
+        :aria-label="$t('library.display')"
         @click="displayMenu = true"
       >
         <v-icon icon="mdi-cog-outline" size="16" />
@@ -405,7 +430,7 @@
     <!-- Mobile group picker bottom sheet -->
     <v-bottom-sheet v-model="groupSheetOpen">
       <div
-        class="bg-charcoal-light border-t border-charcoal-border px-6 pt-4 pb-8 max-h-[78vh] overflow-y-auto"
+        class="bg-charcoal-light border-t border-charcoal-border px-6 pt-4 pb-8 max-h-[78dvh] overflow-y-auto"
       >
         <div class="w-9 h-1 rounded bg-charcoal-border mx-auto mb-4" />
         <div class="flex items-center justify-between pb-1">
@@ -415,6 +440,7 @@
           >
           <button
             class="text-text-secondary text-lg leading-none"
+            :aria-label="$t('detail.close')"
             @click="groupSheetOpen = false"
           >
             ✕
@@ -536,21 +562,23 @@
         <div>
           <!-- Group header -->
           <div class="flex items-baseline gap-3 pb-4">
-            <button
-              v-if="group.seriesId != null"
-              class="font-heading text-2xl font-bold hover:text-orange-neon transition-colors text-left min-w-0 truncate"
-              :class="'text-text-primary'"
-              @click="$router.push(`/series/${group.seriesId}`)"
-            >
-              {{ group.label }}
-            </button>
-            <span
-              v-else
-              class="font-heading text-2xl font-bold min-w-0 truncate"
-              :class="group.complete ? 'text-orange-neon' : 'text-text-primary'"
-            >
-              {{ group.label }}
-            </span>
+            <h2 class="contents">
+              <button
+                v-if="group.seriesId != null"
+                class="font-heading text-2xl font-bold hover:text-orange-neon transition-colors text-left min-w-0 truncate"
+                :class="'text-text-primary'"
+                @click="$router.push(`/series/${group.seriesId}`)"
+              >
+                {{ group.label }}
+              </button>
+              <span
+                v-else
+                class="font-heading text-2xl font-bold min-w-0 truncate"
+                :class="group.complete ? 'text-orange-neon' : 'text-text-primary'"
+              >
+                {{ group.label }}
+              </span>
+            </h2>
             <span
               class="font-mono text-[10px] text-text-secondary/50 shrink-0"
               >{{ group.countLabel }}</span
@@ -678,15 +706,16 @@
 
     <!-- Mobile scan FAB -->
     <button
-      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 md:hidden flex items-center justify-center gap-2 rounded-full py-4 text-[10px] font-bold tracking-[0.25em] uppercase text-white"
+      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 md:hidden flex items-center justify-center gap-2 rounded-full py-4 text-[10px] font-bold tracking-[0.25em] uppercase"
       style="
         background: rgb(var(--v-theme-primary));
+        color: #111110;
         min-width: 58vw;
         box-shadow: 0 4px 28px rgba(255, 102, 0, 0.3);
       "
       @click="$router.push('/scanner')"
     >
-      <v-icon icon="mdi-camera" size="15" color="white" />
+      <v-icon icon="mdi-camera" size="15" style="color: #111110" />
       {{ $t("home.start_scanning") }}
     </button>
 
@@ -724,6 +753,7 @@
               title: bookToDelete?.title || bookToDelete?.isbn,
             })
           }}
+          <p v-if="deleteFailed" class="text-error mt-2">{{ $t("library.error_delete") }}</p>
         </v-card-text>
         <v-card-actions class="px-4 pb-4 gap-2">
           <v-spacer />
@@ -768,6 +798,7 @@ import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useApi } from "@/composables/useApi";
+import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
 import {
   useLibrarySearch,
@@ -926,10 +957,6 @@ const shelfRowSize = computed(() =>
 
 const isGrouped = computed(() => groupBy.value !== "none");
 const seriesContext = computed(() => groupBy.value === "series");
-
-const deleteDialog = ref(false);
-const bookToDelete = ref<Book | null>(null);
-const deleting = ref(false);
 
 const selectedBook = ref<Book | null>(null);
 
@@ -1258,19 +1285,6 @@ function onSearchKeydown(e: KeyboardEvent) {
     }
     return;
   }
-  if (e.key === "Tab") {
-    if (!suggestions.value.length) return;
-    e.preventDefault();
-    const len = suggestions.value.length;
-    activeIndex.value = e.shiftKey
-      ? activeIndex.value <= 0
-        ? len - 1
-        : activeIndex.value - 1
-      : activeIndex.value >= len - 1
-        ? 0
-        : activeIndex.value + 1;
-    return;
-  }
   if (e.key === "ArrowDown") {
     e.preventDefault();
     const len = suggestions.value.length;
@@ -1546,35 +1560,17 @@ function handleRefreshed(updated: Partial<Book>) {
   if (idx !== -1) serverBooks.value[idx] = merged;
 }
 
-const openDeleteDialog = (book: Book) => {
-  bookToDelete.value = book;
-  deleteDialog.value = true;
-};
-
-const confirmDelete = async () => {
-  const book = bookToDelete.value;
-  if (!book) return;
-  if (isGuest.value) {
-    guestStore.removeScan(book.isbn);
-    deleteDialog.value = false;
-    bookToDelete.value = null;
-    return;
-  }
-  deleting.value = true;
-  try {
-    const res = await apiFetch(`/api/scans/${book.id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || t("library.error_delete"));
-    serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
-    deleteDialog.value = false;
-  } catch (err: any) {
-    errorMessage.value = err.message;
-    errorToast.value = true;
-  } finally {
-    deleting.value = false;
-    bookToDelete.value = null;
-  }
-};
+const { deleteDialog, bookToDelete, deleting, deleteFailed, openDeleteDialog, confirmDelete } =
+  useDeleteScan({
+    onDeleted: (book) => {
+      serverBooks.value = serverBooks.value.filter((b) => b.id !== book.id);
+    },
+    onGuestDelete: (book) => {
+      if (!isGuest.value) return false;
+      guestStore.removeScan(book.isbn!);
+      return true;
+    },
+  });
 
 // ── URL ↔ search sync ─────────────────────────────────────────────────────────
 

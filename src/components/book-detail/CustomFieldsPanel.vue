@@ -17,6 +17,7 @@
       >
         <div class="flex-1 min-w-0">
           <label
+            :id="`custom-field-label-${def.id}`"
             class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block"
             >{{ def.name }}</label
           >
@@ -32,6 +33,7 @@
             :delete-confirm-title="
               (tag: string) => $t('detail.tag_delete_confirm', { tag })
             "
+            :aria-labelledby="`custom-field-label-${def.id}`"
             @update:model-value="onTagChange(def.id, $event)"
             @open="onTagOpen(def.id)"
             @close="confirmingTag = null"
@@ -42,6 +44,7 @@
           <input
             v-else-if="def.type === 'date'"
             type="date"
+            :aria-labelledby="`custom-field-label-${def.id}`"
             :value="(customFieldValues[def.id] as string) ?? ''"
             class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
             @change="
@@ -53,6 +56,7 @@
           <input
             v-else-if="def.type === 'integer'"
             type="number"
+            :aria-labelledby="`custom-field-label-${def.id}`"
             :value="(customFieldValues[def.id] as string) ?? ''"
             class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
             @input="
@@ -66,6 +70,7 @@
           <input
             v-else
             type="text"
+            :aria-labelledby="`custom-field-label-${def.id}`"
             :value="(customFieldValues[def.id] as string) ?? ''"
             :placeholder="$t('detail.custom_field_value')"
             class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"

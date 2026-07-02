@@ -28,15 +28,31 @@
             <button
               v-bind="menuProps"
               class="w-8 h-8 rounded-full border border-charcoal-border bg-charcoal-light flex items-center justify-center font-mono text-[11px] text-text-primary hover:opacity-70 transition-opacity"
+              :aria-label="t('header.account_menu')"
             >
               {{ userInitial }}
             </button>
           </template>
           <div
             class="py-1 border border-charcoal-border"
+            role="menu"
             :style="{ background: themeStore.isDark ? '#1c1b19' : '#f5f2ed', minWidth: '180px' }"
           >
+            <!-- Primary nav: mirrored here since the header nav is desktop-only -->
+            <template v-if="authStore.isAuthenticated">
+              <router-link
+                v-for="link in navLinks"
+                :key="link.to"
+                :to="link.to"
+                role="menuitem"
+                class="md:hidden w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+              >
+                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ link.label }}</span>
+              </router-link>
+              <div class="md:hidden border-t border-charcoal-border my-1" />
+            </template>
             <button
+              role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="themeStore.toggle()"
             >
@@ -44,6 +60,7 @@
               <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark') }}</span>
             </button>
             <button
+              role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="localeStore.toggle()"
             >
@@ -52,6 +69,7 @@
             </button>
             <button
               v-if="authStore.isAuthenticated"
+              role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="router.push('/settings')"
             >
@@ -61,6 +79,7 @@
             <div class="border-t border-charcoal-border my-1" />
             <button
               v-if="authStore.isAuthenticated"
+              role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="authStore.logout()"
             >
@@ -69,6 +88,7 @@
             </button>
             <template v-else>
               <button
+                role="menuitem"
                 class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
                 @click="router.push('/login')"
               >
@@ -76,6 +96,7 @@
                 <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('auth.sign_in') }}</span>
               </button>
               <button
+                role="menuitem"
                 class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
                 @click="router.push('/login?mode=register')"
               >

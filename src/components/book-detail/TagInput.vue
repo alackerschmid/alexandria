@@ -13,6 +13,7 @@
       {{ tag }}
       <button
         class="text-text-secondary/50 hover:text-error transition-colors"
+        :aria-label="$t('detail.tag_remove', { tag })"
         @click.stop="removeTag(tag)"
       >
         <v-icon icon="mdi-close" size="12" />
@@ -23,8 +24,14 @@
       ref="inputEl"
       v-model="query"
       type="text"
+      role="combobox"
+      :aria-expanded="open"
+      aria-autocomplete="list"
+      aria-controls="tag-input-listbox"
+      :aria-activedescendant="open && highlighted >= 0 ? `tag-input-option-${highlighted}` : undefined"
+      :aria-labelledby="ariaLabelledby"
       :placeholder="modelValue.length ? '' : placeholder"
-      class="flex-1 min-w-[80px] bg-transparent text-xs text-text-primary outline-none py-0.5"
+      class="flex-1 min-w-[80px] bg-transparent text-xs text-text-primary py-0.5"
       @focus="openMenu"
       @keydown.enter.prevent="onEnter"
       @keydown.backspace="onBackspace"
@@ -35,11 +42,16 @@
 
     <div
       v-if="open && filteredSuggestions.length"
+      id="tag-input-listbox"
+      role="listbox"
       class="absolute left-0 right-0 top-full mt-1 z-10 border border-charcoal-border bg-charcoal-light max-h-56 overflow-y-auto"
     >
       <div
         v-for="(item, idx) in filteredSuggestions"
+        :id="`tag-input-option-${idx}`"
         :key="item"
+        role="option"
+        :aria-selected="idx === highlighted"
         class="flex items-center justify-between gap-2 px-3 py-2 text-xs cursor-pointer transition-colors"
         :class="
           idx === highlighted
@@ -57,6 +69,11 @@
               : 'text-text-secondary/40 hover:text-error'
           "
           :title="
+            confirmingValue === item
+              ? deleteConfirmTitle?.(item)
+              : deleteTitle
+          "
+          :aria-label="
             confirmingValue === item
               ? deleteConfirmTitle?.(item)
               : deleteTitle
@@ -83,6 +100,7 @@ const props = defineProps<{
   confirmingValue?: string | null;
   deleteTitle?: string;
   deleteConfirmTitle?: (tag: string) => string;
+  ariaLabelledby?: string;
 }>();
 
 const emit = defineEmits<{

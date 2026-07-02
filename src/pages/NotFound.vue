@@ -5,26 +5,28 @@
       <p
         class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
       >
-        404
+        {{ $t("not_found.code") }}
       </p>
       <h1
         class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-6"
       >
-        Page not<br />found.
+        {{ $t("not_found.heading_line1") }}<br />{{ $t("not_found.heading_line2") }}
       </h1>
       <p class="text-sm text-text-secondary leading-relaxed mb-12">
-        That page doesn't exist or has moved.
+        {{ $t("not_found.body") }}
       </p>
       <router-link
-        to="/"
+        to="/library"
         class="self-start text-xs font-bold tracking-[0.25em] uppercase border-b border-text-primary pb-0.5 text-text-primary hover:opacity-70 transition-opacity"
       >
-        Go to library
+        {{ $t("not_found.cta") }}
       </router-link>
     </div>
+    <AppFooter />
   </div>
 </template>
 
 <script setup lang="ts">
 import AppHeader from "@/components/AppHeader.vue";
+import AppFooter from "@/components/AppFooter.vue";
 </script>

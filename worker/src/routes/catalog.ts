@@ -14,19 +14,21 @@ type EditionRow = {
   title: string | null
   language: string | null
   cover_url: string | null
+  publish_date: string | null
+  publisher: string | null
   scan_id: number | null
   materialized: boolean
 }
 
 async function loadEditions(db: D1Database, userId: number, workId: string) {
   const { results: materialized } = await db.prepare(`
-    SELECT b.isbn, b.title, b.language, b.cover_url, s.id AS scan_id
+    SELECT b.isbn, b.title, b.language, b.cover_url, b.publish_date, b.publisher, s.id AS scan_id
     FROM books b
     LEFT JOIN scans s ON s.book_id = b.id AND s.user_id = ?
     WHERE b.work_id = ?
     ORDER BY b.language`)
     .bind(userId, workId)
-    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null; scan_id: number | null }>()
+    .all<{ isbn: string; title: string | null; language: string | null; cover_url: string | null; publish_date: string | null; publisher: string | null; scan_id: number | null }>()
 
   const { results: candidates } = await db.prepare(`
     SELECT wei.isbn, wei.title, wei.language, wei.cover_url
@@ -38,7 +40,7 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
 
   const editions: EditionRow[] = [
     ...materialized.map(r => ({ ...r, materialized: true })),
-    ...candidates.map(r => ({ ...r, scan_id: null, materialized: false })),
+    ...candidates.map(r => ({ ...r, publish_date: null, publisher: null, scan_id: null, materialized: false })),
   ]
 
   const work = await db.prepare('SELECT editions_checked_at FROM works WHERE id = ?')

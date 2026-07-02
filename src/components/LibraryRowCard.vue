@@ -1,7 +1,11 @@
 <template>
   <article
-    class="flex items-start gap-3 p-4 border border-charcoal-border cursor-pointer hover:border-charcoal-border/60 transition-colors"
+    class="group flex items-start gap-3 p-4 border border-charcoal-border cursor-pointer hover:border-charcoal-border/60 transition-colors"
+    role="button"
+    tabindex="0"
     @click="$emit('select')"
+    @keydown.enter="onKeydownSelect"
+    @keydown.space.prevent="onKeydownSelect"
   >
     <!-- Cover / spine -->
     <div
@@ -44,6 +48,8 @@
           class="flex items-center gap-1 text-[10px] tracking-[0.12em] uppercase transition-colors"
           :class="statusConfig[book.status].textClass"
           @click.stop="$emit('cycle-status')"
+          @keydown.enter.stop
+          @keydown.space.stop
         >
           <span
             class="w-1.5 h-1.5 rounded-full shrink-0"
@@ -69,8 +75,11 @@
       variant="text"
       color="primary"
       size="x-small"
-      class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+      :aria-label="t('library.delete_book')"
+      class="shrink-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 transition-opacity"
       @click.stop="$emit('delete')"
+      @keydown.enter.stop
+      @keydown.space.stop
     />
   </article>
 </template>
@@ -84,10 +93,14 @@ import { displayTitle, displayAuthor } from "@/utils/book-display";
 import { useBookStatus } from "@/composables/useBookStatus";
 
 const props = defineProps<{ book: Book }>();
-defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
+const emit = defineEmits<{ "cycle-status": []; delete: []; select: [] }>();
 
 const { t } = useI18n();
 const { statusConfig } = useBookStatus();
+
+function onKeydownSelect() {
+  emit("select");
+}
 
 const tint = computed(() => tintFor(displayTitle(props.book)));
 const glyph = computed(() => initials(displayTitle(props.book)));

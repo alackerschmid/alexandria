@@ -42,13 +42,24 @@
         <v-progress-circular indeterminate color="primary" size="24" width="2" />
       </div>
 
+      <!-- Load error -->
+      <div v-else-if="loadError" class="px-6 md:px-10 pt-16 pb-8">
+        <p class="text-sm text-text-secondary mb-4">{{ $t("series.load_error") }}</p>
+        <button
+          class="text-xs font-bold tracking-[0.25em] uppercase border-b border-text-primary pb-0.5 text-text-primary hover:opacity-70 transition-opacity"
+          @click="load"
+        >
+          {{ $t("series.retry") }}
+        </button>
+      </div>
+
       <!-- Not found -->
       <div v-else-if="!series" class="px-6 md:px-10 pt-16 pb-8">
         <p class="text-sm text-text-secondary">{{ $t("series.not_found") }}</p>
       </div>
 
       <!-- Entries -->
-      <div v-else class="pb-28">
+      <div v-else class="pb-28" role="list">
         <div
           v-for="entry in displayedEntries"
           :key="entry.work_id"
@@ -57,7 +68,11 @@
             entry.owned ? '' : 'opacity-50',
             entry.scan_id || entry.isbn ? 'cursor-pointer hover:bg-white/[0.02]' : '',
           ]"
+          :role="entry.isbn ? 'button' : undefined"
+          :tabindex="entry.isbn ? 0 : undefined"
           @click="openEntry(entry)"
+          @keydown.enter="openEntry(entry)"
+          @keydown.space.prevent="openEntry(entry)"
         >
           <div
             class="w-6 shrink-0 text-center font-mono text-xs"
@@ -68,6 +83,7 @@
           <img
             v-if="entry.cover_url"
             :src="entry.cover_url"
+            :alt="entry.title || $t('series.untitled')"
             class="w-9 h-13 object-cover shrink-0"
           />
           <div
@@ -102,16 +118,54 @@
     @update:model-value="(v) => { if (!v) closeDetail() }"
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
+    @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
   />
+
+  <!-- Delete confirmation -->
+  <v-dialog v-model="deleteDialog" max-width="360">
+    <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
+      <v-card-title class="font-heading text-xl pt-6 px-6 font-bold text-text-primary">
+        {{ $t("library.remove_heading") }}
+      </v-card-title>
+      <v-card-text class="px-6 text-sm text-text-secondary">
+        {{ $t("library.remove_body", { title: bookToDelete?.title || bookToDelete?.isbn }) }}
+        <p v-if="deleteFailed" class="text-error mt-2">{{ $t("library.error_delete") }}</p>
+      </v-card-text>
+      <v-card-actions class="px-4 pb-4 gap-2">
+        <v-spacer />
+        <v-btn
+          variant="text"
+          size="small"
+          class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
+          @click="deleteDialog = false"
+        >
+          {{ $t("library.cancel") }}
+        </v-btn>
+        <v-btn
+          variant="flat"
+          size="small"
+          color="error"
+          rounded="0"
+          class="text-[10px] tracking-[0.2em] uppercase"
+          :loading="deleting"
+          @click="confirmDelete"
+        >
+          {{ $t("library.remove") }}
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script lang="ts" setup>
 import { ref, computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useApi } from "@/composables/useApi";
+import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useLocaleStore } from "@/stores/locale";
+import { useThemeStore } from "@/stores/theme";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
@@ -138,10 +192,12 @@ interface SeriesResponse {
 const route = useRoute();
 const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
+const themeStore = useThemeStore();
 const { detailIsbn, openDetail, closeDetail } = useDetailRoute();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
+const loadError = ref(false);
 const showSideEntries = ref(false);
 
 const entries = computed(() => series.value?.entries ?? []);
@@ -155,6 +211,14 @@ const displayedEntries = computed(() =>
 
 const detailBook = ref<BookWithOverrides | null>(null);
 const detailReadonly = ref(false);
+
+const { deleteDialog, bookToDelete, deleting, deleteFailed, openDeleteDialog, confirmDelete } =
+  useDeleteScan({
+    onDeleted: () => {
+      closeDetail();
+      load();
+    },
+  });
 
 function openEntry(entry: SeriesEntry) {
   if (entry.isbn) openDetail(entry.isbn)
@@ -227,13 +291,20 @@ function setDetailStatus(s: ReadStatus) {
 
 async function load() {
   loading.value = true;
+  loadError.value = false;
   try {
     const res = await apiFetch(
       `/api/series/${route.params.id}?locale=${localeStore.locale}`,
     );
-    series.value = res.ok ? await res.json() : null;
+    if (res.ok) {
+      series.value = await res.json();
+    } else {
+      series.value = null;
+      if (res.status !== 404) loadError.value = true;
+    }
   } catch {
     series.value = null;
+    loadError.value = true;
   } finally {
     loading.value = false;
   }

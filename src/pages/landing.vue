@@ -24,6 +24,7 @@
           variant="text"
           color="primary"
           size="small"
+          :aria-label="themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')"
           @click="themeStore.toggle()"
         />
         <button
@@ -56,7 +57,8 @@
         <!-- Scanner + CTAs row -->
         <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
           <!-- Scanner widget -->
-          <div
+          <button
+            type="button"
             class="relative flex items-center justify-center w-full md:w-[300px] bg-charcoal-light border border-charcoal-border shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
             style="height: 110px"
             @click="$router.push('/scanner')"
@@ -94,7 +96,7 @@
               class="scanner-line absolute h-[2px] w-[180px]"
               style="left: 50%; background: rgba(255, 102, 0, 0.7)"
             />
-          </div>
+          </button>
 
           <!-- CTAs: desktop only; orange band covers mobile -->
           <div class="hidden md:flex flex-col gap-3">

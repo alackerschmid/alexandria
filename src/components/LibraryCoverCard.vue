@@ -2,7 +2,11 @@
   <div
     class="cursor-pointer group min-w-0"
     :style="{ opacity: owned ? 1 : 0.5 }"
+    role="button"
+    tabindex="0"
     @click="$emit('select')"
+    @keydown.enter="$emit('select')"
+    @keydown.space.prevent="$emit('select')"
   >
     <div class="relative aspect-2/3 overflow-hidden bg-charcoal-light mb-1.5">
       <!-- Unowned ghost -->
@@ -20,7 +24,7 @@
       <img
         v-else-if="coverUrl"
         :src="coverUrl"
-        :alt="title || ''"
+        :alt="title || $t('series.untitled')"
         class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
       />
 
@@ -38,6 +42,9 @@
       <!-- Status dot (owned only) -->
       <div
         v-if="owned"
+        role="img"
+        :aria-label="statusLabel"
+        :title="statusLabel"
         class="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full"
         style="box-shadow: 0 0 0 2px rgba(0,0,0,0.4)"
         :style="{ background: statusColor }"
@@ -69,7 +76,7 @@
 import { computed } from 'vue'
 import type { ReadStatus } from '@/types/book'
 import { tintFor, initials } from '@/utils/cover'
-import { STATUS_META } from '@/composables/useBookStatus'
+import { STATUS_META, useBookStatus } from '@/composables/useBookStatus'
 
 const props = defineProps<{
   title: string | null
@@ -82,9 +89,12 @@ const props = defineProps<{
 
 defineEmits<{ select: [] }>()
 
+const { statusConfig } = useBookStatus()
+
 const tint = computed(() => tintFor(props.title || ''))
 const glyph = computed(() => initials(props.title || '?'))
 const isNovella = computed(() => props.ordinal != null && !Number.isInteger(props.ordinal))
+const statusLabel = computed(() => statusConfig.value[props.status ?? 'unread'].label)
 
 const statusColor = computed(() => STATUS_META[props.status ?? 'unread'].themeColor)
 </script>

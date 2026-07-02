@@ -1,5 +1,8 @@
 {
   "app_name": "Die Bibliothek von Alexandria",
+  "header": {
+    "account_menu": "Kontomenü"
+  },
   "footer": {
     "latest_update": "Letztes Update: {hash}",
     "data_credit": "Buchdaten bereitgestellt von Wikidata, OpenLibrary & Google Books",
@@ -108,6 +111,11 @@
     "search_results": "{n} Ergebnisse",
     "search_no_matches": "Keine Treffer",
     "search_placeholder_smart": "Nach Titel, Autor, ISBN suchen — oder Präfix eingeben",
+    "search_field_label": "Bibliothek durchsuchen",
+    "clear_search": "Suche löschen",
+    "remove_filter": "Filter entfernen: {token}",
+    "view_list": "Listenansicht",
+    "view_tile": "Rasteransicht",
     "facet_title": "Titel",
     "kbd_navigate": "navigieren",
     "kbd_select": "auswählen",
@@ -133,6 +141,7 @@
     "complete": "✓ Komplett",
     "unowned": "Fehlt",
     "novella": "Nov",
+    "delete_book": "Buch löschen",
     "group_none": "Hinzugefügt am",
     "group_author": "Autor",
     "group_series": "Reihe",
@@ -191,6 +200,10 @@
     "show_less": "Weniger anzeigen",
     "close": "Schließen",
     "remove": "Entfernen",
+    "edit": "Bearbeiten",
+    "refresh": "Aktualisieren",
+    "overridden": "Manuell bearbeitet",
+    "filter_by": "Bibliothek nach {field} filtern: {value}",
     "edit_save": "Änderungen speichern",
     "edit_cancel": "Abbrechen",
     "edit_error": "Änderungen konnten nicht gespeichert werden",
@@ -201,15 +214,19 @@
     "custom_field_confirm_delete": "Nochmal klicken zum Bestätigen – entfernt das Feld aus allen Büchern",
     "add_custom_field": "Feld hinzufügen",
     "tag_add": "Tag hinzufügen…",
+    "tag_remove": "Tag {tag} entfernen",
     "tag_delete": "Tag aus allen Büchern entfernen",
     "tag_delete_confirm": "Nochmal klicken, um ‚{tag}‘ aus allen Büchern zu entfernen",
     "series": "Reihe",
     "series_position": "Band {n}",
     "view_editions": "Alle Ausgaben anzeigen",
     "editions_heading": "Ausgaben",
+    "editions_total": "{n} Ausgabe insgesamt | {n} Ausgaben insgesamt",
+    "editions_filter_all": "Alle",
     "current_edition": "Aktuelle Ausgabe",
     "edition_in_library": "In deiner Bibliothek",
-    "switch_edition": "Wechseln",
+    "edition_not_added": "Noch nicht hinzugefügt",
+    "confirm_switch_edition": "Nochmal klicken, um zu dieser Ausgabe zu wechseln",
     "switch_already_owned": "Diese Ausgabe ist bereits in deiner Bibliothek",
     "switch_error": "Ausgabe konnte nicht gewechselt werden",
     "find_more_editions": "Weitere Ausgaben suchen",
@@ -219,6 +236,7 @@
     "discover_error": "Weitere Ausgaben konnten nicht gefunden werden",
     "no_more_editions": "Noch keine weiteren Ausgaben gefunden",
     "loading": "Lädt…",
+    "saving": "Speichert…",
     "standalone": "Einzelband",
     "enrichment_pending": "Reihenanreicherung ausstehend",
     "enrichment_failed": "Reihenanreicherung fehlgeschlagen",
@@ -252,7 +270,9 @@
     "hide_side": "ausblenden",
     "missing": "Nicht in deiner Bibliothek",
     "untitled": "Ohne Titel",
-    "not_found": "Reihe nicht gefunden."
+    "not_found": "Reihe nicht gefunden.",
+    "load_error": "Beim Laden dieser Reihe ist etwas schiefgelaufen.",
+    "retry": "Erneut versuchen"
   },
   "settings": {
     "nav_label": "Einstellungen",
@@ -284,6 +304,8 @@
       "col_name": "Feldname",
       "col_type": "Typ",
       "col_required": "Pflichtfeld",
+      "delete": "Feld {name} löschen",
+      "confirm_delete": "Nochmal klicken zum Bestätigen – entfernt {name} aus allen Büchern",
       "add": "Feld hinzufügen",
       "new_placeholder": "Feldname",
       "type_text": "Zeichenkette",
@@ -378,6 +400,7 @@
     "toast_failed": "Speichern fehlgeschlagen",
     "toast_session_expired": "Sitzung abgelaufen — melde dich erneut an, um ausstehende Bücher zu synchronisieren",
     "toast_invalid_isbn": "Gib eine gültige 10- oder 13-stellige ISBN ein",
+    "camera_error": "Kamera konnte nicht verwendet werden — prüfe die Berechtigungen oder gib die ISBN unten manuell ein",
     "back_library": "Bibliothek",
     "match_found": "Treffer gefunden",
     "no_match": "Kein Treffer",
@@ -410,5 +433,26 @@
     "search_error": "Suche fehlgeschlagen – bitte erneut versuchen",
     "search_results": "Suchergebnisse",
     "publisher_optional": "Verlag (optional)"
+  },
+  "privacy": {
+    "eyebrow": "Rechtliches",
+    "heading_line1": "Datenschutz-",
+    "heading_line2": "erklärung.",
+    "data_collected_heading": "Erhobene Daten",
+    "data_collected_body": "Sofern du dich für ein Konto registrierst, speichern wir deine E-Mail-Adresse und die von dir gescannten Bücher: ISBN, Titel, Autor, Cover-Bild-URL und Lesestatus. Es werden keine weiteren personenbezogenen Daten erhoben.",
+    "storage_heading": "Speicherung",
+    "storage_body": "Deine Daten werden in Cloudflare D1 gespeichert, verteilt über das globale Netzwerk von Cloudflare. Passwörter werden niemals im Klartext gespeichert.",
+    "third_parties_heading": "Drittanbieter",
+    "third_parties_body": "Buchmetadaten werden anhand der angegebenen ISBN von Wikidata, der Google Books API und OpenLibrary abgerufen. Es werden keine weiteren identifizierenden Informationen an diese Dienste gesendet.",
+    "retention_heading": "Datenaufbewahrung",
+    "retention_body": "Deine Daten werden so lange aufbewahrt, wie dein Konto besteht. Das Löschen eines Buchs entfernt es sofort. Die Kontolöschung entfernt alle zugehörigen Daten.",
+    "contact_heading": "Kontakt"
+  },
+  "not_found": {
+    "code": "404",
+    "heading_line1": "Seite nicht",
+    "heading_line2": "gefunden.",
+    "body": "Diese Seite existiert nicht oder wurde verschoben.",
+    "cta": "Zur Bibliothek"
   }
 }

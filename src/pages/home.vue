@@ -12,21 +12,23 @@
           <p v-if="statsData" class="font-mono text-[10px] md:text-[11px] tracking-[0.05em] text-text-secondary">{{ metaLine }}</p>
         </div>
         <div class="flex gap-3 shrink-0">
-          <div
+          <button
+            type="button"
             class="flex justify-between items-center px-6 py-3 md:py-3 flex-1 md:w-52 cursor-pointer hover:opacity-90 transition-opacity"
             style="background: rgb(var(--v-theme-primary));"
             @click="$router.push('/scanner')"
           >
             <p class="font-heading font-black text-2xl leading-none" style="color: #111110;">{{ $t('home.scan_cta') }}</p>
             <v-icon icon="mdi-barcode" size="28" style="color: #111110;" />
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
             class="flex justify-between items-center px-5 py-3 md:py-3 flex-1 md:w-52 cursor-pointer border border-charcoal-border hover:opacity-70 transition-opacity"
             @click="$router.push('/library')"
           >
             <p class="font-heading font-black text-2xl leading-none text-text-primary">{{ $t('home.go_to_library') }}</p>
             <v-icon icon="mdi-bookshelf" size="28" class="text-text-secondary" />
-          </div>
+          </button>
         </div>
       </div>
     </div>
@@ -163,26 +165,28 @@
             {{ $t('home.firstname_dialog_body') }}
           </p>
           <div class="border-b border-charcoal-border pb-2 mb-8">
-            <label class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">
+            <label for="firstname-input" class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1">
               {{ $t('home.firstname_placeholder') }}
             </label>
             <input
+              id="firstname-input"
               v-model="firstnameInput"
               type="text"
               autocomplete="given-name"
               autofocus
-              class="w-full bg-transparent text-text-primary text-base outline-none placeholder:text-charcoal-border"
+              class="w-full bg-transparent text-text-primary text-base placeholder:text-charcoal-border"
               :placeholder="$t('home.firstname_placeholder')"
               @keyup.enter="saveFirstname"
             />
           </div>
-          <button
-            :disabled="!firstnameInput.trim() || savingFirstname"
-            class="w-full bg-text-primary text-charcoal py-4 text-xs font-bold tracking-[0.25em] uppercase hover:opacity-80 transition-opacity disabled:opacity-40"
+          <LoadingButton
+            :loading="savingFirstname"
+            :disabled="!firstnameInput.trim()"
+            class="bg-text-primary text-charcoal hover:opacity-80"
             @click="saveFirstname"
           >
-            {{ savingFirstname ? '—' : $t('home.firstname_save') }}
-          </button>
+            {{ savingFirstname ? $t('detail.saving') : $t('home.firstname_save') }}
+          </LoadingButton>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -201,6 +205,7 @@ import { useFieldDefsStore } from '@/stores/fieldDefs'
 import AppHeader from '@/components/AppHeader.vue'
 import AppSelect from '@/components/AppSelect.vue'
 import AppToast from '@/components/AppToast.vue'
+import LoadingButton from '@/components/LoadingButton.vue'
 import { useApi } from '@/composables/useApi'
 import { useGroupDimensions } from '@/composables/useGroupDimensions'
 import { STATUS_META } from '@/composables/useBookStatus'

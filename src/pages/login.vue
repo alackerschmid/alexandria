@@ -17,6 +17,7 @@
           variant="text"
           color="primary"
           size="small"
+          :aria-label="themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')"
           @click="themeStore.toggle()"
         />
       </div>
@@ -74,15 +75,17 @@
       <!-- Email -->
       <div class="border-b border-charcoal-border mb-7 pb-2">
         <label
+          for="login-email"
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
           >{{ $t('auth.email') }}</label
         >
         <input
+          id="login-email"
           v-model="email"
           type="email"
           autocomplete="email"
           :disabled="loading"
-          class="w-full bg-transparent text-text-primary text-base outline-none placeholder:text-charcoal-border disabled:opacity-50"
+          class="w-full bg-transparent text-text-primary text-base placeholder:text-charcoal-border disabled:opacity-50"
           placeholder="you@example.com"
         />
       </div>
@@ -90,27 +93,29 @@
       <!-- Password -->
       <div class="border-b border-charcoal-border mb-10 pb-2">
         <label
+          for="login-password"
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
           >{{ $t('auth.password') }}</label
         >
         <input
+          id="login-password"
           v-model="password"
           type="password"
           :autocomplete="isLogin ? 'current-password' : 'new-password'"
           :disabled="loading"
-          class="w-full bg-transparent text-text-primary text-base outline-none placeholder:text-charcoal-border disabled:opacity-50"
+          class="w-full bg-transparent text-text-primary text-base placeholder:text-charcoal-border disabled:opacity-50"
           placeholder="••••••••"
         />
       </div>
 
       <!-- Submit -->
-      <button
+      <LoadingButton
         type="submit"
-        :disabled="loading"
-        class="w-full bg-text-primary text-charcoal py-4 text-xs font-bold tracking-[0.25em] uppercase mb-5 hover:opacity-80 transition-opacity disabled:opacity-40"
+        :loading="loading"
+        class="bg-text-primary text-charcoal mb-5 hover:opacity-80"
       >
-        {{ loading ? '—' : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
-      </button>
+        {{ loading ? $t('detail.loading') : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
+      </LoadingButton>
 
       <!-- Continue as guest — secondary action, more prominent than a text link
            but quieter than the filled sign-in button above. -->
@@ -136,6 +141,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { useGuestStore } from "@/stores/guest";
 import AppFooter from "@/components/AppFooter.vue";
 import AppHeader from "@/components/AppHeader.vue";
+import LoadingButton from "@/components/LoadingButton.vue";
 
 const router = useRouter();
 const route = useRoute();
