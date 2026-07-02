@@ -50,6 +50,32 @@
 @custom-variant light (&:where(.v-theme--light, .v-theme--light *));
 @custom-variant dark (&:where(.v-theme--dark, .v-theme--dark *));
 
+/* Visible keyboard-focus ring, restored where components set outline: none.
+   Uses text-primary (near-black/near-white) rather than the brand orange so it
+   always clears the 3:1 non-text contrast bar in both themes. */
+:focus-visible {
+  outline: 2px solid var(--color-text-primary);
+  outline-offset: 2px;
+}
+
+/* Escape hatch for controls with their own, more prominent custom focus treatment
+   (e.g. a container that lifts/glows on focus). Higher specificity than the bare
+   :focus-visible rule above wins outright — no !important needed. */
+.focus-ring-none:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* safelist to ensure variables are always available */
 @source inline('font-heading');
 @source inline('font-body');

@@ -1,7 +1,11 @@
 <template>
   <article
     class="flex items-start gap-3 p-4 border border-dashed border-charcoal-border cursor-pointer hover:border-charcoal-border/60 transition-colors opacity-50"
+    role="button"
+    tabindex="0"
     @click="$emit('select')"
+    @keydown.enter="$emit('select')"
+    @keydown.space.prevent="$emit('select')"
   >
     <!-- Ghost spine -->
     <div

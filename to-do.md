@@ -1,18 +1,19 @@
 # TO DO
 
+## new batch
+
+add confirmation for switch
+
 ## bugfixes
 
-- ~~reset search fields in manual search after entry~~
-- ~~adjust tooltip below scanner~~
-- ~~go back to title search after title search success~~
-- ~~"show unowned" does not work in list view~~
-- "~~show only main" does not seem to work at all~~
-- ~~groupby filter does not persist across refresh / nav~~
+- bar chart on home page doesnt adhere to accent styling
+- modify buttons on setting page to adhere to black font
+- "find more editions" call doesnt show metadata
+- veirfy switch edition logic
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
 - add display names and titles to the DB that the user can edit
-- setting the status on the library view does not remove the book from view when filtered; doing it in the small card view does
 
 ## batch 1: making series more robust
 
@@ -24,9 +25,11 @@
 
 ## batch 2: improve library view
 
+- improve navigation on mobile (no fixed header usw)
 - ~~make compartmentalization pass ("STATUS_CONFIG composable extraction — spans LibraryRowCard, BookDetail, and scanner.vue; worth doing but needs a broader discussion since BookDetail is large. Search/grouping composable extraction — parsedSearch/allGroups in index.vue are good candidates but are 600+ line extractions; architectural decision.")~~
 - move "delete" to fourth option of reading status
 - ~~back fill items when in group view so that there's always 4 items per row~~
+- remove delete button
 
 ## batch 3: detail page
 
@@ -34,10 +37,7 @@
 - look at books w/o cover
 - edit should allow editing all fields (new ones are missing) (also not the cover url tho)
 - overhaul edit process
-
-## batch 4: improve custom field handling and management
-
-- allow custom fields to have types (int, str, literal, date) -> not working properly atm
+- move edit / refresh / delete buttons to be more central
 
 ## lower priority UI improvements
 
@@ -46,7 +46,7 @@
 - add "rating" as field, should be asked in the scanner view after selecting "read"
 - show version number + release notes in the footer
 - general legibility / contrast etc. check
-- should be able to manualyl enter title / isbn on mobile too
+- ~~should be able to manualyl enter title / isbn on mobile too~~
 - design uniform view for chip items (dropdown values when selected, genres, ...)
 - write some taglines for the stats page
 

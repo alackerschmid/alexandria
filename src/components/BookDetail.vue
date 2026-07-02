@@ -17,6 +17,7 @@
             <img
               v-if="book.cover_url"
               :src="book.cover_url"
+              :alt="book.title || book.isbn"
               class="w-full h-full object-cover"
             />
             <div
@@ -40,13 +41,11 @@
                 class="font-heading font-bold text-2xl text-text-primary leading-tight mb-1 flex items-center gap-1.5"
               >
                 {{ book.title || book.isbn }}
-                <span
-                  v-if="book.title_overridden"
-                  class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0"
-                />
+                <OverrideDot v-if="book.title_overridden" class="w-1.5 h-1.5 shrink-0" />
               </h2>
               <button
                 class="shrink-0 text-text-secondary/50 hover:text-text-secondary transition-colors pt-0.5"
+                :aria-label="$t('detail.close')"
                 @click="$emit('update:modelValue', false)"
               >
                 <v-icon icon="mdi-close" size="18" />
@@ -208,7 +207,7 @@
 
     <!-- ── FULL MODE ──────────────────────────────────────────────────────── -->
     <template v-else>
-      <div class="bg-charcoal flex flex-col h-screen">
+      <div class="bg-charcoal flex flex-col h-dvh">
         <!-- sticky top bar -->
         <div
           class="shrink-0 flex items-center justify-between px-6 md:px-10 py-4 border-b border-charcoal-border bg-charcoal z-10"
@@ -227,6 +226,7 @@
               <button
                 v-if="!guest && !readonly"
                 class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                :aria-label="$t('detail.edit')"
                 @click="enterEdit"
               >
                 <v-icon icon="mdi-pencil-outline" size="18" />
@@ -236,6 +236,7 @@
                 class="transition-colors disabled:opacity-30"
                 :class="enrichmentButtonClass"
                 :disabled="refreshing"
+                :aria-label="refreshing ? $t('detail.loading') : $t('detail.refresh')"
                 @click="refresh"
               >
                 <v-icon
@@ -247,6 +248,7 @@
               <button
                 v-if="!readonly"
                 class="text-error/60 hover:text-error transition-colors"
+                :aria-label="$t('detail.remove')"
                 @click="$emit('delete')"
               >
                 <v-icon icon="mdi-delete-outline" size="18" />
@@ -255,6 +257,7 @@
             <template v-else>
               <button
                 class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                :aria-label="$t('detail.edit_cancel')"
                 @click="editing = false"
               >
                 <v-icon icon="mdi-close" size="18" />
@@ -262,6 +265,7 @@
             </template>
             <button
               class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
+              :aria-label="$t('detail.close')"
               @click="$emit('update:modelValue', false)"
             >
               <v-icon icon="mdi-close" size="20" />
@@ -284,6 +288,7 @@
                   <img
                     v-if="book.cover_url"
                     :src="book.cover_url"
+                    :alt="book.title || book.isbn"
                     class="w-full h-full object-cover shadow-2xl"
                   />
                   <div
@@ -333,10 +338,7 @@
                     class="font-heading font-bold text-3xl md:text-5xl text-text-primary leading-tight tracking-tight mb-3 flex items-start gap-2"
                   >
                     {{ book.title || book.isbn }}
-                    <span
-                      v-if="book.title_overridden"
-                      class="inline-block w-2 h-2 rounded-full bg-orange-neon shrink-0 mt-2"
-                    />
+                    <OverrideDot v-if="book.title_overridden" class="w-2 h-2 shrink-0 mt-2" />
                   </h1>
 
                   <!-- series (moved between title and author) -->
@@ -387,10 +389,7 @@
                       class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3 flex items-center gap-1.5"
                     >
                       {{ $t("detail.description") }}
-                      <span
-                        v-if="book.description_overridden"
-                        class="w-1.5 h-1.5 rounded-full bg-orange-neon"
-                      />
+                      <OverrideDot v-if="book.description_overridden" class="w-1.5 h-1.5" />
                     </div>
                     <p class="text-[15px] leading-relaxed text-text-secondary">
                       {{ book.description }}
@@ -479,6 +478,8 @@
                     <div
                       class="relative flex w-full rounded-full p-1"
                       style="background: rgba(255, 255, 255, 0.045)"
+                      role="radiogroup"
+                      :aria-label="$t('library.filter_status')"
                     >
                       <div
                         class="absolute top-1 bottom-1 rounded-full transition-[left] duration-200 ease-out"
@@ -488,6 +489,8 @@
                         v-for="s in STATUS_ORDER"
                         :key="s"
                         type="button"
+                        role="radio"
+                        :aria-checked="book.status === s"
                         class="relative z-10 flex-1 py-2 text-[10px] tracking-[0.13em] uppercase font-semibold transition-colors"
                         :class="
                           book.status !== s
@@ -591,6 +594,7 @@
                   >
                     <button
                       class="w-full flex items-center justify-between gap-2 text-left"
+                      :aria-expanded="recognitionExpanded"
                       @click="recognitionExpanded = !recognitionExpanded"
                     >
                       <span
@@ -732,6 +736,7 @@ import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
 import BookEditForm from "@/components/book-detail/BookEditForm.vue";
+import OverrideDot from "@/components/OverrideDot.vue";
 import type { ReadStatus } from "@/types/book";
 
 const props = defineProps<{

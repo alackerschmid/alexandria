@@ -9,61 +9,54 @@
         <p
           class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
         >
-          Legal
+          {{ $t("privacy.eyebrow") }}
         </p>
         <h1
           class="font-heading text-4xl font-bold text-text-primary leading-[1.05]"
         >
-          Privacy<br />Policy.
+          {{ $t("privacy.heading_line1") }}<br />{{ $t("privacy.heading_line2") }}
         </h1>
       </div>
 
       <section class="space-y-3">
         <h2 class="text-[10px] tracking-[0.25em] uppercase text-text-secondary">
-          Data collected
+          {{ $t("privacy.data_collected_heading") }}
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Provided you sign up for an account, we store your email address and
-          the books you scan: ISBN, title, author, cover image URL, and reading
-          status. No other personal data is collected.
+          {{ $t("privacy.data_collected_body") }}
         </p>
       </section>
 
       <section class="space-y-3">
         <h2 class="text-[10px] tracking-[0.25em] uppercase text-text-secondary">
-          Storage
+          {{ $t("privacy.storage_heading") }}
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Your data is stored in Cloudflare D1, hosted across Cloudflare's
-          global network. Passwords are never stored in plaintext.
+          {{ $t("privacy.storage_body") }}
         </p>
       </section>
 
       <section class="space-y-3">
         <h2 class="text-[10px] tracking-[0.25em] uppercase text-text-secondary">
-          Third parties
+          {{ $t("privacy.third_parties_heading") }}
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Book metadata is fetched from Wikidata, Google Books API
-          and OpenLibrary using the provided ISBN. No other identifying
-          information is sent to these services.
+          {{ $t("privacy.third_parties_body") }}
         </p>
       </section>
 
       <section class="space-y-3">
         <h2 class="text-[10px] tracking-[0.25em] uppercase text-text-secondary">
-          Data retention
+          {{ $t("privacy.retention_heading") }}
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
-          Your data is retained for as long as your account exists. Deleting a
-          book removes it immediately. Account deletion removes all associated
-          data.
+          {{ $t("privacy.retention_body") }}
         </p>
       </section>
 
       <section class="space-y-3">
         <h2 class="text-[10px] tracking-[0.25em] uppercase text-text-secondary">
-          Contact
+          {{ $t("privacy.contact_heading") }}
         </h2>
         <p class="text-sm text-text-secondary leading-relaxed">
           <a

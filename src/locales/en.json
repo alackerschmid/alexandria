@@ -1,5 +1,8 @@
 {
   "app_name": "The Library of Alexandria",
+  "header": {
+    "account_menu": "Account menu"
+  },
   "footer": {
     "latest_update": "Latest update: {hash}",
     "data_credit": "Book data provided via Wikidata, OpenLibrary & Google Books",
@@ -109,6 +112,11 @@
     "search_results": "{n} results",
     "search_no_matches": "No matches",
     "search_placeholder_smart": "Search by title, author, ISBN — or type a prefix",
+    "search_field_label": "Search library",
+    "clear_search": "Clear search",
+    "remove_filter": "Remove filter: {token}",
+    "view_list": "List view",
+    "view_tile": "Grid view",
     "facet_title": "Title",
     "kbd_navigate": "navigate",
     "kbd_select": "select",
@@ -134,6 +142,7 @@
     "complete": "✓ Complete",
     "unowned": "Unowned",
     "novella": "Nov",
+    "delete_book": "Delete book",
     "group_none": "Added on",
     "group_author": "Author",
     "group_series": "Series",
@@ -191,6 +200,10 @@
     "show_less": "Show less",
     "close": "Close",
     "remove": "Remove",
+    "edit": "Edit",
+    "refresh": "Refresh",
+    "overridden": "Manually edited",
+    "filter_by": "Filter library by {field}: {value}",
     "edit_save": "Save changes",
     "edit_cancel": "Cancel",
     "edit_error": "Failed to save changes",
@@ -201,15 +214,19 @@
     "custom_field_confirm_delete": "Click again to confirm — removes field from all books",
     "add_custom_field": "Add field",
     "tag_add": "Add tag…",
+    "tag_remove": "Remove tag {tag}",
     "tag_delete": "Remove tag from all books",
     "tag_delete_confirm": "Click again to remove ‘{tag}’ from all books",
     "series": "Series",
     "series_position": "Book {n}",
     "view_editions": "View all editions",
     "editions_heading": "Editions",
+    "editions_total": "{n} total edition | {n} total editions",
+    "editions_filter_all": "All",
     "current_edition": "Current edition",
     "edition_in_library": "In your library",
-    "switch_edition": "Switch",
+    "edition_not_added": "Not yet added",
+    "confirm_switch_edition": "Click again to switch to this edition",
     "switch_already_owned": "You already have this edition in your library",
     "switch_error": "Failed to switch edition",
     "find_more_editions": "Find more editions",
@@ -219,6 +236,7 @@
     "discover_error": "Failed to look up more editions",
     "no_more_editions": "No other editions found yet",
     "loading": "Loading…",
+    "saving": "Saving…",
     "standalone": "Standalone",
     "enrichment_pending": "Series lookup pending",
     "enrichment_failed": "Series lookup failed",
@@ -252,7 +270,9 @@
     "hide_side": "hide",
     "missing": "Not in your library",
     "untitled": "Untitled",
-    "not_found": "Series not found."
+    "not_found": "Series not found.",
+    "load_error": "Something went wrong loading this series.",
+    "retry": "Try again"
   },
   "settings": {
     "nav_label": "Settings",
@@ -284,6 +304,8 @@
       "col_name": "Field name",
       "col_type": "Type",
       "col_required": "Required",
+      "delete": "Delete field {name}",
+      "confirm_delete": "Click again to confirm — removes {name} from all books",
       "add": "Add field",
       "new_placeholder": "Field name",
       "type_text": "String",
@@ -378,6 +400,7 @@
     "toast_failed": "Failed to save",
     "toast_session_expired": "Session expired — sign in again to sync pending books",
     "toast_invalid_isbn": "Enter a valid 10 or 13-digit ISBN",
+    "camera_error": "Couldn't access the camera — check permissions, or enter the ISBN manually below",
     "back_library": "Library",
     "match_found": "Match found",
     "no_match": "No match",
@@ -410,5 +433,26 @@
     "search_error": "Search failed — try again",
     "search_results": "Search results",
     "publisher_optional": "Publisher (optional)"
+  },
+  "privacy": {
+    "eyebrow": "Legal",
+    "heading_line1": "Privacy",
+    "heading_line2": "Policy.",
+    "data_collected_heading": "Data collected",
+    "data_collected_body": "Provided you sign up for an account, we store your email address and the books you scan: ISBN, title, author, cover image URL, and reading status. No other personal data is collected.",
+    "storage_heading": "Storage",
+    "storage_body": "Your data is stored in Cloudflare D1, hosted across Cloudflare's global network. Passwords are never stored in plaintext.",
+    "third_parties_heading": "Third parties",
+    "third_parties_body": "Book metadata is fetched from Wikidata, Google Books API and OpenLibrary using the provided ISBN. No other identifying information is sent to these services.",
+    "retention_heading": "Data retention",
+    "retention_body": "Your data is retained for as long as your account exists. Deleting a book removes it immediately. Account deletion removes all associated data.",
+    "contact_heading": "Contact"
+  },
+  "not_found": {
+    "code": "404",
+    "heading_line1": "Page not",
+    "heading_line2": "found.",
+    "body": "That page doesn't exist or has moved.",
+    "cta": "Go to library"
   }
 }

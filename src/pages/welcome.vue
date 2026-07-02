@@ -65,7 +65,7 @@ function start() {
               <span class="text-[9px] tracking-[0.22em] uppercase text-text-secondary font-bold">{{ $t('welcome.f1_label') }}</span>
             </div>
             <div class="flex items-end justify-between gap-3 mb-3.5">
-              <div class="font-heading font-black text-2xl text-text-primary leading-tight">{{ $t('welcome.f1_title') }}</div>
+              <h2 class="font-heading font-black text-2xl text-text-primary leading-tight">{{ $t('welcome.f1_title') }}</h2>
               <div class="text-[11px] leading-[1.4] text-text-secondary text-right shrink-0 max-w-[118px]">{{ $t('welcome.f1_body_short') }}</div>
             </div>
             <div class="scanner-viewport scanner-viewport--sm">
@@ -86,7 +86,7 @@ function start() {
               <div class="text-[8px] tracking-[0.14em] uppercase text-text-secondary mt-1">{{ $t('welcome.f2_label') }}</div>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f2_title') }}</div>
+              <h2 class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f2_title') }}</h2>
               <div class="text-[11px] leading-[1.4] text-text-secondary mt-0.5">{{ $t('welcome.f2_body') }}</div>
             </div>
             <div class="shrink-0 flex items-center gap-1.5 px-2.5 py-2" style="border: 1px dashed rgba(255,102,0,0.5)">
@@ -102,7 +102,7 @@ function start() {
               <div class="text-[8px] tracking-[0.14em] uppercase text-text-secondary mt-1">{{ $t('welcome.f3_label') }}</div>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f3_title') }}</div>
+              <h2 class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f3_title') }}</h2>
               <div class="text-[11px] leading-[1.4] text-text-secondary mt-0.5">{{ $t('welcome.f3_body') }}</div>
             </div>
             <div class="shrink-0 flex flex-col gap-[5px] items-end">
@@ -128,7 +128,7 @@ function start() {
               <div class="text-[8px] tracking-[0.14em] uppercase text-text-secondary mt-1">{{ $t('welcome.f4_label') }}</div>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f4_title') }}</div>
+              <h2 class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f4_title') }}</h2>
               <div class="text-[11px] leading-[1.4] text-text-secondary mt-0.5">{{ $t('welcome.f4_body') }}</div>
             </div>
             <div class="shrink-0 flex items-center gap-2 bg-charcoal border border-charcoal-border px-[11px] py-[9px] w-[104px]">
@@ -144,7 +144,7 @@ function start() {
               <div class="text-[8px] tracking-[0.14em] uppercase text-text-secondary mt-1">{{ $t('welcome.f5_label') }}</div>
             </div>
             <div class="flex-1 min-w-0">
-              <div class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f5_title') }}</div>
+              <h2 class="font-heading font-bold text-base text-text-primary leading-[1.1]">{{ $t('welcome.f5_title') }}</h2>
               <div class="text-[11px] leading-[1.4] text-text-secondary mt-0.5">{{ $t('welcome.f5_body') }}</div>
             </div>
             <div class="shrink-0 w-[104px]">
@@ -171,7 +171,7 @@ function start() {
               <span class="font-mono text-xs text-orange-neon tracking-[0.08em]">01</span>
               <span class="text-[10px] tracking-[0.25em] uppercase text-text-secondary font-bold">{{ $t('welcome.f1_label') }}</span>
             </div>
-            <div class="font-heading font-black text-[34px] text-text-primary leading-[1.0] tracking-[-0.01em] mb-2.5">{{ $t('welcome.f1_title') }}</div>
+            <h2 class="font-heading font-black text-[34px] text-text-primary leading-[1.0] tracking-[-0.01em] mb-2.5">{{ $t('welcome.f1_title') }}</h2>
             <p class="text-[13.5px] leading-[1.55] text-text-secondary mb-[22px] max-w-[300px]">{{ $t('welcome.f1_body') }}</p>
             <div class="flex-1 flex items-center justify-center min-h-0">
               <div class="scanner-viewport scanner-viewport--lg">
@@ -191,7 +191,7 @@ function start() {
               <span class="font-mono text-[11px] text-orange-neon">02</span>
               <span class="text-[9px] tracking-[0.22em] uppercase text-text-secondary font-bold">{{ $t('welcome.f2_label') }}</span>
             </div>
-            <div class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[13px]">{{ $t('welcome.f2_title') }}</div>
+            <h2 class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[13px]">{{ $t('welcome.f2_title') }}</h2>
             <p class="text-xs leading-[1.5] text-text-secondary mb-[13px]">{{ $t('welcome.f2_body') }}</p>
             <div class="mt-auto bg-charcoal border border-charcoal-border">
               <div class="flex justify-between items-center px-3 py-2 border-b border-charcoal-border">
@@ -219,7 +219,7 @@ function start() {
               <span class="font-mono text-[11px] text-orange-neon">03</span>
               <span class="text-[9px] tracking-[0.22em] uppercase text-text-secondary font-bold">{{ $t('welcome.f3_label') }}</span>
             </div>
-            <div class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[14px]">{{ $t('welcome.f3_title') }}</div>
+            <h2 class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[14px]">{{ $t('welcome.f3_title') }}</h2>
             <p class="text-xs leading-[1.5] text-text-secondary mb-[13px]">{{ $t('welcome.f3_body') }}</p>
             <div class="mt-auto flex flex-col gap-2">
               <div class="inline-flex items-center gap-2 self-start px-3 py-1.5 border border-charcoal-border bg-charcoal">
@@ -243,7 +243,7 @@ function start() {
               <span class="font-mono text-[11px] text-orange-neon">04</span>
               <span class="text-[9px] tracking-[0.22em] uppercase text-text-secondary font-bold">{{ $t('welcome.f4_label') }}</span>
             </div>
-            <div class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[14px]">{{ $t('welcome.f4_title') }}</div>
+            <h2 class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-[14px]">{{ $t('welcome.f4_title') }}</h2>
             <p class="text-xs leading-[1.5] text-text-secondary mb-[13px]">{{ $t('welcome.f4_body') }}</p>
             <div class="mt-auto">
               <div class="flex items-center gap-2.5 bg-charcoal border border-charcoal-border px-[13px] py-[11px]">
@@ -267,7 +267,7 @@ function start() {
               <span class="font-mono text-[11px] text-orange-neon">05</span>
               <span class="text-[9px] tracking-[0.22em] uppercase text-text-secondary font-bold">{{ $t('welcome.f5_label') }}</span>
             </div>
-            <div class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-1.5">{{ $t('welcome.f5_title') }}</div>
+            <h2 class="font-heading font-bold text-[21px] text-text-primary leading-[1.05] mb-1.5">{{ $t('welcome.f5_title') }}</h2>
             <p class="text-xs leading-[1.5] text-text-secondary">{{ $t('welcome.f5_body') }}</p>
             <div class="mt-auto">
               <div class="flex justify-between items-baseline mb-[9px]">

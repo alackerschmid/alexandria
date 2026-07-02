@@ -125,6 +125,7 @@
                 }"
               >
                 <label
+                  for="scanner-isbn"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 transition-colors"
                   :class="{
                     'text-text-secondary': isbnState === 'hidden',
@@ -135,13 +136,14 @@
                   {{ $t("scanner.isbn_label") }}
                 </label>
                 <input
+                  id="scanner-isbn"
                   ref="manualEntryInput"
                   :value="manualIsbn"
                   type="text"
                   inputmode="numeric"
                   :disabled="scanState === 'detecting'"
                   placeholder="978…"
-                  class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider placeholder:text-charcoal-border disabled:opacity-50"
                   @input="onIsbnInput"
                 />
               </div>
@@ -159,48 +161,54 @@
               <!-- Title -->
               <div class="border-b mb-6 pb-2 border-charcoal-border">
                 <label
+                  for="scanner-title"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("scanner.title_label") }}
                 </label>
                 <input
+                  id="scanner-title"
                   v-model="titleQuery"
                   type="text"
                   :placeholder="$t('scanner.title_label')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
               <!-- Author (optional) -->
               <div class="border-b mb-6 pb-2 border-charcoal-border">
                 <label
+                  for="scanner-author"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("scanner.author_label") }}
                 </label>
                 <input
+                  id="scanner-author"
                   v-model="authorQuery"
                   type="text"
                   :placeholder="$t('scanner.author_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
               <!-- Publisher (optional) -->
               <div class="border-b mb-10 pb-2 border-charcoal-border">
                 <label
+                  for="scanner-publisher"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("detail.publisher") }}
                 </label>
                 <input
+                  id="scanner-publisher"
                   v-model="publisherQuery"
                   type="text"
                   :placeholder="$t('scanner.publisher_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg outline-none placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
@@ -286,6 +294,7 @@
                 </span>
                 <button
                   class="text-text-secondary/55 hover:text-text-primary transition-colors"
+                  :aria-label="$t('detail.close')"
                   @click="closeSearchResults"
                 >
                   <v-icon icon="mdi-close" size="16" />
@@ -311,6 +320,7 @@
                     <img
                       v-if="candidate.cover_url"
                       :src="candidate.cover_url"
+                      :alt="candidate.title || candidate.isbn"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                     <div
@@ -380,6 +390,7 @@
                     <img
                       v-if="b.coverUrl"
                       :src="b.coverUrl"
+                      :alt="b.title"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                     <div
@@ -565,6 +576,7 @@
                 <img
                   v-if="b.coverUrl"
                   :src="b.coverUrl"
+                  :alt="b.title"
                   class="absolute inset-0 w-full h-full object-cover"
                 />
                 <div
@@ -596,6 +608,8 @@
           class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
         >
           <div
+            ref="detectedSheetEl"
+            tabindex="-1"
             class="px-6 pt-6 pb-8 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
             style="background: #111110"
           >
@@ -624,6 +638,7 @@
               <img
                 v-if="detectedBook.coverUrl"
                 :src="detectedBook.coverUrl"
+                :alt="detectedBook.title || detectedBook.isbn"
                 class="w-20 h-30 object-cover shrink-0"
               />
               <div
@@ -757,19 +772,19 @@
                 </button>
               </div>
 
-              <button
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3 transition-opacity disabled:opacity-40"
-                :disabled="scanState === 'saving'"
+              <LoadingButton
+                :loading="scanState === 'saving'"
+                class="bg-orange-neon text-black mb-3"
                 @click="saveBook"
               >
                 {{
                   scanState === "saving"
-                    ? "—"
+                    ? $t("detail.saving")
                     : detectedBook.notFound
                       ? $t("scanner.save_isbn")
                       : $t("scanner.save_book")
                 }}
-              </button>
+              </LoadingButton>
               <button
                 class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
                 :disabled="scanState === 'saving'"
@@ -789,7 +804,9 @@
           class="absolute bottom-0 left-0 right-0 z-50 md:flex md:justify-center md:pointer-events-none"
         >
           <div
-            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[85vh] md:max-h-[80vh] md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+            ref="reviewSheetEl"
+            tabindex="-1"
+            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[85dvh] md:max-h-[80dvh] md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
           >
             <!-- Header -->
             <div
@@ -797,6 +814,7 @@
             >
               <button
                 class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                :aria-label="$t('detail.close')"
                 @click="showReview = false"
               >
                 <v-icon icon="mdi-chevron-down" size="20" />
@@ -859,6 +877,7 @@
                       <img
                         v-if="b.coverUrl"
                         :src="b.coverUrl"
+                        :alt="b.title"
                         class="absolute inset-0 w-full h-full object-cover"
                       />
                       <div
@@ -940,7 +959,9 @@
           class="absolute bottom-0 left-0 right-0 z-50"
         >
           <div
-            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[80vh]"
+            ref="mobileSearchSheetEl"
+            tabindex="-1"
+            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[80dvh]"
           >
             <!-- Header -->
             <div
@@ -948,6 +969,7 @@
             >
               <button
                 class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                :aria-label="$t('detail.close')"
                 @click="closeSearchResults"
               >
                 <v-icon icon="mdi-chevron-down" size="20" />
@@ -982,6 +1004,7 @@
                   <img
                     v-if="candidate.cover_url"
                     :src="candidate.cover_url"
+                    :alt="candidate.title || candidate.isbn"
                     class="absolute inset-0 w-full h-full object-cover"
                   />
                   <div
@@ -1046,9 +1069,11 @@ import { useGuestStore } from "@/stores/guest";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
 import { useBookStatus, STATUS_META, STATUS_ORDER } from "@/composables/useBookStatus";
+import { useFocusTrap } from "@/composables/useFocusTrap";
 import type { ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
+import LoadingButton from "@/components/LoadingButton.vue";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -1716,6 +1741,7 @@ const startScanner = () => {
     (err: unknown) => {
       if (err) {
         console.error(err);
+        showToast(t("scanner.camera_error"), "error");
         if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
           cameraFailed.value = true;
           focusManualEntry();
@@ -1751,6 +1777,23 @@ onBeforeUnmount(() => {
   Quagga.offDetected(onQuaggaDetected);
   if (scannerStarted) Quagga.stop();
 });
+
+// ── Focus management for the custom bottom-sheet overlays ────────────────────
+// These are hand-rolled <Transition> sheets, not <v-dialog>, so they don't get
+// focus-trapping, initial focus, or Escape-to-close for free.
+
+const detectedSheetEl = ref<HTMLElement>();
+const reviewSheetEl = ref<HTMLElement>();
+const mobileSearchSheetEl = ref<HTMLElement>();
+
+const detectedSheetOpen = computed(
+  () => (scanState.value === "preview" || scanState.value === "saving") && !!detectedBook.value,
+);
+const mobileSearchSheetOpen = computed(() => showSearchResults.value && !mdAndUp.value);
+
+useFocusTrap(detectedSheetEl, detectedSheetOpen, scanAgain);
+useFocusTrap(reviewSheetEl, showReview, () => (showReview.value = false));
+useFocusTrap(mobileSearchSheetEl, mobileSearchSheetOpen, closeSearchResults);
 </script>
 
 <style>

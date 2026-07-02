@@ -1,83 +1,153 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="480"
+    max-width="880"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div class="bg-charcoal-light border border-charcoal-border flex flex-col max-h-[80vh]">
+    <div class="bg-charcoal-light border border-charcoal-border flex flex-col max-h-[80dvh]">
       <div class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-charcoal-border">
-        <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60">
-          {{ $t("detail.editions_heading") }}
+        <div class="flex items-baseline gap-2.5">
+          <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60">
+            {{ $t("detail.editions_heading") }}
+          </div>
+          <div v-if="editions.length" class="font-mono text-[11px] text-text-secondary/50">
+            {{ $t("detail.editions_total", { n: editions.length }, editions.length) }}
+          </div>
         </div>
         <button
           class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+          :aria-label="$t('detail.close')"
           @click="$emit('update:modelValue', false)"
         >
           <v-icon icon="mdi-close" size="18" />
         </button>
       </div>
 
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <!-- language filter chips -->
+      <div
+        v-if="languageGroups.length > 1"
+        class="shrink-0 flex flex-wrap gap-2 px-6 pt-4"
+      >
+        <button
+          type="button"
+          class="px-3.5 py-1.5 text-[10px] tracking-[0.1em] uppercase font-semibold transition-colors"
+          :class="
+            activeLanguage === 'all'
+              ? 'bg-orange-neon text-[#1a1410]'
+              : 'border border-charcoal-border text-text-secondary/70 hover:text-text-secondary'
+          "
+          @click="activeLanguage = 'all'"
+        >
+          {{ $t("detail.editions_filter_all") }} · {{ editions.length }}
+        </button>
+        <button
+          v-for="group in languageGroups"
+          :key="group.code"
+          type="button"
+          class="px-3.5 py-1.5 text-[10px] tracking-[0.1em] uppercase font-semibold transition-colors"
+          :class="
+            activeLanguage === group.code
+              ? 'bg-orange-neon text-[#1a1410]'
+              : 'border border-charcoal-border text-text-secondary/70 hover:text-text-secondary'
+          "
+          @click="activeLanguage = group.code"
+        >
+          {{ group.label }} · {{ group.count }}
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto px-6 py-5">
         <div v-if="loading" class="text-xs text-text-secondary/60 py-4 text-center">
           {{ $t("detail.loading") }}
         </div>
-        <div v-else class="flex flex-col gap-3">
-          <div
-            v-for="ed in editions"
-            :key="ed.isbn"
-            class="flex items-center gap-3"
-          >
-            <img
-              v-if="ed.cover_url"
-              :src="ed.cover_url"
-              class="w-8 h-12 object-cover shrink-0"
-            />
-            <div
-              v-else
-              class="w-8 h-12 bg-charcoal border border-charcoal-border flex items-center justify-center shrink-0"
-            >
-              <v-icon icon="mdi-book-outline" size="14" color="primary" />
+        <template v-else>
+          <div v-for="group in visibleGroups" :key="group.code" class="mb-7 last:mb-0">
+            <div class="flex items-baseline gap-2 pb-2 mb-4 border-b border-charcoal-border/60">
+              <span class="text-[10px] tracking-[0.2em] uppercase text-text-secondary/70">
+                {{ group.label }}
+              </span>
+              <span class="font-mono text-[10px] text-text-secondary/40">{{ group.count }}</span>
             </div>
-            <div class="min-w-0 flex-1">
-              <div class="text-xs text-text-primary truncate">
-                {{ ed.title || ed.isbn }}
-              </div>
-              <div class="text-[10px] text-text-secondary/60 flex items-center gap-2">
-                <span v-if="ed.language">{{ langDisplay(ed.language) }}</span>
-                <span
+            <div class="grid grid-cols-3 sm:grid-cols-5 gap-3">
+              <button
+                v-for="ed in group.items"
+                :key="ed.isbn"
+                type="button"
+                :disabled="switchingIsbn !== null || !isClickable(ed)"
+                class="flex flex-col gap-2 text-left transition-transform duration-150"
+                :class="isClickable(ed) ? 'hover:-translate-y-1 cursor-pointer' : 'cursor-default'"
+                @click="onCardClick(ed)"
+                @blur="pendingSwitchIsbn = null"
+              >
+                <div class="relative w-full aspect-[2/3] overflow-hidden" :class="cardBorderClass(ed)">
+                  <img
+                    v-if="ed.cover_url"
+                    :src="ed.cover_url"
+                    :alt="ed.title || ed.isbn"
+                    class="w-full h-full object-cover"
+                  />
+                  <div
+                    v-else
+                    class="relative w-full h-full bg-charcoal flex flex-col p-3 overflow-hidden"
+                  >
+                    <div class="absolute left-0 top-0 bottom-0 w-1 bg-orange-neon" />
+                    <div class="flex-1" />
+                    <div
+                      class="font-heading font-bold text-xs text-text-primary leading-tight pl-2 line-clamp-4"
+                    >
+                      {{ ed.title || ed.isbn }}
+                    </div>
+                  </div>
+                  <div
+                    v-if="switchingIsbn === ed.isbn"
+                    class="absolute inset-0 bg-black/50 flex items-center justify-center"
+                  >
+                    <v-progress-circular size="20" width="2" indeterminate />
+                  </div>
+                  <div
+                    v-else-if="pendingSwitchIsbn === ed.isbn"
+                    class="absolute inset-0 bg-black/70 flex items-center justify-center p-2 text-center"
+                  >
+                    <span class="text-[10px] tracking-[0.1em] uppercase text-orange-neon font-semibold">
+                      {{ $t("detail.confirm_switch_edition") }}
+                    </span>
+                  </div>
+                </div>
+                <div class="text-xs text-text-primary font-medium leading-snug line-clamp-2">
+                  {{ ed.title || ed.isbn }}
+                </div>
+                <div
+                  v-if="ed.publisher || ed.publish_date"
+                  class="text-[10px] text-text-secondary/60 truncate"
+                >
+                  {{ [ed.publisher, editionYear(ed)].filter(Boolean).join(" · ") }}
+                </div>
+                <div
+                  v-else-if="!ed.materialized"
+                  class="text-[10px] text-text-secondary/40 italic truncate"
+                >
+                  {{ $t("detail.edition_not_added") }}
+                </div>
+                <div
                   v-if="ed.isbn === book.isbn"
-                  class="text-text-secondary/60 tracking-[0.15em] uppercase"
+                  class="text-[9px] tracking-[0.12em] uppercase text-orange-neon font-semibold"
                 >
                   {{ $t("detail.current_edition") }}
-                </span>
-                <span
+                </div>
+                <div
                   v-else-if="ed.scan_id"
-                  class="text-orange-neon tracking-[0.15em] uppercase"
+                  class="text-[9px] tracking-[0.12em] uppercase text-orange-neon font-semibold"
                 >
                   {{ $t("detail.edition_in_library") }}
-                </span>
-              </div>
+                </div>
+              </button>
             </div>
-            <button
-              v-if="canSwitch && ed.isbn !== book.isbn"
-              class="shrink-0 text-[10px] tracking-[0.14em] uppercase text-orange-neon hover:opacity-80 transition-opacity disabled:opacity-40"
-              :disabled="switchingIsbn !== null"
-              @click="switchTo(ed.isbn)"
-            >
-              <v-progress-circular
-                v-if="switchingIsbn === ed.isbn"
-                size="12"
-                width="2"
-                indeterminate
-              />
-              <span v-else>{{ $t("detail.switch_edition") }}</span>
-            </button>
           </div>
 
           <div v-if="!editions.length" class="text-xs text-text-secondary/60 py-2 text-center">
             {{ $t("detail.no_more_editions") }}
           </div>
-        </div>
+        </template>
 
         <p v-if="error" class="text-[10px] text-error tracking-widest uppercase mt-3 text-center">
           {{ $t(error) }}
@@ -126,8 +196,17 @@ interface WorkEdition {
   title: string | null;
   language: string | null;
   cover_url: string | null;
+  publish_date: string | null;
+  publisher: string | null;
   scan_id: number | null;
   materialized: boolean;
+}
+
+interface LanguageGroup {
+  code: string;
+  label: string;
+  count: number;
+  items: WorkEdition[];
 }
 
 const props = defineProps<{
@@ -154,13 +233,64 @@ const loading = ref(false);
 const discovering = ref(false);
 const discoverFoundCount = ref<number | null>(null);
 const switchingIsbn = ref<string | null>(null);
+const pendingSwitchIsbn = ref<string | null>(null);
 const error = ref<string | null>(null);
+const activeLanguage = ref("all");
+
+const languageGroups = computed<LanguageGroup[]>(() => {
+  const buckets = new Map<string, WorkEdition[]>();
+  for (const ed of editions.value) {
+    const code = ed.language ?? "unknown";
+    if (!buckets.has(code)) buckets.set(code, []);
+    buckets.get(code)!.push(ed);
+  }
+  return [...buckets.entries()]
+    .map(([code, items]) => ({
+      code,
+      label: code === "unknown" ? "—" : langDisplay.value(code),
+      count: items.length,
+      items,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+});
+
+const visibleGroups = computed(() =>
+  activeLanguage.value === "all"
+    ? languageGroups.value
+    : languageGroups.value.filter((g) => g.code === activeLanguage.value),
+);
+
+function isClickable(ed: WorkEdition) {
+  return canSwitch.value && ed.isbn !== props.book.isbn;
+}
+
+function onCardClick(ed: WorkEdition) {
+  if (!isClickable(ed)) return;
+  if (pendingSwitchIsbn.value !== ed.isbn) {
+    pendingSwitchIsbn.value = ed.isbn;
+    return;
+  }
+  pendingSwitchIsbn.value = null;
+  switchTo(ed.isbn);
+}
+
+function editionYear(ed: WorkEdition) {
+  return ed.publish_date?.slice(0, 4) ?? "";
+}
+
+function cardBorderClass(ed: WorkEdition) {
+  if (ed.isbn === props.book.isbn) return "border-2 border-orange-neon";
+  if (ed.scan_id) return "border border-orange-neon/50";
+  return "border border-charcoal-border";
+}
 
 async function load() {
   if (!props.book.work_id) return;
   loading.value = true;
   error.value = null;
   discoverFoundCount.value = null;
+  activeLanguage.value = "all";
+  pendingSwitchIsbn.value = null;
   try {
     const res = await apiFetch(`/api/works/${props.book.work_id}/editions`);
     if (!res.ok) throw new Error();
@@ -185,6 +315,8 @@ async function discover() {
   if (!props.book.work_id) return;
   discovering.value = true;
   error.value = null;
+  activeLanguage.value = "all";
+  pendingSwitchIsbn.value = null;
   const previousCount = editions.value.length;
   try {
     const res = await apiFetch(`/api/works/${props.book.work_id}/editions/discover`, {
@@ -212,6 +344,7 @@ async function discover() {
 
 async function switchTo(isbn: string) {
   switchingIsbn.value = isbn;
+  pendingSwitchIsbn.value = null;
   error.value = null;
   try {
     const res = await apiFetch(`/api/scans/${props.book.id}/edition`, {

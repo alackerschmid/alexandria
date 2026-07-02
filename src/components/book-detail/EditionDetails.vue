@@ -13,13 +13,11 @@
         class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
       >
         {{ $t("detail.publisher") }}
-        <span
-          v-if="book.publisher_overridden"
-          class="w-1 h-1 rounded-full bg-orange-neon"
-        />
+        <OverrideDot v-if="book.publisher_overridden" class="w-1 h-1" />
       </span>
       <button
         class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors text-right truncate"
+        :aria-label="$t('detail.filter_by', { field: $t('detail.publisher'), value: book.publisher })"
         @click="filterBy('publisher', book.publisher!)"
       >
         {{ book.publisher }}
@@ -33,13 +31,11 @@
         class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
       >
         {{ $t("detail.language") }}
-        <span
-          v-if="book.language_overridden"
-          class="w-1 h-1 rounded-full bg-orange-neon"
-        />
+        <OverrideDot v-if="book.language_overridden" class="w-1 h-1" />
       </span>
       <button
         class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors"
+        :aria-label="$t('detail.filter_by', { field: $t('detail.language'), value: langDisplay(book.language) })"
         @click="filterBy('language', book.language!)"
       >
         {{ langDisplay(book.language) }}
@@ -53,10 +49,7 @@
         class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
       >
         {{ $t("detail.published") }}
-        <span
-          v-if="book.publish_date_overridden"
-          class="w-1 h-1 rounded-full bg-orange-neon"
-        />
+        <OverrideDot v-if="book.publish_date_overridden" class="w-1 h-1" />
       </span>
       <span class="font-mono text-xs text-text-primary text-right">{{
         formatPublishDate(book.publish_date)
@@ -70,10 +63,7 @@
         class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
       >
         {{ $t("detail.pages") }}
-        <span
-          v-if="book.pages_overridden"
-          class="w-1 h-1 rounded-full bg-orange-neon"
-        />
+        <OverrideDot v-if="book.pages_overridden" class="w-1 h-1" />
       </span>
       <span class="font-mono text-xs text-text-primary">{{
         book.number_of_pages_median
@@ -154,6 +144,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
 import { formatPublishDate as formatDate } from "@/utils/book-display";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
+import OverrideDot from "@/components/OverrideDot.vue";
 
 const props = defineProps<{
   book: BookWithOverrides;
@@ -175,8 +166,12 @@ function filterBy(field: "publisher" | "language", value: string) {
 const isbnCopied = ref(false);
 
 async function copyIsbn() {
-  await navigator.clipboard.writeText(props.book.isbn);
-  isbnCopied.value = true;
-  setTimeout(() => (isbnCopied.value = false), 1500);
+  try {
+    await navigator.clipboard.writeText(props.book.isbn);
+    isbnCopied.value = true;
+    setTimeout(() => (isbnCopied.value = false), 1500);
+  } catch {
+    // Clipboard access denied/unavailable — nothing to recover, just don't show the checkmark.
+  }
 }
 </script>
