@@ -29,6 +29,44 @@ type CustomFieldRow = {
   field_value: string | null;
 };
 type FirstLineRow = { title: string; first_line: string };
+type StatsResponse = {
+  total: number;
+  byStatus: { read: number; reading: number; unread: number; dnf: number };
+  genres: SeriesRow[];
+  uncategorizedGenreCount: number;
+  languages: { code: string; count: number }[];
+  languageCount: number;
+  topAuthors: { label: string; count: number }[];
+  authorCount: number;
+  publishers: { label: string; count: number }[];
+  forms: { label: string; count: number }[];
+  subjects: { label: string; count: number }[];
+  countries: { label: string; count: number }[];
+  decades: { label: string; count: number }[];
+  decadeGenres: {
+    decade: string;
+    genre: string;
+    count: number;
+    total_count: number;
+  }[];
+  topSeries: SeriesRow[];
+  customFields: {
+    fieldDefId: number;
+    fieldName: string;
+    values: { label: string; count: number }[];
+  }[];
+  avgPages: number | null;
+  totalPagesRead: number | null;
+  medianYear: number | null;
+  yearKnownCount: number;
+  genreCount: number;
+  translationRatio: {
+    pct: number;
+    translatedCount: number;
+    knownCount: number;
+  } | null;
+  randomFirstLine: { title: string; firstLine: string } | null;
+};
 
 function extractYear(r: RawRow): number | null {
   if (r.original_pub_date) {
@@ -53,6 +91,34 @@ function topCounts(
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([label, count]) => ({ label, count }));
+}
+
+function buildStatsResponse(input: StatsResponse): StatsResponse {
+  return {
+    total: input.total,
+    byStatus: input.byStatus,
+    genres: input.genres ?? [],
+    uncategorizedGenreCount: input.uncategorizedGenreCount ?? 0,
+    languages: input.languages ?? [],
+    languageCount: input.languageCount ?? 0,
+    topAuthors: input.topAuthors ?? [],
+    authorCount: input.authorCount ?? 0,
+    publishers: input.publishers ?? [],
+    forms: input.forms ?? [],
+    subjects: input.subjects ?? [],
+    countries: input.countries ?? [],
+    decades: input.decades ?? [],
+    decadeGenres: input.decadeGenres ?? [],
+    topSeries: input.topSeries ?? [],
+    customFields: input.customFields ?? [],
+    avgPages: input.avgPages ?? null,
+    totalPagesRead: input.totalPagesRead ?? null,
+    medianYear: input.medianYear ?? null,
+    yearKnownCount: input.yearKnownCount ?? 0,
+    genreCount: input.genreCount ?? 0,
+    translationRatio: input.translationRatio ?? null,
+    randomFirstLine: input.randomFirstLine ?? null,
+  };
 }
 
 stats.get("/", async (c) => {
@@ -372,31 +438,33 @@ stats.get("/", async (c) => {
     }),
   );
 
-  return c.json({
-    total: rows.length,
-    byStatus,
-    genres,
-    uncategorizedGenreCount,
-    languages,
-    languageCount: languages.length,
-    topAuthors,
-    authorCount,
-    publishers,
-    forms,
-    subjects,
-    countries,
-    decades,
-    decadeGenres,
-    topSeries,
-    customFields,
-    avgPages,
-    totalPagesRead,
-    medianYear,
-    yearKnownCount,
-    genreCount,
-    translationRatio,
-    randomFirstLine,
-  });
+  return c.json(
+    buildStatsResponse({
+      total: rows.length,
+      byStatus,
+      genres,
+      uncategorizedGenreCount,
+      languages,
+      languageCount: languages.length,
+      topAuthors,
+      authorCount,
+      publishers,
+      forms,
+      subjects,
+      countries,
+      decades,
+      decadeGenres,
+      topSeries,
+      customFields,
+      avgPages,
+      totalPagesRead,
+      medianYear,
+      yearKnownCount,
+      genreCount,
+      translationRatio,
+      randomFirstLine,
+    }),
+  );
 });
 
 export default stats;

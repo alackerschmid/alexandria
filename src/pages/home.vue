@@ -196,7 +196,7 @@
                 {{ $t("home.median_year") }}
               </p>
               <p
-                v-if="statsData.medianYear"
+                v-if="statsData.medianYear != null"
                 class="font-heading font-black text-[3.5rem] md:text-[82px] leading-[0.85] tracking-[-0.02em] text-text-primary"
               >
                 {{ statsData.medianYear }}
@@ -217,9 +217,9 @@
               </p>
               <p class="flex items-baseline gap-2">
                 <span
-                  v-if="statsData.avgPages"
+                  v-if="statsData.avgPages != null"
                   class="font-heading font-black text-[3.5rem] md:text-[82px] leading-[0.85] tracking-[-0.02em] text-text-primary"
-                  >{{ statsData.avgPages.toLocaleString() }}</span
+                  >{{ formatCount(statsData.avgPages) }}</span
                 >
                 <span
                   v-else
@@ -227,7 +227,7 @@
                   >—</span
                 >
                 <span
-                  v-if="statsData.avgPages"
+                  v-if="statsData.avgPages != null"
                   class="font-heading font-bold text-[14px] text-orange-neon"
                   >{{ $t("home.unit_pp") }}</span
                 >
@@ -451,6 +451,43 @@ const loading = ref(false);
 const errorToast = ref(false);
 const errorMessage = ref("");
 const randomQuote = ref<{ title: string; firstLine: string } | null>(null);
+
+function normalizeStats(payload: any): CollectionStats {
+  return {
+    total: payload?.total ?? 0,
+    byStatus: {
+      read: payload?.byStatus?.read ?? 0,
+      reading: payload?.byStatus?.reading ?? 0,
+      unread: payload?.byStatus?.unread ?? 0,
+      dnf: payload?.byStatus?.dnf ?? 0,
+    },
+    genres: payload?.genres ?? [],
+    uncategorizedGenreCount: payload?.uncategorizedGenreCount ?? 0,
+    languages: payload?.languages ?? [],
+    languageCount: payload?.languageCount ?? 0,
+    topAuthors: payload?.topAuthors ?? [],
+    authorCount: payload?.authorCount ?? 0,
+    publishers: payload?.publishers ?? [],
+    forms: payload?.forms ?? [],
+    subjects: payload?.subjects ?? [],
+    countries: payload?.countries ?? [],
+    decades: payload?.decades ?? [],
+    decadeGenres: payload?.decadeGenres ?? [],
+    topSeries: payload?.topSeries ?? [],
+    customFields: payload?.customFields ?? [],
+    avgPages: payload?.avgPages ?? null,
+    totalPagesRead: payload?.totalPagesRead ?? null,
+    medianYear: payload?.medianYear ?? null,
+    yearKnownCount: payload?.yearKnownCount ?? 0,
+    genreCount: payload?.genreCount ?? 0,
+    translationRatio: payload?.translationRatio ?? null,
+    randomFirstLine: payload?.randomFirstLine ?? null,
+  };
+}
+
+function formatCount(value: number | null | undefined): string {
+  return value == null ? "—" : value.toLocaleString();
+}
 
 // ── First-name onboarding ─────────────────────────────────────────────────────
 
@@ -709,7 +746,7 @@ const statTiles = computed(() => {
     {
       key: "total",
       label: t("home.stat_total"),
-      value: total.toLocaleString(),
+      value: formatCount(total),
       pctLabel: "100%",
       barWidth: "100%",
       color: totalColor,
@@ -717,7 +754,7 @@ const statTiles = computed(() => {
     {
       key: "read",
       label: t("home.stat_read"),
-      value: byStatus.read.toLocaleString(),
+      value: formatCount(byStatus.read),
       pctLabel: pctOf(byStatus.read) + "%",
       barWidth: Math.max(pctOf(byStatus.read), byStatus.read > 0 ? 4 : 0) + "%",
       color: STATUS_META.read.themeColor,
@@ -725,7 +762,7 @@ const statTiles = computed(() => {
     {
       key: "unread",
       label: t("home.stat_unread"),
-      value: byStatus.unread.toLocaleString(),
+      value: formatCount(byStatus.unread),
       pctLabel: pctOf(byStatus.unread) + "%",
       barWidth: pctOf(byStatus.unread) + "%",
       color: STATUS_META.unread.themeColor,
@@ -733,7 +770,7 @@ const statTiles = computed(() => {
     {
       key: "reading",
       label: t("home.stat_reading"),
-      value: byStatus.reading.toLocaleString(),
+      value: formatCount(byStatus.reading),
       pctLabel: pctOf(byStatus.reading) + "%",
       barWidth:
         Math.max(pctOf(byStatus.reading), byStatus.reading > 0 ? 4 : 0) + "%",
@@ -742,7 +779,7 @@ const statTiles = computed(() => {
     {
       key: "dnf",
       label: t("home.stat_dnf"),
-      value: byStatus.dnf.toLocaleString(),
+      value: formatCount(byStatus.dnf),
       pctLabel: pctOf(byStatus.dnf) + "%",
       barWidth: Math.max(pctOf(byStatus.dnf), byStatus.dnf > 0 ? 4 : 0) + "%",
       color: STATUS_META.dnf.themeColor,
@@ -771,7 +808,7 @@ const trioItems = computed(() => {
     {
       key: "total_pages",
       kicker: t("home.total_pages_read"),
-      value: totalPagesRead ? totalPagesRead.toLocaleString() : null,
+      value: formatCount(totalPagesRead),
       unit: t("home.unit_pp"),
     },
     {
@@ -808,7 +845,7 @@ const fetchStats = async () => {
     const res = await apiFetch(`/api/stats?locale=${localeStore.locale}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to fetch stats");
-    statsData.value = data;
+    statsData.value = normalizeStats(data);
     // Only set once per page load — locale-triggered refetches shouldn't change the quote.
     if (randomQuote.value === null && data.randomFirstLine) {
       randomQuote.value = data.randomFirstLine;
