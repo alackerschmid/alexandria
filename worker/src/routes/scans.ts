@@ -3,11 +3,16 @@ import type { Env } from '../types'
 import { authMiddleware } from '../auth'
 import { resolveEdition, materializeEdition } from '../editions'
 import { enrichWork } from '../enrichment'
-import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES } from '../library-query'
+import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES, getBookByIsbn } from '../library-query'
+import { checkRateLimit } from '../rate-limit'
 
 const scans = new Hono<Env>()
 
 scans.use('*', authMiddleware)
+
+// Generous enough for a rapid barcode-scanning session (~1 book every 2s); guards against a
+// runaway client bug/loop, not deliberate abuse.
+const SCAN_RATE_LIMIT = 30
 
 scans.get('/', async (c) => {
   const userId = c.get('userId')
@@ -36,6 +41,23 @@ scans.post('/', async (c) => {
   const db = c.env.DB
   const locale = c.req.query('locale') ?? 'en'
 
+  // Check for an existing scan of this ISBN before consuming rate-limit quota or touching
+  // external metadata APIs — a duplicate scan is a cheap, common case (e.g. rescanning a shelf)
+  // and shouldn't cost the user part of their scan-rate budget.
+  const existingBook = await getBookByIsbn(db, isbn)
+  if (existingBook) {
+    const dup = await db.prepare('SELECT 1 FROM scans WHERE user_id = ? AND book_id = ?')
+      .bind(userId, existingBook.id)
+      .first()
+    if (dup) return c.json({ error: 'Already in your list' }, 409)
+  }
+
+  const rateLimit = await checkRateLimit(db, `scan:${userId}`, SCAN_RATE_LIMIT, 1)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many scans — please slow down' }, 429)
+  }
+
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, true)
   if (!book) {
@@ -57,7 +79,7 @@ scans.post('/', async (c) => {
     return c.json({ error: 'Failed to save scan' }, 500)
   }
 
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(db, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY))
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(db, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY, 'scan'))
 
   const saved = await db
     .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)

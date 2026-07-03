@@ -1,12 +1,53 @@
 import type { WorkRow, WorkDetails, SeriesHit } from './types'
-import { splitAuthors, materializeEdition } from './editions'
+import { splitAuthors, materializeEdition, normalizeStr } from './editions'
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
-export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 1
+export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 2
 
 const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql'
 const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)'
+
+export type FailureReason = 'timeout' | 'rate_limited' | 'http_5xx' | 'network' | 'other'
+
+// Per-reason sweeper retry policy. Typed as Record<FailureReason, ...> so adding a new
+// FailureReason value is a compile error here until a policy is assigned — the sweeper's SQL
+// CASE (worker/src/sweeper.ts) is generated from this map, so the two can't drift apart silently.
+//   - rate_limited: Wikidata is just asking us to slow down — retry soon (5 min), default cap.
+//   - timeout: a work that repeatedly times out is unlikely to resolve quickly — wait longer
+//     (60 min), tighter cap (3) so we don't keep spending subrequests on a consistently slow query.
+//   - other: an unexpected HTTP status from Wikidata itself — usually a query bug, not transient —
+//     tight cap (2) so we don't hammer a hopeless case.
+//   - network / http_5xx: infrastructure-adjacent, not evidence of a hopeless work — default policy.
+export const RETRY_POLICY: Record<FailureReason, { capAttempts: number; backoffMinutes: number }> = {
+  rate_limited: { capAttempts: 5, backoffMinutes: 5 },
+  timeout:      { capAttempts: 3, backoffMinutes: 60 },
+  other:        { capAttempts: 2, backoffMinutes: 30 },
+  http_5xx:     { capAttempts: 5, backoffMinutes: 30 },
+  network:      { capAttempts: 5, backoffMinutes: 30 },
+}
+// Legacy rows enriched before enrichment_failure_reason existed (NULL reason).
+export const DEFAULT_RETRY_POLICY = { capAttempts: 5, backoffMinutes: 30 }
+
+// Thrown by runSparql with a classified `kind` so enrichWork's catch block can record *why*
+// enrichment failed (enrichment_failure_reason) instead of lumping every failure together.
+class SparqlError extends Error {
+  kind: FailureReason
+  constructor(message: string, kind: FailureReason) {
+    super(message)
+    this.name = 'SparqlError'
+    this.kind = kind
+  }
+}
+
+// Only a SparqlError (thrown by runSparql) carries a real classification — an unexpected HTTP
+// status from Wikidata itself is 'other' territory (usually a query bug). Anything else (a D1
+// exception from mergeWorks/upsertSeries/populateSeriesMembers, etc.) is infrastructure-adjacent
+// noise, not evidence of a hopeless work, so it gets the lenient default policy ('network') rather
+// than 'other's tight 2-attempt cap.
+function classifyError(e: unknown): FailureReason {
+  return e instanceof SparqlError ? e.kind : 'network'
+}
 
 function escapeSparql(v: string): string {
   return v.replace(/\\/g, '\\\\').replace(/"/g, String.raw`\"`).replace(/\n/g, '\\n').replace(/\r/g, '\\r')
@@ -35,6 +76,9 @@ async function runSparql(query: string, timeoutMs = 25_000): Promise<any[]> {
         headers: { 'User-Agent': WIKIDATA_UA, Accept: 'application/sparql-results+json' },
         signal: ctrl.signal,
       })
+    } catch (e: any) {
+      if (e?.name === 'AbortError') throw new SparqlError(`[SPARQL] timed out after ${timeoutMs}ms`, 'timeout')
+      throw new SparqlError(`[SPARQL] network error: ${e?.message ?? e}`, 'network')
     } finally { clearTimeout(t) }
   }
   let res = await once()
@@ -44,7 +88,10 @@ async function runSparql(query: string, timeoutMs = 25_000): Promise<any[]> {
     await new Promise(r => setTimeout(r, Math.min(retry, 10) * 1000))
     res = await once()
   }
-  if (!res.ok) throw new Error(`[SPARQL] HTTP ${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const kind: FailureReason = res.status === 429 ? 'rate_limited' : res.status >= 500 ? 'http_5xx' : 'other'
+    throw new SparqlError(`[SPARQL] HTTP ${res.status} ${res.statusText}`, kind)
+  }
   const data: any = await res.json()
   const rows: any[] = data?.results?.bindings ?? []
   console.log(`[SPARQL] Got ${rows.length} rows`)
@@ -52,7 +99,7 @@ async function runSparql(query: string, timeoutMs = 25_000): Promise<any[]> {
 }
 
 // Title (+ optional author) → matched work QID and its primary series, if any.
-async function fetchBookInfo(title: string, author: string): Promise<{ workQid: string; series: SeriesHit | null } | null> {
+async function fetchBookInfo(title: string, author: string): Promise<{ workQid: string; authorQid: string | null; series: SeriesHit | null } | null> {
   const authorBlock = author
     ? `SERVICE wikibase:mwapi {
          bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
@@ -62,7 +109,7 @@ async function fetchBookInfo(title: string, author: string): Promise<{ workQid: 
        ?work wdt:P50 ?author.`
     : ''
   const query = `
-    SELECT ?work ?series ?ordinal ?seriesLabelEn ?seriesLabelDe WHERE {
+    SELECT ?work ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe WHERE {
       SERVICE wikibase:mwapi {
         bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
                          mwapi:srsearch "${escapeSparql(title)}".
@@ -91,6 +138,7 @@ async function fetchBookInfo(title: string, author: string): Promise<{ workQid: 
     return null
   }
   console.log('[fetchBookInfo] workQid =', workQid)
+  const authorQid = qidFromUri(rows[0].author?.value)
 
   const withSeries = rows.find(r => r.series?.value)
   let series: SeriesHit | null = null
@@ -108,7 +156,7 @@ async function fetchBookInfo(title: string, author: string): Promise<{ workQid: 
   } else {
     console.log('[fetchBookInfo] no series found in results')
   }
-  return { workQid, series }
+  return { workQid, authorQid, series }
 }
 
 // Fetches work-level metadata for a known Wikidata QID.
@@ -118,6 +166,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     genres: [], originalPubDate: null, awards: [], nominations: [],
     mainSubject: null, formOfWork: null, languageOfWork: null,
     firstLine: null, epigraph: null, narrativeLocations: [], countriesOfOrigin: [],
+    subtitle: null, translator: [], illustrator: [], characters: [],
   }
   if (!/^Q\d+$/.test(workQid)) {
     console.warn('[fetchWorkDetails] invalid QID:', workQid)
@@ -127,7 +176,8 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   const query = `
     SELECT ?genres ?originalPubDate ?awards ?nominations
            ?mainSubject ?formOfWork ?languageOfWork ?firstLine ?epigraph
-           ?narrativeLocations ?countriesOfOrigin WHERE {
+           ?narrativeLocations ?countriesOfOrigin
+           ?subtitle ?translators ?illustrators ?characters WHERE {
       { SELECT (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres) WHERE {
           OPTIONAL { wd:${workQid} wdt:P136 ?genre.
                      ?genre rdfs:label ?genreLabel. FILTER(LANG(?genreLabel) = "en") } } }
@@ -158,6 +208,17 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
       { SELECT (GROUP_CONCAT(DISTINCT ?countryLabel; separator="|") AS ?countriesOfOrigin) WHERE {
           OPTIONAL { wd:${workQid} wdt:P495 ?country.
                      ?country rdfs:label ?countryLabel. FILTER(LANG(?countryLabel) = "en") } } }
+      { SELECT (SAMPLE(STR(?st)) AS ?subtitle) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P1680 ?st. } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?translatorLabel; separator="|") AS ?translators) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P655 ?translator.
+                     ?translator rdfs:label ?translatorLabel. FILTER(LANG(?translatorLabel) = "en") } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?illustratorLabel; separator="|") AS ?illustrators) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P110 ?illustrator.
+                     ?illustrator rdfs:label ?illustratorLabel. FILTER(LANG(?illustratorLabel) = "en") } } }
+      { SELECT (GROUP_CONCAT(DISTINCT ?characterLabel; separator="|") AS ?characters) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P674 ?character.
+                     ?character rdfs:label ?characterLabel. FILTER(LANG(?characterLabel) = "en") } } }
     }`.trim()
   const rows = await runSparql(query)
   const row = rows[0]
@@ -181,12 +242,18 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     epigraph:          strOrNull(row?.epigraph?.value),
     narrativeLocations: splitPipe(row?.narrativeLocations?.value),
     countriesOfOrigin:  splitPipe(row?.countriesOfOrigin?.value),
+    subtitle:           strOrNull(row?.subtitle?.value),
+    translator:         splitPipe(row?.translators?.value),
+    illustrator:        splitPipe(row?.illustrators?.value),
+    characters:         splitPipe(row?.characters?.value),
   }
   console.log('[fetchWorkDetails] parsed:', {
     genres: result.genres, originalPubDate: result.originalPubDate,
     awards: result.awards.length, nominations: result.nominations.length,
     mainSubject: result.mainSubject, formOfWork: result.formOfWork,
     narrativeLocations: result.narrativeLocations.length, countriesOfOrigin: result.countriesOfOrigin.length,
+    subtitle: result.subtitle, translator: result.translator.length,
+    illustrator: result.illustrator.length, characters: result.characters.length,
   })
   return result
 }
@@ -285,11 +352,33 @@ async function populateSeriesMembers(db: D1Database, seriesId: number, seriesQid
       .bind(seriesId, m.ordinal, m.qid)))
 }
 
+export type EnrichmentSource = 'scan' | 'lookup' | 'refresh' | 'sweeper' | 'unknown'
+
+// Best-effort telemetry write for observability (pending count, failure breakdown, timing) —
+// never lets a logging failure affect the enrichment result itself.
+async function recordRun(
+  db: D1Database,
+  workId: number,
+  startedAt: number,
+  outcome: 'done' | 'not_found' | 'failed',
+  failureReason: FailureReason | null,
+  source: EnrichmentSource,
+): Promise<void> {
+  try {
+    await db.prepare(
+      'INSERT INTO enrichment_runs (work_id, started_at, duration_ms, outcome, failure_reason, source) VALUES (?, ?, ?, ?, ?, ?)',
+    ).bind(workId, new Date(startedAt).toISOString(), Date.now() - startedAt, outcome, failureReason, source).run()
+  } catch (e) {
+    console.error('[enrichWork] failed to write enrichment_runs row', e)
+  }
+}
+
 // Best-effort enrichment for a work. Negative-cached via works.series_checked_at unless force=true.
 // apiKey (Google Books) is only needed when backfilling a cover edition for an unowned work.
-export async function enrichWork(db: D1Database, workId: number, force = false, apiKey?: string): Promise<void> {
+export async function enrichWork(db: D1Database, workId: number, force = false, apiKey?: string, source: EnrichmentSource = 'unknown'): Promise<void> {
   let canonicalId = workId
   let merged = false
+  const startedAt = Date.now()
   try {
     console.log(`[enrichWork] start workId=${workId} force=${force}`)
     const w = await db.prepare('SELECT * FROM works WHERE id = ?').bind(workId).first<WorkRow>()
@@ -316,7 +405,8 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       const title = ed?.title ?? w.canonical_title
       if (!title) {
         console.warn(`[enrichWork] no title for work ${workId}, marking done`)
-        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL WHERE id = ?").bind(workId).run()
+        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL, enrichment_failure_reason = NULL WHERE id = ?").bind(workId).run()
+        await recordRun(db, workId, startedAt, 'not_found', null, source)
         return
       }
       const author = splitAuthors(ed?.author ?? null)[0] ?? ''
@@ -353,6 +443,21 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
           console.log(`[enrichWork] seriesId=${seriesId}`)
           if (seriesId) await populateSeriesMembers(db, seriesId, info.series.seriesQid)
         }
+
+        // Best-effort: link the searched author's own QID for future dedup. Isolated in its own
+        // try/catch so a failure here (e.g. two normalized names colliding on the UNIQUE index)
+        // can't turn an otherwise-successful work enrichment into a failed one.
+        if (info.authorQid && author) {
+          try {
+            const authorResult = await db.prepare(
+              'UPDATE authors SET wikidata_qid = ? WHERE normalized_name = ? AND wikidata_qid IS NULL'
+            ).bind(info.authorQid, normalizeStr(author)).run()
+            console.log(`[enrichWork] author QID ${info.authorQid} write: changes=${authorResult.meta.changes}`)
+          } catch (e) {
+            console.error('[enrichWork] failed to write author QID', info.authorQid, e)
+          }
+        }
+
         details = await fetchWorkDetails(info.workQid)
       } else {
         console.log(`[enrichWork] no Wikidata match found, will store nulls`)
@@ -363,11 +468,24 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
 
     const arrToJson = (a: string[] | undefined) => a?.length ? JSON.stringify(a) : null
-    const genresJson    = arrToJson(details?.genres)
+    let genresJson      = arrToJson(details?.genres)
+    if (!genresJson && !force) {
+      // Wikidata had no genres for this work — fall back to Google Books' BISAC categories,
+      // captured on any linked edition. Wikidata stays authoritative; this only fills a gap.
+      // Skipped on force=true so a manual refresh can still clear a stale genre value —
+      // that's the whole point of force overwriting unconditionally (see coalesce() below).
+      const fallback = await db.prepare(
+        'SELECT categories FROM books WHERE work_id = ? AND categories IS NOT NULL LIMIT 1'
+      ).bind(canonicalId).first<{ categories: string }>()
+      if (fallback?.categories) genresJson = fallback.categories
+    }
     const awardsJson    = arrToJson(details?.awards)
     const nominJson     = arrToJson(details?.nominations)
     const narLocsJson   = arrToJson(details?.narrativeLocations)
     const countriesJson = arrToJson(details?.countriesOfOrigin)
+    const translatorJson  = arrToJson(details?.translator)
+    const illustratorJson = arrToJson(details?.illustrator)
+    const charactersJson  = arrToJson(details?.characters)
     const pubDate        = details?.originalPubDate ?? null
     console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
 
@@ -378,6 +496,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       UPDATE works SET
         series_checked_at         = datetime('now'),
         enrichment_failed_at      = NULL,
+        enrichment_failure_reason = NULL,
         enrichment_attempts       = 0,
         enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
         genres                    = ${coalesce('genres')},
@@ -390,20 +509,30 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
         first_line                = ${coalesce('first_line')},
         epigraph                  = ${coalesce('epigraph')},
         narrative_locations       = ${coalesce('narrative_locations')},
-        countries_of_origin       = ${coalesce('countries_of_origin')}
+        countries_of_origin       = ${coalesce('countries_of_origin')},
+        subtitle                  = ${coalesce('subtitle')},
+        translator                = ${coalesce('translator')},
+        illustrator               = ${coalesce('illustrator')},
+        characters                = ${coalesce('characters')}
       WHERE id = ?`)
       .bind(genresJson, pubDate, awardsJson, nominJson,
             details?.mainSubject ?? null, details?.formOfWork ?? null,
             details?.languageOfWork ?? null, details?.firstLine ?? null,
             details?.epigraph ?? null, narLocsJson, countriesJson,
+            details?.subtitle ?? null, translatorJson, illustratorJson, charactersJson,
             canonicalId)
       .run()
     console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
+    await recordRun(db, canonicalId, startedAt, workQid ? 'done' : 'not_found', null, source)
   } catch (e) {
     console.error('[enrichWork] failed for work', workId, e)
     const failTarget = merged ? canonicalId : workId
+    const reason = classifyError(e)
     try {
-      await db.prepare("UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1 WHERE id = ?").bind(failTarget).run()
+      await db.prepare(
+        "UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1, enrichment_failure_reason = ? WHERE id = ?",
+      ).bind(reason, failTarget).run()
     } catch {}
+    await recordRun(db, failTarget, startedAt, 'failed', reason, source)
   }
 }

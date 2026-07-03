@@ -4,14 +4,29 @@
     max-width="880"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <div class="bg-charcoal-light border border-charcoal-border flex flex-col max-h-[80dvh]">
-      <div class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-charcoal-border">
+    <div
+      class="bg-charcoal-light border border-charcoal-border flex flex-col max-h-[80dvh]"
+    >
+      <div
+        class="shrink-0 flex items-center justify-between px-6 py-4 border-b border-charcoal-border"
+      >
         <div class="flex items-baseline gap-2.5">
-          <div class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60">
+          <div
+            class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60"
+          >
             {{ $t("detail.editions_heading") }}
           </div>
-          <div v-if="editions.length" class="font-mono text-[11px] text-text-secondary/50">
-            {{ $t("detail.editions_total", { n: editions.length }, editions.length) }}
+          <div
+            v-if="editions.length"
+            class="font-mono text-[11px] text-text-secondary/50"
+          >
+            {{
+              $t(
+                "detail.editions_total",
+                { n: editions.length },
+                editions.length,
+              )
+            }}
           </div>
         </div>
         <button
@@ -57,16 +72,29 @@
       </div>
 
       <div class="flex-1 overflow-y-auto px-6 py-5">
-        <div v-if="loading" class="text-xs text-text-secondary/60 py-4 text-center">
+        <div
+          v-if="loading"
+          class="text-xs text-text-secondary/60 py-4 text-center"
+        >
           {{ $t("detail.loading") }}
         </div>
         <template v-else>
-          <div v-for="group in visibleGroups" :key="group.code" class="mb-7 last:mb-0">
-            <div class="flex items-baseline gap-2 pb-2 mb-4 border-b border-charcoal-border/60">
-              <span class="text-[10px] tracking-[0.2em] uppercase text-text-secondary/70">
+          <div
+            v-for="group in visibleGroups"
+            :key="group.code"
+            class="mb-7 last:mb-0"
+          >
+            <div
+              class="flex items-baseline gap-2 pb-2 mb-4 border-b border-charcoal-border/60"
+            >
+              <span
+                class="text-[10px] tracking-[0.2em] uppercase text-text-secondary/70"
+              >
                 {{ group.label }}
               </span>
-              <span class="font-mono text-[10px] text-text-secondary/40">{{ group.count }}</span>
+              <span class="font-mono text-[10px] text-text-secondary/40">{{
+                group.count
+              }}</span>
             </div>
             <div class="grid grid-cols-3 sm:grid-cols-5 gap-3">
               <button
@@ -75,11 +103,18 @@
                 type="button"
                 :disabled="switchingIsbn !== null || !isClickable(ed)"
                 class="flex flex-col gap-2 text-left transition-transform duration-150"
-                :class="isClickable(ed) ? 'hover:-translate-y-1 cursor-pointer' : 'cursor-default'"
+                :class="
+                  isClickable(ed)
+                    ? 'hover:-translate-y-1 cursor-pointer'
+                    : 'cursor-default'
+                "
                 @click="onCardClick(ed)"
                 @blur="pendingSwitchIsbn = null"
               >
-                <div class="relative w-full aspect-[2/3] overflow-hidden" :class="cardBorderClass(ed)">
+                <div
+                  class="relative w-full aspect-[2/3] overflow-hidden"
+                  :class="cardBorderClass(ed)"
+                >
                   <img
                     v-if="ed.cover_url"
                     :src="ed.cover_url"
@@ -103,19 +138,25 @@
                     v-else-if="pendingSwitchIsbn === ed.isbn"
                     class="absolute inset-0 bg-black/70 flex items-center justify-center p-2 text-center"
                   >
-                    <span class="text-[10px] tracking-[0.1em] uppercase text-orange-neon font-semibold">
+                    <span
+                      class="text-[10px] tracking-[0.1em] uppercase text-orange-neon font-semibold"
+                    >
                       {{ $t("detail.confirm_switch_edition") }}
                     </span>
                   </div>
                 </div>
-                <div class="text-xs text-text-primary font-medium leading-snug line-clamp-2">
+                <div
+                  class="text-xs text-text-primary font-medium leading-snug line-clamp-2"
+                >
                   {{ ed.title || ed.isbn }}
                 </div>
                 <div
                   v-if="ed.publisher || ed.publish_date"
                   class="text-[10px] text-text-secondary/60 truncate"
                 >
-                  {{ [ed.publisher, editionYear(ed)].filter(Boolean).join(" · ") }}
+                  {{
+                    [ed.publisher, editionYear(ed)].filter(Boolean).join(" · ")
+                  }}
                 </div>
                 <div
                   v-else-if="!ed.materialized"
@@ -139,12 +180,18 @@
             </div>
           </div>
 
-          <div v-if="!editions.length" class="text-xs text-text-secondary/60 py-2 text-center">
+          <div
+            v-if="!editions.length"
+            class="text-xs text-text-secondary/60 py-2 text-center"
+          >
             {{ $t("detail.no_more_editions") }}
           </div>
         </template>
 
-        <p v-if="error" class="text-[10px] text-error tracking-widest uppercase mt-3 text-center">
+        <p
+          v-if="error"
+          class="text-[10px] text-error tracking-widest uppercase mt-3 text-center"
+        >
           {{ $t(error) }}
         </p>
       </div>
@@ -164,16 +211,26 @@
             width="2"
             indeterminate
           />
-          {{ discovering ? $t("detail.finding_editions") : $t("detail.find_more_editions") }}
+          {{
+            discovering
+              ? $t("detail.finding_editions")
+              : $t("detail.find_more_editions")
+          }}
         </button>
       </div>
       <div
         v-else-if="searched && discoverFoundCount !== null"
         class="shrink-0 border-t border-charcoal-border px-6 py-3 text-[10px] tracking-[0.12em] uppercase text-text-secondary/60 text-center"
       >
-        {{ discoverFoundCount > 0
-          ? $t("detail.editions_found", { n: discoverFoundCount }, discoverFoundCount)
-          : $t("detail.editions_found_none") }}
+        {{
+          discoverFoundCount > 0
+            ? $t(
+                "detail.editions_found",
+                { n: discoverFoundCount },
+                discoverFoundCount,
+              )
+            : $t("detail.editions_found_none")
+        }}
       </div>
     </div>
   </v-dialog>
@@ -219,7 +276,9 @@ const emit = defineEmits<{
 
 const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
-const langDisplay = computed(() => languageDisplayFormatter(localeStore.locale));
+const langDisplay = computed(() =>
+  languageDisplayFormatter(localeStore.locale),
+);
 
 const canSwitch = computed(() => !props.guest && !props.readonly);
 
@@ -290,7 +349,10 @@ async function load() {
   try {
     const res = await apiFetch(`/api/works/${props.book.work_id}/editions`);
     if (!res.ok) throw new Error();
-    const data = (await res.json()) as { searched: boolean; editions: WorkEdition[] };
+    const data = (await res.json()) as {
+      searched: boolean;
+      editions: WorkEdition[];
+    };
     editions.value = data.editions;
     searched.value = data.searched;
   } catch {
@@ -315,9 +377,12 @@ async function discover() {
   pendingSwitchIsbn.value = null;
   const previousCount = editions.value.length;
   try {
-    const res = await apiFetch(`/api/works/${props.book.work_id}/editions/discover`, {
-      method: "POST",
-    });
+    const res = await apiFetch(
+      `/api/works/${props.book.work_id}/editions/discover`,
+      {
+        method: "POST",
+      },
+    );
     if (!res.ok) throw new Error();
     const data = (await res.json()) as {
       searched: boolean;
@@ -329,7 +394,10 @@ async function discover() {
     if (data.discoveryFailed) {
       error.value = "detail.discover_error";
     } else {
-      discoverFoundCount.value = Math.max(data.editions.length - previousCount, 0);
+      discoverFoundCount.value = Math.max(
+        data.editions.length - previousCount,
+        0,
+      );
     }
   } catch {
     error.value = "detail.discover_error";

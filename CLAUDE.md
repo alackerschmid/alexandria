@@ -12,7 +12,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 4. Flag uncertainty explicitly. If you're unsure about something, see point 1 above. If it makes sense to do so, conduct a small, localised and low-risk experiment and bring the hypothesis and results to me to discuss. Confidence without certainty causes more damage than admitting a gap.
 
-5. I'm always open to ideas on better ways to do things. Please don't hesitate to suggest a better way, or one that has long lasting impact over a tactical change. If what we are trying to do is similar to settled science or industry practice, let me know. We don’t have to reinvent the wheel. 
+5. I’m always open to ideas on better ways to do things. Please don’t hesitate to suggest a better way, or one that has long lasting impact over a tactical change. If what we are trying to do is similar to settled science or industry practice, let me know. We don’t have to reinvent the wheel. 
+
+## Development Setup
+
+**Prerequisites:**
+- Node.js 22+ (as per `@tsconfig/node22`)
+- npm 10+
+
+**Local development:**
+1. `npm install` (installs both root and worker dependencies via `npm install` at root)
+2. Create `worker/.dev.vars` with required secrets:
+   ```
+   JWT_SECRET=<any-random-string-for-local-dev>
+   GOOGLE_BOOKS_API_KEY=<your-google-books-api-key>
+   ```
+3. Run **both** dev servers simultaneously:
+   - `npm run dev` (frontend on `:3000`)
+   - `npm run dev:worker` (worker on `:8787`, in separate terminal/tab)
+   
+   The frontend proxies `/api/*` to the worker — API calls fail silently if the worker isn’t running.
 
 ## Commands
 
@@ -42,6 +61,13 @@ cd worker && npx wrangler d1 migrations apply bookscan --local
 cd worker && npx wrangler d1 migrations apply bookscan --remote
 ```
 
+### Verification
+```bash
+npm run type-check   # Verify TypeScript (required before commit)
+```
+
+Note: No test suite is currently configured. Type-checking is the primary verification mechanism.
+
 ## Architecture
 
 Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages and sets `VITE_API_URL` at build time; `worker/wrangler.toml` configures the Worker (D1 binding, cron, observability, `CORS_ORIGIN`).
@@ -67,7 +93,7 @@ Vue 3 + TypeScript + Vite.
 - `src/components/` — `AppHeader`, `AppFooter`, `AppToast`, `BookCard`, `BookDetail`
 - `src/stores/` — Pinia stores:
   - `auth.ts` — JWT + email + firstname in localStorage; exports `WELCOME_SEEN_KEY`
-  - `guest.ts` — up to 3 scans for unauthenticated users stored in localStorage; `syncToAccount()` migrates them on register/login
+  - `guest.ts` — **guest mode:** unauthenticated users can save up to 3 scans to localStorage; on register/login, `syncToAccount()` migrates them to the user's account server-side
   - `theme.ts` (dark/light), `locale.ts` (i18n locale)
 - `src/types/stats.ts` — `CollectionStats` interface matching the `GET /api/stats` response shape
 - `src/locales/` — `en.json`, `de.json` — all UI strings; add new languages here
@@ -90,9 +116,9 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`.
 
 **Public routes** (no auth required):
 
-- `POST /api/auth/register` — creates user, returns JWT
-- `POST /api/auth/login` — returns JWT
-- `GET /api/books/guest-lookup?isbn=` — same cache-then-fetch lookup as `/api/books/lookup`, but unauthenticated (for guest mode)
+- `POST /api/auth/register` — creates user, returns JWT; migrates any guest scans to account
+- `POST /api/auth/login` — returns JWT; migrates any guest scans to account
+- `GET /api/books/guest-lookup?isbn=` — metadata lookup for guest mode (same cache-then-fetch as authenticated `/api/books/lookup`, but **skips Wikidata enrichment** to reduce anonymous load)
 
 **Protected routes** (require `Authorization: Bearer <jwt>`):
 
@@ -106,6 +132,18 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`.
 - `DELETE /api/scans/:id` — remove a scan and its associated `book_overrides`
 
 Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Optional: `CORS_ORIGIN` (defaults to `*`). Local dev uses `worker/.dev.vars`.
+
+**Authentication:**
+- JWT tokens expire after 7 days (no refresh token mechanism; users re-login after expiry)
+- Passwords hashed with `bcryptjs`
+- Auth header format: `Authorization: Bearer <token>`
+
+**Offline/Queue behavior:**
+- `POST /api/scans` accepts `isbn` only and always succeeds, even if metadata fetch fails (`allowEmpty: true`) — unless rate-limited (see below)
+- Scans remain `enrichment_status: pending` until background enrichment completes or is triggered manually
+- Allows users to queue scans offline; metadata resolves asynchronously in the background
+
+**Rate limiting:** `POST /api/scans` is capped at 30 scans/minute per user (`SCAN_RATE_LIMIT` in `routes/scans.ts`) via `checkRateLimit` (`rate-limit.ts`) — a generic fixed-window D1 counter backed by the `rate_limits` table (`key` TEXT, `window_start` ms-epoch bucket, `window_ms` window length, `count`). `key` is caller-defined (e.g. `scan:<userId>`) so the same table can back other rate-limited routes later without a migration. Exceeding the limit returns `429` with a `Retry-After` header; a duplicate-scan request (ISBN already in the user's library) is rejected with `409` before the rate limit is even checked, so retrying/rescanning an owned book doesn't burn quota. No other routes are rate-limited today. The cron sweeper prunes `rate_limits` rows once their own window (`window_start + window_ms`) has elapsed, so retention is correct regardless of window size.
 
 ### Additional API routes
 
@@ -124,7 +162,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Op
 
 `GET /api/scans` accepts a `locale` query param (default `en`) for localized series names, and `sort` with values: `date_desc` (default), `date_asc`, `title_asc`, `title_desc`, `author_asc`, `author_desc`, `series_asc`.
 
-Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `genres`/`awards`/`nominations` (JSON arrays | null), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph` (strings | null), `narrative_locations`/`countries_of_origin` (JSON arrays | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
+Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `genres`/`awards`/`nominations`/`narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays, parsed via `parseTagArray` in `library-query.ts` — `[]` when absent, never `null`), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
 
 ### Database schema
 Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the initial state — migrations are authoritative.
@@ -133,7 +171,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **`users`** — `id`, `email` (UNIQUE), `password_hash`, `firstname`
 
-**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `fetched_at`, `work_id` → `works`
+**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `categories` (JSON array, Google Books BISAC categories — used only as a fallback for `works.genres` when Wikidata has none), `fetched_at`, `work_id` → `works`
 
 **`book_overrides`** — per-user field overrides: `user_id` → `users`, `book_id` → `books`, same nullable fields as `books` (except `author` — not overridable), `updated_at`. Unique on `(user_id, book_id)`.
 
@@ -141,7 +179,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **FRBR-style works/series model** (added in migrations 0009–0011):
 
-**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at`, `enrichment_attempts` (failure count, caps cron-sweeper retries), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph` (strings), `narrative_locations`/`countries_of_origin` (JSON arrays)
+**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at` (TEXT timestamp string despite the column's `boolean` type in migration 0010 — SQLite's dynamic typing makes this harmless), `enrichment_failure_reason` (`timeout` | `rate_limited` | `http_5xx` | `network` | `other`, set by `classifyError` in `enrichment.ts`; drives the sweeper's per-reason retry backoff), `enrichment_attempts` (failure count, caps cron-sweeper retries), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings), `narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays)
 
 **`authors`** — `normalized_name` (UNIQUE dedup key), `name` (display form), `wikidata_qid`
 
@@ -165,7 +203,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWork(...))` after lookups and scans, and in the background via a cron sweeper (see below). It is intentionally skipped for guest lookups to avoid anonymous SPARQL load.
 
-**Flow:** `enrichWork(db, workId, force?, apiKey?)` →
+**Flow:** `enrichWork(db, workId, force?, apiKey?, source?)` (`source` is `scan` | `lookup` | `refresh` | `sweeper` | `unknown`, recorded in `enrichment_runs` for observability — see below) →
 - If the work **already has a `wikidata_qid`** (a series-member placeholder, or a force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
 - Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → work QID + primary series) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as placeholder works with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
 
@@ -173,11 +211,33 @@ Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an
 
 **Merge logic:** If `fetchBookInfo` returns a QID already assigned to another work row, `mergeWorks` repoints all `books`, `work_authors`, and `work_series` rows from the duplicate onto the canonical row and deletes the duplicate.
 
-**Negative caching:** `series_checked_at` non-NULL means the work was already enriched (success or "not found"). `enrichment_failed_at` non-NULL means the last SPARQL run threw (network/timeout); `enrichment_attempts` counts failures. `force=true` clears `series_checked_at` to re-run even for already-enriched works.
+**Negative caching:** `series_checked_at` non-NULL means the work was already enriched (success or "not found"). `enrichment_failed_at` non-NULL means the last SPARQL run threw (network/timeout); `enrichment_failure_reason` classifies why (`timeout` | `rate_limited` | `http_5xx` | `network` | `other`, via `classifyError`/`SparqlError` in `enrichment.ts`); `enrichment_attempts` counts failures. `force=true` clears `series_checked_at` to re-run even for already-enriched works.
 
-**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/2 * * * *` in `wrangler.toml`): each tick enriches a bounded batch (5) of works matching either condition — `series_checked_at IS NULL` (never enriched), failed works with backoff (`enrichment_failed_at` older than 30 min, capped at `enrichment_attempts < 5`), or `enrichment_schema_version < CURRENT_ENRICHMENT_SCHEMA_VERSION` (already enriched but missing newer Wikidata columns). The last condition is the backfill mechanism: when new columns are added to `works`, bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` (exported from `enrichment.ts`) and all existing enriched works drain through the sweeper automatically. Runs sequentially with a short delay to stay polite to Wikidata. `POST /api/books/refresh` is the manual force-retry path.
+**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/5 * * * *` in `wrangler.toml`): each tick enriches a bounded batch (5) of works matching either condition — `series_checked_at IS NULL` (never enriched), failed works past a **per-reason backoff** (`rate_limited`: 5 min backoff, cap 5 attempts; `timeout`: 60 min backoff, cap 3 attempts; `other`: 30 min backoff, cap 2 attempts — usually a bug, not transient; everything else including legacy NULL-reason rows: 30 min backoff, cap 5 attempts), or `enrichment_schema_version < CURRENT_ENRICHMENT_SCHEMA_VERSION` (already enriched but missing newer Wikidata columns). The last condition is the backfill mechanism: when new columns are added to `works`, bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` (exported from `enrichment.ts`) and all existing enriched works drain through the sweeper automatically. Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs` rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
+
+**Observability — `enrichment_runs`:** every `enrichWork` call that actually attempts enrichment (not the "already enriched, skip" no-op) writes one row: `work_id`, `started_at`, `duration_ms`, `outcome` (`done` | `not_found` | `failed`), `failure_reason` (set only when `outcome = 'failed'`), `source`. Query it directly for pending/failure-rate/timing stats — there's no dashboard, this is a queryable log table, not a UI feature. Telemetry writes are best-effort (wrapped so a logging failure can't fail the enrichment itself).
 
 **Adding new Wikidata fields:** (1) add `ALTER TABLE works ADD COLUMN` in a new migration, (2) bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` in `enrichment.ts`, (3) add the SPARQL subquery + `WorkDetails` field + `UPDATE works SET` binding, (4) add to `SCAN_SELECT` in `library-query.ts`, (5) JSON-parse in `attachCustomFields` if it's an array.
+
+## Common Development Flows
+
+**User scans a book:**
+1. Frontend calls `POST /api/scans` with ISBN
+2. Worker calls `resolveEdition()` → `fetchBookMetadata()` (Google Books → OpenLibrary fallback) → inserts/updates `books` row
+3. Worker calls `enrichWork()` asynchronously (does not block response)
+4. Frontend receives scan row with `enrichment_status: pending`
+5. Cron sweeper (`*/5 * * * *`) or manual `POST /api/books/refresh` triggers enrichment pipeline
+6. Wikidata data populates `works` table; series members become placeholder works with covers
+
+**User overrides a book field (e.g., title):**
+1. Frontend calls `PATCH /api/books/override` with `{ isbn, changes: { title: "..." } }`
+2. Worker upserts `book_overrides` row
+3. Subsequent `GET /api/scans` uses `COALESCE(book_overrides.field, books.field)` to merge overrides
+
+**Add a new column to the API response:**
+1. If it's a Wikidata field: follow "Adding new Wikidata fields" (5-step process in enrichment section)
+2. If it's a new book metadata field: (1) add `ALTER TABLE books ADD COLUMN` migration, (2) add to `SCAN_SELECT` in `library-query.ts`, (3) update frontend `BookDetail` type
+3. If it's a custom field: use the existing `user_field_definitions` + `book_custom_fields` schema (already query-merged in `SCAN_SELECT`)
 
 ### Styling system
 
@@ -212,4 +272,37 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 [release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release.
 
 ## Verification
-Always run type-checks after code edits and verify they pass before considering a task complete.
+Always run type-checks after code edits and verify they pass before considering a task complete:
+```bash
+npm run type-check
+```
+
+## Troubleshooting
+
+**API calls fail or return 404 in dev:**
+- Ensure both dev servers are running: `npm run dev` (frontend) + `npm run dev:worker` (worker) in separate terminals
+- Check that worker is on `:8787` and frontend is proxying `/api/*` to it (see vite.config.ts)
+
+**Enrichment stuck on `pending` status:**
+- Cron sweeper runs every 5 minutes (check `wrangler.toml` for `*/5 * * * *`)
+- Check wrangler dev logs for SPARQL errors or timeouts
+- Manual retry: `POST /api/books/refresh?isbn=<isbn>`
+
+**Type-check fails after pulling changes:**
+- Run with `--force`: `npm run type-check -- --force`
+- Clear build cache: `rm -rf dist/ && npm run type-check`
+
+**Guest scans not migrating on login:**
+- Check `localStorage` for `guest_scans` key in browser DevTools
+- Ensure `guest.ts` `syncToAccount()` is called after successful login/register
+- Check server logs for migration errors
+
+**Worker not deploying:**
+- Verify `wrangler.toml` secrets are set: `npm run deploy:worker` prompts if missing
+- Check Cloudflare Workers dashboard for build errors
+- Ensure D1 database binding exists in `worker/wrangler.toml`
+
+**D1 migrations not applied:**
+- Local: run manually during dev (`npx wrangler d1 migrations apply bookscan --local`)
+- Production: **not automatic** — run `npx wrangler d1 migrations apply bookscan --remote` after deploy
+- Check migration status: `npx wrangler d1 info bookscan`

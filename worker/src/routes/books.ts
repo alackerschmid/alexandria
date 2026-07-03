@@ -82,7 +82,7 @@ books.get('/lookup', async (c) => {
 
   const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY)
   if (!book) return c.json({ error: 'Book not found' }, 404)
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY))
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY, 'lookup'))
   return c.json(book)
 })
 
@@ -107,7 +107,8 @@ books.post('/refresh', async (c) => {
         publisher = COALESCE(publisher, ?),
         physical_format = COALESCE(physical_format, ?),
         edition_name = COALESCE(edition_name, ?),
-        physical_dimensions = COALESCE(physical_dimensions, ?)
+        physical_dimensions = COALESCE(physical_dimensions, ?),
+        categories = COALESCE(categories, ?)
       WHERE isbn = ?
     `)
     .bind(
@@ -115,6 +116,7 @@ books.post('/refresh', async (c) => {
       bookData.publish_date, bookData.number_of_pages_median,
       bookData.description, bookData.publisher,
       bookData.physical_format, bookData.edition_name, bookData.physical_dimensions,
+      bookData.categories,
       isbn
     )
     .run()
@@ -128,7 +130,7 @@ books.post('/refresh', async (c) => {
   if (!book.work_id) await linkWork(c.env.DB, book)
   // force=true clears series_checked_at so enrichment re-runs even if already done.
   // Unlike the cron sweeper (which only picks up series_checked_at IS NULL), this forces any work.
-  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, true, c.env.GOOGLE_BOOKS_API_KEY))
+  if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, true, c.env.GOOGLE_BOOKS_API_KEY, 'refresh'))
   return c.json(book)
 })
 

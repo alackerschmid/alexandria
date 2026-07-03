@@ -19,17 +19,21 @@ export interface Book {
   series_ordinal?: number | null
   series_total?: number | null
   enrichment_status?: 'pending' | 'done' | 'failed'
-  genres?: string[] | null
+  genres?: string[]
   original_pub_date?: string | null
-  awards?: string[] | null
-  nominations?: string[] | null
+  awards?: string[]
+  nominations?: string[]
   main_subject?: string | null
   form_of_work?: string | null
   language_of_work?: string | null
   first_line?: string | null
   epigraph?: string | null
-  narrative_locations?: string[] | null
-  countries_of_origin?: string[] | null
+  narrative_locations?: string[]
+  countries_of_origin?: string[]
+  subtitle?: string | null
+  translator?: string[]
+  illustrator?: string[]
+  characters?: string[]
   physical_format?: string | null
   edition_name?: string | null
   physical_dimensions?: string | null

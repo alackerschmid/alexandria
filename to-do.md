@@ -2,10 +2,14 @@
 
 ## new batch
 
-add confirmation for switch
+- add confirmation for switch
+- change the base page's random books to a curated batch (boolean flag in database column)
 
 ## bugfixes
 
+- check automatic worker deployment
+- ~~unscrew tolocalestring stats display on homepage~~
+- ~~dnf doesnt show up in autocomplete status options~~
 - veirfy switch edition logic
 - add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
 - only display "series lookup pending" if it is actually pending
