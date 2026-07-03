@@ -56,6 +56,8 @@ export type WorkRow = {
   translator: string | null
   illustrator: string | null
   characters: string | null
+  openlibrary_work_id: string | null
+  reference_page_count: number | null
 }
 
 export type BookMetadata = {
@@ -89,6 +91,8 @@ export type WorkDetails = {
   translator: string[]
   illustrator: string[]
   characters: string[]
+  openlibraryWorkId: string | null
+  referencePageCount: number | null
 }
 
 export type SeriesHit = { seriesQid: string; ordinal: number | null; nameEn: string | null; nameDe: string | null }

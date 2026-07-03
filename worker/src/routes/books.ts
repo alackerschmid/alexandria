@@ -86,7 +86,8 @@ books.get('/lookup', async (c) => {
   return c.json(book)
 })
 
-// Refresh book metadata — tries Google Books then OpenLibrary, fills NULL fields only.
+// Refresh book metadata — tries Google Books then OpenLibrary, fills NULL fields only
+// (a 0 page count also counts as missing — Google returns 0 when the count is unknown).
 books.post('/refresh', async (c) => {
   const isbn = c.req.query('isbn')
   if (!isbn) return c.json({ error: 'ISBN required' }, 400)
@@ -102,7 +103,7 @@ books.post('/refresh', async (c) => {
         cover_url = COALESCE(cover_url, ?),
         language = COALESCE(language, ?),
         publish_date = COALESCE(publish_date, ?),
-        number_of_pages_median = COALESCE(number_of_pages_median, ?),
+        number_of_pages_median = COALESCE(NULLIF(number_of_pages_median, 0), ?),
         description = COALESCE(description, ?),
         publisher = COALESCE(publisher, ?),
         physical_format = COALESCE(physical_format, ?),

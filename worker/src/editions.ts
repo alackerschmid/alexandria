@@ -41,7 +41,7 @@ async function fetchFromGoogleBooks(
       info.imageLinks?.thumbnail?.replace("http://", "https://") ?? null,
     language: info.language ?? null,
     publish_date: info.publishedDate ?? null,
-    number_of_pages_median: info.pageCount ?? null,
+    number_of_pages_median: info.pageCount > 0 ? info.pageCount : null,
     description: info.description ?? null,
     publisher: info.publisher ?? null,
     physical_format: null,
@@ -77,7 +77,7 @@ async function fetchFromOpenLibrary(
     cover_url: book.cover?.large ?? book.cover?.medium ?? null,
     language: null,
     publish_date: book.publish_date ?? null,
-    number_of_pages_median: book.number_of_pages ?? null,
+    number_of_pages_median: book.number_of_pages > 0 ? book.number_of_pages : null,
     description:
       typeof book.description === "string"
         ? book.description
@@ -233,34 +233,98 @@ export async function fetchOpenLibraryEditions(isbn: string): Promise<OpenLibrar
     const workKey: string | undefined = edition.works?.[0]?.key
     if (!workKey) return []
 
-    const editionsRes = await fetchWithTimeout(`https://openlibrary.org${workKey}/editions.json?limit=200`)
-    if (!editionsRes.ok) {
-      console.error(`[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`)
-      return null
-    }
-    const data: any = await editionsRes.json()
-    const entries: any[] = data.entries ?? []
-
-    const out: OpenLibraryEdition[] = []
-    const seen = new Set<string>()
-    for (const e of entries) {
-      const entryIsbn = ((e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined)?.replace(/[-\s]/g, "")
-      if (!entryIsbn || seen.has(entryIsbn)) continue
-      seen.add(entryIsbn)
-      out.push({
-        isbn: entryIsbn,
-        title: e.title ?? null,
-        language: mapLanguageCode(e.languages?.[0]?.key),
-        cover_url: e.covers?.[0] ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg` : null,
-        publish_date: e.publish_date ?? null,
-        publisher: e.publishers?.[0] ?? null,
-      })
-    }
-    return out
+    return await fetchEditionsForWorkKey(workKey)
   } catch (e) {
     console.error(`[OL editions] failed for isbn ${isbn}:`, e)
     return null
   }
+}
+
+// Same contract, keyed by an OpenLibrary work id (e.g. "OL2943602W" from Wikidata P648) instead
+// of a seed ISBN — works even when none of the owned editions' ISBNs exist in OpenLibrary.
+export async function fetchOpenLibraryEditionsByWorkId(olWorkId: string): Promise<OpenLibraryEdition[] | null> {
+  if (!/^OL\d+W$/.test(olWorkId)) {
+    console.warn(`[OL editions] invalid work id: ${olWorkId}`)
+    return []
+  }
+  try {
+    return await fetchEditionsForWorkKey(`/works/${olWorkId}`)
+  } catch (e) {
+    console.error(`[OL editions] failed for work ${olWorkId}:`, e)
+    return null
+  }
+}
+
+async function fetchEditionsForWorkKey(workKey: string): Promise<OpenLibraryEdition[] | null> {
+  const editionsRes = await fetchWithTimeout(`https://openlibrary.org${workKey}/editions.json?limit=200`)
+  if (editionsRes.status === 404) return []
+  if (!editionsRes.ok) {
+    console.error(`[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`)
+    return null
+  }
+  const data: any = await editionsRes.json()
+  const entries: any[] = data.entries ?? []
+
+  const out: OpenLibraryEdition[] = []
+  const seen = new Set<string>()
+  for (const e of entries) {
+    const entryIsbn = ((e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined)?.replace(/[-\s]/g, "")
+    if (!entryIsbn || seen.has(entryIsbn)) continue
+    seen.add(entryIsbn)
+    out.push({
+      isbn: entryIsbn,
+      title: e.title ?? null,
+      language: mapLanguageCode(e.languages?.[0]?.key),
+      cover_url: e.covers?.[0] ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg` : null,
+      publish_date: e.publish_date ?? null,
+      publisher: e.publishers?.[0] ?? null,
+    })
+  }
+  return out
+}
+
+// Persists discovered candidates (skipping ISBNs already materialized for this work) and marks
+// the work as searched. Shared by the user-triggered discover route and enrichment-time discovery.
+export async function saveEditionCandidates(
+  db: D1Database,
+  workId: number,
+  related: OpenLibraryEdition[],
+): Promise<void> {
+  if (related.length) {
+    const { results: existingBooks } = await db
+      .prepare("SELECT isbn FROM books WHERE work_id = ?")
+      .bind(workId)
+      .all<{ isbn: string }>()
+    const known = new Set(existingBooks.map((b) => b.isbn))
+    const newEditions = related.filter((e) => !known.has(e.isbn))
+
+    if (newEditions.length) {
+      await db.batch(newEditions.map((e) =>
+        db.prepare(
+          "INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ).bind(workId, e.isbn, e.title, e.language, e.cover_url, e.publish_date, e.publisher, "openlibrary")))
+    }
+  }
+  await db.prepare("UPDATE works SET editions_checked_at = datetime('now') WHERE id = ?").bind(workId).run()
+}
+
+// Enrichment-time edition discovery via the Wikidata-linked OL work id. Only runs while the work
+// has no candidate editions yet — this deliberately includes works already marked searched whose
+// seed-ISBN discovery came up empty (ISBN unknown to OpenLibrary), since the work id is a better key.
+export async function discoverEditionsFromOpenLibrary(
+  db: D1Database,
+  workId: number,
+  olWorkId: string,
+): Promise<void> {
+  const existing = await db
+    .prepare("SELECT 1 FROM work_edition_isbns WHERE work_id = ? LIMIT 1")
+    .bind(workId)
+    .first()
+  if (existing) return
+
+  const related = await fetchOpenLibraryEditionsByWorkId(olWorkId)
+  if (related === null) return // transient OL failure — leave retryable, don't mark searched
+  await saveEditionCandidates(db, workId, related)
 }
 
 // Returns the books row for `isbn` linked to `workId`, fetching and inserting it if missing.

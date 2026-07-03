@@ -201,6 +201,7 @@
     "language": "Sprache",
     "published": "Erschienen",
     "pages": "Seiten",
+    "reference_pages_tooltip": "Seitenzahl einer anderen Ausgabe dieses Werks – die genaue Seitenzahl dieser Ausgabe ist unbekannt.",
     "isbn": "ISBN",
     "copy_isbn": "ISBN kopieren",
     "description": "Beschreibung",

@@ -56,7 +56,7 @@
       }}</span>
     </div>
     <div
-      v-if="book.number_of_pages_median"
+      v-if="book.number_of_pages_median || book.reference_page_count"
       class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
     >
       <span
@@ -65,9 +65,24 @@
         {{ $t("detail.pages") }}
         <OverrideDot v-if="book.pages_overridden" class="w-1 h-1" />
       </span>
-      <span class="font-mono text-xs text-text-primary">{{
+      <span v-if="book.number_of_pages_median" class="font-mono text-xs text-text-primary">{{
         book.number_of_pages_median
       }}</span>
+      <v-tooltip
+        v-else
+        location="top"
+        max-width="260"
+        :text="$t('detail.reference_pages_tooltip')"
+      >
+        <template #activator="{ props: tooltipProps }">
+          <span
+            v-bind="tooltipProps"
+            class="font-mono text-xs text-text-primary/70 cursor-help"
+          >
+            ≈{{ book.reference_page_count }}
+          </span>
+        </template>
+      </v-tooltip>
     </div>
     <div
       class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
