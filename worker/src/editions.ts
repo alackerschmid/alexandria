@@ -1,15 +1,39 @@
 import type { BookRow, BookMetadata } from "./types";
 
+async function fetchWithTimeout(
+  url: string,
+  opts: RequestInit = {},
+  timeoutMs = 4000,
+): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 async function fetchFromGoogleBooks(
   isbn: string,
   apiKey: string,
 ): Promise<BookMetadata | null> {
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${apiKey}`,
   );
   const data: any = await res.json();
   const info = data.items?.[0]?.volumeInfo;
   if (!info) return null;
+  // Google's categories are often BISAC-style ("Fiction / Fantasy / General") — split on the
+  // separator and dedupe so they're usable as flat genre tags when Wikidata has no P136 genres.
+  const rawCategories: string[] = info.categories ?? [];
+  const cleanedCategories = Array.from(
+    new Set(
+      rawCategories.flatMap((c) =>
+        c.split(" / ").map((s) => s.trim()).filter(Boolean),
+      ),
+    ),
+  );
   return {
     title: info.title ?? null,
     author: info.authors?.join(", ") ?? null,
@@ -23,6 +47,7 @@ async function fetchFromGoogleBooks(
     physical_format: null,
     edition_name: null,
     physical_dimensions: null,
+    categories: cleanedCategories.length ? JSON.stringify(cleanedCategories) : null,
   };
 }
 
@@ -35,8 +60,8 @@ async function fetchFromOpenLibrary(
   // Fetch data (existing fields) and details (physical_dimensions, edition_name) in parallel.
   // details fetch is best-effort; failures leave those fields null.
   const [dataJson, detailsJson] = await Promise.all([
-    fetch(`${base}&jscmd=data`).then((r) => r.json() as Promise<any>),
-    fetch(`${base}&jscmd=details`)
+    fetchWithTimeout(`${base}&jscmd=data`).then((r) => r.json() as Promise<any>),
+    fetchWithTimeout(`${base}&jscmd=details`)
       .then((r) => r.json() as Promise<any>)
       .catch(() => ({})),
   ]);
@@ -62,6 +87,7 @@ async function fetchFromOpenLibrary(
     edition_name: details?.edition_name ?? null,
     physical_dimensions:
       typeof pdRaw === "string" ? pdRaw : (pdRaw?.value ?? null),
+    categories: null, // OpenLibrary's API doesn't expose BISAC-style categories
   };
 }
 
@@ -119,7 +145,7 @@ export async function searchBooksByTitle(
     let q = `intitle:"${encodeURIComponent(title)}"`;
     if (author) q += `+inauthor:"${encodeURIComponent(author)}"`;
     if (publisher) q += `+inpublisher:"${encodeURIComponent(publisher)}"`;
-    const res = await fetch(
+    const res = await fetchWithTimeout(
       `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=20&key=${apiKey}`,
     );
     const data: any = await res.json();
@@ -197,7 +223,7 @@ export type OpenLibraryEdition = {
 // no further editions — so the caller doesn't permanently cache a transient error as "none found".
 export async function fetchOpenLibraryEditions(isbn: string): Promise<OpenLibraryEdition[] | null> {
   try {
-    const editionRes = await fetch(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`)
+    const editionRes = await fetchWithTimeout(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`)
     if (editionRes.status === 404) return [] // ISBN unknown to OpenLibrary — nothing to expand from, not an error
     if (!editionRes.ok) {
       console.error(`[OL editions] HTTP ${editionRes.status} resolving isbn ${isbn}`)
@@ -207,7 +233,7 @@ export async function fetchOpenLibraryEditions(isbn: string): Promise<OpenLibrar
     const workKey: string | undefined = edition.works?.[0]?.key
     if (!workKey) return []
 
-    const editionsRes = await fetch(`https://openlibrary.org${workKey}/editions.json?limit=200`)
+    const editionsRes = await fetchWithTimeout(`https://openlibrary.org${workKey}/editions.json?limit=200`)
     if (!editionsRes.ok) {
       console.error(`[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`)
       return null
@@ -268,8 +294,8 @@ export async function materializeEdition(
     .prepare(
       `INSERT OR IGNORE INTO books
       (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
-       physical_format, edition_name, physical_dimensions, work_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       physical_format, edition_name, physical_dimensions, categories, work_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *`,
     )
     .bind(
@@ -285,6 +311,7 @@ export async function materializeEdition(
       meta.physical_format,
       meta.edition_name,
       meta.physical_dimensions,
+      meta.categories,
       workId,
     )
     .first<BookRow>();
@@ -397,14 +424,15 @@ export async function resolveEdition(
     physical_format: null,
     edition_name: null,
     physical_dimensions: null,
+    categories: null,
   };
 
   book = await db
     .prepare(
       `INSERT OR IGNORE INTO books
       (isbn, title, author, cover_url, language, publish_date, number_of_pages_median, description, publisher,
-       physical_format, edition_name, physical_dimensions)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       physical_format, edition_name, physical_dimensions, categories)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       RETURNING *`,
     )
     .bind(
@@ -420,6 +448,7 @@ export async function resolveEdition(
       meta.physical_format,
       meta.edition_name,
       meta.physical_dimensions,
+      meta.categories,
     )
     .first<BookRow>();
 

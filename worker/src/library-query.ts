@@ -62,6 +62,10 @@ export function buildScanSelect(locale: string): string {
          wk.epigraph                                       AS epigraph,
          wk.narrative_locations                            AS narrative_locations,
          wk.countries_of_origin                            AS countries_of_origin,
+         wk.subtitle                                       AS subtitle,
+         wk.translator                                     AS translator,
+         wk.illustrator                                    AS illustrator,
+         wk.characters                                     AS characters,
          (o.title IS NOT NULL)                               AS title_overridden,
          (o.cover_url IS NOT NULL)                           AS cover_url_overridden,
          (o.language IS NOT NULL)                            AS language_overridden,
@@ -112,7 +116,6 @@ export async function fetchCustomFields(db: D1Database, userId: number, bookIds:
 }
 
 
-const jsonOrNull = (v: string | null | undefined) => (v ? JSON.parse(v) : null)
 export const titleCase = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
 
 export function parseTagArray(raw: string | null): string[] {
@@ -134,11 +137,14 @@ export function attachCustomFields(
   const bookVals = valuesByBook.get(book_id)
   return {
     ...rest,
-    genres:              rest.genres              ? (jsonOrNull(rest.genres) as string[]).map(titleCase) : null,
-    awards:              jsonOrNull(rest.awards),
-    nominations:         jsonOrNull(rest.nominations),
-    narrative_locations: jsonOrNull(rest.narrative_locations),
-    countries_of_origin: jsonOrNull(rest.countries_of_origin),
+    genres:              parseTagArray(rest.genres).map(titleCase),
+    awards:              parseTagArray(rest.awards),
+    nominations:         parseTagArray(rest.nominations),
+    narrative_locations: parseTagArray(rest.narrative_locations),
+    countries_of_origin: parseTagArray(rest.countries_of_origin),
+    translator:          parseTagArray(rest.translator),
+    illustrator:         parseTagArray(rest.illustrator),
+    characters:          parseTagArray(rest.characters),
     custom_field_values: defs.map(d => ({ field_def_id: d.id, value: bookVals?.get(d.id) ?? null })),
   }
 }
