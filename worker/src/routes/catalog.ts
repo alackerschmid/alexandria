@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
-import { fetchOpenLibraryEditions } from '../editions'
+import { fetchOpenLibraryEditions, fetchOpenLibraryEditionsByWorkId, saveEditionCandidates } from '../editions'
 
 export const works = new Hono<Env>()
 export const series = new Hono<Env>()
@@ -67,9 +67,9 @@ works.post('/:workId/editions/discover', async (c) => {
   const workId = c.req.param('workId')
   const db = c.env.DB
 
-  const work = await db.prepare('SELECT editions_checked_at FROM works WHERE id = ?')
+  const work = await db.prepare('SELECT editions_checked_at, openlibrary_work_id FROM works WHERE id = ?')
     .bind(workId)
-    .first<{ editions_checked_at: string | null }>()
+    .first<{ editions_checked_at: string | null; openlibrary_work_id: string | null }>()
   if (!work) return c.json({ error: 'Work not found' }, 404)
 
   let discoveryFailed = false
@@ -86,23 +86,17 @@ works.post('/:workId/editions/discover', async (c) => {
     // related is null when the OpenLibrary lookup itself failed (network/timeout/non-2xx) —
     // distinct from a successful call that found zero results. Only a successful call (found
     // something or confirmed nothing) marks the work as searched; a failure leaves it retryable.
-    const related = seed ? await fetchOpenLibraryEditions(seed.isbn) : []
+    let related = seed ? await fetchOpenLibraryEditions(seed.isbn) : []
+    // Seed-ISBN path found nothing (e.g. the owned ISBN is unknown to OpenLibrary) — fall back
+    // to the OpenLibrary work id Wikidata linked during enrichment, when available.
+    if (related !== null && related.length === 0 && work.openlibrary_work_id) {
+      related = await fetchOpenLibraryEditionsByWorkId(work.openlibrary_work_id)
+    }
+
     if (related === null) {
       discoveryFailed = true
     } else {
-      if (related.length) {
-        const { results: existingBooks } = await db.prepare('SELECT isbn FROM books WHERE work_id = ?').bind(workId).all<{ isbn: string }>()
-        const known = new Set(existingBooks.map(b => b.isbn))
-        const newEditions = related.filter(e => !known.has(e.isbn))
-
-        if (newEditions.length) {
-          await db.batch(newEditions.map(e =>
-            db.prepare('INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-              .bind(workId, e.isbn, e.title, e.language, e.cover_url, e.publish_date, e.publisher, 'openlibrary')))
-        }
-      }
-
-      await db.prepare("UPDATE works SET editions_checked_at = datetime('now') WHERE id = ?").bind(workId).run()
+      await saveEditionCandidates(db, Number(workId), related)
     }
   }
 

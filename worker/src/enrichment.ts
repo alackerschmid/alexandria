@@ -1,9 +1,9 @@
 import type { WorkRow, WorkDetails, SeriesHit } from './types'
-import { splitAuthors, materializeEdition, normalizeStr } from './editions'
+import { splitAuthors, materializeEdition, normalizeStr, discoverEditionsFromOpenLibrary } from './editions'
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
-export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 2
+export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 3
 
 const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql'
 const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)'
@@ -167,6 +167,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     mainSubject: null, formOfWork: null, languageOfWork: null,
     firstLine: null, epigraph: null, narrativeLocations: [], countriesOfOrigin: [],
     subtitle: null, translator: [], illustrator: [], characters: [],
+    openlibraryWorkId: null, referencePageCount: null,
   }
   if (!/^Q\d+$/.test(workQid)) {
     console.warn('[fetchWorkDetails] invalid QID:', workQid)
@@ -177,7 +178,8 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     SELECT ?genres ?originalPubDate ?awards ?nominations
            ?mainSubject ?formOfWork ?languageOfWork ?firstLine ?epigraph
            ?narrativeLocations ?countriesOfOrigin
-           ?subtitle ?translators ?illustrators ?characters WHERE {
+           ?subtitle ?translators ?illustrators ?characters
+           ?olWorkId ?refPageCount WHERE {
       { SELECT (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres) WHERE {
           OPTIONAL { wd:${workQid} wdt:P136 ?genre.
                      ?genre rdfs:label ?genreLabel. FILTER(LANG(?genreLabel) = "en") } } }
@@ -219,12 +221,20 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
       { SELECT (GROUP_CONCAT(DISTINCT ?characterLabel; separator="|") AS ?characters) WHERE {
           OPTIONAL { wd:${workQid} wdt:P674 ?character.
                      ?character rdfs:label ?characterLabel. FILTER(LANG(?characterLabel) = "en") } } }
+      { SELECT (SAMPLE(?olid) AS ?olWorkId) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P648 ?olid. FILTER(STRENDS(?olid, "W")) } } }
+      { SELECT (SAMPLE(?pageCount) AS ?refPageCount) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P747 ?refEd. ?refEd wdt:P1104 ?pageCount. } } }
     }`.trim()
   const rows = await runSparql(query)
   const row = rows[0]
   console.log('[fetchWorkDetails] raw row:', JSON.stringify(row ?? null))
   const splitPipe = (v: string | undefined) => (v ? v.split('|').filter(Boolean) : [])
   const strOrNull = (v: string | undefined) => v || null
+  const positiveIntOrNull = (v: string | undefined) => {
+    const n = Number(v)
+    return Number.isFinite(n) && n > 0 ? Math.round(n) : null
+  }
   const yearFrom = (v: string | undefined) => {
     if (!v) return null
     const m = v.match(/(\d{4})/)
@@ -246,6 +256,8 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     translator:         splitPipe(row?.translators?.value),
     illustrator:        splitPipe(row?.illustrators?.value),
     characters:         splitPipe(row?.characters?.value),
+    openlibraryWorkId:  strOrNull(row?.olWorkId?.value),
+    referencePageCount: positiveIntOrNull(row?.refPageCount?.value),
   }
   console.log('[fetchWorkDetails] parsed:', {
     genres: result.genres, originalPubDate: result.originalPubDate,
@@ -254,6 +266,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     narrativeLocations: result.narrativeLocations.length, countriesOfOrigin: result.countriesOfOrigin.length,
     subtitle: result.subtitle, translator: result.translator.length,
     illustrator: result.illustrator.length, characters: result.characters.length,
+    openlibraryWorkId: result.openlibraryWorkId, referencePageCount: result.referencePageCount,
   })
   return result
 }
@@ -467,6 +480,17 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     // Give unowned/placeholder works a real edition (cover + ISBN) so the series view renders them.
     if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
 
+    // Pre-discover related editions via the Wikidata-linked OpenLibrary work id (P648) — covers
+    // works whose owned ISBN is unknown to OpenLibrary (the seed-ISBN discover path finds nothing).
+    // Best-effort: a failure here must not turn a successful enrichment into a failed one.
+    if (details?.openlibraryWorkId) {
+      try {
+        await discoverEditionsFromOpenLibrary(db, canonicalId, details.openlibraryWorkId)
+      } catch (e) {
+        console.error('[enrichWork] edition discovery failed for work', canonicalId, e)
+      }
+    }
+
     const arrToJson = (a: string[] | undefined) => a?.length ? JSON.stringify(a) : null
     let genresJson      = arrToJson(details?.genres)
     if (!genresJson && !force) {
@@ -513,13 +537,16 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
         subtitle                  = ${coalesce('subtitle')},
         translator                = ${coalesce('translator')},
         illustrator               = ${coalesce('illustrator')},
-        characters                = ${coalesce('characters')}
+        characters                = ${coalesce('characters')},
+        openlibrary_work_id       = ${coalesce('openlibrary_work_id')},
+        reference_page_count      = ${coalesce('reference_page_count')}
       WHERE id = ?`)
       .bind(genresJson, pubDate, awardsJson, nominJson,
             details?.mainSubject ?? null, details?.formOfWork ?? null,
             details?.languageOfWork ?? null, details?.firstLine ?? null,
             details?.epigraph ?? null, narLocsJson, countriesJson,
             details?.subtitle ?? null, translatorJson, illustratorJson, charactersJson,
+            details?.openlibraryWorkId ?? null, details?.referencePageCount ?? null,
             canonicalId)
       .run()
     console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)

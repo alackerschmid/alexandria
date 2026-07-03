@@ -4,6 +4,7 @@
 
 - add confirmation for switch
 - change the base page's random books to a curated batch (boolean flag in database column)
+- add focus styling from settings to all other relevant fields (isbn title search)
 
 ## bugfixes
 

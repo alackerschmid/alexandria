@@ -145,9 +145,31 @@
           </div>
           <div class="py-4 px-3 text-center border-r border-charcoal-border">
             <div
+              v-if="book.number_of_pages_median"
               class="font-heading font-bold text-xl text-text-primary leading-none"
             >
-              {{ book.number_of_pages_median || "—" }}
+              {{ book.number_of_pages_median }}
+            </div>
+            <v-tooltip
+              v-else-if="book.reference_page_count"
+              location="top"
+              max-width="260"
+              :text="$t('detail.reference_pages_tooltip')"
+            >
+              <template #activator="{ props: tooltipProps }">
+                <div
+                  v-bind="tooltipProps"
+                  class="font-heading font-bold text-xl text-text-primary/70 leading-none cursor-help"
+                >
+                  ≈{{ book.reference_page_count }}
+                </div>
+              </template>
+            </v-tooltip>
+            <div
+              v-else
+              class="font-heading font-bold text-xl text-text-primary leading-none"
+            >
+              —
             </div>
             <div
               class="text-[9px] tracking-[0.18em] uppercase text-text-secondary/60 mt-2"

@@ -11,6 +11,7 @@ export interface Book {
   language?: string | null
   publish_date?: string | null
   number_of_pages_median?: number | null
+  reference_page_count?: number | null
   description?: string | null
   publisher?: string | null
   work_id?: number | null

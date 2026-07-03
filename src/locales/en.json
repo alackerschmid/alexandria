@@ -201,6 +201,7 @@
     "language": "Language",
     "published": "Published",
     "pages": "Pages",
+    "reference_pages_tooltip": "Page count of another edition of this work — the exact count for this edition is unknown.",
     "isbn": "ISBN",
     "copy_isbn": "Copy ISBN",
     "description": "Description",

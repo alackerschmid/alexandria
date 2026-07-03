@@ -66,6 +66,7 @@ export function buildScanSelect(locale: string): string {
          wk.translator                                     AS translator,
          wk.illustrator                                    AS illustrator,
          wk.characters                                     AS characters,
+         wk.reference_page_count                           AS reference_page_count,
          (o.title IS NOT NULL)                               AS title_overridden,
          (o.cover_url IS NOT NULL)                           AS cover_url_overridden,
          (o.language IS NOT NULL)                            AS language_overridden,
