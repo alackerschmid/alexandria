@@ -2,10 +2,8 @@
 
 ## new batch
 
-- ~~plan 1~~
-- "One thing worth flagging separately (not fixed, out of scope for this pass): enrichWork in worker/src/enrichment.ts already trips ESLint's cyclomatic-complexity rule (74 vs. max 32) before my changes — it's grown into a large function with many branches and would benefit from being split up as a follow-up."
-- plan 2
-  https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_two_questions/
+https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_two_questions/
+
 - implement select field options properly
 - add confirmation for switch
 - change the base page's random books to a curated batch (boolean flag in database column)

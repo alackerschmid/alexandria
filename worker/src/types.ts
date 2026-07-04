@@ -98,3 +98,5 @@ export type WorkDetails = {
 }
 
 export type SeriesHit = { seriesQid: string; ordinal: number | null; nameEn: string | null; nameDe: string | null }
+
+export type AuthorRef = { name: string; wikidata_qid: string | null }

@@ -693,7 +693,7 @@
           :ordinal="null"
           :owned="true"
           :status="book.status"
-          :author="book.author"
+          :author="authorDisplayName(book)"
           @select="openDetail(book)"
         />
       </div>
@@ -813,7 +813,7 @@ import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
-import { sortByCreatedAt } from "@/utils/book-display";
+import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 import type { GroupBy, SortOption } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
@@ -1445,7 +1445,7 @@ const bookToEntry = (b: Book): ShelfEntry => ({
   ordinal: b.series_ordinal ?? null,
   owned: true,
   status: b.status,
-  author: b.author,
+  author: authorDisplayName(b),
   book: b,
   seriesId: b.series_id ?? null,
 });
@@ -1475,7 +1475,7 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
           ordinal: e.ordinal,
           owned: !!e.owned,
           status: book?.status,
-          author: book?.author ?? null,
+          author: book ? authorDisplayName(book) : null,
           book,
           seriesId: g.seriesId,
         };

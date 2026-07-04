@@ -17,9 +17,21 @@ export function displayTitle(book: Pick<Book, 'title' | 'isbn'>): string {
   return book.title || book.isbn
 }
 
+/** Author names, preferring the structured `authors` link over the raw string; empty when neither is known. */
+export function authorNames(book: Pick<Book, 'author' | 'authors'>): string[] {
+  if (book.authors?.length) return book.authors.map(a => a.name)
+  return book.author ? [book.author] : []
+}
+
+/** Joined author names, preferring the structured `authors` link over the raw string; null when neither is known. */
+export function authorDisplayName(book: Pick<Book, 'author' | 'authors'>): string | null {
+  const names = authorNames(book)
+  return names.length ? names.join(', ') : null
+}
+
 /** Author with a translated "unknown author" fallback. Pass the i18n `t`. */
-export function displayAuthor(book: Pick<Book, 'author'>, t: (key: string) => string): string {
-  return book.author || t('book.unknown_author')
+export function displayAuthor(book: Pick<Book, 'author' | 'authors'>, t: (key: string) => string): string {
+  return authorDisplayName(book) || t('book.unknown_author')
 }
 
 /** 4-digit year, preferring the edition's publish date then the work's original date. */

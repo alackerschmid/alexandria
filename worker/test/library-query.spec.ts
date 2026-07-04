@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseTagArray, titleCase, parseIntOr } from '../src/library-query'
+import { parseTagArray, titleCase, parseIntOr, parseAuthorsJson } from '../src/library-query'
 
 describe('parseTagArray', () => {
   it('returns [] for null', () => {
@@ -21,6 +21,39 @@ describe('parseTagArray', () => {
 
   it('returns a clean string array unchanged', () => {
     expect(parseTagArray('["Fantasy", "Sci-Fi"]')).toEqual(['Fantasy', 'Sci-Fi'])
+  })
+})
+
+describe('parseAuthorsJson', () => {
+  it('returns [] for null', () => {
+    expect(parseAuthorsJson(null)).toEqual([])
+  })
+
+  it('returns [] for the empty-array json_group_array result', () => {
+    expect(parseAuthorsJson('[]')).toEqual([])
+  })
+
+  it('parses a json_group_array of json_object rows', () => {
+    expect(
+      parseAuthorsJson(
+        '[{"name":"Frank Herbert","wikidata_qid":"Q184680"},{"name":"Brian Herbert","wikidata_qid":null}]',
+      ),
+    ).toEqual([
+      { name: 'Frank Herbert', wikidata_qid: 'Q184680' },
+      { name: 'Brian Herbert', wikidata_qid: null },
+    ])
+  })
+
+  it('drops entries with a missing or empty name', () => {
+    expect(parseAuthorsJson('[{"wikidata_qid":"Q1"},{"name":"","wikidata_qid":null}]')).toEqual([])
+  })
+
+  it('returns [] for garbage (non-JSON) input', () => {
+    expect(parseAuthorsJson('not json')).toEqual([])
+  })
+
+  it('returns [] for valid JSON that is not an array', () => {
+    expect(parseAuthorsJson('{"name":"Frank Herbert"}')).toEqual([])
   })
 })
 

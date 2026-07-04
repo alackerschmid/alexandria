@@ -1,4 +1,5 @@
 // Shared query infrastructure for scans and books routes.
+import type { AuthorRef } from './types'
 
 // Guards against garbage query params (NaN, negative offsets) reaching a D1 bind and 500ing.
 export function parseIntOr(value: string | undefined, fallback: number): number {
@@ -33,6 +34,12 @@ export const SORT_CLAUSES: Record<string, string> = {
 // rowid lookup. This keys the work_series read off b.work_id (using idx_work_series_work) so we
 // only touch the handful of rows for books in this result set, instead of GROUP BY-scanning the
 // whole table. A work in multiple series still yields one row (list view shows the primary series).
+export const AUTHORS_JSON_SUBQUERY = `
+         (SELECT json_group_array(json_object('name', a.name, 'wikidata_qid', a.wikidata_qid))
+          FROM work_authors wa JOIN authors a ON a.id = wa.author_id
+          WHERE wa.work_id = b.work_id
+          ORDER BY wa.ordinal, wa.author_id)`
+
 export function buildScanSelect(locale: string): string {
   const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : 'en'
   return `
@@ -42,6 +49,7 @@ export function buildScanSelect(locale: string): string {
          b.work_id                                           AS work_id,
          COALESCE(o.title, b.title)                          AS title,
          b.author                                            AS author,
+         ${AUTHORS_JSON_SUBQUERY}                            AS authors_json,
          COALESCE(o.cover_url, b.cover_url)                  AS cover_url,
          COALESCE(o.language, b.language)                    AS language,
          COALESCE(o.publish_date, b.publish_date)            AS publish_date,
@@ -139,15 +147,32 @@ export function parseTagArray(raw: string | null): string[] {
   }
 }
 
+// authors_json is a json_group_array(json_object(...)) from buildScanSelect's correlated
+// subquery; [] (unlinked work, or work_id NULL) is the common case until enrichment links authors.
+export function parseAuthorsJson(raw: string | null): AuthorRef[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.filter(
+      (v): v is AuthorRef =>
+        v && typeof v === 'object' && typeof v.name === 'string' && v.name !== '',
+    )
+  } catch {
+    return []
+  }
+}
+
 export function attachCustomFields(
   row: any,
   defs: { id: number; name: string; type: string }[],
   valuesByBook: Map<number, Map<number, string | null>>,
 ) {
-  const { book_id, ...rest } = row
+  const { book_id, authors_json, ...rest } = row
   const bookVals = valuesByBook.get(book_id)
   return {
     ...rest,
+    authors:             parseAuthorsJson(authors_json),
     genres:              parseTagArray(rest.genres).map(titleCase),
     awards:              parseTagArray(rest.awards),
     nominations:         parseTagArray(rest.nominations),

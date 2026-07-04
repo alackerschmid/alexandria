@@ -5,7 +5,7 @@ import { resolveEdition, fetchBookMetadata, linkWork, searchBooksByTitle } from 
 import { enrichWork } from '../enrichment'
 import { getBookByIsbn, OVERRIDE_FIELDS, parseIntOr, type OverrideField } from '../library-query'
 import { normalizeIsbn, isValidIsbn } from '../isbn'
-import { checkRateLimit } from '../rate-limit'
+import { rateLimitOrReject } from '../rate-limit'
 
 const books = new Hono<Env>()
 
@@ -21,11 +21,8 @@ const REFRESH_RATE_LIMIT = 10
 // user looks it up or scans it.
 books.get('/guest-lookup', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const rateLimit = await checkRateLimit(c.env.DB, `guest-lookup:${ip}`, 20, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many requests — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `guest-lookup:${ip}`, 20, 1, 'Too many requests — please slow down')
+  if (blocked) return blocked
 
   const rawIsbn = c.req.query('isbn')
   if (!rawIsbn) return c.json({ error: 'ISBN required' }, 400)
@@ -40,11 +37,8 @@ books.get('/guest-lookup', async (c) => {
 // Public guest title search — no auth. Mirrors /search for unauthenticated users.
 books.get('/guest-search', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const rateLimit = await checkRateLimit(c.env.DB, `guest-search:${ip}`, 15, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many requests — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `guest-search:${ip}`, 15, 1, 'Too many requests — please slow down')
+  if (blocked) return blocked
 
   const title = c.req.query('title')?.trim()
   const author = c.req.query('author')?.trim() || undefined
@@ -120,11 +114,8 @@ books.post('/refresh', async (c) => {
   if (!isValidIsbn(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
 
   const userId = c.get('userId')
-  const rateLimit = await checkRateLimit(c.env.DB, `refresh:${userId}`, REFRESH_RATE_LIMIT, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many refresh requests — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `refresh:${userId}`, REFRESH_RATE_LIMIT, 1, 'Too many refresh requests — please slow down')
+  if (blocked) return blocked
 
   const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY)
   if (!bookData) return c.json({ error: 'Book not found in any source' }, 404)

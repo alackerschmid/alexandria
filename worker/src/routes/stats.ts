@@ -1,7 +1,13 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { authMiddleware } from "../auth";
-import { titleCase, parseTagArray } from "../library-query";
+import {
+  titleCase,
+  parseTagArray,
+  parseAuthorsJson,
+  AUTHORS_JSON_SUBQUERY,
+} from "../library-query";
+import { splitAuthors, normalizeStr } from "../editions";
 
 const stats = new Hono<Env>();
 stats.use("*", authMiddleware);
@@ -9,6 +15,7 @@ stats.use("*", authMiddleware);
 type RawRow = {
   status: string;
   author: string | null;
+  authors_json: string | null;
   language: string | null;
   pages: number | null;
   publish_date: string | null;
@@ -132,6 +139,7 @@ stats.get("/", async (c) => {
         `
       SELECT s.status                                                        AS status,
              b.author                                                        AS author,
+             ${AUTHORS_JSON_SUBQUERY}                                       AS authors_json,
              COALESCE(o.language, b.language)                               AS language,
              COALESCE(o.number_of_pages_median, b.number_of_pages_median)   AS pages,
              COALESCE(o.publish_date, b.publish_date)                       AS publish_date,
@@ -210,13 +218,25 @@ stats.get("/", async (c) => {
     else byStatus.unread++;
   }
 
-  // Top authors
+  // Top authors — per-individual-author counts, read straight off each row's own
+  // authors_json (co-authored books increment every author). Books whose work isn't
+  // linked yet fall back to splitting the raw `author` string, keyed by normalized
+  // name so a fallback entry merges into a linked one once the book gets re-enriched.
+  const authorLabels = new Map<string, string>();
   const authorCounts = new Map<string, number>();
   for (const r of rows) {
-    if (r.author)
-      authorCounts.set(r.author, (authorCounts.get(r.author) ?? 0) + 1);
+    const linked = parseAuthorsJson(r.authors_json);
+    const names = linked.length ? linked.map((a) => a.name) : splitAuthors(r.author);
+    for (const name of names) {
+      const norm = normalizeStr(name);
+      if (!authorLabels.has(norm)) authorLabels.set(norm, name);
+      authorCounts.set(norm, (authorCounts.get(norm) ?? 0) + 1);
+    }
   }
-  const topAuthors = topCounts(authorCounts, 6);
+  const topAuthors = topCounts(authorCounts, 6).map(({ label, count }) => ({
+    label: authorLabels.get(label)!,
+    count,
+  }));
   const authorCount = authorCounts.size;
 
   // Languages

@@ -442,12 +442,12 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
   await db.batch(stmts);
 
   if (authors.length) {
-    const links = authors.map((name) =>
+    const links = authors.map((name, idx) =>
       db
         .prepare(
-          "INSERT OR IGNORE INTO work_authors (work_id, author_id) SELECT ?, id FROM authors WHERE normalized_name = ?",
+          "INSERT OR IGNORE INTO work_authors (work_id, author_id, ordinal) SELECT ?, id, ? FROM authors WHERE normalized_name = ?",
         )
-        .bind(work.id, normalizeStr(name)),
+        .bind(work.id, idx, normalizeStr(name)),
     );
     await db.batch(links);
   }

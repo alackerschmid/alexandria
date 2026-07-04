@@ -369,6 +369,181 @@ async function populateSeriesMembers(db: D1Database, seriesId: number, seriesQid
       .bind(seriesId, m.ordinal, m.qid)))
 }
 
+// Atomically claims a work for enrichment so a concurrent invocation (cron sweeper vs. a manual
+// refresh/lookup) can't run the same SPARQL work twice. A stale claim (a run that crashed without
+// clearing it) expires after 2 minutes. Returns false if another run currently holds the claim.
+async function claimWork(db: D1Database, workId: number): Promise<boolean> {
+  const claim = await db.prepare(
+    "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
+  ).bind(workId).run()
+  return claim.meta.changes > 0
+}
+
+type IdentityOutcome =
+  | { kind: 'no-title' }
+  | { kind: 'in-flight' }
+  | { kind: 'resolved'; workQid: string | null; canonicalId: number; merged: boolean; details: WorkDetails | null }
+
+// Resolves the Wikidata QID and work-level details for a work: either fetches details directly
+// for a work that already has a QID (placeholder series member, or a force-refresh), or searches
+// Wikidata by title/author, dedup-merges onto an existing work if the QID is already claimed
+// elsewhere, and populates series membership. Returns 'no-title' when the work has no title to
+// search with, and 'in-flight' when a post-merge re-claim loses to a concurrent run.
+async function resolveWorkIdentity(db: D1Database, workId: number, w: WorkRow): Promise<IdentityOutcome> {
+  if (w.wikidata_qid) {
+    console.log(`[enrichWork] work ${workId} already has QID ${w.wikidata_qid}, fetching details directly`)
+    const details = await fetchWorkDetails(w.wikidata_qid)
+    return { kind: 'resolved', workQid: w.wikidata_qid, canonicalId: workId, merged: false, details }
+  }
+
+  const ed = await db.prepare('SELECT title, author FROM books WHERE work_id = ? AND title IS NOT NULL LIMIT 1')
+    .bind(workId)
+    .first<{ title: string | null; author: string | null }>()
+  const title = ed?.title ?? w.canonical_title
+  if (!title) {
+    console.warn(`[enrichWork] no title for work ${workId}, marking done`)
+    return { kind: 'no-title' }
+  }
+  const author = splitAuthors(ed?.author ?? null)[0] ?? ''
+  console.log(`[enrichWork] looking up: title="${title}" author="${author}"`)
+
+  let info = await fetchBookInfo(title, author)
+  if (!info) {
+    const strippedTitle = title.replace(/\s*[([{].*?[)\]}]/g, '').trim()
+    if (strippedTitle && strippedTitle !== title) {
+      console.log(`[enrichWork] no results for "${title}", retrying with stripped title "${strippedTitle}"`)
+      info = await fetchBookInfo(strippedTitle, author)
+    }
+  }
+  console.log(`[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? 'null'} seriesQid=${info?.series?.seriesQid ?? 'null'}`)
+
+  if (!info?.workQid) {
+    console.log(`[enrichWork] no Wikidata match found, will store nulls`)
+    return { kind: 'resolved', workQid: null, canonicalId: workId, merged: false, details: null }
+  }
+
+  let canonicalId = workId
+  let merged = false
+  const existing = await db.prepare('SELECT id FROM works WHERE wikidata_qid = ? AND id != ?')
+    .bind(info.workQid, workId)
+    .first<{ id: number }>()
+  if (existing) {
+    console.log(`[enrichWork] QID ${info.workQid} already on work ${existing.id}, merging ${workId} → ${existing.id}`)
+    await mergeWorks(db, workId, existing.id)
+    canonicalId = existing.id
+    merged = true
+    // The claim taken earlier was on workId, which mergeWorks just deleted. Re-claim the
+    // canonical row so a second concurrent enrichWork that resolves to the same existing
+    // work can't race this one on the series/detail writes below.
+    if (!(await claimWork(db, canonicalId))) {
+      console.log(`[enrichWork] canonical work ${canonicalId} already has an enrichment in flight, skipping after merge`)
+      return { kind: 'in-flight' }
+    }
+  } else {
+    console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
+    await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
+  }
+
+  if (info.series) {
+    console.log(`[enrichWork] upserting series ${info.series.seriesQid} for work ${canonicalId}`)
+    const seriesId = await upsertSeries(db, canonicalId, info.series)
+    console.log(`[enrichWork] seriesId=${seriesId}`)
+    if (seriesId) await populateSeriesMembers(db, seriesId, info.series.seriesQid)
+  }
+
+  // Best-effort: link the searched author's own QID for future dedup, in parallel with the
+  // work-details SPARQL fetch below (independent writes, so no need to serialize). Isolated in
+  // its own try/catch so a failure here (e.g. two normalized names colliding on the UNIQUE index)
+  // can't turn an otherwise-successful work enrichment into a failed one.
+  const authorQidUpdate = info.authorQid && author
+    ? db.prepare(
+        'UPDATE authors SET wikidata_qid = ? WHERE normalized_name = ? AND wikidata_qid IS NULL'
+      ).bind(info.authorQid, normalizeStr(author)).run()
+        .then(authorResult => console.log(`[enrichWork] author QID ${info.authorQid} write: changes=${authorResult.meta.changes}`))
+        .catch(e => console.error('[enrichWork] failed to write author QID', info.authorQid, e))
+    : Promise.resolve()
+
+  const [details] = await Promise.all([fetchWorkDetails(info.workQid), authorQidUpdate])
+  return { kind: 'resolved', workQid: info.workQid, canonicalId, merged, details }
+}
+
+// Gives an identified work a cover edition (if unowned) and pre-discovers related OpenLibrary
+// editions via the Wikidata-linked work id. Independent operations on different tables, run
+// concurrently. Both best-effort: a discovery failure must not turn a successful enrichment
+// into a failed one (backfillEdition has no failure mode of its own).
+async function backfillEditionsAndDiscovery(db: D1Database, canonicalId: number, workQid: string | null, details: WorkDetails | null, apiKey?: string): Promise<void> {
+  const backfill = workQid ? backfillEdition(db, canonicalId, workQid, apiKey) : Promise.resolve()
+  const discovery = details?.openlibraryWorkId
+    ? discoverEditionsFromOpenLibrary(db, canonicalId, details.openlibraryWorkId).catch(e => {
+        console.error('[enrichWork] edition discovery failed for work', canonicalId, e)
+      })
+    : Promise.resolve()
+  await Promise.all([backfill, discovery])
+}
+
+// Writes fetched Wikidata details back to `works`. force=true (manual refresh) overwrites
+// unconditionally so stale values can be cleared; force=false (sweeper backfill) COALESCEs to
+// preserve existing values when Wikidata returns null. When Wikidata has no genres and this
+// isn't a force refresh, falls back to Google Books' BISAC categories from a linked edition.
+async function persistWorkDetails(db: D1Database, canonicalId: number, details: WorkDetails | null, force: boolean): Promise<void> {
+  const arrToJson = (a: string[] | undefined) => a?.length ? JSON.stringify(a) : null
+  const nullish = <T>(v: T | null | undefined): T | null => v ?? null
+  let genresJson = arrToJson(details?.genres)
+  if (!genresJson && !force) {
+    const fallback = await db.prepare(
+      'SELECT categories FROM books WHERE work_id = ? AND categories IS NOT NULL LIMIT 1'
+    ).bind(canonicalId).first<{ categories: string }>()
+    if (fallback?.categories) genresJson = fallback.categories
+  }
+  const awardsJson      = arrToJson(details?.awards)
+  const nominJson       = arrToJson(details?.nominations)
+  const narLocsJson     = arrToJson(details?.narrativeLocations)
+  const countriesJson   = arrToJson(details?.countriesOfOrigin)
+  const translatorJson  = arrToJson(details?.translator)
+  const illustratorJson = arrToJson(details?.illustrator)
+  const charactersJson  = arrToJson(details?.characters)
+  const pubDate         = nullish(details?.originalPubDate)
+  console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
+
+  const coalesce = (col: string) => force ? '?' : `COALESCE(?, ${col})`
+  const updateResult = await db.prepare(`
+    UPDATE works SET
+      series_checked_at         = datetime('now'),
+      enrichment_failed_at      = NULL,
+      enrichment_failure_reason = NULL,
+      enrichment_attempts       = 0,
+      enrichment_started_at     = NULL,
+      enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
+      genres                    = ${coalesce('genres')},
+      original_pub_date         = ${coalesce('original_pub_date')},
+      awards                    = ${coalesce('awards')},
+      nominations               = ${coalesce('nominations')},
+      main_subject              = ${coalesce('main_subject')},
+      form_of_work              = ${coalesce('form_of_work')},
+      language_of_work          = ${coalesce('language_of_work')},
+      language_of_work_code     = ${coalesce('language_of_work_code')},
+      first_line                = ${coalesce('first_line')},
+      epigraph                  = ${coalesce('epigraph')},
+      narrative_locations       = ${coalesce('narrative_locations')},
+      countries_of_origin       = ${coalesce('countries_of_origin')},
+      subtitle                  = ${coalesce('subtitle')},
+      translator                = ${coalesce('translator')},
+      illustrator               = ${coalesce('illustrator')},
+      characters                = ${coalesce('characters')},
+      openlibrary_work_id       = ${coalesce('openlibrary_work_id')},
+      reference_page_count      = ${coalesce('reference_page_count')}
+    WHERE id = ?`)
+    .bind(genresJson, pubDate, awardsJson, nominJson,
+          nullish(details?.mainSubject), nullish(details?.formOfWork),
+          nullish(details?.languageOfWork), nullish(details?.languageOfWorkCode), nullish(details?.firstLine),
+          nullish(details?.epigraph), narLocsJson, countriesJson,
+          nullish(details?.subtitle), translatorJson, illustratorJson, charactersJson,
+          nullish(details?.openlibraryWorkId), nullish(details?.referencePageCount),
+          canonicalId)
+    .run()
+  console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
+}
+
 export type EnrichmentSource = 'scan' | 'lookup' | 'refresh' | 'sweeper' | 'unknown'
 
 // Best-effort telemetry write for observability (pending count, failure breakdown, timing) —
@@ -406,12 +581,9 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     if (w.series_checked_at && !force && !schemaStale) { console.log(`[enrichWork] already enriched (series_checked_at=${w.series_checked_at}), skipping`); return }
 
     // Claim the work atomically so a concurrent invocation (cron sweeper vs. a manual
-    // refresh/lookup) can't run the same SPARQL work twice. A stale claim (a run that crashed
-    // without clearing it) expires after 2 minutes. force=true still respects an in-flight run.
-    const claim = await db.prepare(
-      "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
-    ).bind(workId).run()
-    if (claim.meta.changes === 0) {
+    // refresh/lookup) can't run the same SPARQL work twice. force=true still respects an
+    // in-flight run.
+    if (!(await claimWork(db, workId))) {
       console.log(`[enrichWork] work ${workId} already has an enrichment in flight, skipping`)
       return
     }
@@ -422,165 +594,20 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     // deferred to later failed (which doesn't restore series_checked_at).
     if (force) await db.prepare('UPDATE works SET series_checked_at = NULL WHERE id = ?').bind(workId).run()
 
-    let workQid: string | null = w.wikidata_qid
-    let details: WorkDetails | null = null
-
-    if (workQid) {
-      // QID-first (placeholder series member, or force-refresh of an already-identified work):
-      // we already know the work, so skip the title search, merge, and series repopulation.
-      console.log(`[enrichWork] work ${workId} already has QID ${workQid}, fetching details directly`)
-      details = await fetchWorkDetails(workQid)
-    } else {
-      const ed = await db.prepare('SELECT title, author FROM books WHERE work_id = ? AND title IS NOT NULL LIMIT 1')
-        .bind(workId)
-        .first<{ title: string | null; author: string | null }>()
-      const title = ed?.title ?? w.canonical_title
-      if (!title) {
-        console.warn(`[enrichWork] no title for work ${workId}, marking done`)
-        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL, enrichment_failure_reason = NULL, enrichment_started_at = NULL WHERE id = ?").bind(workId).run()
-        await recordRun(db, workId, startedAt, 'not_found', null, source)
-        return
-      }
-      const author = splitAuthors(ed?.author ?? null)[0] ?? ''
-      console.log(`[enrichWork] looking up: title="${title}" author="${author}"`)
-
-      let info = await fetchBookInfo(title, author)
-      if (!info) {
-        const strippedTitle = title.replace(/\s*[([{].*?[)\]}]/g, '').trim()
-        if (strippedTitle && strippedTitle !== title) {
-          console.log(`[enrichWork] no results for "${title}", retrying with stripped title "${strippedTitle}"`)
-          info = await fetchBookInfo(strippedTitle, author)
-        }
-      }
-      console.log(`[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? 'null'} seriesQid=${info?.series?.seriesQid ?? 'null'}`)
-
-      if (info?.workQid) {
-        workQid = info.workQid
-        const existing = await db.prepare('SELECT id FROM works WHERE wikidata_qid = ? AND id != ?')
-          .bind(info.workQid, workId)
-          .first<{ id: number }>()
-        if (existing) {
-          console.log(`[enrichWork] QID ${info.workQid} already on work ${existing.id}, merging ${workId} → ${existing.id}`)
-          await mergeWorks(db, workId, existing.id)
-          canonicalId = existing.id
-          merged = true
-          // The claim above was taken on workId, which mergeWorks just deleted. Re-claim the
-          // canonical row so a second concurrent enrichWork that resolves to the same existing
-          // work can't race this one on the series/detail writes below.
-          const canonicalClaim = await db.prepare(
-            "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
-          ).bind(canonicalId).run()
-          if (canonicalClaim.meta.changes === 0) {
-            console.log(`[enrichWork] canonical work ${canonicalId} already has an enrichment in flight, skipping after merge`)
-            return
-          }
-        } else {
-          console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
-          await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
-        }
-
-        if (info.series) {
-          console.log(`[enrichWork] upserting series ${info.series.seriesQid} for work ${canonicalId}`)
-          const seriesId = await upsertSeries(db, canonicalId, info.series)
-          console.log(`[enrichWork] seriesId=${seriesId}`)
-          if (seriesId) await populateSeriesMembers(db, seriesId, info.series.seriesQid)
-        }
-
-        // Best-effort: link the searched author's own QID for future dedup. Isolated in its own
-        // try/catch so a failure here (e.g. two normalized names colliding on the UNIQUE index)
-        // can't turn an otherwise-successful work enrichment into a failed one.
-        if (info.authorQid && author) {
-          try {
-            const authorResult = await db.prepare(
-              'UPDATE authors SET wikidata_qid = ? WHERE normalized_name = ? AND wikidata_qid IS NULL'
-            ).bind(info.authorQid, normalizeStr(author)).run()
-            console.log(`[enrichWork] author QID ${info.authorQid} write: changes=${authorResult.meta.changes}`)
-          } catch (e) {
-            console.error('[enrichWork] failed to write author QID', info.authorQid, e)
-          }
-        }
-
-        details = await fetchWorkDetails(info.workQid)
-      } else {
-        console.log(`[enrichWork] no Wikidata match found, will store nulls`)
-      }
+    const identity = await resolveWorkIdentity(db, workId, w)
+    if (identity.kind === 'no-title') {
+      await persistWorkDetails(db, workId, null, force)
+      await recordRun(db, workId, startedAt, 'not_found', null, source)
+      return
     }
+    if (identity.kind === 'in-flight') return
 
-    // Give unowned/placeholder works a real edition (cover + ISBN) so the series view renders them.
-    if (workQid) await backfillEdition(db, canonicalId, workQid, apiKey)
+    const { workQid, details } = identity
+    canonicalId = identity.canonicalId
+    merged = identity.merged
 
-    // Pre-discover related editions via the Wikidata-linked OpenLibrary work id (P648) — covers
-    // works whose owned ISBN is unknown to OpenLibrary (the seed-ISBN discover path finds nothing).
-    // Best-effort: a failure here must not turn a successful enrichment into a failed one.
-    if (details?.openlibraryWorkId) {
-      try {
-        await discoverEditionsFromOpenLibrary(db, canonicalId, details.openlibraryWorkId)
-      } catch (e) {
-        console.error('[enrichWork] edition discovery failed for work', canonicalId, e)
-      }
-    }
-
-    const arrToJson = (a: string[] | undefined) => a?.length ? JSON.stringify(a) : null
-    let genresJson      = arrToJson(details?.genres)
-    if (!genresJson && !force) {
-      // Wikidata had no genres for this work — fall back to Google Books' BISAC categories,
-      // captured on any linked edition. Wikidata stays authoritative; this only fills a gap.
-      // Skipped on force=true so a manual refresh can still clear a stale genre value —
-      // that's the whole point of force overwriting unconditionally (see coalesce() below).
-      const fallback = await db.prepare(
-        'SELECT categories FROM books WHERE work_id = ? AND categories IS NOT NULL LIMIT 1'
-      ).bind(canonicalId).first<{ categories: string }>()
-      if (fallback?.categories) genresJson = fallback.categories
-    }
-    const awardsJson    = arrToJson(details?.awards)
-    const nominJson     = arrToJson(details?.nominations)
-    const narLocsJson   = arrToJson(details?.narrativeLocations)
-    const countriesJson = arrToJson(details?.countriesOfOrigin)
-    const translatorJson  = arrToJson(details?.translator)
-    const illustratorJson = arrToJson(details?.illustrator)
-    const charactersJson  = arrToJson(details?.characters)
-    const pubDate        = details?.originalPubDate ?? null
-    console.log(`[enrichWork] writing to works id=${canonicalId}:`, { genresJson, pubDate, awardsJson, nominJson })
-
-    // force=true (manual refresh): overwrite unconditionally so stale values can be cleared.
-    // force=false (sweeper backfill): COALESCE preserves existing values when Wikidata returns null.
-    const coalesce = (col: string) => force ? '?' : `COALESCE(?, ${col})`
-    const updateResult = await db.prepare(`
-      UPDATE works SET
-        series_checked_at         = datetime('now'),
-        enrichment_failed_at      = NULL,
-        enrichment_failure_reason = NULL,
-        enrichment_attempts       = 0,
-        enrichment_started_at     = NULL,
-        enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
-        genres                    = ${coalesce('genres')},
-        original_pub_date         = ${coalesce('original_pub_date')},
-        awards                    = ${coalesce('awards')},
-        nominations               = ${coalesce('nominations')},
-        main_subject              = ${coalesce('main_subject')},
-        form_of_work              = ${coalesce('form_of_work')},
-        language_of_work          = ${coalesce('language_of_work')},
-        language_of_work_code     = ${coalesce('language_of_work_code')},
-        first_line                = ${coalesce('first_line')},
-        epigraph                  = ${coalesce('epigraph')},
-        narrative_locations       = ${coalesce('narrative_locations')},
-        countries_of_origin       = ${coalesce('countries_of_origin')},
-        subtitle                  = ${coalesce('subtitle')},
-        translator                = ${coalesce('translator')},
-        illustrator               = ${coalesce('illustrator')},
-        characters                = ${coalesce('characters')},
-        openlibrary_work_id       = ${coalesce('openlibrary_work_id')},
-        reference_page_count      = ${coalesce('reference_page_count')}
-      WHERE id = ?`)
-      .bind(genresJson, pubDate, awardsJson, nominJson,
-            details?.mainSubject ?? null, details?.formOfWork ?? null,
-            details?.languageOfWork ?? null, details?.languageOfWorkCode ?? null, details?.firstLine ?? null,
-            details?.epigraph ?? null, narLocsJson, countriesJson,
-            details?.subtitle ?? null, translatorJson, illustratorJson, charactersJson,
-            details?.openlibraryWorkId ?? null, details?.referencePageCount ?? null,
-            canonicalId)
-      .run()
-    console.log(`[enrichWork] UPDATE result: changes=${updateResult.meta.changes}`)
+    await backfillEditionsAndDiscovery(db, canonicalId, workQid, details, apiKey)
+    await persistWorkDetails(db, canonicalId, details, force)
     await recordRun(db, canonicalId, startedAt, workQid ? 'done' : 'not_found', null, source)
   } catch (e) {
     console.error('[enrichWork] failed for work', workId, e)

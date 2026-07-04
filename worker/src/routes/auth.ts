@@ -2,17 +2,14 @@ import { Hono } from 'hono'
 import * as bcrypt from 'bcryptjs'
 import type { Env } from '../types'
 import { EMAIL_RE, signToken, authMiddleware } from '../auth'
-import { checkRateLimit } from '../rate-limit'
+import { rateLimitOrReject } from '../rate-limit'
 
 const auth = new Hono<Env>()
 
 auth.post('/register', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const rateLimit = await checkRateLimit(c.env.DB, `register:${ip}`, 5, 10)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many registration attempts — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `register:${ip}`, 5, 10, 'Too many registration attempts — please slow down')
+  if (blocked) return blocked
 
   const body = await c.req.json()
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email
@@ -48,11 +45,8 @@ auth.post('/register', async (c) => {
 
 auth.post('/login', async (c) => {
   const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
-  const rateLimit = await checkRateLimit(c.env.DB, `login:${ip}`, 10, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many login attempts — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `login:${ip}`, 10, 1, 'Too many login attempts — please slow down')
+  if (blocked) return blocked
 
   const body = await c.req.json()
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email

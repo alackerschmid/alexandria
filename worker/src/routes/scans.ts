@@ -4,7 +4,7 @@ import { authMiddleware } from '../auth'
 import { resolveEdition, materializeEdition } from '../editions'
 import { enrichWork } from '../enrichment'
 import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES, getBookByIsbn, parseIntOr } from '../library-query'
-import { checkRateLimit } from '../rate-limit'
+import { rateLimitOrReject } from '../rate-limit'
 import { normalizeIsbn, isValidIsbn, isIsbnFormat } from '../isbn'
 
 const scans = new Hono<Env>()
@@ -57,11 +57,8 @@ scans.post('/', async (c) => {
     if (dup) return c.json({ error: 'Already in your list' }, 409)
   }
 
-  const rateLimit = await checkRateLimit(db, `scan:${userId}`, SCAN_RATE_LIMIT, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many scans — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `scan:${userId}`, SCAN_RATE_LIMIT, 1, 'Too many scans — please slow down')
+  if (blocked) return blocked
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, true)
