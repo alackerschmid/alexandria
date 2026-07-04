@@ -5,9 +5,13 @@ const BASE = import.meta.env.VITE_API_URL || ''
 export function useApi() {
   const authStore = useAuthStore()
 
-  function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  async function apiFetch(
+    path: string,
+    init: RequestInit = {},
+    opts: { on401?: 'logout' | 'ignore' } = {},
+  ): Promise<Response> {
     const { headers, ...rest } = init
-    return fetch(`${BASE}${path}`, {
+    const res = await fetch(`${BASE}${path}`, {
       ...rest,
       headers: {
         'Content-Type': 'application/json',
@@ -15,6 +19,10 @@ export function useApi() {
         ...(headers as Record<string, string>),
       },
     })
+    if (res.status === 401 && (opts.on401 ?? 'logout') === 'logout') {
+      authStore.logout()
+    }
+    return res
   }
 
   return { apiFetch }

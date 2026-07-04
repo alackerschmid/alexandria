@@ -1,7 +1,13 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { authMiddleware } from "../auth";
-import { titleCase, parseTagArray } from "../library-query";
+import {
+  titleCase,
+  parseTagArray,
+  parseAuthorsJson,
+  AUTHORS_JSON_SUBQUERY,
+} from "../library-query";
+import { splitAuthors, normalizeStr } from "../editions";
 
 const stats = new Hono<Env>();
 stats.use("*", authMiddleware);
@@ -9,6 +15,7 @@ stats.use("*", authMiddleware);
 type RawRow = {
   status: string;
   author: string | null;
+  authors_json: string | null;
   language: string | null;
   pages: number | null;
   publish_date: string | null;
@@ -19,6 +26,7 @@ type RawRow = {
   main_subject: string | null;
   countries_of_origin: string | null;
   language_of_work: string | null;
+  language_of_work_code: string | null;
 };
 
 type SeriesRow = { label: string; count: number };
@@ -131,6 +139,7 @@ stats.get("/", async (c) => {
         `
       SELECT s.status                                                        AS status,
              b.author                                                        AS author,
+             ${AUTHORS_JSON_SUBQUERY}                                       AS authors_json,
              COALESCE(o.language, b.language)                               AS language,
              COALESCE(o.number_of_pages_median, b.number_of_pages_median)   AS pages,
              COALESCE(o.publish_date, b.publish_date)                       AS publish_date,
@@ -140,7 +149,8 @@ stats.get("/", async (c) => {
              wk.form_of_work                                                AS form_of_work,
              wk.main_subject                                                AS main_subject,
              wk.countries_of_origin                                         AS countries_of_origin,
-             wk.language_of_work                                            AS language_of_work
+             wk.language_of_work                                            AS language_of_work,
+             wk.language_of_work_code                                       AS language_of_work_code
       FROM scans s
       JOIN books b ON s.book_id = b.id
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
@@ -208,13 +218,25 @@ stats.get("/", async (c) => {
     else byStatus.unread++;
   }
 
-  // Top authors
+  // Top authors — per-individual-author counts, read straight off each row's own
+  // authors_json (co-authored books increment every author). Books whose work isn't
+  // linked yet fall back to splitting the raw `author` string, keyed by normalized
+  // name so a fallback entry merges into a linked one once the book gets re-enriched.
+  const authorLabels = new Map<string, string>();
   const authorCounts = new Map<string, number>();
   for (const r of rows) {
-    if (r.author)
-      authorCounts.set(r.author, (authorCounts.get(r.author) ?? 0) + 1);
+    const linked = parseAuthorsJson(r.authors_json);
+    const names = linked.length ? linked.map((a) => a.name) : splitAuthors(r.author);
+    for (const name of names) {
+      const norm = normalizeStr(name);
+      if (!authorLabels.has(norm)) authorLabels.set(norm, name);
+      authorCounts.set(norm, (authorCounts.get(norm) ?? 0) + 1);
+    }
   }
-  const topAuthors = topCounts(authorCounts, 6);
+  const topAuthors = topCounts(authorCounts, 6).map(({ label, count }) => ({
+    label: authorLabels.get(label)!,
+    count,
+  }));
   const authorCount = authorCounts.size;
 
   // Languages
@@ -370,13 +392,20 @@ stats.get("/", async (c) => {
     .filter((v): v is NonNullable<typeof v> => !!v)
     .sort((a, b) => parseInt(a.decade, 10) - parseInt(b.decade, 10));
 
-  // Translation ratio: edition language (ISO code) vs work's original language (Wikidata English label)
+  // Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
+  // ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
+  // back to the older English-label comparison for rows the sweeper hasn't reached yet.
   const langNamer = new Intl.DisplayNames(["en"], { type: "language" });
   let translatedCount = 0;
   let translationKnownCount = 0;
   for (const r of rows) {
     if (!r.language || !r.language_of_work) continue;
     translationKnownCount++;
+    if (r.language_of_work_code) {
+      if (r.language.toLowerCase() !== r.language_of_work_code.toLowerCase())
+        translatedCount++;
+      continue;
+    }
     let editionLangName: string;
     try {
       editionLangName = langNamer.of(r.language) ?? r.language;

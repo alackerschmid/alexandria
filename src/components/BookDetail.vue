@@ -46,16 +46,7 @@
               </button>
             </div>
 
-            <button
-              v-if="book.author"
-              class="text-sm text-text-secondary hover:text-orange-neon transition-colors mb-3 text-left"
-              @click="filterBy('author', book.author!)"
-            >
-              {{ book.author }}
-            </button>
-            <div v-else class="text-sm text-text-secondary mb-3">
-              {{ $t("book.unknown_author") }}
-            </div>
+            <AuthorChips :book="book" @select="filterBy('author', $event)" />
 
             <!-- series label -->
             <button
@@ -366,16 +357,7 @@
                   </span>
 
                   <!-- author -->
-                  <button
-                    v-if="book.author"
-                    class="text-base text-text-secondary hover:text-orange-neon transition-colors mb-8 block"
-                    @click="filterBy('author', book.author!)"
-                  >
-                    {{ book.author }}
-                  </button>
-                  <div v-else class="text-base text-text-secondary mb-8">
-                    {{ $t("book.unknown_author") }}
-                  </div>
+                  <AuthorChips :book="book" size="expanded" @select="filterBy('author', $event)" />
 
                   <!-- enrichment status (full view) -->
                   <EnrichmentBadge
@@ -784,6 +766,7 @@ import {
 } from "@/composables/useBookStatus";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { bookYear } from "@/utils/book-display";
+import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";

@@ -1458,7 +1458,7 @@ const onBarcodeDetected = async (isbn: string) => {
     duplicate,
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };
-  selectedStatus.value = "read";
+  selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
   scanState.value = "preview";
 
   // A duplicate gets shown once, then suppressed for the rest of the session.
@@ -1481,25 +1481,27 @@ function enqueue(book: QueuedBook) {
   }
 }
 
-async function patchStatus(id: number, status: ReadStatus) {
-  try {
-    await apiFetch(`/api/scans/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify({ status }),
-    });
-  } catch {}
+function postScanRequest(
+  book: QueuedBook,
+  opts?: { on401?: "logout" | "ignore" },
+): Promise<Response> {
+  return apiFetch(
+    `/api/scans`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        isbn: book.isbn,
+        status: book.status ?? libraryDefaultsStore.defaultScanStatus,
+      }),
+    },
+    opts,
+  );
 }
 
 async function postScan(
   book: QueuedBook,
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
-  const res = await apiFetch(`/api/scans`, {
-    method: "POST",
-    body: JSON.stringify({
-      isbn: book.isbn,
-      status: libraryDefaultsStore.defaultScanStatus,
-    }),
-  });
+  const res = await postScanRequest(book);
   if (res.status === 409) return { result: "duplicate" };
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
   const saved = await res.json();
@@ -1517,13 +1519,7 @@ async function drainQueue() {
       continue;
     }
     try {
-      const res = await apiFetch(`/api/scans`, {
-        method: "POST",
-        body: JSON.stringify({
-          isbn: book.isbn,
-          status: libraryDefaultsStore.defaultScanStatus,
-        }),
-      });
+      const res = await postScanRequest(book, { on401: "ignore" });
       if (res.status === 401) {
         authExpired = true;
         remaining.push(book);
@@ -1531,15 +1527,12 @@ async function drainQueue() {
         remaining.push(book);
       } else if (res.ok) {
         // Backfill the server scan id onto the matching session entry so it can
-        // still be deleted, and apply any non-default status.
+        // still be deleted.
         try {
           const saved = await res.json();
           if (saved?.id) {
             const entry = sessionBooks.value.find((b) => b.isbn === book.isbn);
             if (entry) entry.scanId = saved.id;
-            if (book.status && book.status !== "unread") {
-              await patchStatus(saved.id, book.status);
-            }
           }
         } catch {}
       }
@@ -1595,7 +1588,6 @@ const saveBook = async () => {
     libraryBooks.set(book.isbn, status);
     // result === "duplicate" → already in the library; nothing to add to the session.
     if (result === "saved") {
-      if (status !== "unread" && id) await patchStatus(id, status);
       recordSession(book, status, id);
     }
   } catch {

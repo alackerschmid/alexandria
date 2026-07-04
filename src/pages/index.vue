@@ -693,7 +693,7 @@
           :ordinal="null"
           :owned="true"
           :status="book.status"
-          :author="book.author"
+          :author="authorDisplayName(book)"
           @select="openDetail(book)"
         />
       </div>
@@ -813,7 +813,7 @@ import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
-import { sortByCreatedAt } from "@/utils/book-display";
+import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 import type { GroupBy, SortOption } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
@@ -986,7 +986,6 @@ const selectedBook = ref<Book | null>(null);
 const errorToast = ref(false);
 const errorMessage = ref("");
 
-const FETCH_LIMIT = 5000;
 let fetchSeq = 0;
 
 const perPage = ref<string>(String(libraryDefaultsStore.defaultPageSize));
@@ -1446,7 +1445,7 @@ const bookToEntry = (b: Book): ShelfEntry => ({
   ordinal: b.series_ordinal ?? null,
   owned: true,
   status: b.status,
-  author: b.author,
+  author: authorDisplayName(b),
   book: b,
   seriesId: b.series_id ?? null,
 });
@@ -1476,7 +1475,7 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
           ordinal: e.ordinal,
           owned: !!e.owned,
           status: book?.status,
-          author: book?.author ?? null,
+          author: book ? authorDisplayName(book) : null,
           book,
           seriesId: g.seriesId,
         };
@@ -1551,16 +1550,28 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 
 // ── Data fetching ─────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 500;
+// Hard ceiling so a pagination/sort-stability bug (pages that never shrink below PAGE_SIZE)
+// can't spin the loop forever — 40 pages is 20,000 books, far beyond any real library.
+const MAX_PAGES = 40;
+
 const fetchBooks = async () => {
   const seq = ++fetchSeq;
   try {
-    const res = await apiFetch(
-      `/api/scans?limit=${FETCH_LIMIT}&offset=0&locale=${localeStore.locale}`,
-    );
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch books");
-    if (seq !== fetchSeq) return;
-    serverBooks.value = data;
+    const allBooks: Book[] = [];
+    let offset = 0;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const res = await apiFetch(
+        `/api/scans?limit=${PAGE_SIZE}&offset=${offset}&locale=${localeStore.locale}`,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch books");
+      if (seq !== fetchSeq) return;
+      allBooks.push(...data);
+      if (data.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
+    }
+    serverBooks.value = allBooks;
     statusOverrides.value.clear();
   } catch (err: any) {
     if (seq !== fetchSeq) return;

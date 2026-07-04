@@ -1,4 +1,11 @@
 // Shared query infrastructure for scans and books routes.
+import type { AuthorRef } from './types'
+
+// Guards against garbage query params (NaN, negative offsets) reaching a D1 bind and 500ing.
+export function parseIntOr(value: string | undefined, fallback: number): number {
+  const n = parseInt(value ?? '', 10)
+  return Number.isNaN(n) ? fallback : n
+}
 
 export function getBookByIsbn(db: D1Database, isbn: string) {
   return db.prepare('SELECT id FROM books WHERE isbn = ?').bind(isbn).first<{ id: number }>()
@@ -8,14 +15,18 @@ export function getBookByIsbn(db: D1Database, isbn: string) {
 export const OVERRIDE_FIELDS = ['title', 'cover_url', 'language', 'publish_date', 'number_of_pages_median', 'description', 'publisher'] as const
 export type OverrideField = typeof OVERRIDE_FIELDS[number]
 
+// Every clause ends in `s.id` (the scan's unique, monotonic primary key) as a tiebreaker —
+// without it, rows sharing the same sort value (e.g. scans saved in the same second) have no
+// deterministic order, so sequential paginated requests (see index.vue's fetchBooks) could
+// duplicate or drop a row across a page boundary.
 export const SORT_CLAUSES: Record<string, string> = {
-  date_desc: 's.created_at DESC',
-  date_asc: 's.created_at ASC',
-  title_asc: 'COALESCE(b.title, b.isbn) ASC COLLATE NOCASE',
-  title_desc: 'COALESCE(b.title, b.isbn) DESC COLLATE NOCASE',
-  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE",
-  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE",
-  series_asc: 'series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC',
+  date_desc: 's.created_at DESC, s.id DESC',
+  date_asc: 's.created_at ASC, s.id ASC',
+  title_asc: 'COALESCE(b.title, b.isbn) ASC COLLATE NOCASE, s.id ASC',
+  title_desc: 'COALESCE(b.title, b.isbn) DESC COLLATE NOCASE, s.id ASC',
+  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE, s.id ASC",
+  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE, s.id ASC",
+  series_asc: 'series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC',
 }
 
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
@@ -23,6 +34,12 @@ export const SORT_CLAUSES: Record<string, string> = {
 // rowid lookup. This keys the work_series read off b.work_id (using idx_work_series_work) so we
 // only touch the handful of rows for books in this result set, instead of GROUP BY-scanning the
 // whole table. A work in multiple series still yields one row (list view shows the primary series).
+export const AUTHORS_JSON_SUBQUERY = `
+         (SELECT json_group_array(json_object('name', a.name, 'wikidata_qid', a.wikidata_qid))
+          FROM work_authors wa JOIN authors a ON a.id = wa.author_id
+          WHERE wa.work_id = b.work_id
+          ORDER BY wa.ordinal, wa.author_id)`
+
 export function buildScanSelect(locale: string): string {
   const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : 'en'
   return `
@@ -32,6 +49,7 @@ export function buildScanSelect(locale: string): string {
          b.work_id                                           AS work_id,
          COALESCE(o.title, b.title)                          AS title,
          b.author                                            AS author,
+         ${AUTHORS_JSON_SUBQUERY}                            AS authors_json,
          COALESCE(o.cover_url, b.cover_url)                  AS cover_url,
          COALESCE(o.language, b.language)                    AS language,
          COALESCE(o.publish_date, b.publish_date)            AS publish_date,
@@ -117,7 +135,7 @@ export async function fetchCustomFields(db: D1Database, userId: number, bookIds:
 }
 
 
-export const titleCase = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
+export const titleCase = (s: string) => s.replace(/(^|[\s-])\p{L}/gu, c => c.toUpperCase())
 
 export function parseTagArray(raw: string | null): string[] {
   if (!raw) return []
@@ -129,15 +147,32 @@ export function parseTagArray(raw: string | null): string[] {
   }
 }
 
+// authors_json is a json_group_array(json_object(...)) from buildScanSelect's correlated
+// subquery; [] (unlinked work, or work_id NULL) is the common case until enrichment links authors.
+export function parseAuthorsJson(raw: string | null): AuthorRef[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr.filter(
+      (v): v is AuthorRef =>
+        v && typeof v === 'object' && typeof v.name === 'string' && v.name !== '',
+    )
+  } catch {
+    return []
+  }
+}
+
 export function attachCustomFields(
   row: any,
   defs: { id: number; name: string; type: string }[],
   valuesByBook: Map<number, Map<number, string | null>>,
 ) {
-  const { book_id, ...rest } = row
+  const { book_id, authors_json, ...rest } = row
   const bookVals = valuesByBook.get(book_id)
   return {
     ...rest,
+    authors:             parseAuthorsJson(authors_json),
     genres:              parseTagArray(rest.genres).map(titleCase),
     awards:              parseTagArray(rest.awards),
     nominations:         parseTagArray(rest.nominations),

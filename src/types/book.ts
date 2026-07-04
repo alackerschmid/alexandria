@@ -1,10 +1,16 @@
 export type ReadStatus = 'unread' | 'reading' | 'read' | 'dnf'
 
+export interface AuthorRef {
+  name: string
+  wikidata_qid: string | null
+}
+
 export interface Book {
   id: number
   isbn: string
   title: string | null
   author: string | null
+  authors?: AuthorRef[]
   cover_url: string | null
   status: ReadStatus
   created_at: string

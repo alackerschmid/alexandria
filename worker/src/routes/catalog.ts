@@ -2,12 +2,17 @@ import { Hono } from 'hono'
 import type { Env } from '../types'
 import { authMiddleware } from '../auth'
 import { fetchOpenLibraryEditions, fetchOpenLibraryEditionsByWorkId, saveEditionCandidates } from '../editions'
+import { rateLimitOrReject } from '../rate-limit'
 
 export const works = new Hono<Env>()
 export const series = new Hono<Env>()
 
 works.use('*', authMiddleware)
 series.use('*', authMiddleware)
+
+// Each call can fire an uncapped OpenLibrary fetch (and a retry loop is possible when discovery
+// keeps failing, since a failed attempt doesn't set editions_checked_at and stays retryable).
+const DISCOVER_RATE_LIMIT = 20
 
 type EditionRow = {
   isbn: string
@@ -66,6 +71,9 @@ works.post('/:workId/editions/discover', async (c) => {
   const userId = c.get('userId')
   const workId = c.req.param('workId')
   const db = c.env.DB
+
+  const blocked = await rateLimitOrReject(c, `discover:${userId}`, DISCOVER_RATE_LIMIT, 1, 'Too many requests — please slow down')
+  if (blocked) return blocked
 
   const work = await db.prepare('SELECT editions_checked_at, openlibrary_work_id FROM works WHERE id = ?')
     .bind(workId)

@@ -4,6 +4,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { parseTagList } from '@/utils/tags'
 import { bookCustomValue } from '@/utils/custom-fields'
 import { languageDisplayFormatter } from '@/utils/language'
+import { authorNames } from '@/utils/book-display'
 import { STATUS_ORDER } from '@/composables/useBookStatus'
 import type { Book, ReadStatus } from '@/types/book'
 import type { CustomFieldMeta } from '@/composables/useGroupDimensions'
@@ -244,7 +245,7 @@ export function useLibrarySearch(options: {
       )
     }
     if (author) {
-      list = list.filter(b => b.author?.toLowerCase().includes(author))
+      list = list.filter(b => authorNames(b).some(n => n.toLowerCase().includes(author)))
     }
     if (genre) {
       list = list.filter(b =>
@@ -296,7 +297,7 @@ export function useLibrarySearch(options: {
       list = list.filter(
         b =>
           b.title?.toLowerCase().includes(text) ||
-          b.author?.toLowerCase().includes(text) ||
+          authorNames(b).some(n => n.toLowerCase().includes(text)) ||
           b.isbn.includes(text),
       )
     }
@@ -358,7 +359,7 @@ export function useLibrarySearch(options: {
     }
 
     for (const b of pool) {
-      if (b.author) pushFacet('author', b.author, 'mdi-account-outline', authorLabel)
+      for (const name of authorNames(b)) pushFacet('author', name, 'mdi-account-outline', authorLabel)
       for (const g of b.genres ?? []) pushFacet('genre', g, 'mdi-tag-outline', genreLabel)
       if (b.series_name) pushFacet('series', b.series_name, 'mdi-bookshelf', seriesLabel)
       if (b.publisher) pushFacet('publisher', b.publisher, 'mdi-domain', publisherLabel)

@@ -4,7 +4,7 @@ import { useLocaleStore } from '@/stores/locale'
 import { useFieldDefsStore } from '@/stores/fieldDefs'
 import { parseTagList } from '@/utils/tags'
 import { bookCustomValue } from '@/utils/custom-fields'
-import { sortByCreatedAt } from '@/utils/book-display'
+import { sortByCreatedAt, authorNames } from '@/utils/book-display'
 import { languageDisplayFormatter } from '@/utils/language'
 import type { Book, ReadStatus } from '@/types/book'
 import type { GroupBy, SortOption } from '@/types/library'
@@ -192,7 +192,7 @@ export function useLibraryGrouping(options: {
     switch (gb) {
       case 'author':
         return groupByValues(books, dir, locale, {
-          values: b => (b.author ? [b.author] : []),
+          values: authorNames,
           missingKey: '__unknown__',
           missingLabel: t('book.unknown_author'),
         })

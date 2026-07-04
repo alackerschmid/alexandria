@@ -1,3 +1,6 @@
+import type { Context } from 'hono'
+import type { Env } from './types'
+
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number }
 
 // Fixed-window rate limiter backed by D1. `key` is caller-defined (e.g. `scan:<userId>`) so one
@@ -27,4 +30,21 @@ export async function checkRateLimit(
   const count = row?.count ?? 1
   const retryAfterSeconds = Math.max(0, Math.ceil((windowStart + windowMs - now) / 1000))
   return { allowed: count <= limit, retryAfterSeconds }
+}
+
+// Checks the rate limit and, if exceeded, sets the Retry-After header and returns the 429
+// response to send. Returns null when the request is allowed, so call sites read as:
+//   const blocked = await rateLimitOrReject(c, key, limit, windowMinutes, message)
+//   if (blocked) return blocked
+export async function rateLimitOrReject(
+  c: Context<Env>,
+  key: string,
+  limit: number,
+  windowMinutes: number,
+  message: string,
+): Promise<Response | null> {
+  const rateLimit = await checkRateLimit(c.env.DB, key, limit, windowMinutes)
+  if (rateLimit.allowed) return null
+  c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+  return c.json({ error: message }, 429)
 }

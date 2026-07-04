@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - npm 10+
 
 **Local development:**
-1. `npm install` (installs both root and worker dependencies via `npm install` at root)
+1. `npm install` at root, then `cd worker && npm install` — the worker has its own `package.json`/lockfile and is not covered by the root install
 2. Create `worker/.dev.vars` with required secrets:
    ```
    JWT_SECRET=<any-random-string-for-local-dev>
@@ -63,10 +63,11 @@ cd worker && npx wrangler d1 migrations apply bookscan --remote
 
 ### Verification
 ```bash
-npm run type-check   # Verify TypeScript (required before commit)
+npm run type-check          # Verify TypeScript (required before commit)
+cd worker && npm test       # Vitest — pure-logic unit tests (isbn, library-query, editions, enrichment, auth)
 ```
 
-Note: No test suite is currently configured. Type-checking is the primary verification mechanism.
+Note: The worker has unit tests (`worker/test/*.spec.ts`, `vitest run`) covering pure logic only — no D1/miniflare, so anything requiring a DB is untested (deliberate scope decision). The frontend has no test suite; type-checking is its primary verification mechanism.
 
 ## Architecture
 
@@ -143,7 +144,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Op
 - Scans remain `enrichment_status: pending` until background enrichment completes or is triggered manually
 - Allows users to queue scans offline; metadata resolves asynchronously in the background
 
-**Rate limiting:** `POST /api/scans` is capped at 30 scans/minute per user (`SCAN_RATE_LIMIT` in `routes/scans.ts`) via `checkRateLimit` (`rate-limit.ts`) — a generic fixed-window D1 counter backed by the `rate_limits` table (`key` TEXT, `window_start` ms-epoch bucket, `window_ms` window length, `count`). `key` is caller-defined (e.g. `scan:<userId>`) so the same table can back other rate-limited routes later without a migration. Exceeding the limit returns `429` with a `Retry-After` header; a duplicate-scan request (ISBN already in the user's library) is rejected with `409` before the rate limit is even checked, so retrying/rescanning an owned book doesn't burn quota. No other routes are rate-limited today. The cron sweeper prunes `rate_limits` rows once their own window (`window_start + window_ms`) has elapsed, so retention is correct regardless of window size.
+**Rate limiting:** `POST /api/scans` is capped at 30 scans/minute per user (`SCAN_RATE_LIMIT` in `routes/scans.ts`) via `checkRateLimit` (`rate-limit.ts`) — a generic fixed-window D1 counter backed by the `rate_limits` table (`key` TEXT, `window_start` ms-epoch bucket, `window_ms` window length, `count`). `key` is caller-defined (e.g. `scan:<userId>`) so the same table can back other rate-limited routes without a migration. Exceeding the limit returns `429` with a `Retry-After` header; a duplicate-scan request (ISBN already in the user's library) is rejected with `409` before the rate limit is even checked, so retrying/rescanning an owned book doesn't burn quota. The following routes are also rate-limited by caller IP (`CF-Connecting-IP`, keyed `<route>:<ip>`): `POST /api/auth/login` (10/min), `POST /api/auth/register` (5 per 10 min), `GET /api/books/guest-lookup` (20/min), `GET /api/books/guest-search` (15/min). No other routes are rate-limited today. The cron sweeper prunes `rate_limits` rows once their own window (`window_start + window_ms`) has elapsed, so retention is correct regardless of window size.
 
 ### Additional API routes
 
@@ -179,7 +180,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **FRBR-style works/series model** (added in migrations 0009–0011):
 
-**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at` (TEXT timestamp string despite the column's `boolean` type in migration 0010 — SQLite's dynamic typing makes this harmless), `enrichment_failure_reason` (`timeout` | `rate_limited` | `http_5xx` | `network` | `other`, set by `classifyError` in `enrichment.ts`; drives the sweeper's per-reason retry backoff), `enrichment_attempts` (failure count, caps cron-sweeper retries), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings), `narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays), `openlibrary_work_id` (from Wikidata P648, drives edition discovery), `reference_page_count` (page count of the work's Wikidata reference edition P747→P1104; display-only fallback for editions with unknown page count), `editions_checked_at` (non-NULL = OpenLibrary edition discovery already ran)
+**`works`** — one row per logical work (groups editions): `match_key` (normalized `title|primary-author`, dedup key), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `series_checked_at` (NULL = not yet enriched, acts as negative cache), `enrichment_failed_at` (TEXT timestamp string despite the column's `boolean` type in migration 0010 — SQLite's dynamic typing makes this harmless), `enrichment_failure_reason` (`timeout` | `rate_limited` | `http_5xx` | `network` | `other`, set by `classifyError` in `enrichment.ts`; drives the sweeper's per-reason retry backoff), `enrichment_attempts` (failure count, caps cron-sweeper retries), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `language_of_work_code` (ISO 639-1 code via Wikidata P407→P218; stats-only — lets `stats.ts` compare languages by code instead of fragile English-label matching, with the label comparison as a fallback for works the sweeper hasn't backfilled yet), `first_line`, `epigraph`, `subtitle` (strings), `narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays), `openlibrary_work_id` (from Wikidata P648, drives edition discovery), `reference_page_count` (page count of the work's Wikidata reference edition P747→P1104; display-only fallback for editions with unknown page count), `editions_checked_at` (non-NULL = OpenLibrary edition discovery already ran)
 
 **`authors`** — `normalized_name` (UNIQUE dedup key), `name` (display form), `wikidata_qid`
 
@@ -275,6 +276,7 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 Always run type-checks after code edits and verify they pass before considering a task complete:
 ```bash
 npm run type-check
+cd worker && npm test   # if you touched worker pure-logic functions covered by worker/test/*.spec.ts
 ```
 
 ## Troubleshooting

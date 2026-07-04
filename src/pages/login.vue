@@ -138,7 +138,6 @@ import { useRouter, useRoute } from "vue-router";
 import { useAuthStore, WELCOME_SEEN_KEY } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
-import { useGuestStore } from "@/stores/guest";
 import AppFooter from "@/components/AppFooter.vue";
 import AppHeader from "@/components/AppHeader.vue";
 import LoadingButton from "@/components/LoadingButton.vue";
@@ -148,7 +147,6 @@ const route = useRoute();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
-const guestStore = useGuestStore();
 
 const isLogin = ref(route.query.mode !== "register");
 const email = ref("");
@@ -192,10 +190,8 @@ const submit = async () => {
 
     authStore.setAuth(data.token, data.email, data.firstname ?? null);
 
-    // Sync any guest scans to the new/existing account
-    if (guestStore.scans.length > 0) {
-      await guestStore.syncToAccount(data.token);
-    }
+    // Guest scan migration is handled centrally in App.vue (reacts to isAuthenticated),
+    // so it also retries any scans that failed to sync on a previous login.
 
     router.push({ name: wasLogin ? 'dashboard' : 'welcome' });
   } catch (err: any) {

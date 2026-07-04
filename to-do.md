@@ -2,6 +2,9 @@
 
 ## new batch
 
+https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_two_questions/
+
+- implement select field options properly
 - add confirmation for switch
 - change the base page's random books to a curated batch (boolean flag in database column)
 - add focus styling from settings to all other relevant fields (isbn title search)

@@ -8,7 +8,7 @@
       :placeholder="book.isbn"
     />
     <div class="text-sm text-text-secondary/60 mb-6">
-      {{ book.author || $t("book.unknown_author") }}
+      {{ authorDisplayName(book) || $t("book.unknown_author") }}
     </div>
 
     <div class="flex flex-col gap-4">
@@ -108,6 +108,7 @@
 
 <script setup lang="ts">
 import type { Book } from "@/types/book";
+import { authorDisplayName } from "@/utils/book-display";
 
 // The editable override fields. The model object is owned by the parent
 // (which performs the save + override-flag computation); this component is
@@ -125,7 +126,7 @@ export interface EditForm {
 const form = defineModel<EditForm>("form", { required: true });
 
 defineProps<{
-  book: Pick<Book, "isbn" | "author">;
+  book: Pick<Book, "isbn" | "author" | "authors">;
   saveError: boolean;
 }>();
 </script>

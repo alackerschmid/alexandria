@@ -3,8 +3,9 @@ import type { Env } from '../types'
 import { authMiddleware } from '../auth'
 import { resolveEdition, materializeEdition } from '../editions'
 import { enrichWork } from '../enrichment'
-import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES, getBookByIsbn } from '../library-query'
-import { checkRateLimit } from '../rate-limit'
+import { SORT_CLAUSES, buildScanSelect, fetchCustomFields, attachCustomFields, VALID_STATUSES, getBookByIsbn, parseIntOr } from '../library-query'
+import { rateLimitOrReject } from '../rate-limit'
+import { normalizeIsbn, isValidIsbn, isIsbnFormat } from '../isbn'
 
 const scans = new Hono<Env>()
 
@@ -16,8 +17,8 @@ const SCAN_RATE_LIMIT = 30
 
 scans.get('/', async (c) => {
   const userId = c.get('userId')
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '200'), 500)
-  const offset = parseInt(c.req.query('offset') ?? '0')
+  const limit = Math.min(Math.max(parseIntOr(c.req.query('limit'), 200), 1), 500)
+  const offset = Math.max(parseIntOr(c.req.query('offset'), 0), 0)
   const locale = c.req.query('locale') ?? 'en'
   const orderClause = SORT_CLAUSES[c.req.query('sort') ?? ''] ?? SORT_CLAUSES.date_desc
 
@@ -33,9 +34,13 @@ scans.get('/', async (c) => {
 })
 
 scans.post('/', async (c) => {
-  const { isbn, status } = await c.req.json<{ isbn: string; status?: string }>()
-  if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
-  const initialStatus = (VALID_STATUSES as readonly string[]).includes(status ?? '') ? status : 'unread'
+  const body = await c.req.json<{ isbn: string; status?: string }>()
+  if (!body.isbn) return c.json({ error: 'ISBN is required' }, 400)
+  const isbn = normalizeIsbn(body.isbn)
+  // Format-only check (not checksum): a scanner misread that gets one check digit wrong must
+  // still queue as a pending scan rather than being hard-rejected — see resolveEdition's allowEmpty.
+  if (!isIsbnFormat(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
+  const initialStatus = (VALID_STATUSES as readonly string[]).includes(body.status ?? '') ? body.status : 'unread'
 
   const userId = c.get('userId')
   const db = c.env.DB
@@ -52,11 +57,8 @@ scans.post('/', async (c) => {
     if (dup) return c.json({ error: 'Already in your list' }, 409)
   }
 
-  const rateLimit = await checkRateLimit(db, `scan:${userId}`, SCAN_RATE_LIMIT, 1)
-  if (!rateLimit.allowed) {
-    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-    return c.json({ error: 'Too many scans — please slow down' }, 429)
-  }
+  const blocked = await rateLimitOrReject(c, `scan:${userId}`, SCAN_RATE_LIMIT, 1, 'Too many scans — please slow down')
+  if (blocked) return blocked
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, true)
@@ -130,8 +132,10 @@ scans.patch('/:id/edition', async (c) => {
   const scanId = c.req.param('id')
   const db = c.env.DB
   const locale = c.req.query('locale') ?? 'en'
-  const { isbn } = await c.req.json<{ isbn: string }>()
-  if (!isbn) return c.json({ error: 'ISBN is required' }, 400)
+  const body = await c.req.json<{ isbn: string }>()
+  if (!body.isbn) return c.json({ error: 'ISBN is required' }, 400)
+  const isbn = normalizeIsbn(body.isbn)
+  if (!isValidIsbn(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
 
   const scan = await db.prepare('SELECT book_id FROM scans WHERE id = ? AND user_id = ?')
     .bind(scanId, userId)
