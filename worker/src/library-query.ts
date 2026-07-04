@@ -1,5 +1,11 @@
 // Shared query infrastructure for scans and books routes.
 
+// Guards against garbage query params (NaN, negative offsets) reaching a D1 bind and 500ing.
+export function parseIntOr(value: string | undefined, fallback: number): number {
+  const n = parseInt(value ?? '', 10)
+  return Number.isNaN(n) ? fallback : n
+}
+
 export function getBookByIsbn(db: D1Database, isbn: string) {
   return db.prepare('SELECT id FROM books WHERE isbn = ?').bind(isbn).first<{ id: number }>()
 }
@@ -8,14 +14,18 @@ export function getBookByIsbn(db: D1Database, isbn: string) {
 export const OVERRIDE_FIELDS = ['title', 'cover_url', 'language', 'publish_date', 'number_of_pages_median', 'description', 'publisher'] as const
 export type OverrideField = typeof OVERRIDE_FIELDS[number]
 
+// Every clause ends in `s.id` (the scan's unique, monotonic primary key) as a tiebreaker —
+// without it, rows sharing the same sort value (e.g. scans saved in the same second) have no
+// deterministic order, so sequential paginated requests (see index.vue's fetchBooks) could
+// duplicate or drop a row across a page boundary.
 export const SORT_CLAUSES: Record<string, string> = {
-  date_desc: 's.created_at DESC',
-  date_asc: 's.created_at ASC',
-  title_asc: 'COALESCE(b.title, b.isbn) ASC COLLATE NOCASE',
-  title_desc: 'COALESCE(b.title, b.isbn) DESC COLLATE NOCASE',
-  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE",
-  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE",
-  series_asc: 'series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC',
+  date_desc: 's.created_at DESC, s.id DESC',
+  date_asc: 's.created_at ASC, s.id ASC',
+  title_asc: 'COALESCE(b.title, b.isbn) ASC COLLATE NOCASE, s.id ASC',
+  title_desc: 'COALESCE(b.title, b.isbn) DESC COLLATE NOCASE, s.id ASC',
+  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE, s.id ASC",
+  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE, s.id ASC",
+  series_asc: 'series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC',
 }
 
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
@@ -117,7 +127,7 @@ export async function fetchCustomFields(db: D1Database, userId: number, bookIds:
 }
 
 
-export const titleCase = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
+export const titleCase = (s: string) => s.replace(/(^|[\s-])\p{L}/gu, c => c.toUpperCase())
 
 export function parseTagArray(raw: string | null): string[] {
   if (!raw) return []

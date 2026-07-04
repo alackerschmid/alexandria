@@ -779,10 +779,14 @@ async function saveAccount() {
   }
 
   try {
-    const res = await apiFetch("/api/auth/me", {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    });
+    const res = await apiFetch(
+      "/api/auth/me",
+      {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      },
+      { on401: "ignore" },
+    );
     const data = (await res.json()) as {
       firstname?: string;
       email?: string;
@@ -814,7 +818,9 @@ async function saveAccount() {
 
 // ── Custom fields ─────────────────────────────────────────────────────────────
 
-const FIELD_TYPES = ["text", "integer", "select", "tag", "date"];
+// "select" is intentionally excluded — existing select fields still render (as text) via
+// TYPE_LABELS/worker VALID_TYPES, but the type isn't offered until proper option editing exists.
+const FIELD_TYPES = ["text", "integer", "tag", "date"];
 const TYPE_LABELS: Record<string, string> = {
   text: t("settings.fields.type_text"),
   integer: t("settings.fields.type_number"),
@@ -930,10 +936,14 @@ async function confirmDeleteAccount() {
   deleteError.value = "";
   deletingAccount.value = true;
   try {
-    const res = await apiFetch("/api/auth/me", {
-      method: "DELETE",
-      body: JSON.stringify({ password: deleteConfirmPassword.value }),
-    });
+    const res = await apiFetch(
+      "/api/auth/me",
+      {
+        method: "DELETE",
+        body: JSON.stringify({ password: deleteConfirmPassword.value }),
+      },
+      { on401: "ignore" },
+    );
     if (res.status === 204 || res.ok) {
       authStore.logout();
     } else {

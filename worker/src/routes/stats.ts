@@ -19,6 +19,7 @@ type RawRow = {
   main_subject: string | null;
   countries_of_origin: string | null;
   language_of_work: string | null;
+  language_of_work_code: string | null;
 };
 
 type SeriesRow = { label: string; count: number };
@@ -140,7 +141,8 @@ stats.get("/", async (c) => {
              wk.form_of_work                                                AS form_of_work,
              wk.main_subject                                                AS main_subject,
              wk.countries_of_origin                                         AS countries_of_origin,
-             wk.language_of_work                                            AS language_of_work
+             wk.language_of_work                                            AS language_of_work,
+             wk.language_of_work_code                                       AS language_of_work_code
       FROM scans s
       JOIN books b ON s.book_id = b.id
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
@@ -370,13 +372,20 @@ stats.get("/", async (c) => {
     .filter((v): v is NonNullable<typeof v> => !!v)
     .sort((a, b) => parseInt(a.decade, 10) - parseInt(b.decade, 10));
 
-  // Translation ratio: edition language (ISO code) vs work's original language (Wikidata English label)
+  // Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
+  // ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
+  // back to the older English-label comparison for rows the sweeper hasn't reached yet.
   const langNamer = new Intl.DisplayNames(["en"], { type: "language" });
   let translatedCount = 0;
   let translationKnownCount = 0;
   for (const r of rows) {
     if (!r.language || !r.language_of_work) continue;
     translationKnownCount++;
+    if (r.language_of_work_code) {
+      if (r.language.toLowerCase() !== r.language_of_work_code.toLowerCase())
+        translatedCount++;
+      continue;
+    }
     let editionLangName: string;
     try {
       editionLangName = langNamer.of(r.language) ?? r.language;

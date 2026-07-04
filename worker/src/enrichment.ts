@@ -3,7 +3,7 @@ import { splitAuthors, materializeEdition, normalizeStr, discoverEditionsFromOpe
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
-export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 3
+export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 4
 
 const WIKIDATA_ENDPOINT = 'https://query.wikidata.org/sparql'
 const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)'
@@ -31,7 +31,8 @@ export const DEFAULT_RETRY_POLICY = { capAttempts: 5, backoffMinutes: 30 }
 
 // Thrown by runSparql with a classified `kind` so enrichWork's catch block can record *why*
 // enrichment failed (enrichment_failure_reason) instead of lumping every failure together.
-class SparqlError extends Error {
+// Exported for unit testing classifyError below.
+export class SparqlError extends Error {
   kind: FailureReason
   constructor(message: string, kind: FailureReason) {
     super(message)
@@ -45,7 +46,7 @@ class SparqlError extends Error {
 // exception from mergeWorks/upsertSeries/populateSeriesMembers, etc.) is infrastructure-adjacent
 // noise, not evidence of a hopeless work, so it gets the lenient default policy ('network') rather
 // than 'other's tight 2-attempt cap.
-function classifyError(e: unknown): FailureReason {
+export function classifyError(e: unknown): FailureReason {
   return e instanceof SparqlError ? e.kind : 'network'
 }
 
@@ -164,7 +165,7 @@ async function fetchBookInfo(title: string, author: string): Promise<{ workQid: 
 async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   const empty: WorkDetails = {
     genres: [], originalPubDate: null, awards: [], nominations: [],
-    mainSubject: null, formOfWork: null, languageOfWork: null,
+    mainSubject: null, formOfWork: null, languageOfWork: null, languageOfWorkCode: null,
     firstLine: null, epigraph: null, narrativeLocations: [], countriesOfOrigin: [],
     subtitle: null, translator: [], illustrator: [], characters: [],
     openlibraryWorkId: null, referencePageCount: null,
@@ -176,7 +177,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   console.log('[fetchWorkDetails] fetching details for', workQid)
   const query = `
     SELECT ?genres ?originalPubDate ?awards ?nominations
-           ?mainSubject ?formOfWork ?languageOfWork ?firstLine ?epigraph
+           ?mainSubject ?formOfWork ?languageOfWork ?languageOfWorkCode ?firstLine ?epigraph
            ?narrativeLocations ?countriesOfOrigin
            ?subtitle ?translators ?illustrators ?characters
            ?olWorkId ?refPageCount WHERE {
@@ -200,6 +201,8 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
       { SELECT (SAMPLE(?langLabel) AS ?languageOfWork) WHERE {
           OPTIONAL { wd:${workQid} wdt:P407 ?lang.
                      ?lang rdfs:label ?langLabel. FILTER(LANG(?langLabel) = "en") } } }
+      { SELECT (SAMPLE(?langCode) AS ?languageOfWorkCode) WHERE {
+          OPTIONAL { wd:${workQid} wdt:P407 ?lang2. ?lang2 wdt:P218 ?langCode. } } }
       { SELECT (SAMPLE(STR(?fl)) AS ?firstLine) WHERE {
           OPTIONAL { wd:${workQid} wdt:P1922 ?fl. } } }
       { SELECT (SAMPLE(STR(?ep)) AS ?epigraph) WHERE {
@@ -248,6 +251,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
     mainSubject:       strOrNull(row?.mainSubject?.value),
     formOfWork:        strOrNull(row?.formOfWork?.value),
     languageOfWork:    strOrNull(row?.languageOfWork?.value),
+    languageOfWorkCode: strOrNull(row?.languageOfWorkCode?.value),
     firstLine:         strOrNull(row?.firstLine?.value),
     epigraph:          strOrNull(row?.epigraph?.value),
     narrativeLocations: splitPipe(row?.narrativeLocations?.value),
@@ -400,7 +404,22 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     // backfill path passes force=false), so new Wikidata columns get populated without a force-refresh.
     const schemaStale = (w.enrichment_schema_version ?? 0) < CURRENT_ENRICHMENT_SCHEMA_VERSION
     if (w.series_checked_at && !force && !schemaStale) { console.log(`[enrichWork] already enriched (series_checked_at=${w.series_checked_at}), skipping`); return }
-    // Clear series_checked_at so the enrichment poll sees 'pending' while we run SPARQL.
+
+    // Claim the work atomically so a concurrent invocation (cron sweeper vs. a manual
+    // refresh/lookup) can't run the same SPARQL work twice. A stale claim (a run that crashed
+    // without clearing it) expires after 2 minutes. force=true still respects an in-flight run.
+    const claim = await db.prepare(
+      "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
+    ).bind(workId).run()
+    if (claim.meta.changes === 0) {
+      console.log(`[enrichWork] work ${workId} already has an enrichment in flight, skipping`)
+      return
+    }
+
+    // Clear series_checked_at so the enrichment poll sees 'pending' while we run SPARQL. Done
+    // only now, after winning the claim — clearing it before the claim risked leaving the work
+    // stuck looking 'pending' forever if this call then lost the claim and the in-flight run it
+    // deferred to later failed (which doesn't restore series_checked_at).
     if (force) await db.prepare('UPDATE works SET series_checked_at = NULL WHERE id = ?').bind(workId).run()
 
     let workQid: string | null = w.wikidata_qid
@@ -418,7 +437,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       const title = ed?.title ?? w.canonical_title
       if (!title) {
         console.warn(`[enrichWork] no title for work ${workId}, marking done`)
-        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL, enrichment_failure_reason = NULL WHERE id = ?").bind(workId).run()
+        await db.prepare("UPDATE works SET series_checked_at = datetime('now'), enrichment_failed_at = NULL, enrichment_failure_reason = NULL, enrichment_started_at = NULL WHERE id = ?").bind(workId).run()
         await recordRun(db, workId, startedAt, 'not_found', null, source)
         return
       }
@@ -445,6 +464,16 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
           await mergeWorks(db, workId, existing.id)
           canonicalId = existing.id
           merged = true
+          // The claim above was taken on workId, which mergeWorks just deleted. Re-claim the
+          // canonical row so a second concurrent enrichWork that resolves to the same existing
+          // work can't race this one on the series/detail writes below.
+          const canonicalClaim = await db.prepare(
+            "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
+          ).bind(canonicalId).run()
+          if (canonicalClaim.meta.changes === 0) {
+            console.log(`[enrichWork] canonical work ${canonicalId} already has an enrichment in flight, skipping after merge`)
+            return
+          }
         } else {
           console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`)
           await db.prepare('UPDATE works SET wikidata_qid = ? WHERE id = ?').bind(info.workQid, workId).run()
@@ -522,6 +551,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
         enrichment_failed_at      = NULL,
         enrichment_failure_reason = NULL,
         enrichment_attempts       = 0,
+        enrichment_started_at     = NULL,
         enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
         genres                    = ${coalesce('genres')},
         original_pub_date         = ${coalesce('original_pub_date')},
@@ -530,6 +560,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
         main_subject              = ${coalesce('main_subject')},
         form_of_work              = ${coalesce('form_of_work')},
         language_of_work          = ${coalesce('language_of_work')},
+        language_of_work_code     = ${coalesce('language_of_work_code')},
         first_line                = ${coalesce('first_line')},
         epigraph                  = ${coalesce('epigraph')},
         narrative_locations       = ${coalesce('narrative_locations')},
@@ -543,7 +574,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       WHERE id = ?`)
       .bind(genresJson, pubDate, awardsJson, nominJson,
             details?.mainSubject ?? null, details?.formOfWork ?? null,
-            details?.languageOfWork ?? null, details?.firstLine ?? null,
+            details?.languageOfWork ?? null, details?.languageOfWorkCode ?? null, details?.firstLine ?? null,
             details?.epigraph ?? null, narLocsJson, countriesJson,
             details?.subtitle ?? null, translatorJson, illustratorJson, charactersJson,
             details?.openlibraryWorkId ?? null, details?.referencePageCount ?? null,
@@ -557,7 +588,7 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     const reason = classifyError(e)
     try {
       await db.prepare(
-        "UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1, enrichment_failure_reason = ? WHERE id = ?",
+        "UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1, enrichment_failure_reason = ?, enrichment_started_at = NULL WHERE id = ?",
       ).bind(reason, failTarget).run()
     } catch {}
     await recordRun(db, failTarget, startedAt, 'failed', reason, source)

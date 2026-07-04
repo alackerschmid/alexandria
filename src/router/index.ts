@@ -17,6 +17,8 @@ declare module 'vue-router' {
   interface RouteMeta {
     /** Show the persistent mobile bottom tab bar (Home / Scan / Settings) on this route. */
     mobileNav?: boolean
+    /** Redirect unauthenticated users to `/` instead of rendering this route. */
+    requiresAuth?: boolean
   }
 }
 
@@ -32,7 +34,7 @@ const router = createRouter({
       path: '/home',
       name: 'dashboard',
       component: Home,
-      meta: { mobileNav: true },
+      meta: { mobileNav: true, requiresAuth: true },
     },
     {
       path: '/library',
@@ -59,13 +61,13 @@ const router = createRouter({
       path: '/series/:id',
       name: 'series',
       component: () => import('@/pages/series.vue'),
-      meta: { mobileNav: true },
+      meta: { mobileNav: true, requiresAuth: true },
     },
     {
       path: '/settings',
       name: 'settings',
       component: () => import('@/pages/settings.vue'),
-      meta: { mobileNav: true },
+      meta: { mobileNav: true, requiresAuth: true },
     },
     {
       path: '/privacy',
@@ -87,7 +89,7 @@ router.beforeEach((to) => {
     if (to.name === 'login') return { name: 'dashboard' }
     if (to.name === 'welcome' && localStorage.getItem(WELCOME_SEEN_KEY)) return { name: 'dashboard' }
   }
-  if (!authStore.isAuthenticated && (to.name === 'dashboard' || to.name === 'series')) {
+  if (!authStore.isAuthenticated && to.meta.requiresAuth) {
     return { name: 'home' }
   }
 })

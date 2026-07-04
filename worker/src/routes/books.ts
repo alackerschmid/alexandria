@@ -3,9 +3,16 @@ import type { Env, BookRow } from '../types'
 import { authMiddleware } from '../auth'
 import { resolveEdition, fetchBookMetadata, linkWork, searchBooksByTitle } from '../editions'
 import { enrichWork } from '../enrichment'
-import { getBookByIsbn, OVERRIDE_FIELDS, type OverrideField } from '../library-query'
+import { getBookByIsbn, OVERRIDE_FIELDS, parseIntOr, type OverrideField } from '../library-query'
+import { normalizeIsbn, isValidIsbn } from '../isbn'
+import { checkRateLimit } from '../rate-limit'
 
 const books = new Hono<Env>()
+
+// /refresh forces a fresh Google Books/OpenLibrary fetch plus a forced Wikidata SPARQL
+// re-run (enrichWork force=true) — the most expensive call path in the app — so it gets a
+// tighter per-user cap than routine per-scan traffic.
+const REFRESH_RATE_LIMIT = 10
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────
 
@@ -13,8 +20,17 @@ const books = new Hono<Env>()
 // anonymous traffic driving Wikidata load; the work gets enriched when an authenticated
 // user looks it up or scans it.
 books.get('/guest-lookup', async (c) => {
-  const isbn = c.req.query('isbn')
-  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rateLimit = await checkRateLimit(c.env.DB, `guest-lookup:${ip}`, 20, 1)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many requests — please slow down' }, 429)
+  }
+
+  const rawIsbn = c.req.query('isbn')
+  if (!rawIsbn) return c.json({ error: 'ISBN required' }, 400)
+  const isbn = normalizeIsbn(rawIsbn)
+  if (!isValidIsbn(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
 
   const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, false, true)
   if (!book) return c.json({ notFound: true }, 404)
@@ -23,6 +39,13 @@ books.get('/guest-lookup', async (c) => {
 
 // Public guest title search — no auth. Mirrors /search for unauthenticated users.
 books.get('/guest-search', async (c) => {
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rateLimit = await checkRateLimit(c.env.DB, `guest-search:${ip}`, 15, 1)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many requests — please slow down' }, 429)
+  }
+
   const title = c.req.query('title')?.trim()
   const author = c.req.query('author')?.trim() || undefined
   const publisher = c.req.query('publisher')?.trim() || undefined
@@ -35,7 +58,7 @@ books.get('/guest-search', async (c) => {
 // re-run the ORDER BY RANDOM() full scan on every hit. A 10-min-stale random sample is
 // fine for a marketing preview.
 books.get('/sample', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '3'), 12)
+  const limit = Math.min(Math.max(parseIntOr(c.req.query('limit'), 3), 1), 12)
   const db = c.env.DB
 
   const cache = caches.default
@@ -77,8 +100,10 @@ books.get('/search', async (c) => {
 
 // Book metadata lookup — checks DB cache first, then Google Books, then OpenLibrary.
 books.get('/lookup', async (c) => {
-  const isbn = c.req.query('isbn')
-  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+  const rawIsbn = c.req.query('isbn')
+  if (!rawIsbn) return c.json({ error: 'ISBN required' }, 400)
+  const isbn = normalizeIsbn(rawIsbn)
+  if (!isValidIsbn(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
 
   const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY)
   if (!book) return c.json({ error: 'Book not found' }, 404)
@@ -89,8 +114,17 @@ books.get('/lookup', async (c) => {
 // Refresh book metadata — tries Google Books then OpenLibrary, fills NULL fields only
 // (a 0 page count also counts as missing — Google returns 0 when the count is unknown).
 books.post('/refresh', async (c) => {
-  const isbn = c.req.query('isbn')
-  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+  const rawIsbn = c.req.query('isbn')
+  if (!rawIsbn) return c.json({ error: 'ISBN required' }, 400)
+  const isbn = normalizeIsbn(rawIsbn)
+  if (!isValidIsbn(isbn)) return c.json({ error: 'Invalid ISBN' }, 400)
+
+  const userId = c.get('userId')
+  const rateLimit = await checkRateLimit(c.env.DB, `refresh:${userId}`, REFRESH_RATE_LIMIT, 1)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many refresh requests — please slow down' }, 429)
+  }
 
   const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY)
   if (!bookData) return c.json({ error: 'Book not found in any source' }, 404)
@@ -137,9 +171,10 @@ books.post('/refresh', async (c) => {
 
 books.patch('/override', async (c) => {
   const userId = c.get('userId')
-  const { isbn, changes } = await c.req.json<{ isbn: string; changes: Partial<Record<OverrideField, string | number | null>> }>()
+  const { isbn: rawIsbn, changes } = await c.req.json<{ isbn: string; changes: Partial<Record<OverrideField, string | number | null>> }>()
 
-  if (!isbn) return c.json({ error: 'ISBN required' }, 400)
+  if (!rawIsbn) return c.json({ error: 'ISBN required' }, 400)
+  const isbn = normalizeIsbn(rawIsbn)
 
   const validFields = Object.keys(changes ?? {}).filter(f => (OVERRIDE_FIELDS as readonly string[]).includes(f)) as OverrideField[]
   if (!validFields.length) return c.json({ ok: true })
@@ -170,9 +205,10 @@ books.patch('/custom-fields', async (c) => {
   const userId = c.get('userId')
   const body = await c.req.json<{ isbn: string; values: Array<{ field_def_id: number; value: string }> }>()
   if (!body.isbn) return c.json({ error: 'ISBN required' }, 400)
+  const isbn = normalizeIsbn(body.isbn)
 
   const [book, { results: ownedDefs }] = await Promise.all([
-    getBookByIsbn(c.env.DB, body.isbn),
+    getBookByIsbn(c.env.DB, isbn),
     c.env.DB.prepare('SELECT id FROM user_field_definitions WHERE user_id = ?').bind(userId).all<{ id: number }>(),
   ])
   if (!book) return c.json({ error: 'Book not found' }, 404)

@@ -56,19 +56,23 @@ export const useGuestStore = defineStore('guest', () => {
 
   async function syncToAccount(token: string): Promise<void> {
     const toSync = [...scans.value].reverse() // oldest first
+    const failedIsbns = new Set<string>()
     for (const scan of toSync) {
       try {
-        await fetch(`${API_BASE}/api/scans`, {
+        const res = await fetch(`${API_BASE}/api/scans`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ isbn: scan.isbn }),
+          body: JSON.stringify({ isbn: scan.isbn, status: scan.status }),
         })
         // 409 duplicate → already in account, fine
+        if (!res.ok && res.status !== 409) failedIsbns.add(scan.isbn)
       } catch {
-        // network error → skip silently
+        failedIsbns.add(scan.isbn)
       }
     }
-    clear()
+    // Keep failures around so they survive for a retry on next login.
+    scans.value = scans.value.filter(s => failedIsbns.has(s.isbn))
+    persist()
   }
 
   function clear() {

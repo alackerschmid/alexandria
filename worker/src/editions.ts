@@ -19,7 +19,7 @@ async function fetchFromGoogleBooks(
   apiKey: string,
 ): Promise<BookMetadata | null> {
   const res = await fetchWithTimeout(
-    `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&key=${apiKey}`,
+    `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}&key=${apiKey}`,
   );
   const data: any = await res.json();
   const info = data.items?.[0]?.volumeInfo;
@@ -55,7 +55,7 @@ async function fetchFromOpenLibrary(
   isbn: string,
 ): Promise<BookMetadata | null> {
   const bibkey = `ISBN:${isbn}`;
-  const base = `https://openlibrary.org/api/books?bibkeys=${bibkey}&format=json`;
+  const base = `https://openlibrary.org/api/books?bibkeys=${encodeURIComponent(bibkey)}&format=json`;
 
   // Fetch data (existing fields) and details (physical_dimensions, edition_name) in parallel.
   // details fetch is best-effort; failures leave those fields null.
@@ -92,7 +92,7 @@ async function fetchFromOpenLibrary(
 }
 
 // Fill any null field in `primary` from `fallback` (primary's non-null values always win).
-function mergeMetadata(
+export function mergeMetadata(
   primary: BookMetadata,
   fallback: BookMetadata,
 ): BookMetadata {

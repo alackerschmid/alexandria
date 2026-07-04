@@ -2,11 +2,21 @@ import { Hono } from 'hono'
 import * as bcrypt from 'bcryptjs'
 import type { Env } from '../types'
 import { EMAIL_RE, signToken, authMiddleware } from '../auth'
+import { checkRateLimit } from '../rate-limit'
 
 const auth = new Hono<Env>()
 
 auth.post('/register', async (c) => {
-  const { email, password } = await c.req.json()
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rateLimit = await checkRateLimit(c.env.DB, `register:${ip}`, 5, 10)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many registration attempts — please slow down' }, 429)
+  }
+
+  const body = await c.req.json()
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email
+  const { password } = body
 
   if (!email || !EMAIL_RE.test(email)) {
     return c.json({ error: 'A valid email address is required' }, 400)
@@ -18,11 +28,13 @@ auth.post('/register', async (c) => {
   const db = c.env.DB
   const hash = bcrypt.hashSync(password, 10)
 
+  let userId: number
   try {
-    await db
+    const result = await db
       .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
       .bind(email, hash)
       .run()
+    userId = result.meta.last_row_id
   } catch (e: any) {
     if (e.message?.includes('UNIQUE constraint failed')) {
       return c.json({ error: 'An account with that email already exists' }, 409)
@@ -30,17 +42,21 @@ auth.post('/register', async (c) => {
     return c.json({ error: 'Failed to create account' }, 500)
   }
 
-  const user = await db
-    .prepare('SELECT id FROM users WHERE email = ?')
-    .bind(email)
-    .first<{ id: number }>()
-
-  const token = await signToken(user!.id, c.env.JWT_SECRET)
+  const token = await signToken(userId, c.env.JWT_SECRET)
   return c.json({ token, email, firstname: null }, 201)
 })
 
 auth.post('/login', async (c) => {
-  const { email, password } = await c.req.json()
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown'
+  const rateLimit = await checkRateLimit(c.env.DB, `login:${ip}`, 10, 1)
+  if (!rateLimit.allowed) {
+    c.header('Retry-After', String(rateLimit.retryAfterSeconds))
+    return c.json({ error: 'Too many login attempts — please slow down' }, 429)
+  }
+
+  const body = await c.req.json()
+  const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email
+  const { password } = body
 
   if (!email || !password) {
     return c.json({ error: 'Email and password are required' }, 400)

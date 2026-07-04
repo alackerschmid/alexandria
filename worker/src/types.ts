@@ -48,6 +48,7 @@ export type WorkRow = {
   main_subject: string | null
   form_of_work: string | null
   language_of_work: string | null
+  language_of_work_code: string | null
   first_line: string | null
   epigraph: string | null
   narrative_locations: string | null
@@ -83,6 +84,7 @@ export type WorkDetails = {
   mainSubject: string | null
   formOfWork: string | null
   languageOfWork: string | null
+  languageOfWorkCode: string | null
   firstLine: string | null
   epigraph: string | null
   narrativeLocations: string[]
