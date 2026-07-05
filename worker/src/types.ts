@@ -36,6 +36,8 @@ export type WorkRow = {
   wikidata_qid: string | null
   canonical_title: string | null
   original_language: string | null
+  enrichment_status: 'pending' | 'done' | 'failed' | 'exhausted'
+  next_retry_at: string | null
   series_checked_at: string | null
   enrichment_failed_at: string | null
   enrichment_failure_reason: string | null

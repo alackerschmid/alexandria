@@ -10,9 +10,9 @@ const WIKIDATA_UA = 'BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.
 
 export type FailureReason = 'timeout' | 'rate_limited' | 'http_5xx' | 'network' | 'other'
 
-// Per-reason sweeper retry policy. Typed as Record<FailureReason, ...> so adding a new
-// FailureReason value is a compile error here until a policy is assigned — the sweeper's SQL
-// CASE (worker/src/sweeper.ts) is generated from this map, so the two can't drift apart silently.
+// Per-reason retry policy, applied by scheduleRetry at failure time. Typed as
+// Record<FailureReason, ...> so adding a new FailureReason value is a compile error here
+// until a policy is assigned.
 //   - rate_limited: Wikidata is just asking us to slow down — retry soon (5 min), default cap.
 //   - timeout: a work that repeatedly times out is unlikely to resolve quickly — wait longer
 //     (60 min), tighter cap (3) so we don't keep spending subrequests on a consistently slow query.
@@ -26,18 +26,40 @@ export const RETRY_POLICY: Record<FailureReason, { capAttempts: number; backoffM
   http_5xx:     { capAttempts: 5, backoffMinutes: 30 },
   network:      { capAttempts: 5, backoffMinutes: 30 },
 }
-// Legacy rows enriched before enrichment_failure_reason existed (NULL reason).
-export const DEFAULT_RETRY_POLICY = { capAttempts: 5, backoffMinutes: 30 }
+
+// Backstop past the per-reason caps: a work that has exhausted its cap (e.g. a genuinely bad
+// title/author match that will never resolve) is marked 'exhausted' rather than dropped —
+// it still gets one retry per long cooldown, so nothing is ever stuck forever without an
+// automated path back in. Manual POST /api/books/refresh remains the immediate force path.
+export const LONG_COOLDOWN_MINUTES = 2 * 24 * 60
+
+// Decides, at failure time, when a work is next due for a sweeper retry. `attempts` is the
+// total failure count *including* the failure being recorded. A Retry-After hint from Wikidata
+// overrides the policy backoff when it asks for a longer wait (never a shorter one — the policy
+// backoff also spaces out our own load). Pure — unit-tested in test/enrichment.spec.ts.
+export function scheduleRetry(
+  reason: FailureReason,
+  attempts: number,
+  retryAfterSeconds?: number,
+): { status: 'failed' | 'exhausted'; nextRetryMinutes: number } {
+  const policy = RETRY_POLICY[reason]
+  if (attempts >= policy.capAttempts) return { status: 'exhausted', nextRetryMinutes: LONG_COOLDOWN_MINUTES }
+  const hintMinutes = retryAfterSeconds ? Math.ceil(retryAfterSeconds / 60) : 0
+  return { status: 'failed', nextRetryMinutes: Math.max(policy.backoffMinutes, hintMinutes) }
+}
 
 // Thrown by runSparql with a classified `kind` so enrichWork's catch block can record *why*
 // enrichment failed (enrichment_failure_reason) instead of lumping every failure together.
-// Exported for unit testing classifyError below.
+// retryAfterSeconds carries Wikidata's Retry-After hint on a final 429, so scheduleRetry can
+// honor the server's own suggested wait. Exported for unit testing classifyError below.
 export class SparqlError extends Error {
   kind: FailureReason
-  constructor(message: string, kind: FailureReason) {
+  retryAfterSeconds?: number
+  constructor(message: string, kind: FailureReason, retryAfterSeconds?: number) {
     super(message)
     this.name = 'SparqlError'
     this.kind = kind
+    this.retryAfterSeconds = retryAfterSeconds
   }
 }
 
@@ -91,7 +113,8 @@ async function runSparql(query: string, timeoutMs = 25_000): Promise<any[]> {
   }
   if (!res.ok) {
     const kind: FailureReason = res.status === 429 ? 'rate_limited' : res.status >= 500 ? 'http_5xx' : 'other'
-    throw new SparqlError(`[SPARQL] HTTP ${res.status} ${res.statusText}`, kind)
+    const retryAfter = res.status === 429 ? Number(res.headers.get('Retry-After')) || undefined : undefined
+    throw new SparqlError(`[SPARQL] HTTP ${res.status} ${res.statusText}`, kind, retryAfter)
   }
   const data: any = await res.json()
   const rows: any[] = data?.results?.bindings ?? []
@@ -369,12 +392,18 @@ async function populateSeriesMembers(db: D1Database, seriesId: number, seriesQid
       .bind(seriesId, m.ordinal, m.qid)))
 }
 
+// A stale claim (a run that crashed without clearing it) expires after this long. Must
+// comfortably exceed a worst-case enrichWork run — several SPARQL calls at 25s timeout each,
+// plus 429 retry sleeps and Google Books/OpenLibrary calls — or a live run's claim can be
+// stolen mid-flight. 5 minutes = one cron interval.
+const CLAIM_TTL_MINUTES = 5
+
 // Atomically claims a work for enrichment so a concurrent invocation (cron sweeper vs. a manual
-// refresh/lookup) can't run the same SPARQL work twice. A stale claim (a run that crashed without
-// clearing it) expires after 2 minutes. Returns false if another run currently holds the claim.
+// refresh/lookup) can't run the same SPARQL work twice. Returns false if another run currently
+// holds the claim.
 async function claimWork(db: D1Database, workId: number): Promise<boolean> {
   const claim = await db.prepare(
-    "UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-2 minutes'))",
+    `UPDATE works SET enrichment_started_at = datetime('now') WHERE id = ? AND (enrichment_started_at IS NULL OR enrichment_started_at < datetime('now', '-${CLAIM_TTL_MINUTES} minutes'))`,
   ).bind(workId).run()
   return claim.meta.changes > 0
 }
@@ -508,6 +537,8 @@ async function persistWorkDetails(db: D1Database, canonicalId: number, details: 
   const coalesce = (col: string) => force ? '?' : `COALESCE(?, ${col})`
   const updateResult = await db.prepare(`
     UPDATE works SET
+      enrichment_status         = 'done',
+      next_retry_at             = NULL,
       series_checked_at         = datetime('now'),
       enrichment_failed_at      = NULL,
       enrichment_failure_reason = NULL,
@@ -575,10 +606,10 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     console.log(`[enrichWork] start workId=${workId} force=${force}`)
     const w = await db.prepare('SELECT * FROM works WHERE id = ?').bind(workId).first<WorkRow>()
     if (!w) { console.warn(`[enrichWork] work ${workId} not found`); return }
-    // Re-enrich already-checked works when they're behind the current schema version (the sweeper's
+    // Re-enrich already-done works when they're behind the current schema version (the sweeper's
     // backfill path passes force=false), so new Wikidata columns get populated without a force-refresh.
     const schemaStale = (w.enrichment_schema_version ?? 0) < CURRENT_ENRICHMENT_SCHEMA_VERSION
-    if (w.series_checked_at && !force && !schemaStale) { console.log(`[enrichWork] already enriched (series_checked_at=${w.series_checked_at}), skipping`); return }
+    if (w.enrichment_status === 'done' && !force && !schemaStale) { console.log(`[enrichWork] already enriched (${w.series_checked_at}), skipping`); return }
 
     // Claim the work atomically so a concurrent invocation (cron sweeper vs. a manual
     // refresh/lookup) can't run the same SPARQL work twice. force=true still respects an
@@ -588,11 +619,11 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
       return
     }
 
-    // Clear series_checked_at so the enrichment poll sees 'pending' while we run SPARQL. Done
-    // only now, after winning the claim — clearing it before the claim risked leaving the work
-    // stuck looking 'pending' forever if this call then lost the claim and the in-flight run it
-    // deferred to later failed (which doesn't restore series_checked_at).
-    if (force) await db.prepare('UPDATE works SET series_checked_at = NULL WHERE id = ?').bind(workId).run()
+    // Reset to 'pending' so the enrichment poll sees it while we run SPARQL. Done only now,
+    // after winning the claim — resetting before the claim risked leaving the work stuck
+    // looking 'pending' forever if this call then lost the claim and the in-flight run it
+    // deferred to later failed (which doesn't restore the status to 'done').
+    if (force) await db.prepare("UPDATE works SET enrichment_status = 'pending' WHERE id = ?").bind(workId).run()
 
     const identity = await resolveWorkIdentity(db, workId, w)
     if (identity.kind === 'no-title') {
@@ -614,9 +645,23 @@ export async function enrichWork(db: D1Database, workId: number, force = false, 
     const failTarget = merged ? canonicalId : workId
     const reason = classifyError(e)
     try {
+      // Re-read attempts from the fail target: after a merge it's the canonical row, whose
+      // count differs from the row loaded at the top. The claim rules out concurrent increments.
+      const row = await db.prepare('SELECT enrichment_attempts FROM works WHERE id = ?')
+        .bind(failTarget).first<{ enrichment_attempts: number }>()
+      const attempts = (row?.enrichment_attempts ?? 0) + 1
+      const retryAfter = e instanceof SparqlError ? e.retryAfterSeconds : undefined
+      const { status, nextRetryMinutes } = scheduleRetry(reason, attempts, retryAfter)
       await db.prepare(
-        "UPDATE works SET enrichment_failed_at = datetime('now'), enrichment_attempts = enrichment_attempts + 1, enrichment_failure_reason = ?, enrichment_started_at = NULL WHERE id = ?",
-      ).bind(reason, failTarget).run()
+        `UPDATE works SET
+           enrichment_status         = ?,
+           next_retry_at             = datetime('now', '+${nextRetryMinutes} minutes'),
+           enrichment_failed_at      = datetime('now'),
+           enrichment_attempts       = ?,
+           enrichment_failure_reason = ?,
+           enrichment_started_at     = NULL
+         WHERE id = ?`,
+      ).bind(status, attempts, reason, failTarget).run()
     } catch {}
     await recordRun(db, failTarget, startedAt, 'failed', reason, source)
   }

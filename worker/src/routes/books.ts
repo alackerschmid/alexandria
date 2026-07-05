@@ -154,8 +154,8 @@ books.post('/refresh', async (c) => {
 
   if (!book) return c.json({ error: 'Book not found' }, 404)
   if (!book.work_id) await linkWork(c.env.DB, book)
-  // force=true clears series_checked_at so enrichment re-runs even if already done.
-  // Unlike the cron sweeper (which only picks up series_checked_at IS NULL), this forces any work.
+  // force=true resets enrichment_status to 'pending' so enrichment re-runs even if already done.
+  // Unlike the cron sweeper (which only picks up works that aren't 'done'), this forces any work.
   if (book.work_id) c.executionCtx.waitUntil(enrichWork(c.env.DB, book.work_id, true, c.env.GOOGLE_BOOKS_API_KEY, 'refresh'))
   return c.json(book)
 })
