@@ -64,10 +64,10 @@ export function buildScanSelect(locale: string): string {
          ws.ordinal                                          AS series_ordinal,
          (SELECT COUNT(*) FROM work_series x WHERE x.series_id = ws.series_id) AS series_total,
          CASE
-           WHEN b.work_id IS NULL                         THEN 'pending'
-           WHEN wk.enrichment_failed_at IS NOT NULL       THEN 'failed'
-           WHEN wk.series_checked_at IS NOT NULL          THEN 'done'
-           ELSE                                                'pending'
+           WHEN b.work_id IS NULL                              THEN 'pending'
+           WHEN wk.enrichment_status IN ('failed','exhausted') THEN 'failed'
+           WHEN wk.enrichment_status = 'done'                  THEN 'done'
+           ELSE                                                     'pending'
          END                                                 AS enrichment_status,
          wk.genres                                          AS genres,
          wk.original_pub_date                              AS original_pub_date,
