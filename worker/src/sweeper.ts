@@ -14,6 +14,11 @@ const RUNS_RETENTION_DAYS = 30
 // again), this just guards against clock skew. Correct regardless of which caller/window size
 // wrote the row, unlike a single fixed retention constant.
 const RATE_LIMIT_PRUNE_GRACE_MS = 5 * 60_000
+// Backstop above the per-reason RETRY_POLICY caps: a work that has exhausted its cap (e.g. a
+// genuinely bad title/author match that will never resolve) would otherwise be excluded from
+// both sweeper queries forever, with no automated path back in. Once a failure is this old, retry
+// once more regardless of attempts/cap — worst case it fails again and waits another cooldown.
+const LONG_COOLDOWN_MINUTES = 2 * 24 * 60
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
@@ -26,6 +31,17 @@ const attemptsCaseSql = (Object.entries(RETRY_POLICY) as [FailureReason, typeof 
 const backoffCaseSql = (Object.entries(RETRY_POLICY) as [FailureReason, typeof RETRY_POLICY[FailureReason]][])
   .map(([reason, p]) => `WHEN '${reason}' THEN ${p.backoffMinutes}`)
   .join(' ')
+
+// Shared retry gate for both sweeper queries: never failed, or failed but past its reason's
+// backoff/cap, or failed so long ago that it gets one more try regardless of cap. Without the
+// last clause, a work that failed enough times to hit its cap (or, for Q2, failed even once
+// before the fix that added this fragment there) would never appear in either query again.
+const retryableSql = `
+  ( enrichment_failed_at IS NULL
+    OR ( enrichment_attempts < CASE enrichment_failure_reason ${attemptsCaseSql} ELSE ${DEFAULT_RETRY_POLICY.capAttempts} END
+         AND enrichment_failed_at < datetime('now', '-' || CASE enrichment_failure_reason ${backoffCaseSql} ELSE ${DEFAULT_RETRY_POLICY.backoffMinutes} END || ' minutes') )
+    OR enrichment_failed_at < datetime('now', '-${LONG_COOLDOWN_MINUTES} minutes') )
+`
 
 // Background sweeper: drains the backlog of un-enriched works — series-member placeholders that
 // were never touched, plus works whose enrichment failed (retried with a cap + backoff).
@@ -52,23 +68,22 @@ export async function scheduled(_event: ScheduledController, env: Bindings, _ctx
   const { results: backlog } = await env.DB.prepare(`
     SELECT id FROM works
     WHERE series_checked_at IS NULL
-      AND ( enrichment_failed_at IS NULL
-            OR ( enrichment_attempts < CASE enrichment_failure_reason ${attemptsCaseSql} ELSE ${DEFAULT_RETRY_POLICY.capAttempts} END
-                 AND enrichment_failed_at < datetime('now', '-' || CASE enrichment_failure_reason ${backoffCaseSql} ELSE ${DEFAULT_RETRY_POLICY.backoffMinutes} END || ' minutes') ) )
+      AND ${retryableSql}
     ORDER BY enrichment_failed_at IS NOT NULL, id
     LIMIT ?`)
     .bind(BATCH_SIZE)
     .all<{ id: number }>()
 
-  // Q2 — schema backfill: already-enriched works missing newer Wikidata columns.
+  // Q2 — schema backfill: already-enriched works missing newer Wikidata columns, including ones
+  // where the backfill attempt itself previously failed (retried under the same policy as Q1).
   // Uses idx_works_schema_backfill.
   const remaining = Math.max(0, BATCH_SIZE - backlog.length)
   const backfill = remaining > 0
     ? (await env.DB.prepare(`
         SELECT id FROM works
         WHERE series_checked_at IS NOT NULL
-          AND enrichment_failed_at IS NULL
           AND enrichment_schema_version < ?
+          AND ${retryableSql}
         ORDER BY enrichment_schema_version, id
         LIMIT ?`)
         .bind(CURRENT_ENRICHMENT_SCHEMA_VERSION, remaining)
