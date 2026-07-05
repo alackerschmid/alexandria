@@ -58,7 +58,9 @@ books.get('/sample', async (c) => {
   const cache = caches.default
   const cacheKey = new Request(`https://bookscan-cache/sample?limit=${limit}`)
   const cached = await cache.match(cacheKey)
-  if (cached) return cached
+  // Re-wrap: cache.match responses have immutable headers, and the CORS middleware
+  // mutates response headers after the handler returns.
+  if (cached) return new Response(cached.body, cached)
 
   const [{ results }, total] = await Promise.all([
     db

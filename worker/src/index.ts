@@ -17,7 +17,7 @@ app.use('/api/*', async (c, next) => {
     origin,
     allowHeaders: ['Content-Type', 'Authorization'],
     allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-    exposeHeaders: ['Content-Type'],
+    exposeHeaders: ['Content-Type', 'Retry-After'],
   })(c, next)
 })
 
