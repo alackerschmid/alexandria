@@ -75,10 +75,12 @@ Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages
 
 Two separate deployments, both triggered by pushing to `main`:
 
-- **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main`
-- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed automatically on push to `main` via Cloudflare's Git integration (Workers Builds). `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys.
+- **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main` via Cloudflare's Git integration
+- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed by the GitHub Actions **Deploy** workflow (`.github/workflows/deploy.yml`) on push to `main`: it runs the shared verify workflow (type-check, lint, worker tests), applies pending D1 migrations, then runs `wrangler deploy`. Requires the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. The former Cloudflare Git integration (Workers Builds) for the worker is disabled. `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys (it does not apply migrations).
 
-Pushing to GitHub redeploys both the frontend and the worker. Note: deploys do **not** run D1 migrations — apply those manually with `npx wrangler d1 migrations apply bookscan --remote` (see below).
+CI: the **CI** workflow (`.github/workflows/ci.yml`) runs the same verify workflow on every push to non-`main` branches.
+
+Pushing to GitHub redeploys both the frontend and the worker. Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote` (see below).
 
 ### Frontend (`src/`)
 Vue 3 + TypeScript + Vite.
@@ -136,7 +138,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Op
 
 **Authentication:**
 - JWT tokens expire after 7 days (no refresh token mechanism; users re-login after expiry)
-- Passwords hashed with `bcryptjs`
+- Passwords hashed with Web Crypto PBKDF2 (`worker/src/password.ts`, 100k iterations, self-describing `pbkdf2$<iter>$<salt>$<hash>` format); legacy `bcryptjs` hashes still verify and are re-hashed to PBKDF2 on the next successful login (`bcryptjs` stays a dependency until all users have logged in post-migration)
 - Auth header format: `Authorization: Bearer <token>`
 
 **Offline/Queue behavior:**
@@ -300,11 +302,12 @@ cd worker && npm test   # if you touched worker pure-logic functions covered by 
 - Check server logs for migration errors
 
 **Worker not deploying:**
-- Verify `wrangler.toml` secrets are set: `npm run deploy:worker` prompts if missing
-- Check Cloudflare Workers dashboard for build errors
+- Check the GitHub Actions **Deploy** workflow run for the failing step (verify, migrations, or `wrangler deploy`)
+- Ensure the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set
 - Ensure D1 database binding exists in `worker/wrangler.toml`
+- For manual deploys: `npm run deploy:worker` prompts if wrangler secrets are missing
 
 **D1 migrations not applied:**
 - Local: run manually during dev (`npx wrangler d1 migrations apply bookscan --local`)
-- Production: **not automatic** — run `npx wrangler d1 migrations apply bookscan --remote` after deploy
+- Production: applied automatically by the Deploy workflow before `wrangler deploy`; after a **manual** deploy, run `npx wrangler d1 migrations apply bookscan --remote` yourself
 - Check migration status: `npx wrangler d1 info bookscan`

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
-import * as bcrypt from 'bcryptjs'
 import type { Env } from '../types'
 import { EMAIL_RE, signToken, authMiddleware } from '../auth'
+import { hashPassword, verifyPassword, needsRehash } from '../password'
 import { rateLimitOrReject } from '../rate-limit'
 
 const auth = new Hono<Env>()
@@ -18,12 +18,14 @@ auth.post('/register', async (c) => {
   if (!email || !EMAIL_RE.test(email)) {
     return c.json({ error: 'A valid email address is required' }, 400)
   }
-  if (!password || password.length < 8) {
+  // typeof guard: a non-string JSON value (e.g. a number) has no usable .length
+  // and would otherwise be silently coerced by hashPassword's TextEncoder.
+  if (typeof password !== 'string' || password.length < 8) {
     return c.json({ error: 'Password must be at least 8 characters' }, 400)
   }
 
   const db = c.env.DB
-  const hash = bcrypt.hashSync(password, 10)
+  const hash = await hashPassword(password)
 
   let userId: number
   try {
@@ -52,7 +54,7 @@ auth.post('/login', async (c) => {
   const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email
   const { password } = body
 
-  if (!email || !password) {
+  if (!email || typeof password !== 'string' || !password) {
     return c.json({ error: 'Email and password are required' }, 400)
   }
 
@@ -62,8 +64,21 @@ auth.post('/login', async (c) => {
     .bind(email)
     .first<{ id: number, password_hash: string, firstname: string | null }>()
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await verifyPassword(password, user.password_hash))) {
     return c.json({ error: 'Invalid email or password' }, 401)
+  }
+
+  // Lazy migration to the current hash scheme now that the plaintext is in hand.
+  // Best-effort and off the critical path: a failed rehash must not fail a
+  // verified login (the next login simply retries it).
+  if (needsRehash(user.password_hash)) {
+    c.executionCtx.waitUntil(
+      hashPassword(password)
+        .then(hash => db.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+          .bind(hash, user.id)
+          .run())
+        .catch(e => console.error('password rehash failed', e)),
+    )
   }
 
   const token = await signToken(user.id, c.env.JWT_SECRET)
@@ -110,10 +125,10 @@ auth.patch('/me', authMiddleware, async (c) => {
       .prepare('SELECT password_hash FROM users WHERE id = ?')
       .bind(userId)
       .first<{ password_hash: string }>()
-    if (!user || !bcrypt.compareSync(body.currentPassword, user.password_hash)) {
+    if (!user || !(await verifyPassword(body.currentPassword, user.password_hash))) {
       return c.json({ error: 'Current password is incorrect' }, 401)
     }
-    const newHash = bcrypt.hashSync(body.newPassword, 10)
+    const newHash = await hashPassword(body.newPassword)
     await db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(newHash, userId).run()
     result.passwordChanged = true
   }
@@ -127,7 +142,9 @@ auth.patch('/me', authMiddleware, async (c) => {
 
 auth.delete('/me', authMiddleware, async (c) => {
   const { password } = await c.req.json<{ password?: string }>()
-  if (!password) return c.json({ error: 'Password is required to delete your account' }, 400)
+  if (typeof password !== 'string' || !password) {
+    return c.json({ error: 'Password is required to delete your account' }, 400)
+  }
 
   const db = c.env.DB
   const userId = c.get('userId')
@@ -136,7 +153,7 @@ auth.delete('/me', authMiddleware, async (c) => {
     .bind(userId)
     .first<{ password_hash: string }>()
 
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+  if (!user || !(await verifyPassword(password, user.password_hash))) {
     return c.json({ error: 'Incorrect password' }, 401)
   }
 
