@@ -17,7 +17,12 @@
       </span>
       <button
         class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors text-right truncate"
-        :aria-label="$t('detail.filter_by', { field: $t('detail.publisher'), value: book.publisher })"
+        :aria-label="
+          $t('detail.filter_by', {
+            field: $t('detail.publisher'),
+            value: book.publisher,
+          })
+        "
         @click="filterBy('publisher', book.publisher!)"
       >
         {{ book.publisher }}
@@ -35,7 +40,12 @@
       </span>
       <button
         class="font-mono text-xs text-text-primary hover:text-orange-neon transition-colors"
-        :aria-label="$t('detail.filter_by', { field: $t('detail.language'), value: langDisplay(book.language) })"
+        :aria-label="
+          $t('detail.filter_by', {
+            field: $t('detail.language'),
+            value: langDisplay(book.language),
+          })
+        "
         @click="filterBy('language', book.language!)"
       >
         {{ langDisplay(book.language) }}
@@ -65,9 +75,11 @@
         {{ $t("detail.pages") }}
         <OverrideDot v-if="book.pages_overridden" class="w-1 h-1" />
       </span>
-      <span v-if="book.number_of_pages_median" class="font-mono text-xs text-text-primary">{{
-        book.number_of_pages_median
-      }}</span>
+      <span
+        v-if="book.number_of_pages_median"
+        class="font-mono text-xs text-text-primary"
+        >{{ book.number_of_pages_median }}</span
+      >
       <v-tooltip
         v-else
         location="top"

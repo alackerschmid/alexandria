@@ -49,5 +49,12 @@ export function useDeleteScan(options: {
     }
   }
 
-  return { deleteDialog, bookToDelete, deleting, deleteFailed, openDeleteDialog, confirmDelete };
+  return {
+    deleteDialog,
+    bookToDelete,
+    deleting,
+    deleteFailed,
+    openDeleteDialog,
+    confirmDelete,
+  };
 }

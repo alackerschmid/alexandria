@@ -1,10 +1,12 @@
 <template>
-  <header class="shrink-0 flex justify-between items-center px-6 md:px-14 py-4 md:py-5.5 border-b border-charcoal-border">
+  <header
+    class="shrink-0 flex justify-between items-center px-6 md:px-14 py-4 md:py-5.5 border-b border-charcoal-border"
+  >
     <router-link
       to="/home"
       class="text-orange-neon font-mono text-[9px] md:text-[10px] font-bold tracking-[0.28em] md:tracking-[0.35em] uppercase leading-snug max-w-40 md:max-w-none"
     >
-      {{ $t('app_name') }}
+      {{ $t("app_name") }}
     </router-link>
     <div class="flex items-center gap-5 md:gap-8">
       <nav class="hidden md:flex items-center gap-8">
@@ -36,33 +38,66 @@
           <div
             class="py-1 border border-charcoal-border"
             role="menu"
-            :style="{ background: themeStore.isDark ? '#1c1b19' : '#f5f2ed', minWidth: '180px' }"
+            :style="{
+              background: themeStore.isDark ? '#1c1b19' : '#f5f2ed',
+              minWidth: '180px',
+            }"
           >
             <button
               role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="themeStore.toggle()"
             >
-              <v-icon :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'" size="14" class="text-text-secondary shrink-0" />
-              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark') }}</span>
+              <v-icon
+                :icon="
+                  themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'
+                "
+                size="14"
+                class="text-text-secondary shrink-0"
+              />
+              <span
+                class="text-[11px] tracking-widest uppercase text-text-primary"
+                >{{
+                  themeStore.isDark
+                    ? $t("home.theme_light")
+                    : $t("home.theme_dark")
+                }}</span
+              >
             </button>
             <button
               role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="localeStore.toggle()"
             >
-              <v-icon icon="mdi-translate" size="14" class="text-text-secondary shrink-0" />
-              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ localeStore.locale === 'en' ? 'Deutsch' : 'English' }}</span>
+              <v-icon
+                icon="mdi-translate"
+                size="14"
+                class="text-text-secondary shrink-0"
+              />
+              <span
+                class="text-[11px] tracking-widest uppercase text-text-primary"
+                >{{ localeStore.locale === "en" ? "Deutsch" : "English" }}</span
+              >
             </button>
-            <div v-if="authStore.isAuthenticated" class="border-t border-charcoal-border my-1" />
+            <div
+              v-if="authStore.isAuthenticated"
+              class="border-t border-charcoal-border my-1"
+            />
             <button
               v-if="authStore.isAuthenticated"
               role="menuitem"
               class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
               @click="authStore.logout()"
             >
-              <v-icon icon="mdi-logout" size="14" class="text-text-secondary shrink-0" />
-              <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('home.sign_out') }}</span>
+              <v-icon
+                icon="mdi-logout"
+                size="14"
+                class="text-text-secondary shrink-0"
+              />
+              <span
+                class="text-[11px] tracking-widest uppercase text-text-primary"
+                >{{ $t("home.sign_out") }}</span
+              >
             </button>
             <template v-else>
               <button
@@ -70,16 +105,30 @@
                 class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
                 @click="router.push('/login')"
               >
-                <v-icon icon="mdi-login" size="14" class="text-text-secondary shrink-0" />
-                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('auth.sign_in') }}</span>
+                <v-icon
+                  icon="mdi-login"
+                  size="14"
+                  class="text-text-secondary shrink-0"
+                />
+                <span
+                  class="text-[11px] tracking-widest uppercase text-text-primary"
+                  >{{ $t("auth.sign_in") }}</span
+                >
               </button>
               <button
                 role="menuitem"
                 class="w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
                 @click="router.push('/login?mode=register')"
               >
-                <v-icon icon="mdi-account-plus-outline" size="14" class="text-text-secondary shrink-0" />
-                <span class="text-[11px] tracking-widest uppercase text-text-primary">{{ $t('auth.create_account') }}</span>
+                <v-icon
+                  icon="mdi-account-plus-outline"
+                  size="14"
+                  class="text-text-secondary shrink-0"
+                />
+                <span
+                  class="text-[11px] tracking-widest uppercase text-text-primary"
+                  >{{ $t("auth.create_account") }}</span
+                >
               </button>
             </template>
           </div>
@@ -90,26 +139,26 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import { useAuthStore } from '@/stores/auth'
-import { useThemeStore } from '@/stores/theme'
-import { useLocaleStore } from '@/stores/locale'
-import { useNavLinks } from '@/composables/useNavLinks'
+import { computed } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
+import { useAuthStore } from "@/stores/auth";
+import { useThemeStore } from "@/stores/theme";
+import { useLocaleStore } from "@/stores/locale";
+import { useNavLinks } from "@/composables/useNavLinks";
 
-const { t } = useI18n()
-const route = useRoute()
-const router = useRouter()
-const authStore = useAuthStore()
-const themeStore = useThemeStore()
-const localeStore = useLocaleStore()
-const { navLinks } = useNavLinks()
+const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
+const themeStore = useThemeStore();
+const localeStore = useLocaleStore();
+const { navLinks } = useNavLinks();
 
 // "G" for guests; otherwise the first name's initial, falling back to the email.
 const userInitial = computed(() => {
-  if (!authStore.isAuthenticated) return 'G'
-  const source = authStore.firstname || authStore.email || ''
-  return source.charAt(0).toUpperCase()
-})
+  if (!authStore.isAuthenticated) return "G";
+  const source = authStore.firstname || authStore.email || "";
+  return source.charAt(0).toUpperCase();
+});
 </script>

@@ -223,7 +223,9 @@
               <!-- Status feedback -->
               <Transition name="fade">
                 <div
-                  v-if="scanState === 'detecting' || searchState === 'searching'"
+                  v-if="
+                    scanState === 'detecting' || searchState === 'searching'
+                  "
                   class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max"
                   style="
                     background: rgba(17, 17, 16, 0.88);
@@ -233,7 +235,9 @@
                   <span
                     class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
                   />
-                  <span class="text-white text-xs font-bold tracking-[0.2em] uppercase">
+                  <span
+                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+                  >
                     {{
                       scanState === "detecting"
                         ? $t("scanner.looking_up")
@@ -500,7 +504,11 @@
             class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2 whitespace-nowrap pointer-events-auto"
             @click="enterManualEntry"
           >
-            <v-icon icon="mdi-keyboard-outline" size="15" class="text-white/60" />
+            <v-icon
+              icon="mdi-keyboard-outline"
+              size="15"
+              class="text-white/60"
+            />
             <span class="text-[11px] tracking-[0.2em] uppercase text-white/60">
               {{ $t("scanner.enter_isbn_manually") }}
             </span>
@@ -702,7 +710,9 @@
                 </span>
                 <span
                   class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
-                  :style="{ color: STATUS_META[detectedBook.currentStatus].color }"
+                  :style="{
+                    color: STATUS_META[detectedBook.currentStatus].color,
+                  }"
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full"
@@ -1068,7 +1078,11 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
-import { useBookStatus, STATUS_META, STATUS_ORDER } from "@/composables/useBookStatus";
+import {
+  useBookStatus,
+  STATUS_META,
+  STATUS_ORDER,
+} from "@/composables/useBookStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
 import type { ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
@@ -1779,9 +1793,13 @@ const reviewSheetEl = ref<HTMLElement>();
 const mobileSearchSheetEl = ref<HTMLElement>();
 
 const detectedSheetOpen = computed(
-  () => (scanState.value === "preview" || scanState.value === "saving") && !!detectedBook.value,
+  () =>
+    (scanState.value === "preview" || scanState.value === "saving") &&
+    !!detectedBook.value,
 );
-const mobileSearchSheetOpen = computed(() => showSearchResults.value && !mdAndUp.value);
+const mobileSearchSheetOpen = computed(
+  () => showSearchResults.value && !mdAndUp.value,
+);
 
 useFocusTrap(detectedSheetEl, detectedSheetOpen, scanAgain);
 useFocusTrap(reviewSheetEl, showReview, () => (showReview.value = false));

@@ -17,7 +17,9 @@
       <div class="w-0.75 shrink-0" :class="ACCENT[type]" />
       <div class="flex items-center gap-2.5 px-4 py-3.5">
         <v-icon :icon="ICON[type]" size="16" :color="type" />
-        <span class="text-sm font-body text-text-primary tracking-wide">{{ message }}</span>
+        <span class="text-sm font-body text-text-primary tracking-wide">{{
+          message
+        }}</span>
         <button
           class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
           :aria-label="$t('detail.close')"
@@ -44,14 +46,16 @@ const props = withDefaults(
     timeout?: number;
     location?: Anchor;
   }>(),
-  { type: "success", timeout: 3000, location: "top end" }
+  { type: "success", timeout: 3000, location: "top end" },
 );
 
 defineEmits<{ "update:modelValue": [value: boolean] }>();
 
 // Errors never auto-dismiss — the visible close button above is the only way
 // out, so a slow reader can't lose the message to a timer.
-const effectiveTimeout = computed(() => (props.type === "error" ? -1 : props.timeout));
+const effectiveTimeout = computed(() =>
+  props.type === "error" ? -1 : props.timeout,
+);
 
 const ACCENT: Record<ToastType, string> = {
   success: "bg-success",

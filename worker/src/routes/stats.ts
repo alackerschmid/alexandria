@@ -101,6 +101,269 @@ function topCounts(
     .map(([label, count]) => ({ label, count }));
 }
 
+function computeStatusCounts(rows: RawRow[]) {
+  const byStatus = { read: 0, reading: 0, unread: 0, dnf: 0 };
+  for (const r of rows) {
+    switch (r.status) {
+      case "read": {
+        byStatus.read++;
+        break;
+      }
+      case "reading": {
+        byStatus.reading++;
+        break;
+      }
+      case "dnf": {
+        byStatus.dnf++;
+        break;
+      }
+      default:
+        byStatus.unread++;
+    }
+  }
+  return byStatus;
+}
+
+// Top authors — per-individual-author counts, read straight off each row's own
+// authors_json (co-authored books increment every author). Books whose work isn't
+// linked yet fall back to splitting the raw `author` string, keyed by normalized
+// name so a fallback entry merges into a linked one once the book gets re-enriched.
+function computeTopAuthors(rows: RawRow[]) {
+  const authorLabels = new Map<string, string>();
+  const authorCounts = new Map<string, number>();
+  for (const r of rows) {
+    const linked = parseAuthorsJson(r.authors_json);
+    const names = linked.length
+      ? linked.map((a) => a.name)
+      : splitAuthors(r.author);
+    for (const name of names) {
+      const norm = normalizeStr(name);
+      if (!authorLabels.has(norm)) authorLabels.set(norm, name);
+      authorCounts.set(norm, (authorCounts.get(norm) ?? 0) + 1);
+    }
+  }
+  const topAuthors = topCounts(authorCounts, 6).map(({ label, count }) => ({
+    label: authorLabels.get(label)!,
+    count,
+  }));
+  return { topAuthors, authorCount: authorCounts.size };
+}
+
+function computeLanguages(rows: RawRow[]) {
+  const langCounts = new Map<string, number>();
+  for (const r of rows) {
+    if (r.language)
+      langCounts.set(r.language, (langCounts.get(r.language) ?? 0) + 1);
+  }
+  return [...langCounts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([code, count]) => ({ code, count }));
+}
+
+// Genres (JSON array on works)
+function computeGenreCounts(rows: RawRow[]) {
+  const genreCounts = new Map<string, number>();
+  let uncategorizedGenreCount = 0;
+  for (const r of rows) {
+    if (!r.genres) {
+      uncategorizedGenreCount++;
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(r.genres);
+    } catch {
+      uncategorizedGenreCount++;
+      continue;
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      uncategorizedGenreCount++;
+      continue;
+    }
+    for (const g of parsed) {
+      if (typeof g === "string") {
+        const label = titleCase(g);
+        genreCounts.set(label, (genreCounts.get(label) ?? 0) + 1);
+      }
+    }
+  }
+  return {
+    genres: topCounts(genreCounts, 15),
+    genreCount: genreCounts.size,
+    uncategorizedGenreCount,
+  };
+}
+
+function computeStringFieldCounts(
+  rows: RawRow[],
+  field: "publisher" | "form_of_work" | "main_subject",
+) {
+  const counts = new Map<string, number>();
+  for (const r of rows) {
+    const v = r[field];
+    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return topCounts(counts, 15);
+}
+
+// Countries of origin (JSON array)
+function computeCountries(rows: RawRow[]) {
+  const countryCounts = new Map<string, number>();
+  for (const r of rows) {
+    if (!r.countries_of_origin) continue;
+    for (const c of parseTagArray(r.countries_of_origin)) {
+      countryCounts.set(c, (countryCounts.get(c) ?? 0) + 1);
+    }
+  }
+  return topCounts(countryCounts, 15);
+}
+
+function computePageStats(rows: RawRow[]) {
+  const pageNums = rows
+    .filter((r) => r.pages != null && r.pages > 0)
+    .map((r) => r.pages as number);
+  const avgPages =
+    pageNums.length > 0
+      ? Math.round(pageNums.reduce((a, b) => a + b, 0) / pageNums.length)
+      : null;
+
+  const readPageNums = rows
+    .filter((r) => r.status === "read" && r.pages != null && r.pages > 0)
+    .map((r) => r.pages as number);
+  const totalPagesRead =
+    readPageNums.length > 0 ? readPageNums.reduce((a, b) => a + b, 0) : null;
+
+  return { avgPages, totalPagesRead };
+}
+
+function computeYearStats(rows: RawRow[]) {
+  const years = rows
+    .map((r) => extractYear(r))
+    .filter((y): y is number => y !== null)
+    .sort((a, b) => a - b);
+  const yearKnownCount = years.length;
+  const medianYear =
+    yearKnownCount > 0 ? years[Math.floor(yearKnownCount / 2)] : null;
+
+  const decadeCounts = new Map<string, number>();
+  for (const y of years) {
+    const label = `${Math.floor(y / 10) * 10}s`;
+    decadeCounts.set(label, (decadeCounts.get(label) ?? 0) + 1);
+  }
+  const decades = topCounts(decadeCounts, 15);
+
+  return { years, yearKnownCount, medianYear, decades };
+}
+
+// Decade × dominant genre
+function computeDecadeGenres(rows: RawRow[]) {
+  const decadeGenreCounts = new Map<string, Map<string, number>>();
+  for (const r of rows) {
+    const year = extractYear(r);
+    if (year === null || !r.genres) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(r.genres);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    const decadeLabel = `${Math.floor(year / 10) * 10}s`;
+    let inner = decadeGenreCounts.get(decadeLabel);
+    if (!inner) {
+      inner = new Map();
+      decadeGenreCounts.set(decadeLabel, inner);
+    }
+    for (const g of parsed) {
+      if (typeof g === "string") {
+        const label = titleCase(g);
+        inner.set(label, (inner.get(label) ?? 0) + 1);
+      }
+    }
+  }
+  return [...decadeGenreCounts.entries()]
+    .filter(([, genreMap]) => genreMap.size > 0)
+    .map(([decade, genreMap]) => {
+      const total_count = [...genreMap.values()].reduce(
+        (sum, count) => sum + count,
+        0,
+      );
+      const [genre, count] = [...genreMap.entries()].sort(
+        (a, b) => b[1] - a[1],
+      )[0];
+      if (count < 10) return null;
+      return { decade, genre, count, total_count };
+    })
+    .filter((v): v is NonNullable<typeof v> => !!v)
+    .sort((a, b) => parseInt(a.decade, 10) - parseInt(b.decade, 10));
+}
+
+// Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
+// ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
+// back to the older English-label comparison for rows the sweeper hasn't reached yet.
+function computeTranslationRatio(rows: RawRow[]) {
+  const langNamer = new Intl.DisplayNames(["en"], { type: "language" });
+  let translatedCount = 0;
+  let translationKnownCount = 0;
+  for (const r of rows) {
+    if (!r.language || !r.language_of_work) continue;
+    translationKnownCount++;
+    if (r.language_of_work_code) {
+      if (r.language.toLowerCase() !== r.language_of_work_code.toLowerCase())
+        translatedCount++;
+      continue;
+    }
+    let editionLangName: string;
+    try {
+      editionLangName = langNamer.of(r.language) ?? r.language;
+    } catch {
+      editionLangName = r.language;
+    }
+    if (editionLangName.toLowerCase() !== r.language_of_work.toLowerCase())
+      translatedCount++;
+  }
+  return translationKnownCount > 0
+    ? {
+        pct: Math.round((translatedCount / translationKnownCount) * 100),
+        translatedCount,
+        knownCount: translationKnownCount,
+      }
+    : null;
+}
+
+// Custom fields — group by field def, count values
+function computeCustomFields(customFieldRows: CustomFieldRow[]) {
+  const cfMap = new Map<
+    number,
+    { fieldName: string; fieldType: string; valueCounts: Map<string, number> }
+  >();
+  for (const row of customFieldRows) {
+    if (row.field_value == null) continue;
+    if (!cfMap.has(row.field_def_id)) {
+      cfMap.set(row.field_def_id, {
+        fieldName: row.field_name,
+        fieldType: row.field_type,
+        valueCounts: new Map(),
+      });
+    }
+    const entry = cfMap.get(row.field_def_id)!;
+    const vals =
+      row.field_type === "tag"
+        ? parseTagArray(row.field_value)
+        : [row.field_value];
+    for (const v of vals) {
+      entry.valueCounts.set(v, (entry.valueCounts.get(v) ?? 0) + 1);
+    }
+  }
+  return [...cfMap.entries()].map(
+    ([fieldDefId, { fieldName, valueCounts }]) => ({
+      fieldDefId,
+      fieldName,
+      values: topCounts(valueCounts, 15),
+    }),
+  );
+}
+
 function buildStatsResponse(input: StatsResponse): StatsResponse {
   return {
     total: input.total,
@@ -209,220 +472,19 @@ stats.get("/", async (c) => {
 
   const rows = results;
 
-  // Status counts
-  const byStatus = { read: 0, reading: 0, unread: 0, dnf: 0 };
-  for (const r of rows) {
-    if (r.status === "read") byStatus.read++;
-    else if (r.status === "reading") byStatus.reading++;
-    else if (r.status === "dnf") byStatus.dnf++;
-    else byStatus.unread++;
-  }
-
-  // Top authors — per-individual-author counts, read straight off each row's own
-  // authors_json (co-authored books increment every author). Books whose work isn't
-  // linked yet fall back to splitting the raw `author` string, keyed by normalized
-  // name so a fallback entry merges into a linked one once the book gets re-enriched.
-  const authorLabels = new Map<string, string>();
-  const authorCounts = new Map<string, number>();
-  for (const r of rows) {
-    const linked = parseAuthorsJson(r.authors_json);
-    const names = linked.length ? linked.map((a) => a.name) : splitAuthors(r.author);
-    for (const name of names) {
-      const norm = normalizeStr(name);
-      if (!authorLabels.has(norm)) authorLabels.set(norm, name);
-      authorCounts.set(norm, (authorCounts.get(norm) ?? 0) + 1);
-    }
-  }
-  const topAuthors = topCounts(authorCounts, 6).map(({ label, count }) => ({
-    label: authorLabels.get(label)!,
-    count,
-  }));
-  const authorCount = authorCounts.size;
-
-  // Languages
-  const langCounts = new Map<string, number>();
-  for (const r of rows) {
-    if (r.language)
-      langCounts.set(r.language, (langCounts.get(r.language) ?? 0) + 1);
-  }
-  const languages = [...langCounts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([code, count]) => ({ code, count }));
-
-  // Genres (JSON array on works)
-  const genreCounts = new Map<string, number>();
-  let uncategorizedGenreCount = 0;
-  for (const r of rows) {
-    if (!r.genres) {
-      uncategorizedGenreCount++;
-      continue;
-    }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(r.genres);
-    } catch {
-      uncategorizedGenreCount++;
-      continue;
-    }
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      uncategorizedGenreCount++;
-      continue;
-    }
-    for (const g of parsed) {
-      if (typeof g === "string") {
-        const label = titleCase(g);
-        genreCounts.set(label, (genreCounts.get(label) ?? 0) + 1);
-      }
-    }
-  }
-  const genres = topCounts(genreCounts, 15);
-  const genreCount = genreCounts.size;
-
-  // Publishers
-  const publisherCounts = new Map<string, number>();
-  for (const r of rows) {
-    if (r.publisher)
-      publisherCounts.set(
-        r.publisher,
-        (publisherCounts.get(r.publisher) ?? 0) + 1,
-      );
-  }
-  const publishers = topCounts(publisherCounts, 15);
-
-  // Form of work
-  const formCounts = new Map<string, number>();
-  for (const r of rows) {
-    if (r.form_of_work)
-      formCounts.set(r.form_of_work, (formCounts.get(r.form_of_work) ?? 0) + 1);
-  }
-  const forms = topCounts(formCounts, 15);
-
-  // Main subject
-  const subjectCounts = new Map<string, number>();
-  for (const r of rows) {
-    if (r.main_subject)
-      subjectCounts.set(
-        r.main_subject,
-        (subjectCounts.get(r.main_subject) ?? 0) + 1,
-      );
-  }
-  const subjects = topCounts(subjectCounts, 15);
-
-  // Countries of origin (JSON array)
-  const countryCounts = new Map<string, number>();
-  for (const r of rows) {
-    if (!r.countries_of_origin) continue;
-    for (const c of parseTagArray(r.countries_of_origin)) {
-      countryCounts.set(c, (countryCounts.get(c) ?? 0) + 1);
-    }
-  }
-  const countries = topCounts(countryCounts, 15);
-
-  // Average pages
-  const pageNums = rows
-    .filter((r) => r.pages != null && r.pages > 0)
-    .map((r) => r.pages as number);
-  const avgPages =
-    pageNums.length > 0
-      ? Math.round(pageNums.reduce((a, b) => a + b, 0) / pageNums.length)
-      : null;
-
-  // Total pages read
-  const readPageNums = rows
-    .filter((r) => r.status === "read" && r.pages != null && r.pages > 0)
-    .map((r) => r.pages as number);
-  const totalPagesRead =
-    readPageNums.length > 0 ? readPageNums.reduce((a, b) => a + b, 0) : null;
-
-  // Publication year stats
-  const years = rows
-    .map(extractYear)
-    .filter((y): y is number => y !== null)
-    .sort((a, b) => a - b);
-  const yearKnownCount = years.length;
-  const medianYear =
-    yearKnownCount > 0 ? years[Math.floor(yearKnownCount / 2)] : null;
-
-  // Decades (sorted by count DESC)
-  const decadeCounts = new Map<string, number>();
-  for (const y of years) {
-    const label = `${Math.floor(y / 10) * 10}s`;
-    decadeCounts.set(label, (decadeCounts.get(label) ?? 0) + 1);
-  }
-  const decades = topCounts(decadeCounts, 15);
-
-  // Decade × dominant genre
-  const decadeGenreCounts = new Map<string, Map<string, number>>();
-  for (const r of rows) {
-    const year = extractYear(r);
-    if (year === null || !r.genres) continue;
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(r.genres);
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(parsed)) continue;
-    const decadeLabel = `${Math.floor(year / 10) * 10}s`;
-    let inner = decadeGenreCounts.get(decadeLabel);
-    if (!inner) {
-      inner = new Map();
-      decadeGenreCounts.set(decadeLabel, inner);
-    }
-    for (const g of parsed) {
-      if (typeof g === "string") {
-        const label = titleCase(g);
-        inner.set(label, (inner.get(label) ?? 0) + 1);
-      }
-    }
-  }
-  const decadeGenres = [...decadeGenreCounts.entries()]
-    .filter(([, genreMap]) => genreMap.size > 0)
-    .map(([decade, genreMap]) => {
-      const total_count = [...genreMap.values()].reduce(
-        (sum, count) => sum + count,
-        0,
-      );
-      const [genre, count] = [...genreMap.entries()].sort(
-        (a, b) => b[1] - a[1],
-      )[0];
-      if (count < 10) return null;
-      return { decade, genre, count, total_count };
-    })
-    .filter((v): v is NonNullable<typeof v> => !!v)
-    .sort((a, b) => parseInt(a.decade, 10) - parseInt(b.decade, 10));
-
-  // Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
-  // ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
-  // back to the older English-label comparison for rows the sweeper hasn't reached yet.
-  const langNamer = new Intl.DisplayNames(["en"], { type: "language" });
-  let translatedCount = 0;
-  let translationKnownCount = 0;
-  for (const r of rows) {
-    if (!r.language || !r.language_of_work) continue;
-    translationKnownCount++;
-    if (r.language_of_work_code) {
-      if (r.language.toLowerCase() !== r.language_of_work_code.toLowerCase())
-        translatedCount++;
-      continue;
-    }
-    let editionLangName: string;
-    try {
-      editionLangName = langNamer.of(r.language) ?? r.language;
-    } catch {
-      editionLangName = r.language;
-    }
-    if (editionLangName.toLowerCase() !== r.language_of_work.toLowerCase())
-      translatedCount++;
-  }
-  const translationRatio =
-    translationKnownCount > 0
-      ? {
-          pct: Math.round((translatedCount / translationKnownCount) * 100),
-          translatedCount,
-          knownCount: translationKnownCount,
-        }
-      : null;
+  const byStatus = computeStatusCounts(rows);
+  const { topAuthors, authorCount } = computeTopAuthors(rows);
+  const languages = computeLanguages(rows);
+  const { genres, genreCount, uncategorizedGenreCount } =
+    computeGenreCounts(rows);
+  const publishers = computeStringFieldCounts(rows, "publisher");
+  const forms = computeStringFieldCounts(rows, "form_of_work");
+  const subjects = computeStringFieldCounts(rows, "main_subject");
+  const countries = computeCountries(rows);
+  const { avgPages, totalPagesRead } = computePageStats(rows);
+  const { yearKnownCount, medianYear, decades } = computeYearStats(rows);
+  const decadeGenres = computeDecadeGenres(rows);
+  const translationRatio = computeTranslationRatio(rows);
 
   // Random first line (for the home page spotlight)
   const firstLineRow = firstLineResult.results[0];
@@ -436,36 +498,7 @@ stats.get("/", async (c) => {
     count: r.count,
   }));
 
-  // Custom fields — group by field def, count values
-  const cfMap = new Map<
-    number,
-    { fieldName: string; fieldType: string; valueCounts: Map<string, number> }
-  >();
-  for (const row of customFieldResult.results) {
-    if (row.field_value == null) continue;
-    if (!cfMap.has(row.field_def_id)) {
-      cfMap.set(row.field_def_id, {
-        fieldName: row.field_name,
-        fieldType: row.field_type,
-        valueCounts: new Map(),
-      });
-    }
-    const entry = cfMap.get(row.field_def_id)!;
-    const vals =
-      row.field_type === "tag"
-        ? parseTagArray(row.field_value)
-        : [row.field_value];
-    for (const v of vals) {
-      entry.valueCounts.set(v, (entry.valueCounts.get(v) ?? 0) + 1);
-    }
-  }
-  const customFields = [...cfMap.entries()].map(
-    ([fieldDefId, { fieldName, valueCounts }]) => ({
-      fieldDefId,
-      fieldName,
-      values: topCounts(valueCounts, 15),
-    }),
-  );
+  const customFields = computeCustomFields(customFieldResult.results);
 
   return c.json(
     buildStatsResponse({

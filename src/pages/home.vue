@@ -665,7 +665,7 @@ const glanceData = computed(() => {
   const otherCount = total - topTotal;
   const segs = top.map((item, i) => ({
     label: item.label,
-    color: ramp[i] ?? ramp[ramp.length - 1],
+    color: ramp[i] ?? ramp.at(-1),
     pctWidth: pctStr(item.count),
     pctLabel: pctStr(item.count),
   }));
@@ -731,7 +731,7 @@ const mostRepresentedData = computed(() => {
         ? "rgb(var(--v-theme-primary))"
         : mostRepMode.value === "author"
           ? secondaryBarColor()
-          : (ramp[i] ?? ramp[ramp.length - 1]),
+          : (ramp[i] ?? ramp.at(-1)),
   }));
 });
 
@@ -862,7 +862,7 @@ onMounted(async () => {
   loading.value = false;
   decadeGenreTimer = setInterval(() => {
     decadeGenreIndex.value++;
-  }, 15000);
+  }, 15_000);
 });
 
 onUnmounted(() => {

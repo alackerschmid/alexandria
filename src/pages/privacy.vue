@@ -14,7 +14,9 @@
         <h1
           class="font-heading text-4xl font-bold text-text-primary leading-[1.05]"
         >
-          {{ $t("privacy.heading_line1") }}<br />{{ $t("privacy.heading_line2") }}
+          {{ $t("privacy.heading_line1") }}<br />{{
+            $t("privacy.heading_line2")
+          }}
         </h1>
       </div>
 

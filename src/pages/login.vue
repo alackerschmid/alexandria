@@ -10,14 +10,16 @@
           class="text-[10px] tracking-widest font-mono"
           @click="localeStore.toggle()"
         >
-          {{ localeStore.locale === 'en' ? 'DE' : 'EN' }}
+          {{ localeStore.locale === "en" ? "DE" : "EN" }}
         </v-btn>
         <v-btn
           :icon="themeStore.isDark ? 'mdi-weather-sunny' : 'mdi-weather-night'"
           variant="text"
           color="primary"
           size="small"
-          :aria-label="themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')"
+          :aria-label="
+            themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')
+          "
           @click="themeStore.toggle()"
         />
       </div>
@@ -31,10 +33,12 @@
       <h1
         class="font-heading text-5xl font-bold text-text-primary leading-[1.1] mb-3"
       >
-        {{ isLogin ? $t('auth.sign_in_heading') : $t('auth.register_heading') }}
+        {{ isLogin ? $t("auth.sign_in_heading") : $t("auth.register_heading") }}
       </h1>
       <p class="text-text-secondary text-sm mb-8">
-        {{ isLogin ? $t('auth.sign_in_subtitle') : $t('auth.register_subtitle') }}
+        {{
+          isLogin ? $t("auth.sign_in_subtitle") : $t("auth.register_subtitle")
+        }}
       </p>
 
       <!-- Mode toggle pills -->
@@ -42,22 +46,26 @@
         <button
           type="button"
           class="flex-1 py-2 px-4 text-[10px] tracking-[0.2em] uppercase border transition-colors"
-          :class="isLogin
-            ? 'border-text-primary text-text-primary'
-            : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'"
+          :class="
+            isLogin
+              ? 'border-text-primary text-text-primary'
+              : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'
+          "
           @click="setMode(true)"
         >
-          {{ $t('auth.sign_in') }}
+          {{ $t("auth.sign_in") }}
         </button>
         <button
           type="button"
           class="flex-1 py-2 px-4 text-[10px] tracking-[0.2em] uppercase border transition-colors"
-          :class="!isLogin
-            ? 'border-text-primary text-text-primary'
-            : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'"
+          :class="
+            !isLogin
+              ? 'border-text-primary text-text-primary'
+              : 'border-charcoal-border text-text-secondary/50 hover:text-text-secondary hover:border-text-secondary/30'
+          "
           @click="setMode(false)"
         >
-          {{ $t('auth.create_account') }}
+          {{ $t("auth.create_account") }}
         </button>
       </div>
 
@@ -77,7 +85,7 @@
         <label
           for="login-email"
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
-          >{{ $t('auth.email') }}</label
+          >{{ $t("auth.email") }}</label
         >
         <input
           id="login-email"
@@ -95,7 +103,7 @@
         <label
           for="login-password"
           class="block text-[10px] tracking-[0.2em] uppercase text-text-secondary mb-1"
-          >{{ $t('auth.password') }}</label
+          >{{ $t("auth.password") }}</label
         >
         <input
           id="login-password"
@@ -114,7 +122,13 @@
         :loading="loading"
         class="bg-text-primary text-charcoal mb-5 hover:opacity-80"
       >
-        {{ loading ? $t('detail.loading') : isLogin ? $t('auth.sign_in') : $t('auth.create_account') }}
+        {{
+          loading
+            ? $t("detail.loading")
+            : isLogin
+              ? $t("auth.sign_in")
+              : $t("auth.create_account")
+        }}
       </LoadingButton>
 
       <!-- Continue as guest — secondary action, more prominent than a text link
@@ -125,7 +139,7 @@
         class="w-full border border-charcoal-border text-text-primary py-3.5 text-xs font-bold tracking-[0.25em] uppercase hover:border-text-primary transition-colors disabled:opacity-40"
         @click="continueAsGuest"
       >
-        {{ $t('auth.continue_as_guest') }}
+        {{ $t("auth.continue_as_guest") }}
       </button>
     </form>
     <AppFooter />
@@ -156,8 +170,8 @@ const error = ref("");
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 function continueAsGuest() {
-  const dest = localStorage.getItem(WELCOME_SEEN_KEY) ? '/library' : '/welcome'
-  router.push(dest)
+  const dest = localStorage.getItem(WELCOME_SEEN_KEY) ? "/library" : "/welcome";
+  router.push(dest);
 }
 
 function setMode(login: boolean) {
@@ -193,7 +207,7 @@ const submit = async () => {
     // Guest scan migration is handled centrally in App.vue (reacts to isAuthenticated),
     // so it also retries any scans that failed to sync on a previous login.
 
-    router.push({ name: wasLogin ? 'dashboard' : 'welcome' });
+    router.push({ name: wasLogin ? "dashboard" : "welcome" });
   } catch (err: any) {
     error.value = err.message;
   } finally {

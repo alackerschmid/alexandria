@@ -10,7 +10,9 @@
       <h1
         class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-6"
       >
-        {{ $t("not_found.heading_line1") }}<br />{{ $t("not_found.heading_line2") }}
+        {{ $t("not_found.heading_line1") }}<br />{{
+          $t("not_found.heading_line2")
+        }}
       </h1>
       <p class="text-sm text-text-secondary leading-relaxed mb-12">
         {{ $t("not_found.body") }}
