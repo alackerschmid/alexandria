@@ -30,7 +30,10 @@ async function fetchFromGoogleBooks(
   const cleanedCategories = Array.from(
     new Set(
       rawCategories.flatMap((c) =>
-        c.split(" / ").map((s) => s.trim()).filter(Boolean),
+        c
+          .split(" / ")
+          .map((s) => s.trim())
+          .filter(Boolean),
       ),
     ),
   );
@@ -47,7 +50,9 @@ async function fetchFromGoogleBooks(
     physical_format: null,
     edition_name: null,
     physical_dimensions: null,
-    categories: cleanedCategories.length ? JSON.stringify(cleanedCategories) : null,
+    categories: cleanedCategories.length
+      ? JSON.stringify(cleanedCategories)
+      : null,
   };
 }
 
@@ -60,7 +65,9 @@ async function fetchFromOpenLibrary(
   // Fetch data (existing fields) and details (physical_dimensions, edition_name) in parallel.
   // details fetch is best-effort; failures leave those fields null.
   const [dataJson, detailsJson] = await Promise.all([
-    fetchWithTimeout(`${base}&jscmd=data`).then((r) => r.json() as Promise<any>),
+    fetchWithTimeout(`${base}&jscmd=data`).then(
+      (r) => r.json() as Promise<any>,
+    ),
     fetchWithTimeout(`${base}&jscmd=details`)
       .then((r) => r.json() as Promise<any>)
       .catch(() => ({})),
@@ -77,7 +84,8 @@ async function fetchFromOpenLibrary(
     cover_url: book.cover?.large ?? book.cover?.medium ?? null,
     language: null,
     publish_date: book.publish_date ?? null,
-    number_of_pages_median: book.number_of_pages > 0 ? book.number_of_pages : null,
+    number_of_pages_median:
+      book.number_of_pages > 0 ? book.number_of_pages : null,
     description:
       typeof book.description === "string"
         ? book.description
@@ -190,30 +198,79 @@ export async function searchBooksByTitle(
 // editions.json reports languages in this 3-letter form; falls back to the raw code (still
 // usable, just less polished in Intl.DisplayNames) for anything not in this table.
 const ISO_639_2_TO_1: Record<string, string> = {
-  eng: "en", ger: "de", deu: "de", fre: "fr", fra: "fr", spa: "es", ita: "it",
-  por: "pt", dut: "nl", nld: "nl", rus: "ru", pol: "pl", swe: "sv", nor: "no",
-  dan: "da", fin: "fi", gre: "el", ell: "el", tur: "tr", ara: "ar", heb: "he",
-  jpn: "ja", chi: "zh", zho: "zh", kor: "ko", hin: "hi", cze: "cs", ces: "cs",
-  hun: "hu", rum: "ro", ron: "ro", ukr: "uk", hrv: "hr", srp: "sr", slo: "sk",
-  slk: "sk", slv: "sl", bul: "bg", lit: "lt", lav: "lv", est: "et", gle: "ga",
-  cat: "ca", baq: "eu", eus: "eu", glg: "gl", ice: "is", isl: "is", alb: "sq",
-  sqi: "sq", mac: "mk", mkd: "mk", vie: "vi", tha: "th", ind: "id", may: "ms", msa: "ms",
-}
+  eng: "en",
+  ger: "de",
+  deu: "de",
+  fre: "fr",
+  fra: "fr",
+  spa: "es",
+  ita: "it",
+  por: "pt",
+  dut: "nl",
+  nld: "nl",
+  rus: "ru",
+  pol: "pl",
+  swe: "sv",
+  nor: "no",
+  dan: "da",
+  fin: "fi",
+  gre: "el",
+  ell: "el",
+  tur: "tr",
+  ara: "ar",
+  heb: "he",
+  jpn: "ja",
+  chi: "zh",
+  zho: "zh",
+  kor: "ko",
+  hin: "hi",
+  cze: "cs",
+  ces: "cs",
+  hun: "hu",
+  rum: "ro",
+  ron: "ro",
+  ukr: "uk",
+  hrv: "hr",
+  srp: "sr",
+  slo: "sk",
+  slk: "sk",
+  slv: "sl",
+  bul: "bg",
+  lit: "lt",
+  lav: "lv",
+  est: "et",
+  gle: "ga",
+  cat: "ca",
+  baq: "eu",
+  eus: "eu",
+  glg: "gl",
+  ice: "is",
+  isl: "is",
+  alb: "sq",
+  sqi: "sq",
+  mac: "mk",
+  mkd: "mk",
+  vie: "vi",
+  tha: "th",
+  ind: "id",
+  may: "ms",
+  msa: "ms",
+};
 
 function mapLanguageCode(olKey: string | undefined): string | null {
-  if (!olKey) return null
-  const code = olKey.replace("/languages/", "")
-  return ISO_639_2_TO_1[code] ?? code
+  if (!olKey) return null;
+  const code = olKey.replace("/languages/", "");
+  return ISO_639_2_TO_1[code] ?? code;
 }
 
 export type OpenLibraryEdition = {
-  isbn: string
-  title: string | null
-  language: string | null
-  cover_url: string | null
-  publish_date: string | null
-  publisher: string | null
-}
+  isbn: string;
+  title: string | null;
+  language: string | null;
+  cover_url: string | null;
+  publish_date: string | null;
+  publisher: string | null;
+};
 
 // Given an ISBN, resolves its OpenLibrary work and returns every edition OpenLibrary knows for
 // that work (other printings, translations) — replaces LibraryThing's thingISBN, which sits
@@ -221,66 +278,84 @@ export type OpenLibraryEdition = {
 // was Cloudflare's own challenge page, not an app-level rejection — unfixable from server fetch()).
 // Returns null on failure (network/timeout/non-2xx) — distinct from a successful call that found
 // no further editions — so the caller doesn't permanently cache a transient error as "none found".
-export async function fetchOpenLibraryEditions(isbn: string): Promise<OpenLibraryEdition[] | null> {
+export async function fetchOpenLibraryEditions(
+  isbn: string,
+): Promise<OpenLibraryEdition[] | null> {
   try {
-    const editionRes = await fetchWithTimeout(`https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`)
-    if (editionRes.status === 404) return [] // ISBN unknown to OpenLibrary — nothing to expand from, not an error
+    const editionRes = await fetchWithTimeout(
+      `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
+    );
+    if (editionRes.status === 404) return []; // ISBN unknown to OpenLibrary — nothing to expand from, not an error
     if (!editionRes.ok) {
-      console.error(`[OL editions] HTTP ${editionRes.status} resolving isbn ${isbn}`)
-      return null
+      console.error(
+        `[OL editions] HTTP ${editionRes.status} resolving isbn ${isbn}`,
+      );
+      return null;
     }
-    const edition: any = await editionRes.json()
-    const workKey: string | undefined = edition.works?.[0]?.key
-    if (!workKey) return []
+    const edition: any = await editionRes.json();
+    const workKey: string | undefined = edition.works?.[0]?.key;
+    if (!workKey) return [];
 
-    return await fetchEditionsForWorkKey(workKey)
+    return await fetchEditionsForWorkKey(workKey);
   } catch (e) {
-    console.error(`[OL editions] failed for isbn ${isbn}:`, e)
-    return null
+    console.error(`[OL editions] failed for isbn ${isbn}:`, e);
+    return null;
   }
 }
 
 // Same contract, keyed by an OpenLibrary work id (e.g. "OL2943602W" from Wikidata P648) instead
 // of a seed ISBN — works even when none of the owned editions' ISBNs exist in OpenLibrary.
-export async function fetchOpenLibraryEditionsByWorkId(olWorkId: string): Promise<OpenLibraryEdition[] | null> {
+export async function fetchOpenLibraryEditionsByWorkId(
+  olWorkId: string,
+): Promise<OpenLibraryEdition[] | null> {
   if (!/^OL\d+W$/.test(olWorkId)) {
-    console.warn(`[OL editions] invalid work id: ${olWorkId}`)
-    return []
+    console.warn(`[OL editions] invalid work id: ${olWorkId}`);
+    return [];
   }
   try {
-    return await fetchEditionsForWorkKey(`/works/${olWorkId}`)
+    return await fetchEditionsForWorkKey(`/works/${olWorkId}`);
   } catch (e) {
-    console.error(`[OL editions] failed for work ${olWorkId}:`, e)
-    return null
+    console.error(`[OL editions] failed for work ${olWorkId}:`, e);
+    return null;
   }
 }
 
-async function fetchEditionsForWorkKey(workKey: string): Promise<OpenLibraryEdition[] | null> {
-  const editionsRes = await fetchWithTimeout(`https://openlibrary.org${workKey}/editions.json?limit=200`)
-  if (editionsRes.status === 404) return []
+async function fetchEditionsForWorkKey(
+  workKey: string,
+): Promise<OpenLibraryEdition[] | null> {
+  const editionsRes = await fetchWithTimeout(
+    `https://openlibrary.org${workKey}/editions.json?limit=200`,
+  );
+  if (editionsRes.status === 404) return [];
   if (!editionsRes.ok) {
-    console.error(`[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`)
-    return null
+    console.error(
+      `[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`,
+    );
+    return null;
   }
-  const data: any = await editionsRes.json()
-  const entries: any[] = data.entries ?? []
+  const data: any = await editionsRes.json();
+  const entries: any[] = data.entries ?? [];
 
-  const out: OpenLibraryEdition[] = []
-  const seen = new Set<string>()
+  const out: OpenLibraryEdition[] = [];
+  const seen = new Set<string>();
   for (const e of entries) {
-    const entryIsbn = ((e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined)?.replace(/[-\s]/g, "")
-    if (!entryIsbn || seen.has(entryIsbn)) continue
-    seen.add(entryIsbn)
+    const entryIsbn = (
+      (e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined
+    )?.replace(/[-\s]/g, "");
+    if (!entryIsbn || seen.has(entryIsbn)) continue;
+    seen.add(entryIsbn);
     out.push({
       isbn: entryIsbn,
       title: e.title ?? null,
       language: mapLanguageCode(e.languages?.[0]?.key),
-      cover_url: e.covers?.[0] ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg` : null,
+      cover_url: e.covers?.[0]
+        ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg`
+        : null,
       publish_date: e.publish_date ?? null,
       publisher: e.publishers?.[0] ?? null,
-    })
+    });
   }
-  return out
+  return out;
 }
 
 // Persists discovered candidates (skipping ISBNs already materialized for this work) and marks
@@ -294,18 +369,37 @@ export async function saveEditionCandidates(
     const { results: existingBooks } = await db
       .prepare("SELECT isbn FROM books WHERE work_id = ?")
       .bind(workId)
-      .all<{ isbn: string }>()
-    const known = new Set(existingBooks.map((b) => b.isbn))
-    const newEditions = related.filter((e) => !known.has(e.isbn))
+      .all<{ isbn: string }>();
+    const known = new Set(existingBooks.map((b) => b.isbn));
+    const newEditions = related.filter((e) => !known.has(e.isbn));
 
     if (newEditions.length) {
-      await db.batch(newEditions.map((e) =>
-        db.prepare(
-          "INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        ).bind(workId, e.isbn, e.title, e.language, e.cover_url, e.publish_date, e.publisher, "openlibrary")))
+      await db.batch(
+        newEditions.map((e) =>
+          db
+            .prepare(
+              "INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(
+              workId,
+              e.isbn,
+              e.title,
+              e.language,
+              e.cover_url,
+              e.publish_date,
+              e.publisher,
+              "openlibrary",
+            ),
+        ),
+      );
     }
   }
-  await db.prepare("UPDATE works SET editions_checked_at = datetime('now') WHERE id = ?").bind(workId).run()
+  await db
+    .prepare(
+      "UPDATE works SET editions_checked_at = datetime('now') WHERE id = ?",
+    )
+    .bind(workId)
+    .run();
 }
 
 // Enrichment-time edition discovery via the Wikidata-linked OL work id. Only runs while the work
@@ -319,12 +413,12 @@ export async function discoverEditionsFromOpenLibrary(
   const existing = await db
     .prepare("SELECT 1 FROM work_edition_isbns WHERE work_id = ? LIMIT 1")
     .bind(workId)
-    .first()
-  if (existing) return
+    .first();
+  if (existing) return;
 
-  const related = await fetchOpenLibraryEditionsByWorkId(olWorkId)
-  if (related === null) return // transient OL failure — leave retryable, don't mark searched
-  await saveEditionCandidates(db, workId, related)
+  const related = await fetchOpenLibraryEditionsByWorkId(olWorkId);
+  if (related === null) return; // transient OL failure — leave retryable, don't mark searched
+  await saveEditionCandidates(db, workId, related);
 }
 
 // Returns the books row for `isbn` linked to `workId`, fetching and inserting it if missing.

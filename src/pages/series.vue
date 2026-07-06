@@ -11,7 +11,9 @@
           <v-icon icon="mdi-arrow-left" size="14" />
           {{ $t("series.back") }}
         </button>
-        <p class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3">
+        <p
+          class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+        >
           {{ $t("series.section") }}
         </p>
         <h1
@@ -24,27 +26,55 @@
           class="text-xs text-text-secondary tracking-[0.15em] uppercase mt-3 font-mono"
         >
           <template v-if="sideEntries.length > 0">
-            {{ $t("series.main_owned_count", { owned: mainOwnedCount, total: mainEntries.length }) }};
-            {{ $t("series.side_owned_count", { owned: sideOwnedCount, total: sideEntries.length }) }}
+            {{
+              $t("series.main_owned_count", {
+                owned: mainOwnedCount,
+                total: mainEntries.length,
+              })
+            }};
+            {{
+              $t("series.side_owned_count", {
+                owned: sideOwnedCount,
+                total: sideEntries.length,
+              })
+            }}
             <button
               class="text-orange-neon hover:underline cursor-pointer"
               @click="showSideEntries = !showSideEntries"
-            >({{ showSideEntries ? $t("series.hide_side") : $t("series.show_side") }})</button>
+            >
+              ({{
+                showSideEntries
+                  ? $t("series.hide_side")
+                  : $t("series.show_side")
+              }})
+            </button>
           </template>
           <template v-else>
-            {{ $t("series.owned_count", { owned: mainOwnedCount, total: mainEntries.length }) }}
+            {{
+              $t("series.owned_count", {
+                owned: mainOwnedCount,
+                total: mainEntries.length,
+              })
+            }}
           </template>
         </p>
       </div>
 
       <!-- Loading -->
       <div v-if="loading" class="flex justify-center mt-20">
-        <v-progress-circular indeterminate color="primary" size="24" width="2" />
+        <v-progress-circular
+          indeterminate
+          color="primary"
+          size="24"
+          width="2"
+        />
       </div>
 
       <!-- Load error -->
       <div v-else-if="loadError" class="px-6 md:px-10 pt-16 pb-8">
-        <p class="text-sm text-text-secondary mb-4">{{ $t("series.load_error") }}</p>
+        <p class="text-sm text-text-secondary mb-4">
+          {{ $t("series.load_error") }}
+        </p>
         <button
           class="text-xs font-bold tracking-[0.25em] uppercase border-b border-text-primary pb-0.5 text-text-primary hover:opacity-70 transition-opacity"
           @click="load"
@@ -66,7 +96,9 @@
           class="flex items-center gap-4 px-6 md:px-10 py-3 border-b border-charcoal-border transition-colors"
           :class="[
             entry.owned ? '' : 'opacity-50',
-            entry.scan_id || entry.isbn ? 'cursor-pointer hover:bg-white/[0.02]' : '',
+            entry.scan_id || entry.isbn
+              ? 'cursor-pointer hover:bg-white/[0.02]'
+              : '',
           ]"
           :role="entry.isbn ? 'button' : undefined"
           :tabindex="entry.isbn ? 0 : undefined"
@@ -101,9 +133,15 @@
             </div>
             <div
               class="text-[10px] tracking-[0.15em] uppercase mt-0.5"
-              :class="entry.owned ? 'text-orange-neon' : 'text-text-secondary/50'"
+              :class="
+                entry.owned ? 'text-orange-neon' : 'text-text-secondary/50'
+              "
             >
-              {{ entry.owned ? $t("detail.edition_in_library") : $t("series.missing") }}
+              {{
+                entry.owned
+                  ? $t("detail.edition_in_library")
+                  : $t("series.missing")
+              }}
             </div>
           </div>
         </div>
@@ -118,7 +156,11 @@
     :model-value="!!detailIsbn && !!detailBook"
     :book="detailBook"
     :readonly="detailReadonly"
-    @update:model-value="(v) => { if (!v) closeDetail() }"
+    @update:model-value="
+      (v) => {
+        if (!v) closeDetail();
+      }
+    "
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @delete="openDeleteDialog(detailBook!)"
@@ -128,12 +170,20 @@
   <!-- Delete confirmation -->
   <v-dialog v-model="deleteDialog" max-width="360">
     <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-      <v-card-title class="font-heading text-xl pt-6 px-6 font-bold text-text-primary">
+      <v-card-title
+        class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
+      >
         {{ $t("library.remove_heading") }}
       </v-card-title>
       <v-card-text class="px-6 text-sm text-text-secondary">
-        {{ $t("library.remove_body", { title: bookToDelete?.title || bookToDelete?.isbn }) }}
-        <p v-if="deleteFailed" class="text-error mt-2">{{ $t("library.error_delete") }}</p>
+        {{
+          $t("library.remove_body", {
+            title: bookToDelete?.title || bookToDelete?.isbn,
+          })
+        }}
+        <p v-if="deleteFailed" class="text-error mt-2">
+          {{ $t("library.error_delete") }}
+        </p>
       </v-card-text>
       <v-card-actions class="px-4 pb-4 gap-2">
         <v-spacer />
@@ -205,47 +255,63 @@ const loadError = ref(false);
 const showSideEntries = ref(false);
 
 const entries = computed(() => series.value?.entries ?? []);
-const mainEntries = computed(() => entries.value.filter((e) => e.ordinal != null && e.ordinal % 1 === 0));
-const sideEntries = computed(() => entries.value.filter((e) => e.ordinal == null || e.ordinal % 1 !== 0));
-const mainOwnedCount = computed(() => mainEntries.value.filter((e) => e.owned).length);
-const sideOwnedCount = computed(() => sideEntries.value.filter((e) => e.owned).length);
+const mainEntries = computed(() =>
+  entries.value.filter((e) => e.ordinal != null && e.ordinal % 1 === 0),
+);
+const sideEntries = computed(() =>
+  entries.value.filter((e) => e.ordinal == null || e.ordinal % 1 !== 0),
+);
+const mainOwnedCount = computed(
+  () => mainEntries.value.filter((e) => e.owned).length,
+);
+const sideOwnedCount = computed(
+  () => sideEntries.value.filter((e) => e.owned).length,
+);
 const displayedEntries = computed(() =>
-  showSideEntries.value ? entries.value : mainEntries.value
+  showSideEntries.value ? entries.value : mainEntries.value,
 );
 
 const detailBook = ref<BookWithOverrides | null>(null);
 const detailReadonly = ref(false);
 
-const { deleteDialog, bookToDelete, deleting, deleteFailed, openDeleteDialog, confirmDelete } =
-  useDeleteScan({
-    onDeleted: () => {
-      closeDetail();
-      load();
-    },
-  });
+const {
+  deleteDialog,
+  bookToDelete,
+  deleting,
+  deleteFailed,
+  openDeleteDialog,
+  confirmDelete,
+} = useDeleteScan({
+  onDeleted: () => {
+    closeDetail();
+    load();
+  },
+});
 
 function openEntry(entry: SeriesEntry) {
-  if (entry.isbn) openDetail(entry.isbn)
+  if (entry.isbn) openDetail(entry.isbn);
 }
 
 async function loadDetail(entry: SeriesEntry) {
   if (entry.scan_id) {
-    const res = await apiFetch(`/api/scans/${entry.scan_id}?locale=${localeStore.locale}`);
+    const res = await apiFetch(
+      `/api/scans/${entry.scan_id}?locale=${localeStore.locale}`,
+    );
     if (!res.ok) return;
-    detailBook.value = await res.json() as Book;
+    detailBook.value = (await res.json()) as Book;
     detailReadonly.value = false;
   } else if (entry.isbn) {
     const res = await apiFetch(`/api/books/lookup?isbn=${entry.isbn}`);
     if (!res.ok) return;
-    const raw = await res.json() as any;
+    const raw = (await res.json()) as any;
     detailBook.value = {
       id: raw.id,
       isbn: raw.isbn,
       title: entry.title ?? raw.title,
       author: raw.author,
       cover_url: entry.cover_url ?? raw.cover_url,
-      status: 'unread',
-      created_at: raw.fetched_at ?? '',
+      status: "unread",
+      created_at: raw.fetched_at ?? "",
       language: raw.language,
       publish_date: raw.publish_date,
       number_of_pages_median: raw.number_of_pages_median,
@@ -258,39 +324,46 @@ async function loadDetail(entry: SeriesEntry) {
 }
 
 // Drive detail open/close from the URL — handles click, Back/Forward, and deep links
-watch([detailIsbn, entries], ([isbn]) => {
-  if (!isbn) { detailBook.value = null; return }
-  const entry = entries.value.find(e => e.isbn === isbn)
-  if (entry && detailBook.value?.isbn !== isbn) loadDetail(entry)
-}, { immediate: true })
+watch(
+  [detailIsbn, entries],
+  ([isbn]) => {
+    if (!isbn) {
+      detailBook.value = null;
+      return;
+    }
+    const entry = entries.value.find((e) => e.isbn === isbn);
+    if (entry && detailBook.value?.isbn !== isbn) loadDetail(entry);
+  },
+  { immediate: true },
+);
 
 function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
-  if (detailBook.value) detailBook.value = { ...detailBook.value, ...updated }
+  if (detailBook.value) detailBook.value = { ...detailBook.value, ...updated };
 }
 
-
 async function updateDetailStatus(newStatus: ReadStatus) {
-  if (!detailBook.value || detailReadonly.value) return
-  const prev = detailBook.value.status
-  detailBook.value = { ...detailBook.value, status: newStatus }
+  if (!detailBook.value || detailReadonly.value) return;
+  const prev = detailBook.value.status;
+  detailBook.value = { ...detailBook.value, status: newStatus };
   try {
     const res = await apiFetch(`/api/scans/${detailBook.value.id}`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify({ status: newStatus }),
-    })
-    if (!res.ok) throw new Error()
+    });
+    if (!res.ok) throw new Error();
   } catch {
-    if (detailBook.value) detailBook.value = { ...detailBook.value, status: prev }
+    if (detailBook.value)
+      detailBook.value = { ...detailBook.value, status: prev };
   }
 }
 
 function cycleDetailStatus() {
-  if (!detailBook.value) return
-  updateDetailStatus(NEXT_STATUS[detailBook.value.status])
+  if (!detailBook.value) return;
+  updateDetailStatus(NEXT_STATUS[detailBook.value.status]);
 }
 
 function setDetailStatus(s: ReadStatus) {
-  updateDetailStatus(s)
+  updateDetailStatus(s);
 }
 
 async function load() {

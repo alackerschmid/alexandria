@@ -24,7 +24,9 @@
           variant="text"
           color="primary"
           size="small"
-          :aria-label="themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')"
+          :aria-label="
+            themeStore.isDark ? $t('home.theme_light') : $t('home.theme_dark')
+          "
           @click="themeStore.toggle()"
         />
         <button
@@ -159,7 +161,8 @@
           <p
             class="font-mono text-[9px] text-text-secondary tracking-[0.12em] uppercase"
           >
-            {{ totalCount.toLocaleString() }} {{ $t("marketing.preview_count") }}
+            {{ totalCount.toLocaleString() }}
+            {{ $t("marketing.preview_count") }}
           </p>
         </div>
 
@@ -274,7 +277,11 @@ const PREVIEW_STATUSES: ReadStatus[] = ["read", "reading", "unread"];
 // is too small), so the marketing preview is never empty.
 const FALLBACK_BOOKS: DemoBook[] = [
   { title: "Infinite Jest", author: "David Foster Wallace", status: "read" },
-  { title: "The Sun Also Rises", author: "Ernest Hemingway", status: "reading" },
+  {
+    title: "The Sun Also Rises",
+    author: "Ernest Hemingway",
+    status: "reading",
+  },
   { title: "The White Album", author: "Joan Didion", status: "read" },
 ];
 
@@ -286,7 +293,11 @@ onMounted(async () => {
     const res = await fetch(`${API_BASE}/api/books/sample?limit=3`);
     if (!res.ok) return;
     const data: {
-      books: { title: string; author: string | null; cover_url: string | null }[];
+      books: {
+        title: string;
+        author: string | null;
+        cover_url: string | null;
+      }[];
       total: number;
     } = await res.json();
     if (data.books?.length >= 3) {

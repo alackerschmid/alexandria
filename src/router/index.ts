@@ -5,20 +5,20 @@
  */
 
 // Composables
-import { createRouter, createWebHistory } from 'vue-router'
-import Landing from '@/pages/landing.vue'
-import Home from '@/pages/home.vue'
-import Index from '@/pages/index.vue'
-import Login from '@/pages/login.vue'
-import Scanner from '@/pages/scanner.vue'
-import { useAuthStore, WELCOME_SEEN_KEY } from '@/stores/auth'
+import { createRouter, createWebHistory } from "vue-router";
+import Landing from "@/pages/landing.vue";
+import Home from "@/pages/home.vue";
+import Index from "@/pages/index.vue";
+import Login from "@/pages/login.vue";
+import Scanner from "@/pages/scanner.vue";
+import { useAuthStore, WELCOME_SEEN_KEY } from "@/stores/auth";
 
-declare module 'vue-router' {
+declare module "vue-router" {
   interface RouteMeta {
     /** Show the persistent mobile bottom tab bar (Home / Scan / Settings) on this route. */
-    mobileNav?: boolean
+    mobileNav?: boolean;
     /** Redirect unauthenticated users to `/` instead of rendering this route. */
-    requiresAuth?: boolean
+    requiresAuth?: boolean;
   }
 }
 
@@ -26,72 +26,73 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     {
-      path: '/',
-      name: 'home',
+      path: "/",
+      name: "home",
       component: Landing,
     },
     {
-      path: '/home',
-      name: 'dashboard',
+      path: "/home",
+      name: "dashboard",
       component: Home,
       meta: { mobileNav: true, requiresAuth: true },
     },
     {
-      path: '/library',
-      name: 'library',
+      path: "/library",
+      name: "library",
       component: Index,
       meta: { mobileNav: true },
     },
     {
-      path: '/scanner',
-      name: 'scanner',
+      path: "/scanner",
+      name: "scanner",
       component: Scanner,
     },
     {
-      path: '/login',
-      name: 'login',
+      path: "/login",
+      name: "login",
       component: Login,
     },
     {
-      path: '/welcome',
-      name: 'welcome',
-      component: () => import('@/pages/welcome.vue'),
+      path: "/welcome",
+      name: "welcome",
+      component: () => import("@/pages/welcome.vue"),
     },
     {
-      path: '/series/:id',
-      name: 'series',
-      component: () => import('@/pages/series.vue'),
+      path: "/series/:id",
+      name: "series",
+      component: () => import("@/pages/series.vue"),
       meta: { mobileNav: true, requiresAuth: true },
     },
     {
-      path: '/settings',
-      name: 'settings',
-      component: () => import('@/pages/settings.vue'),
+      path: "/settings",
+      name: "settings",
+      component: () => import("@/pages/settings.vue"),
       meta: { mobileNav: true, requiresAuth: true },
     },
     {
-      path: '/privacy',
-      name: 'privacy',
-      component: () => import('@/pages/privacy.vue'),
+      path: "/privacy",
+      name: "privacy",
+      component: () => import("@/pages/privacy.vue"),
     },
     {
-      path: '/:pathMatch(.*)*',
-      name: 'not-found',
-      component: () => import('@/pages/NotFound.vue'),
+      path: "/:pathMatch(.*)*",
+      name: "not-found",
+      component: () => import("@/pages/NotFound.vue"),
     },
   ],
-})
+});
 
 router.beforeEach((to) => {
-  const authStore = useAuthStore()
+  const authStore = useAuthStore();
   if (authStore.isAuthenticated) {
-    if (to.name === 'home')  return { name: 'dashboard' }
-    if (to.name === 'login') return { name: 'dashboard' }
-    if (to.name === 'welcome' && localStorage.getItem(WELCOME_SEEN_KEY)) return { name: 'dashboard' }
+    if (to.name === "home") return { name: "dashboard" };
+    if (to.name === "login") return { name: "dashboard" };
+    if (to.name === "welcome" && localStorage.getItem(WELCOME_SEEN_KEY))
+      return { name: "dashboard" };
   }
   if (!authStore.isAuthenticated && to.meta.requiresAuth) {
-    return { name: 'home' }
+    return { name: "home" };
   }
-})
+});
 
-export default router
+export default router;

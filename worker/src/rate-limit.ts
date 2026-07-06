@@ -1,7 +1,7 @@
-import type { Context } from 'hono'
-import type { Env } from './types'
+import type { Context } from "hono";
+import type { Env } from "./types";
 
-export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number }
+export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
 
 // Fixed-window rate limiter backed by D1. `key` is caller-defined (e.g. `scan:<userId>`) so one
 // table can back multiple rate-limited routes without a schema change. Not exact under bursts at
@@ -13,9 +13,9 @@ export async function checkRateLimit(
   limit: number,
   windowMinutes = 1,
 ): Promise<RateLimitResult> {
-  const windowMs = windowMinutes * 60_000
-  const now = Date.now()
-  const windowStart = Math.floor(now / windowMs) * windowMs
+  const windowMs = windowMinutes * 60_000;
+  const now = Date.now();
+  const windowStart = Math.floor(now / windowMs) * windowMs;
 
   const row = await db
     .prepare(
@@ -25,11 +25,14 @@ export async function checkRateLimit(
        RETURNING count`,
     )
     .bind(key, windowStart, windowMs)
-    .first<{ count: number }>()
+    .first<{ count: number }>();
 
-  const count = row?.count ?? 1
-  const retryAfterSeconds = Math.max(0, Math.ceil((windowStart + windowMs - now) / 1000))
-  return { allowed: count <= limit, retryAfterSeconds }
+  const count = row?.count ?? 1;
+  const retryAfterSeconds = Math.max(
+    0,
+    Math.ceil((windowStart + windowMs - now) / 1000),
+  );
+  return { allowed: count <= limit, retryAfterSeconds };
 }
 
 // Checks the rate limit and, if exceeded, sets the Retry-After header and returns the 429
@@ -43,8 +46,8 @@ export async function rateLimitOrReject(
   windowMinutes: number,
   message: string,
 ): Promise<Response | null> {
-  const rateLimit = await checkRateLimit(c.env.DB, key, limit, windowMinutes)
-  if (rateLimit.allowed) return null
-  c.header('Retry-After', String(rateLimit.retryAfterSeconds))
-  return c.json({ error: message }, 429)
+  const rateLimit = await checkRateLimit(c.env.DB, key, limit, windowMinutes);
+  if (rateLimit.allowed) return null;
+  c.header("Retry-After", String(rateLimit.retryAfterSeconds));
+  return c.json({ error: message }, 429);
 }

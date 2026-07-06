@@ -36,7 +36,9 @@
       </aside>
 
       <!-- ── Main content ──────────────────────────────────────────────────── -->
-      <main class="flex-1 min-w-0 px-6 md:px-12 pt-8 md:pt-10 pb-28 md:pb-10 overflow-y-auto">
+      <main
+        class="flex-1 min-w-0 px-6 md:px-12 pt-8 md:pt-10 pb-28 md:pb-10 overflow-y-auto"
+      >
         <div class="max-w-[720px] flex flex-col gap-14">
           <!-- Mobile heading -->
           <div class="md:hidden">
@@ -694,7 +696,7 @@ const activeSection = ref("account");
 
 function scrollTo(id: string) {
   document
-    .getElementById(id)
+    .querySelector(`#${id}`)
     ?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -713,7 +715,7 @@ onMounted(() => {
     { rootMargin: "-40% 0px -55% 0px", threshold: 0 },
   );
   for (const s of NAV_SECTIONS) {
-    const el = document.getElementById(s.id);
+    const el = document.querySelector(`#${s.id}`);
     if (el) observer.observe(el);
   }
 });
@@ -722,15 +724,15 @@ onUnmounted(() => observer?.disconnect());
 
 // ── Accent presets ────────────────────────────────────────────────────────────
 
-const ACCENT_PRESETS = [
+const ACCENT_PRESETS: Set<string> = new Set([
   "#ff6600",
   "#d9534f",
   "#d4a017",
   "#2d8f4e",
   "#3b6dde",
   "#9b4dca",
-];
-const isPreset = (c: string) => ACCENT_PRESETS.includes(c);
+]);
+const isPreset = (c: string) => ACCENT_PRESETS.has(c);
 
 // ── Account form ──────────────────────────────────────────────────────────────
 

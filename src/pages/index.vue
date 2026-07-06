@@ -815,7 +815,7 @@ import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
-import type { GroupBy, SortOption } from "@/types/library";
+import type { GroupBy } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
@@ -1029,10 +1029,7 @@ type SuggestionExpand = {
   typeLabel: string;
 };
 type Suggestion =
-  | SuggestionPrefix
-  | SuggestionFacet
-  | SuggestionBook
-  | SuggestionExpand;
+  SuggestionPrefix | SuggestionFacet | SuggestionBook | SuggestionExpand;
 
 // ── Autocomplete prefix chips ───────────────────────────────────────────────────
 
@@ -1081,7 +1078,7 @@ const PREFIXES = computed(() => [
 // ── Search highlight overlay ───────────────────────────────────────────────────
 
 const HIGHLIGHT_PATTERN = computed(
-  () => `((?:${[...knownKeys.value].join("|")}):)("(?:[^"]*)"?|\\S*)`,
+  () => String.raw`((?:${[...knownKeys.value].join("|")}):)("(?:[^"]*)"?|\S*)`,
 );
 
 interface SearchSegment {

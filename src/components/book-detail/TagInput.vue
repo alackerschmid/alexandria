@@ -28,7 +28,9 @@
       :aria-expanded="open"
       aria-autocomplete="list"
       aria-controls="tag-input-listbox"
-      :aria-activedescendant="open && highlighted >= 0 ? `tag-input-option-${highlighted}` : undefined"
+      :aria-activedescendant="
+        open && highlighted >= 0 ? `tag-input-option-${highlighted}` : undefined
+      "
       :aria-labelledby="ariaLabelledby"
       :placeholder="modelValue.length ? '' : placeholder"
       class="flex-1 min-w-[80px] bg-transparent text-xs text-text-primary py-0.5"
@@ -69,14 +71,10 @@
               : 'text-text-secondary/40 hover:text-error'
           "
           :title="
-            confirmingValue === item
-              ? deleteConfirmTitle?.(item)
-              : deleteTitle
+            confirmingValue === item ? deleteConfirmTitle?.(item) : deleteTitle
           "
           :aria-label="
-            confirmingValue === item
-              ? deleteConfirmTitle?.(item)
-              : deleteTitle
+            confirmingValue === item ? deleteConfirmTitle?.(item) : deleteTitle
           "
           @mousedown.stop.prevent="$emit('delete-suggestion', item)"
         >
@@ -186,5 +184,7 @@ function onClickOutside(e: MouseEvent) {
 }
 
 onMounted(() => document.addEventListener("mousedown", onClickOutside));
-onBeforeUnmount(() => document.removeEventListener("mousedown", onClickOutside));
+onBeforeUnmount(() =>
+  document.removeEventListener("mousedown", onClickOutside),
+);
 </script>

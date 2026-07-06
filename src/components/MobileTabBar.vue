@@ -6,13 +6,21 @@
     <router-link
       :to="sideLinks[0].to"
       class="flex flex-col items-center gap-1 flex-1 py-1 transition-colors"
-      :class="isActive(sideLinks[0].name) ? 'text-orange-neon' : 'text-text-secondary'"
+      :class="
+        isActive(sideLinks[0].name) ? 'text-orange-neon' : 'text-text-secondary'
+      "
     >
       <v-icon
-        :icon="isActive(sideLinks[0].name) ? sideLinks[0].activeIcon : sideLinks[0].icon"
+        :icon="
+          isActive(sideLinks[0].name)
+            ? sideLinks[0].activeIcon
+            : sideLinks[0].icon
+        "
         size="20"
       />
-      <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{ sideLinks[0].label }}</span>
+      <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{
+        sideLinks[0].label
+      }}</span>
     </router-link>
 
     <div class="flex flex-col items-center gap-1 flex-1 py-1">
@@ -32,13 +40,21 @@
     <router-link
       :to="sideLinks[1].to"
       class="flex flex-col items-center gap-1 flex-1 py-1 transition-colors"
-      :class="isActive(sideLinks[1].name) ? 'text-orange-neon' : 'text-text-secondary'"
+      :class="
+        isActive(sideLinks[1].name) ? 'text-orange-neon' : 'text-text-secondary'
+      "
     >
       <v-icon
-        :icon="isActive(sideLinks[1].name) ? sideLinks[1].activeIcon : sideLinks[1].icon"
+        :icon="
+          isActive(sideLinks[1].name)
+            ? sideLinks[1].activeIcon
+            : sideLinks[1].icon
+        "
         size="20"
       />
-      <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{ sideLinks[1].label }}</span>
+      <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{
+        sideLinks[1].label
+      }}</span>
     </router-link>
   </nav>
 </template>
@@ -55,9 +71,13 @@ const isActive = (name: string) => route.name === name;
 // The bottom bar always centers the scan action; the two side slots show
 // whichever of Home/Library/Settings isn't the current section (the series
 // detail page is reached from Library, so it counts as the library section).
-const currentSection = computed(() => (route.name === "series" ? "library" : route.name));
+const currentSection = computed(() =>
+  route.name === "series" ? "library" : route.name,
+);
 
 const sideLinks = computed(() =>
-  navLinks.value.filter((l) => l.name !== "scanner" && l.name !== currentSection.value),
+  navLinks.value.filter(
+    (l) => l.name !== "scanner" && l.name !== currentSection.value,
+  ),
 );
 </script>

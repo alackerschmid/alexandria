@@ -10,21 +10,21 @@
 </template>
 
 <script lang="ts" setup>
-import { watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { useTheme } from 'vuetify'
-import { useThemeStore } from '@/stores/theme'
-import { useAccentStore } from '@/stores/accent'
-import { useAuthStore } from '@/stores/auth'
-import { useGuestStore } from '@/stores/guest'
-import MobileTabBar from '@/components/MobileTabBar.vue'
+import { watch } from "vue";
+import { useRoute } from "vue-router";
+import { useTheme } from "vuetify";
+import { useThemeStore } from "@/stores/theme";
+import { useAccentStore } from "@/stores/accent";
+import { useAuthStore } from "@/stores/auth";
+import { useGuestStore } from "@/stores/guest";
+import MobileTabBar from "@/components/MobileTabBar.vue";
 
-const route = useRoute()
-const vuetifyTheme = useTheme()
-const themeStore = useThemeStore()
-const accentStore = useAccentStore()
-const authStore = useAuthStore()
-const guestStore = useGuestStore()
+const route = useRoute();
+const vuetifyTheme = useTheme();
+const themeStore = useThemeStore();
+const accentStore = useAccentStore();
+const authStore = useAuthStore();
+const guestStore = useGuestStore();
 
 // Centralized retry for guest scans that failed to migrate on a previous login (network
 // blip, etc.) — syncToAccount keeps failed ISBNs in localStorage for exactly this. Runs
@@ -34,28 +34,28 @@ watch(
   () => authStore.isAuthenticated,
   (authenticated) => {
     if (authenticated && authStore.token && guestStore.scans.length > 0) {
-      guestStore.syncToAccount(authStore.token)
+      guestStore.syncToAccount(authStore.token);
     }
   },
   { immediate: true },
-)
+);
 
 watch(
   () => themeStore.isDark,
   (dark) => {
-    vuetifyTheme.global.name.value = dark ? 'editorial-dark' : 'editorial'
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+    vuetifyTheme.global.name.value = dark ? "editorial-dark" : "editorial";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
   },
   { immediate: true },
-)
+);
 
 watch(
   () => accentStore.color,
   (c) => {
-    vuetifyTheme.themes.value['editorial'].colors.primary = c
-    vuetifyTheme.themes.value['editorial-dark'].colors.primary = c
-    document.documentElement.style.setProperty('--color-orange-neon', c)
+    vuetifyTheme.themes.value["editorial"].colors.primary = c;
+    vuetifyTheme.themes.value["editorial-dark"].colors.primary = c;
+    document.documentElement.style.setProperty("--color-orange-neon", c);
   },
   { immediate: true },
-)
+);
 </script>

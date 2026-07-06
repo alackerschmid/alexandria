@@ -1,5 +1,10 @@
 <template>
-  <v-menu v-model="open" :close-on-content-click="true" offset="4" :min-width="minWidth">
+  <v-menu
+    v-model="open"
+    :close-on-content-click="true"
+    offset="4"
+    :min-width="minWidth"
+  >
     <template #activator="{ props: menuProps }">
       <button
         v-bind="menuProps"
@@ -10,7 +15,8 @@
         <span
           class="text-text-secondary text-[10px] transition-transform duration-150"
           :class="{ 'rotate-180': open }"
-        >▾</span>
+          >▾</span
+        >
       </button>
     </template>
 
@@ -19,9 +25,11 @@
         v-for="opt in options"
         :key="String(opt.value)"
         class="flex items-center justify-between w-full px-4 py-2.5 text-left text-[11px] tracking-[0.04em] transition-colors"
-        :class="modelValue === opt.value
-          ? 'text-orange-neon'
-          : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]'"
+        :class="
+          modelValue === opt.value
+            ? 'text-orange-neon'
+            : 'text-text-secondary hover:text-text-primary hover:bg-white/[0.03]'
+        "
         @click="$emit('update:modelValue', opt.value)"
       >
         {{ opt.label }}
@@ -37,21 +45,26 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed } from 'vue'
+import { ref, computed } from "vue";
 
-const props = withDefaults(defineProps<{
-  modelValue: string
-  options: { value: string; label: string }[]
-  minWidth?: number
-}>(), {
-  minWidth: 160,
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    options: { value: string; label: string }[];
+    minWidth?: number;
+  }>(),
+  {
+    minWidth: 160,
+  },
+);
 
-defineEmits<{ 'update:modelValue': [value: string] }>()
+defineEmits<{ "update:modelValue": [value: string] }>();
 
-const open = ref(false)
+const open = ref(false);
 
 const currentLabel = computed(
-  () => props.options.find(o => o.value === props.modelValue)?.label ?? props.modelValue,
-)
+  () =>
+    props.options.find((o) => o.value === props.modelValue)?.label ??
+    props.modelValue,
+);
 </script>

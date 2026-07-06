@@ -35,7 +35,10 @@
                 class="font-heading font-bold text-2xl text-text-primary leading-tight mb-1 flex items-center gap-1.5"
               >
                 {{ book.title || book.isbn }}
-                <OverrideDot v-if="book.title_overridden" class="w-1.5 h-1.5 shrink-0" />
+                <OverrideDot
+                  v-if="book.title_overridden"
+                  class="w-1.5 h-1.5 shrink-0"
+                />
               </h2>
               <button
                 class="shrink-0 text-text-secondary/50 hover:text-text-secondary transition-colors pt-0.5"
@@ -243,7 +246,9 @@
                 class="transition-colors disabled:opacity-30"
                 :class="enrichmentButtonClass"
                 :disabled="refreshing"
-                :aria-label="refreshing ? $t('detail.loading') : $t('detail.refresh')"
+                :aria-label="
+                  refreshing ? $t('detail.loading') : $t('detail.refresh')
+                "
                 @click="refresh"
               >
                 <v-icon
@@ -332,7 +337,10 @@
                     class="font-heading font-bold text-3xl md:text-5xl text-text-primary leading-tight tracking-tight mb-3 flex items-start gap-2"
                   >
                     {{ book.title || book.isbn }}
-                    <OverrideDot v-if="book.title_overridden" class="w-2 h-2 shrink-0 mt-2" />
+                    <OverrideDot
+                      v-if="book.title_overridden"
+                      class="w-2 h-2 shrink-0 mt-2"
+                    />
                   </h1>
 
                   <!-- series (moved between title and author) -->
@@ -357,7 +365,11 @@
                   </span>
 
                   <!-- author -->
-                  <AuthorChips :book="book" size="expanded" @select="filterBy('author', $event)" />
+                  <AuthorChips
+                    :book="book"
+                    size="expanded"
+                    @select="filterBy('author', $event)"
+                  />
 
                   <!-- enrichment status (full view) -->
                   <EnrichmentBadge
@@ -374,7 +386,10 @@
                       class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3 flex items-center gap-1.5"
                     >
                       {{ $t("detail.description") }}
-                      <OverrideDot v-if="book.description_overridden" class="w-1.5 h-1.5" />
+                      <OverrideDot
+                        v-if="book.description_overridden"
+                        class="w-1.5 h-1.5"
+                      />
                     </div>
                     <p class="text-[15px] leading-relaxed text-text-secondary">
                       {{ book.description }}
@@ -517,7 +532,12 @@
                     </div>
                     <button
                       class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
-                      :aria-label="$t('detail.filter_by', { field: $t('detail.form_of_work'), value: book.form_of_work })"
+                      :aria-label="
+                        $t('detail.filter_by', {
+                          field: $t('detail.form_of_work'),
+                          value: book.form_of_work,
+                        })
+                      "
                       @click="filterBy('form', book.form_of_work!)"
                     >
                       {{ book.form_of_work }}
@@ -534,8 +554,15 @@
                     </div>
                     <button
                       class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
-                      :aria-label="$t('detail.filter_by', { field: $t('detail.language_of_work'), value: book.language_of_work })"
-                      @click="filterBy('original_language', book.language_of_work!)"
+                      :aria-label="
+                        $t('detail.filter_by', {
+                          field: $t('detail.language_of_work'),
+                          value: book.language_of_work,
+                        })
+                      "
+                      @click="
+                        filterBy('original_language', book.language_of_work!)
+                      "
                     >
                       {{ book.language_of_work }}
                     </button>
@@ -562,19 +589,29 @@
                     >
                       {{ $t("detail.narrative_locations") }}
                     </div>
-                    <div class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+                    <div
+                      class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5"
+                    >
                       <template
                         v-for="(loc, i) in book.narrative_locations"
                         :key="loc"
                       >
                         <button
                           class="hover:text-orange-neon transition-colors"
-                          :aria-label="$t('detail.filter_by', { field: $t('detail.narrative_locations'), value: loc })"
+                          :aria-label="
+                            $t('detail.filter_by', {
+                              field: $t('detail.narrative_locations'),
+                              value: loc,
+                            })
+                          "
                           @click="filterBy('location', loc)"
-                        >{{ loc }}</button><span
+                        >
+                          {{ loc }}</button
+                        ><span
                           v-if="i < book.narrative_locations!.length - 1"
                           class="text-text-secondary/40"
-                        >·</span>
+                          >·</span
+                        >
                       </template>
                     </div>
                   </div>
@@ -587,19 +624,29 @@
                     >
                       {{ $t("detail.countries_of_origin") }}
                     </div>
-                    <div class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5">
+                    <div
+                      class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5"
+                    >
                       <template
                         v-for="(c, i) in book.countries_of_origin"
                         :key="c"
                       >
                         <button
                           class="hover:text-orange-neon transition-colors"
-                          :aria-label="$t('detail.filter_by', { field: $t('detail.countries_of_origin'), value: c })"
+                          :aria-label="
+                            $t('detail.filter_by', {
+                              field: $t('detail.countries_of_origin'),
+                              value: c,
+                            })
+                          "
                           @click="filterBy('country', c)"
-                        >{{ c }}</button><span
+                        >
+                          {{ c }}</button
+                        ><span
                           v-if="i < book.countries_of_origin!.length - 1"
                           class="text-text-secondary/40"
-                        >·</span>
+                          >·</span
+                        >
                       </template>
                     </div>
                   </div>
@@ -646,16 +693,26 @@
                         >
                           {{ $t("detail.awards") }}
                         </div>
-                        <div class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5">
+                        <div
+                          class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5"
+                        >
                           <template v-for="(a, i) in book.awards" :key="a">
                             <button
                               class="hover:text-orange-neon transition-colors text-left"
-                              :aria-label="$t('detail.filter_by', { field: $t('detail.awards'), value: a })"
+                              :aria-label="
+                                $t('detail.filter_by', {
+                                  field: $t('detail.awards'),
+                                  value: a,
+                                })
+                              "
                               @click="filterBy('award', a)"
-                            >{{ a }}</button><span
+                            >
+                              {{ a }}</button
+                            ><span
                               v-if="i < book.awards!.length - 1"
                               class="text-text-secondary/40"
-                            >·</span>
+                              >·</span
+                            >
                           </template>
                         </div>
                       </div>
@@ -665,16 +722,26 @@
                         >
                           {{ $t("detail.nominations") }}
                         </div>
-                        <div class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5">
+                        <div
+                          class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5"
+                        >
                           <template v-for="(a, i) in book.nominations" :key="a">
                             <button
                               class="hover:text-orange-neon transition-colors text-left"
-                              :aria-label="$t('detail.filter_by', { field: $t('detail.nominations'), value: a })"
+                              :aria-label="
+                                $t('detail.filter_by', {
+                                  field: $t('detail.nominations'),
+                                  value: a,
+                                })
+                              "
                               @click="filterBy('award', a)"
-                            >{{ a }}</button><span
+                            >
+                              {{ a }}</button
+                            ><span
                               v-if="i < book.nominations!.length - 1"
                               class="text-text-secondary/40"
-                            >·</span>
+                              >·</span
+                            >
                           </template>
                         </div>
                       </div>
@@ -732,26 +799,6 @@
   </v-dialog>
 </template>
 
-<script lang="ts">
-import type { Book } from "@/types/book";
-
-export interface CustomFieldValue {
-  field_def_id: number;
-  value: string | null;
-}
-
-export interface BookWithOverrides extends Book {
-  title_overridden?: number;
-  cover_url_overridden?: number;
-  language_overridden?: number;
-  publish_date_overridden?: number;
-  pages_overridden?: number;
-  description_overridden?: number;
-  publisher_overridden?: number;
-  custom_field_values?: CustomFieldValue[] | null;
-}
-</script>
-
 <script lang="ts" setup>
 import { ref, watch, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
@@ -776,7 +823,23 @@ import BookEditForm, {
   type EditForm,
 } from "@/components/book-detail/BookEditForm.vue";
 import OverrideDot from "@/components/OverrideDot.vue";
-import type { ReadStatus } from "@/types/book";
+import type { Book, ReadStatus } from "@/types/book";
+
+export interface CustomFieldValue {
+  field_def_id: number;
+  value: string | null;
+}
+
+export interface BookWithOverrides extends Book {
+  title_overridden?: number;
+  cover_url_overridden?: number;
+  language_overridden?: number;
+  publish_date_overridden?: number;
+  pages_overridden?: number;
+  description_overridden?: number;
+  publisher_overridden?: number;
+  custom_field_values?: CustomFieldValue[] | null;
+}
 
 const props = defineProps<{
   modelValue: boolean;
