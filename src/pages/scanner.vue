@@ -805,6 +805,26 @@
                 </button>
               </div>
 
+              <!-- Rating picker (read only — rating a book you haven't finished doesn't make sense) -->
+              <template v-if="selectedStatus === 'read'">
+                <p
+                  class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+                >
+                  {{ $t("scanner.rate_as") }}
+                </p>
+                <div class="flex gap-2 mb-6">
+                  <div
+                    v-for="d in scannerRatingDots"
+                    :key="d.n"
+                    class="cursor-pointer"
+                    :style="d.style"
+                    @click="
+                      selectedRating = selectedRating === d.n ? null : d.n
+                    "
+                  />
+                </div>
+              </template>
+
               <LoadingButton
                 :loading="scanState === 'saving'"
                 class="bg-orange-neon text-black mb-3"
@@ -1112,6 +1132,7 @@ import {
   OWNING_ORDER,
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
+import { ratingDots } from "@/composables/useRating";
 import type { OwningStatus, ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
@@ -1161,6 +1182,14 @@ const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
 const selectedStatus = ref<ReadStatus>("read");
 const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
+const selectedRating = ref<number | null>(null);
+const scannerRatingDots = computed(() => ratingDots(selectedRating.value, "lg"));
+
+// The picker is hidden for any non-"read" status — drop a pending selection so it can't be
+// silently saved against a status where it no longer makes sense.
+watch(selectedStatus, (status) => {
+  if (status !== "read") selectedRating.value = null;
+});
 const flash = ref(false);
 
 // Metadata chips for the detected-book sheet (year · pages · language · publisher).
@@ -1439,6 +1468,7 @@ const selectCandidate = async (candidate: EditionCandidate) => {
   };
   selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
   selectedOwning.value = DEFAULT_OWNING_STATUS;
+  selectedRating.value = null;
   scanState.value = "preview";
 
   if (duplicate) sessionScanned.add(isbn);
@@ -1509,6 +1539,7 @@ const onBarcodeDetected = async (isbn: string) => {
   };
   selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
   selectedOwning.value = DEFAULT_OWNING_STATUS;
+  selectedRating.value = null;
   scanState.value = "preview";
 
   // A duplicate gets shown once, then suppressed for the rest of the session.
@@ -1521,6 +1552,7 @@ interface QueuedBook {
   isbn: string;
   status?: ReadStatus;
   owning_status?: OwningStatus;
+  rating?: number | null;
 }
 
 const QUEUE_KEY = "bookscan_queue_v3";
@@ -1544,6 +1576,7 @@ function postScanRequest(
         isbn: book.isbn,
         status: book.status ?? libraryDefaultsStore.defaultScanStatus,
         owning_status: book.owning_status ?? DEFAULT_OWNING_STATUS,
+        rating: book.rating ?? null,
       }),
     },
     opts,
@@ -1607,6 +1640,7 @@ const saveBook = async () => {
   const book = detectedBook.value;
   const status = selectedStatus.value;
   const owningStatus = selectedOwning.value;
+  const rating = selectedRating.value;
 
   // Guest path
   if (isGuest.value) {
@@ -1621,6 +1655,7 @@ const saveBook = async () => {
       },
       status,
       owningStatus,
+      rating,
     );
     if (result === "ok") {
       sessionScanned.add(book.isbn);
@@ -1639,6 +1674,7 @@ const saveBook = async () => {
     isbn: book.isbn,
     status,
     owning_status: owningStatus,
+    rating,
   };
   try {
     const { result, id } = await postScan(queued);
@@ -1671,6 +1707,7 @@ const scanAgain = () => {
   detectedBook.value = null;
   selectedStatus.value = "read";
   selectedOwning.value = DEFAULT_OWNING_STATUS;
+  selectedRating.value = null;
   clearManualFields();
   scanState.value = "scanning";
 };

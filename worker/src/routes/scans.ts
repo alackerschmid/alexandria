@@ -10,6 +10,7 @@ import {
   attachCustomFields,
   VALID_STATUSES,
   VALID_OWNING_STATUSES,
+  isValidRating,
   getBookByIsbn,
   parseIntOr,
 } from "../library-query";
@@ -58,6 +59,7 @@ scans.post("/", async (c) => {
     isbn: string;
     status?: string;
     owning_status?: string;
+    rating?: number | null;
   }>();
   if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
@@ -74,6 +76,13 @@ scans.post("/", async (c) => {
   ).includes(body.owning_status ?? "")
     ? body.owning_status
     : "owned";
+  // Unlike status/owning_status, unrated (null) is a legitimate, common state — no default applied.
+  if (body.rating != null && !isValidRating(body.rating)) {
+    return c.json({ error: "rating must be an integer 0-10 or null" }, 400);
+  }
+  // Rating only makes sense for a book marked "read" — silently drop it otherwise, mirroring
+  // the silent status/owning_status fallback above rather than hard-rejecting the whole scan.
+  const initialRating = initialStatus === "read" ? (body.rating ?? null) : null;
 
   const userId = c.get("userId");
   const db = c.env.DB;
@@ -111,9 +120,9 @@ scans.post("/", async (c) => {
   try {
     result = await db
       .prepare(
-        "INSERT INTO scans (user_id, book_id, status, owning_status) VALUES (?, ?, ?, ?)",
+        "INSERT INTO scans (user_id, book_id, status, owning_status, rating) VALUES (?, ?, ?, ?, ?)",
       )
-      .bind(userId, book.id, initialStatus, initialOwningStatus)
+      .bind(userId, book.id, initialStatus, initialOwningStatus, initialRating)
       .run();
   } catch (e: any) {
     if (e.message?.includes("UNIQUE constraint failed")) {
@@ -166,12 +175,20 @@ scans.patch("/:id", async (c) => {
   if (typeof rawBody !== "object" || rawBody === null) {
     return c.json({ error: "status or owning_status is required" }, 400);
   }
-  const body = rawBody as { status?: string; owning_status?: string };
+  const body = rawBody as {
+    status?: string;
+    owning_status?: string;
+    rating?: number | null;
+  };
   const hasStatus = "status" in body;
   const hasOwningStatus = "owning_status" in body;
+  const hasRating = "rating" in body;
 
-  if (!hasStatus && !hasOwningStatus) {
-    return c.json({ error: "status or owning_status is required" }, 400);
+  if (!hasStatus && !hasOwningStatus && !hasRating) {
+    return c.json(
+      { error: "status, owning_status, or rating is required" },
+      400,
+    );
   }
   if (
     hasStatus &&
@@ -195,9 +212,36 @@ scans.patch("/:id", async (c) => {
       400,
     );
   }
+  if (hasRating && body.rating !== null && !isValidRating(body.rating)) {
+    return c.json({ error: "rating must be an integer 0-10 or null" }, 400);
+  }
+
+  const userId = c.get("userId");
+  const scanId = c.req.param("id");
+
+  // Rating only makes sense for a book marked "read" — enforce that invariant here so it
+  // holds regardless of caller (frontend gates the rating UI on status==='read', but a
+  // direct API call must not be able to leave a rating on a non-read scan).
+  if (hasRating && body.rating != null) {
+    const effectiveStatus = hasStatus
+      ? body.status
+      : (
+          await c.env.DB.prepare(
+            "SELECT status FROM scans WHERE id = ? AND user_id = ?",
+          )
+            .bind(scanId, userId)
+            .first<{ status: string }>()
+        )?.status;
+    if (effectiveStatus !== "read") {
+      return c.json(
+        { error: "rating can only be set on a book marked as read" },
+        400,
+      );
+    }
+  }
 
   const sets: string[] = [];
-  const binds: string[] = [];
+  const binds: (string | number | null)[] = [];
   if (hasStatus) {
     sets.push("status = ?");
     binds.push(body.status!);
@@ -206,11 +250,21 @@ scans.patch("/:id", async (c) => {
     sets.push("owning_status = ?");
     binds.push(body.owning_status!);
   }
+  const clearsRatingOnStatusChange = !hasRating && hasStatus && body.status !== "read";
+  if (hasRating) {
+    sets.push("rating = ?");
+    binds.push(body.rating ?? null);
+  } else if (clearsRatingOnStatusChange) {
+    // Moving off "read" without an explicit rating change clears any existing rating —
+    // otherwise a book no longer marked read could still surface under "group by rating".
+    sets.push("rating = ?");
+    binds.push(null);
+  }
 
   const result = await c.env.DB.prepare(
     `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
   )
-    .bind(...binds, c.req.param("id"), c.get("userId"))
+    .bind(...binds, scanId, userId)
     .run();
 
   if (!result.meta.changes) {
@@ -218,9 +272,10 @@ scans.patch("/:id", async (c) => {
   }
 
   return c.json({
-    id: Number(c.req.param("id")),
+    id: Number(scanId),
     ...(hasStatus ? { status: body.status } : {}),
     ...(hasOwningStatus ? { owning_status: body.owning_status } : {}),
+    ...(hasRating || clearsRatingOnStatusChange ? { rating: body.rating ?? null } : {}),
   });
 });
 

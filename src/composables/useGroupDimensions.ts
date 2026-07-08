@@ -17,6 +17,7 @@ export interface DimensionOption {
 const BUILTIN_SLUGS = new Set([
   "status",
   "owning",
+  "rating",
   "author",
   "genre",
   "series",
@@ -54,6 +55,7 @@ export function useGroupDimensions() {
     { value: "genre", label: t("library.group_genre") },
     { value: "status", label: t("library.group_status") },
     { value: "owning", label: t("library.group_owning") },
+    { value: "rating", label: t("library.group_rating") },
     { value: "publisher", label: t("library.group_publisher") },
     { value: "language", label: t("library.group_language") },
     { value: "form", label: t("library.group_form") },

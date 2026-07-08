@@ -21,7 +21,11 @@ export function useScanStatus() {
       return;
     }
     const prev = book.status;
+    const prevRating = book.rating;
     book.status = next;
+    // The backend clears rating whenever status moves off "read" — mirror that locally so
+    // the UI doesn't show a stale rating until the next refetch.
+    if (next !== "read") book.rating = null;
     try {
       const res = await apiFetch(`/api/scans/${book.id}`, {
         method: "PATCH",
@@ -30,6 +34,7 @@ export function useScanStatus() {
       if (!res.ok) throw new Error();
     } catch (e) {
       book.status = prev;
+      book.rating = prevRating;
       throw e;
     }
   }
@@ -67,5 +72,25 @@ export function useScanStatus() {
     }
   }
 
-  return { setStatus, cycleStatus, setOwningStatus };
+  async function setRating(book: Book, next: number | null): Promise<void> {
+    if (book.rating === next) return;
+    if (isGuest.value) {
+      guestStore.setRating(book.isbn, next);
+      return;
+    }
+    const prev = book.rating;
+    book.rating = next;
+    try {
+      const res = await apiFetch(`/api/scans/${book.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ rating: next }),
+      });
+      if (!res.ok) throw new Error();
+    } catch (e) {
+      if (book.rating === next) book.rating = prev;
+      throw e;
+    }
+  }
+
+  return { setStatus, cycleStatus, setOwningStatus, setRating };
 }

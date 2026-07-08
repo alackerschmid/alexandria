@@ -745,6 +745,7 @@
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
       @set-owning-status="(s) => setOwningStatus(selectedBook!, s)"
+      @set-rating="(r) => setRating(selectedBook!, r)"
       @delete="
         closeDetail();
         openDeleteDialog(selectedBook!);
@@ -853,6 +854,7 @@ const {
   setStatus: applyStatus,
   cycleStatus: applyCycle,
   setOwningStatus: applyOwningStatus,
+  setRating: applyRating,
 } = useScanStatus();
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
@@ -972,7 +974,7 @@ const currentGroupLabel = computed(
 
 // Reset sort direction to a sensible default when the group changes.
 watch(groupBy, (v) => {
-  sortDirection.value = v === "none" ? "desc" : "asc";
+  sortDirection.value = v === "none" || v === "rating" ? "desc" : "asc";
 });
 
 // Mobile group picker: re-tapping the active group flips sort direction (matches mockup).
@@ -1679,6 +1681,10 @@ const setStatus = (book: Book, newStatus: ReadStatus) => {
 
 const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
   return applyOwningStatus(book, newStatus).catch(notifyStatusError);
+};
+
+const setRating = (book: Book, rating: number | null) => {
+  return applyRating(book, rating).catch(notifyStatusError);
 };
 
 // ── Detail & delete ───────────────────────────────────────────────────────────

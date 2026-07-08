@@ -5,6 +5,7 @@ export type GroupBy =
   | "genre"
   | "status"
   | "owning"
+  | "rating"
   | "publisher"
   | "language"
   | "form"

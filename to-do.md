@@ -54,6 +54,7 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 
 ## features for v1.0.0
 
+- new page-scrolling landing page that details all of the features
 - wishlist feature
 - "missing" filter that highlights incomplete series
 - "to sell" marker

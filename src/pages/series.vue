@@ -164,6 +164,7 @@
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @set-owning-status="(s) => setDetailOwningStatus(s)"
+    @set-rating="(r) => setDetailRating(r)"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
   />
@@ -250,7 +251,8 @@ const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
 const { detailIsbn, openDetail, closeDetail } = useDetailRoute();
-const { setOwningStatus: applyOwningStatus } = useScanStatus();
+const { setOwningStatus: applyOwningStatus, setRating: applyRating } =
+  useScanStatus();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
@@ -317,6 +319,7 @@ async function loadDetail(entry: SeriesEntry) {
       // This is a reference edition the user hasn't scanned — "unowned" reflects that
       // honestly (the picker itself never renders here since detailReadonly is true).
       owning_status: "unowned",
+      rating: null,
       created_at: raw.fetched_at ?? "",
       language: raw.language,
       publish_date: raw.publish_date,
@@ -350,7 +353,14 @@ function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
 async function updateDetailStatus(newStatus: ReadStatus) {
   if (!detailBook.value || detailReadonly.value) return;
   const prev = detailBook.value.status;
-  detailBook.value = { ...detailBook.value, status: newStatus };
+  const prevRating = detailBook.value.rating;
+  // The backend clears rating whenever status moves off "read" — mirror that locally so
+  // the detail view doesn't show a stale rating until the next refetch.
+  detailBook.value = {
+    ...detailBook.value,
+    status: newStatus,
+    rating: newStatus === "read" ? detailBook.value.rating : null,
+  };
   try {
     const res = await apiFetch(`/api/scans/${detailBook.value.id}`, {
       method: "PATCH",
@@ -359,7 +369,7 @@ async function updateDetailStatus(newStatus: ReadStatus) {
     if (!res.ok) throw new Error();
   } catch {
     if (detailBook.value)
-      detailBook.value = { ...detailBook.value, status: prev };
+      detailBook.value = { ...detailBook.value, status: prev, rating: prevRating };
   }
 }
 
@@ -375,6 +385,11 @@ function setDetailStatus(s: ReadStatus) {
 function setDetailOwningStatus(newStatus: OwningStatus) {
   if (!detailBook.value || detailReadonly.value) return;
   return applyOwningStatus(detailBook.value, newStatus).catch(() => {});
+}
+
+function setDetailRating(rating: number | null) {
+  if (!detailBook.value || detailReadonly.value) return;
+  return applyRating(detailBook.value, rating).catch(() => {});
 }
 
 async function load() {
