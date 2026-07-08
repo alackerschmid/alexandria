@@ -79,6 +79,7 @@ export type BookMetadata = {
 };
 
 export type WorkDetails = {
+  title: string | null;
   genres: string[];
   originalPubDate: string | null;
   awards: string[];

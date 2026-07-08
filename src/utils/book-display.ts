@@ -1,6 +1,6 @@
 // Shared book display formatters — keep title/author fallbacks and date parsing in one place.
 import { BCP47 } from "@/plugins/i18n";
-import type { Book } from "@/types/book";
+import type { Book, ReadStatus } from "@/types/book";
 import type { SortOption } from "@/types/library";
 
 /** Stable sort by acquisition date: `asc` oldest-first, `desc` newest-first. */
@@ -10,6 +10,27 @@ export function sortByCreatedAt(list: Book[], dir: SortOption): Book[] {
       ? a.created_at.localeCompare(b.created_at)
       : b.created_at.localeCompare(a.created_at),
   );
+}
+
+// Edition-collapsing priority rule: read > reading > unread > dnf, most-recent tie-break.
+// Distinct from STATUS_ORDER (useBookStatus.ts), which orders the quick-cycle button, not
+// which edition "wins" when multiple editions of a work carry different statuses.
+const REPRESENTATIVE_STATUS_PRIORITY: Record<ReadStatus, number> = {
+  read: 3,
+  reading: 2,
+  unread: 1,
+  dnf: 0,
+};
+
+/** Picks the edition whose edition-only fields (cover, publisher, status, ...) represent a
+ *  collapsed work-card, via the status-priority rule with most-recently-added as tie-break. */
+export function pickRepresentativeEdition(editions: Book[]): Book {
+  return editions.reduce((best, cur) => {
+    const bestPriority = REPRESENTATIVE_STATUS_PRIORITY[best.status];
+    const curPriority = REPRESENTATIVE_STATUS_PRIORITY[cur.status];
+    if (curPriority !== bestPriority) return curPriority > bestPriority ? cur : best;
+    return cur.created_at > best.created_at ? cur : best;
+  });
 }
 
 /** Title with ISBN fallback when a book has no catalogued title. */

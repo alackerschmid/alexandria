@@ -62,6 +62,7 @@ export function buildScanSelect(locale: string): string {
          b.id   AS book_id,
          b.isbn,
          b.work_id                                           AS work_id,
+         wk.canonical_title                                  AS work_canonical_title,
          COALESCE(o.title, b.title)                          AS title,
          b.author                                            AS author,
          ${AUTHORS_JSON_SUBQUERY}                            AS authors_json,

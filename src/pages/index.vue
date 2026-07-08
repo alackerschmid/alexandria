@@ -167,7 +167,7 @@
                 >{{ dropdownHeading }}</span
               >
               <span class="font-mono text-[10px] text-text-secondary/50">{{
-                $t("library.filtered_count", { n: baseFiltered.length })
+                $t("library.filtered_count", { n: groupedFiltered.length })
               }}</span>
             </div>
 
@@ -323,6 +323,8 @@
               v-model:show-unowned="showUnowned"
               v-model:show-status-icons="showStatusIcons"
               v-model:only-owned="onlyOwned"
+              v-model:highlight-owning-border="highlightOwningBorder"
+              v-model:group-editions="groupEditions"
               :series-context="seriesContext"
             >
               <template #extra>
@@ -506,6 +508,8 @@
           v-model:show-unowned="showUnowned"
           v-model:show-status-icons="showStatusIcons"
           v-model:only-owned="onlyOwned"
+          v-model:highlight-owning-border="highlightOwningBorder"
+          v-model:group-editions="groupEditions"
           v-model:view-mode="viewMode"
           show-view-row
           :series-context="seriesContext"
@@ -640,7 +644,7 @@
             }"
           >
             <LibraryCoverCard
-              v-for="entry in shelfVisible(group)"
+              v-for="entry in shelfVisible(group).flatMap(expandEntry)"
               :key="entry.key"
               :title="entry.title"
               :cover-url="entry.cover_url"
@@ -650,19 +654,29 @@
               :owning-status="entry.owningStatus"
               :author="entry.author"
               :hide-status="!showStatusIcons"
+              :edition-count="entry.editionCount"
+              :expanded="!!entry.book && expandedCards.has(entry.book.id)"
               @select="onEntrySelect(entry)"
+              @toggle-editions="entry.book && toggleCardExpand(entry.book.id)"
             />
           </div>
 
           <!-- List shelf -->
           <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <template v-for="entry in shelfVisible(group)" :key="entry.key">
+            <template
+              v-for="entry in shelfVisible(group)"
+              :key="entry.key"
+            >
               <LibraryRowCard
                 v-if="entry.book"
                 :book="entry.book"
                 :hide-status="!showStatusIcons"
+                :expanded="expandedCards.has(entry.book.id)"
+                :highlight-owning-border="highlightOwningBorder"
                 @cycle-status="cycleStatus(entry.book)"
                 @select="openDetail(entry.book)"
+                @select-edition="openDetail($event)"
+                @toggle-editions="toggleCardExpand(entry.book.id)"
               />
               <LibraryGhostRow
                 v-else
@@ -693,7 +707,7 @@
         class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4"
       >
         <LibraryCoverCard
-          v-for="book in pagedBooks"
+          v-for="book in pagedBooks.flatMap(expandBook)"
           :key="book.id"
           :title="book.title || book.isbn"
           :cover-url="book.cover_url ?? null"
@@ -703,7 +717,10 @@
           :owning-status="book.owning_status"
           :author="authorDisplayName(book)"
           :hide-status="!showStatusIcons"
+          :edition-count="book.editionCount"
+          :expanded="expandedCards.has(book.id)"
           @select="openDetail(book)"
+          @toggle-editions="toggleCardExpand(book.id)"
         />
       </div>
 
@@ -714,8 +731,12 @@
           :key="book.id"
           :book="book"
           :hide-status="!showStatusIcons"
+          :expanded="expandedCards.has(book.id)"
+          :highlight-owning-border="highlightOwningBorder"
           @cycle-status="cycleStatus(book)"
           @select="openDetail(book)"
+          @select-edition="openDetail($event)"
+          @toggle-editions="toggleCardExpand(book.id)"
         />
       </div>
 
@@ -734,7 +755,7 @@
     <!-- Book detail dialog -->
     <BookDetail
       v-if="selectedBook"
-      :model-value="!!detailIsbn && !!selectedBook"
+      :model-value="!!detailEditionIsbn && !!selectedBook"
       :book="selectedBook"
       :guest="isGuest"
       @update:model-value="
@@ -751,6 +772,7 @@
         openDeleteDialog(selectedBook!);
       "
       @refreshed="handleRefreshed"
+      @switch-edition="onSwitchEdition"
     />
 
     <!-- Delete confirmation -->
@@ -822,6 +844,7 @@ import {
   type SuggestionFacet,
 } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
+import { useEditionGrouping } from "@/composables/useEditionGrouping";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
@@ -859,7 +882,7 @@ const {
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const {
-  detailIsbn,
+  detailEditionIsbn,
   openDetail: openDetailRoute,
   closeDetail,
 } = useDetailRoute();
@@ -913,6 +936,11 @@ const onlyOwned = computed({
   get: () => libraryDefaultsStore.onlyOwned,
   set: (v) => libraryDefaultsStore.setOnlyOwned(v),
 });
+// Same reasoning — needed by the useEditionGrouping calls right below.
+const groupEditions = computed({
+  get: () => libraryDefaultsStore.groupEditions,
+  set: (v) => libraryDefaultsStore.setGroupEditions(v),
+});
 
 const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
   useLibrarySearch({
@@ -923,18 +951,30 @@ const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
     onlyOwned,
   });
 
+// Collapses same-work editions into one synthetic card. Must run after search/filtering
+// (baseFiltered), not before — see useEditionGrouping's doc comment.
+const groupedFiltered = useEditionGrouping(baseFiltered, groupEditions);
+
 // Filtered and sorted — used by tile view and all non-series groupings.
 const filteredBooks = computed<Book[]>(() =>
-  sortByCreatedAt(baseFiltered.value, sortDirection.value),
+  sortByCreatedAt(groupedFiltered.value, sortDirection.value),
 );
 
 const { allGroups } = useLibraryGrouping({
-  baseFiltered,
+  baseFiltered: groupedFiltered,
   filteredBooks,
   groupBy,
   sortDirection,
   statusOf,
 });
+
+// Separate, unfiltered grouping pass (independent of search) purely to resolve which
+// owned edition represents each work — the series-shelf branch below needs this
+// regardless of any active search, mirroring how it already reads from allBooks today.
+// Always enabled (not gated on the groupEditions display toggle): a series shelf always shows
+// one card per work, so it needs a deliberate representative pick regardless of whether the
+// *other* shelves are currently displaying editions collapsed or expanded.
+const groupedAllBooks = useEditionGrouping(allBooks, true);
 
 // ── Display settings (persisted) ───────────────────────────────────────────────
 const mainOnly = computed({
@@ -948,6 +988,10 @@ const highlightComplete = computed({
 const showUnowned = computed({
   get: () => libraryDefaultsStore.showUnowned,
   set: (v) => libraryDefaultsStore.setShowUnowned(v),
+});
+const highlightOwningBorder = computed({
+  get: () => libraryDefaultsStore.highlightOwningBorder,
+  set: (v) => libraryDefaultsStore.setHighlightOwningBorder(v),
 });
 // Backed by a separate persisted default per view (list vs tile) — see
 // showStatusIconsList/Tile in libraryDefaults.ts — so the toggle always reflects
@@ -990,6 +1034,33 @@ function selectGroupMobile(v: GroupBy) {
 const expanded = ref<Record<string, boolean>>({});
 function toggleExpand(key: string) {
   expanded.value[key] = !expanded.value[key];
+}
+
+// Per-card edition expansion (key = the representative book's id). Toggled by the
+// ×N badge, distinct from `expanded` above (which shows more shelf rows, not editions).
+const expandedCards = ref<Set<number>>(new Set());
+function toggleCardExpand(id: number) {
+  const next = new Set(expandedCards.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  expandedCards.value = next;
+}
+
+// Injects a work-card's *other* owned editions right after it when expanded — the
+// collapsed/representative card itself always stays put, since its ×N badge is the only
+// way to collapse again (replacing it entirely would strand the user with no way back).
+function expandBook(b: Book): Book[] {
+  if (!b.editionCount || b.editionCount <= 1 || !expandedCards.value.has(b.id))
+    return [b];
+  const others = (b.editions ?? []).filter((e) => e.id !== b.id);
+  return [b, ...others];
+}
+function expandEntry(e: ShelfEntry): ShelfEntry[] {
+  if (!e.book) return [e];
+  const book = e.book;
+  // Keep the original entry (not a re-derived bookToEntry) for the representative slot —
+  // series-shelf entries carry fields (seriesId, key) that bookToEntry doesn't reconstruct.
+  return expandBook(book).map((b) => (b.id === book.id ? e : bookToEntry(b)));
 }
 
 // Series membership for grouped-by-series shelves (unowned reveal + completeness)
@@ -1474,6 +1545,7 @@ interface ShelfEntry {
   author?: string | null;
   book?: Book;
   seriesId?: number | null;
+  editionCount?: number;
 }
 
 interface ShelfGroup {
@@ -1485,9 +1557,12 @@ interface ShelfGroup {
   entries: ShelfEntry[];
 }
 
-const bookById = computed(() => {
+// Keyed by work_id so a work with multiple owned scans resolves to one representative
+// (via useEditionGrouping's priority rule) — deliberately built from the unfiltered
+// allBooks, since series-shelf entries below aren't meant to react to the active search.
+const booksByWorkId = computed(() => {
   const m = new Map<number, Book>();
-  for (const b of allBooks.value) m.set(b.id, b);
+  for (const b of groupedAllBooks.value) if (b.work_id != null) m.set(b.work_id, b);
   return m;
 });
 
@@ -1502,6 +1577,7 @@ const bookToEntry = (b: Book): ShelfEntry => ({
   author: authorDisplayName(b),
   book: b,
   seriesId: b.series_id ?? null,
+  editionCount: b.editionCount,
 });
 
 const shelfGroups = computed<ShelfGroup[]>(() =>
@@ -1529,8 +1605,7 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
       const owningFilter = parsedSearch.value.owning;
       const entries: ShelfEntry[] = visible
         .map((e) => {
-          const book =
-            e.scan_id != null ? bookById.value.get(e.scan_id) : undefined;
+          const book = booksByWorkId.value.get(e.work_id);
           return {
             key: `m${e.work_id}`,
             title: e.title,
@@ -1542,6 +1617,7 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
             author: book ? authorDisplayName(book) : null,
             book,
             seriesId: g.seriesId,
+            editionCount: book?.editionCount,
           };
         })
         .filter((entry) => {
@@ -1691,12 +1767,19 @@ const setRating = (book: Book, rating: number | null) => {
 
 const openDetail = (book: Book) => {
   selectedBook.value = book;
-  openDetailRoute(book.isbn);
+  openDetailRoute(book.work_id, book.isbn);
 };
+
+// Switching editions from within the detail carousel is just another owned scan in this
+// same user's library — no extra fetch needed, unlike series.vue's readonly reference case.
+function onSwitchEdition(payload: { isbn: string; scanId: number }) {
+  const book = allBooks.value.find((b) => b.isbn === payload.isbn);
+  if (book) openDetail(book);
+}
 
 // Resolve selectedBook from the URL (handles Back/Forward and deep links)
 watch(
-  [detailIsbn, allBooks],
+  [detailEditionIsbn, allBooks],
   ([isbn]) => {
     if (!isbn) {
       selectedBook.value = null;

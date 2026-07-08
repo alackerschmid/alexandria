@@ -26,6 +26,7 @@ type EditionRow = {
   publish_date: string | null;
   publisher: string | null;
   scan_id: number | null;
+  status: string | null;
   materialized: boolean;
 };
 
@@ -33,7 +34,8 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
   const { results: materialized } = await db
     .prepare(
       `
-    SELECT b.isbn, b.title, b.language, b.cover_url, b.publish_date, b.publisher, s.id AS scan_id
+    SELECT b.isbn, b.title, b.language, b.cover_url, b.publish_date, b.publisher, s.id AS scan_id,
+           s.status
     FROM books b
     LEFT JOIN scans s ON s.book_id = b.id AND s.user_id = ?
     WHERE b.work_id = ?
@@ -48,6 +50,7 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
       publish_date: string | null;
       publisher: string | null;
       scan_id: number | null;
+      status: string | null;
     }>();
 
   const { results: candidates } = await db
@@ -70,7 +73,12 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
 
   const editions: EditionRow[] = [
     ...materialized.map((r) => ({ ...r, materialized: true })),
-    ...candidates.map((r) => ({ ...r, scan_id: null, materialized: false })),
+    ...candidates.map((r) => ({
+      ...r,
+      scan_id: null,
+      status: null,
+      materialized: false,
+    })),
   ];
 
   const work = await db

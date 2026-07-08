@@ -64,6 +64,22 @@
       >
         {{ $t("library.novella") }}
       </span>
+
+      <!-- Edition-count badge -->
+      <button
+        v-if="editionCount && editionCount > 1"
+        type="button"
+        class="absolute bottom-1.5 right-1.5 font-mono text-[9px] tracking-[0.08em] px-1.5 py-0.5"
+        :class="expanded ? 'text-charcoal bg-orange-neon' : 'text-orange-neon'"
+        :style="expanded ? '' : 'background: rgba(0, 0, 0, 0.55)'"
+        :aria-label="$t('library.edition_count', { n: editionCount })"
+        :aria-pressed="expanded"
+        @click.stop="$emit('toggle-editions')"
+        @keydown.enter.stop
+        @keydown.space.stop
+      >
+        ×{{ editionCount }}
+      </button>
     </div>
 
     <p
@@ -106,9 +122,11 @@ const props = defineProps<{
   owningStatus?: OwningStatus;
   author?: string | null;
   hideStatus?: boolean;
+  editionCount?: number | null;
+  expanded?: boolean;
 }>();
 
-defineEmits<{ select: [] }>();
+defineEmits<{ select: []; "toggle-editions": [] }>();
 
 const { statusConfig } = useBookStatus();
 const { owningBadge: getOwningBadge } = useOwningStatus();

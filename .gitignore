@@ -15,3 +15,5 @@ library-rework.md
 worker/schema.sql
 Library.dc (1).html
 create-a-plan-for-transient-naur.md
+*.csv
+.playwright-mcp
