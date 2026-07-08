@@ -72,27 +72,62 @@
               {{ $t("detail.standalone") }}
             </span>
 
-            <!-- status pill -->
-            <button
-              v-if="!readonly"
-              class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase font-medium transition-colors"
-              :class="STATUS_CONFIG[book.status].textClass"
-              @click="$emit('cycle-status')"
-            >
+            <!-- status pill + owning status -->
+            <div class="flex items-center gap-3">
+              <button
+                v-if="!readonly"
+                class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase font-medium transition-colors"
+                :class="STATUS_CONFIG[book.status].textClass"
+                @click="$emit('cycle-status')"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full shrink-0"
+                  :class="STATUS_CONFIG[book.status].dotClass"
+                />
+                {{ STATUS_CONFIG[book.status].label }}
+              </button>
               <span
-                class="w-1.5 h-1.5 rounded-full shrink-0"
-                :class="STATUS_CONFIG[book.status].dotClass"
-              />
-              {{ STATUS_CONFIG[book.status].label }}
+                v-else
+                class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-text-secondary/50"
+              >
+                <span
+                  class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border"
+                />
+                {{ STATUS_CONFIG[book.status].label }}
+              </span>
+
+              <span
+                class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase"
+                :style="{ color: OWNING_META[book.owning_status].color }"
+              >
+                <v-icon :icon="OWNING_META[book.owning_status].icon" size="12" />
+                {{ owningLabels[book.owning_status] }}
+              </span>
+            </div>
+
+            <!-- rating (card view; read only — rating a book you haven't finished doesn't make sense) -->
+            <button
+              v-if="!readonly && book.status === 'read'"
+              class="flex items-center gap-1.5 mt-3"
+              @click="ratingDialogOpen = true"
+            >
+              <span class="flex items-center gap-1">
+                <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
+              </span>
+              <span class="font-mono text-[11px] text-text-secondary">
+                {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
+              </span>
             </button>
             <span
-              v-else
-              class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-text-secondary/50"
+              v-else-if="readonly && book.status === 'read'"
+              class="flex items-center gap-1.5 mt-3"
             >
-              <span
-                class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border"
-              />
-              {{ STATUS_CONFIG[book.status].label }}
+              <span class="flex items-center gap-1">
+                <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
+              </span>
+              <span class="font-mono text-[11px] text-text-secondary">
+                {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
+              </span>
             </span>
 
             <!-- enrichment indicator -->
@@ -553,6 +588,32 @@
                     </div>
                   </div>
 
+                  <!-- rating (read only — rating a book you haven't finished doesn't make sense) -->
+                  <div
+                    v-if="!readonly && book.status === 'read'"
+                    class="py-4 border-b border-charcoal-border/50 flex items-center justify-between cursor-pointer"
+                    @click="ratingDialogOpen = true"
+                  >
+                    <span
+                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
+                    >
+                      {{ $t("detail.rating") }}
+                    </span>
+                    <span class="flex items-center gap-2">
+                      <span class="flex items-center gap-0.5">
+                        <span
+                          v-for="d in ratingRowDots"
+                          :key="d.n"
+                          :style="d.style"
+                        />
+                      </span>
+                      <span class="font-mono text-[13px] text-text-primary">
+                        {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
+                      </span>
+                      <span class="text-[9px] text-text-secondary/50">▾</span>
+                    </span>
+                  </div>
+
                   <div class="pb-4 border-b border-charcoal-border/50">
                     <div
                       class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
@@ -840,6 +901,13 @@
         </div>
       </div>
     </template>
+
+    <!-- shared across both card and full mode -->
+    <RatingDialog
+      v-model="ratingDialogOpen"
+      :rating="book.rating"
+      @set-rating="$emit('set-rating', $event)"
+    />
   </v-dialog>
 </template>
 
@@ -865,6 +933,8 @@ import { bookYear } from "@/utils/book-display";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
+import RatingDialog from "@/components/book-detail/RatingDialog.vue";
+import { ratingDots } from "@/composables/useRating";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";
@@ -902,6 +972,7 @@ const emit = defineEmits<{
   "cycle-status": [];
   "set-status": [status: ReadStatus];
   "set-owning-status": [status: OwningStatus];
+  "set-rating": [rating: number | null];
   delete: [];
   refreshed: [updated: Partial<BookWithOverrides>];
 }>();
@@ -917,6 +988,7 @@ const router = useRouter();
 
 const mode = ref<"card" | "full">("card");
 const editionsDialogOpen = ref(false);
+const ratingDialogOpen = ref(false);
 
 function expand() {
   mode.value = "full";
@@ -956,6 +1028,9 @@ const owningThumbStyle = computed(() => {
     meta.color,
   );
 });
+
+const ratingRowDots = computed(() => ratingDots(props.book.rating, "sm"));
+const cardRatingDots = computed(() => ratingDots(props.book.rating, "md"));
 
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 

@@ -258,6 +258,14 @@ export function useLibraryGrouping(options: {
           missingKey: "__unclassified__",
           missingLabel: unclassified,
         });
+      case "rating":
+        return groupByValues(books, dir, locale, {
+          values: (b) => (b.rating != null ? [String(b.rating)] : []),
+          label: (key) => `${key}${t("detail.of_ten")}`,
+          missingKey: "__unrated__",
+          missingLabel: t("library.unrated"),
+          numeric: true,
+        });
       case "decade":
         return groupByValues(books, dir, locale, {
           values: (b) => {

@@ -15,6 +15,7 @@ export interface Book {
   cover_url: string | null;
   status: ReadStatus;
   owning_status: OwningStatus;
+  rating: number | null;
   created_at: string;
   language?: string | null;
   publish_date?: string | null;

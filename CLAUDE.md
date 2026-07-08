@@ -131,7 +131,7 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`.
 - `PATCH /api/books/override` — write per-user field overrides to `book_overrides`; body `{ isbn, changes: { field: value } }`
 - `GET /api/scans` — paginated list (`limit`/`offset`/`sort`); returns merged rows with `*_overridden` boolean flags
 - `POST /api/scans` — save a scan by ISBN; resolves book metadata automatically
-- `PATCH /api/scans/:id` — update status (`unread` | `reading` | `read` | `dnf`)
+- `PATCH /api/scans/:id` — update status (`unread` | `reading` | `read` | `dnf`), `owning_status`, and/or `rating` (integer 0-10 or `null` to clear)
 - `DELETE /api/scans/:id` — remove a scan and its associated `book_overrides`
 
 Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Optional: `CORS_ORIGIN` (defaults to `*`). Local dev uses `worker/.dev.vars`.
@@ -165,7 +165,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Op
 
 `GET /api/scans` accepts a `locale` query param (default `en`) for localized series names, and `sort` with values: `date_desc` (default), `date_asc`, `title_asc`, `title_desc`, `author_asc`, `author_desc`, `series_asc`.
 
-Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `genres`/`awards`/`nominations`/`narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays, parsed via `parseTagArray` in `library-query.ts` — `[]` when absent, never `null`), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `reference_page_count` (number | null, page count of the work's Wikidata reference edition — the frontend shows it as "≈N" with a tooltip when the edition's own page count is unknown), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
+Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `rating` (integer 0-10 | null), `genres`/`awards`/`nominations`/`narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays, parsed via `parseTagArray` in `library-query.ts` — `[]` when absent, never `null`), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `reference_page_count` (number | null, page count of the work's Wikidata reference edition — the frontend shows it as "≈N" with a tooltip when the edition's own page count is unknown), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
 
 ### Database schema
 Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the initial state — migrations are authoritative.
@@ -178,7 +178,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **`book_overrides`** — per-user field overrides: `user_id` → `users`, `book_id` → `books`, same nullable fields as `books` (except `author` — not overridable), `updated_at`. Unique on `(user_id, book_id)`.
 
-**`scans`** — per-user library entries: `id`, `user_id` → `users`, `book_id` → `books`, `status` (`unread` | `reading` | `read`), `created_at`. Unique on `(user_id, book_id)`.
+**`scans`** — per-user library entries: `id`, `user_id` → `users`, `book_id` → `books`, `status` (`unread` | `reading` | `read` | `dnf`), `owning_status` (`owned` | `unowned` | `want` | `lent_out`), `rating` (integer 0-10, nullable — unrated is the default, no `NOT NULL DEFAULT` unlike the other scan-level fields), `created_at`. Unique on `(user_id, book_id)`.
 
 **FRBR-style works/series model** (added in migrations 0009–0011):
 
@@ -275,11 +275,13 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 [release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release.
 
 ## Verification
-Always run type-checks after code edits and verify they pass before considering a task complete:
+Always run type-checks and lint after code edits and verify they pass before considering a task complete:
 ```bash
 npm run type-check
+npm run lint
 cd worker && npm test   # if you touched worker pure-logic functions covered by worker/test/*.spec.ts
 ```
+This applies to code review as well: a `/code-review` pass (and any fixes applied from one) isn't done until these commands have actually been run and shown to pass — don't stop at static-analysis findings.
 
 ## Troubleshooting
 
