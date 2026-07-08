@@ -1,0 +1,87 @@
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
+import type { OwningStatus } from "@/types/book";
+
+// Mirrors useBookStatus.ts, but for the independent "do I own this copy" axis.
+// Presentation is border-first (library cards), unlike reading status which is dot-first.
+
+export const OWNING_ORDER: OwningStatus[] = [
+  "owned",
+  "unowned",
+  "want",
+  "lent_out",
+];
+
+// Statuses that render a corner badge on library cards — "owned"/"unowned" get a border
+// treatment only (see OwningMeta.borderClass), no badge.
+const BADGE_STATUSES = new Set<OwningStatus>(["want", "lent_out"]);
+
+export interface OwningMeta {
+  /** Tailwind border classes for the library cards (tile cover box / list article) */
+  borderClass: string;
+  /** mdi icon name — shown as a corner badge on cards for non-default statuses */
+  icon: string;
+  /** Solid colour (hex) for inline styles — scanner picker, detail picker thumb, card badge */
+  color: string;
+  /** Translucent tint background (rgba) for inline styles */
+  tint: string;
+}
+
+export const OWNING_META: Record<OwningStatus, OwningMeta> = {
+  owned: {
+    borderClass: "",
+    icon: "mdi-check-circle-outline",
+    color: "#8a8078",
+    tint: "rgba(138,128,120,0.12)",
+  },
+  unowned: {
+    // Wider border (vs. a plain 1px `border-dashed`) so the dash/gap pattern reads as
+    // clearly distinct from the default owned card at a glance.
+    borderClass: "border-2 border-dashed border-text-secondary/40",
+    icon: "mdi-circle-outline",
+    color: "#8a8078",
+    tint: "rgba(138,128,120,0.08)",
+  },
+  want: {
+    borderClass: "border-2 border-dashed border-orange-neon/50",
+    icon: "mdi-heart-outline",
+    color: "#ff6600",
+    tint: "rgba(255,102,0,0.10)",
+  },
+  lent_out: {
+    borderClass: "border-2 border-dashed border-[#d4a017]/50",
+    icon: "mdi-account-arrow-right-outline",
+    color: "#d4a017",
+    tint: "rgba(212,160,23,0.10)",
+  },
+};
+
+export interface OwningBadge {
+  icon: string;
+  label: string;
+  color: string;
+}
+
+/** Reactive owning-status presentation with translated labels. */
+export function useOwningStatus() {
+  const { t } = useI18n();
+
+  const owningLabels = computed<Record<OwningStatus, string>>(() => ({
+    owned: t("owning.owned"),
+    unowned: t("owning.unowned"),
+    want: t("owning.want"),
+    lent_out: t("owning.lent_out"),
+  }));
+
+  /** Corner-badge info for library cards — null for 'owned'/'unowned' (no badge shown). */
+  function owningBadge(status: OwningStatus): OwningBadge | null {
+    if (!BADGE_STATUSES.has(status)) return null;
+    return {
+      icon: OWNING_META[status].icon,
+      label: owningLabels.value[status],
+      color: OWNING_META[status].color,
+    };
+  }
+
+  return { owningLabels, owningBadge };
+}

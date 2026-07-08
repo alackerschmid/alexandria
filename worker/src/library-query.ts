@@ -58,7 +58,7 @@ export const AUTHORS_JSON_SUBQUERY = `
 export function buildScanSelect(locale: string): string {
   const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : "en";
   return `
-  SELECT s.id, s.status, s.created_at,
+  SELECT s.id, s.status, s.owning_status, s.created_at,
          b.id   AS book_id,
          b.isbn,
          b.work_id                                           AS work_id,
@@ -226,3 +226,10 @@ export function attachCustomFields(
 }
 
 export const VALID_STATUSES = ["unread", "reading", "read", "dnf"] as const;
+
+export const VALID_OWNING_STATUSES = [
+  "owned",
+  "unowned",
+  "want",
+  "lent_out",
+] as const;

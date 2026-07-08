@@ -3,7 +3,7 @@ import { useApi } from "@/composables/useApi";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
-import type { Book, ReadStatus } from "@/types/book";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 // Centralises the optimistic reading-status mutation that the library list performs.
 // Guest scans are updated in localStorage; authenticated scans PATCH the API and roll
@@ -42,5 +42,30 @@ export function useScanStatus() {
     return setStatus(book, NEXT_STATUS[book.status]);
   }
 
-  return { setStatus, cycleStatus };
+  async function setOwningStatus(
+    book: Book,
+    next: OwningStatus,
+  ): Promise<void> {
+    if (book.owning_status === next) return;
+    if (isGuest.value) {
+      guestStore.setOwningStatus(book.isbn, next);
+      return;
+    }
+    const prev = book.owning_status;
+    book.owning_status = next;
+    try {
+      const res = await apiFetch(`/api/scans/${book.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ owning_status: next }),
+      });
+      if (!res.ok) throw new Error();
+    } catch (e) {
+      // Only roll back if nothing newer has superseded this optimistic write
+      // (e.g. a second rapid toggle that already succeeded).
+      if (book.owning_status === next) book.owning_status = prev;
+      throw e;
+    }
+  }
+
+  return { setStatus, cycleStatus, setOwningStatus };
 }

@@ -23,6 +23,16 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     boolFrom("libHighlightComplete", true),
   );
   const showUnowned = ref<boolean>(boolFrom("libShowUnowned", false));
+  // Independent per-view defaults: the reading-status dot is the primary signal in
+  // list view but visual clutter in the denser tile grid, so each view remembers
+  // its own preference rather than sharing one flag.
+  const showStatusIconsList = ref<boolean>(
+    boolFrom("libShowStatusIconsList", true),
+  );
+  const showStatusIconsTile = ref<boolean>(
+    boolFrom("libShowStatusIconsTile", false),
+  );
+  const onlyOwned = ref<boolean>(boolFrom("libOnlyOwned", false));
 
   const VALID_GROUP_BY: GroupBy[] = [
     "none",
@@ -30,6 +40,7 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     "series",
     "genre",
     "status",
+    "owning",
     "publisher",
     "language",
     "form",
@@ -58,6 +69,18 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
   function setShowUnowned(v: boolean) {
     showUnowned.value = v;
     localStorage.setItem("libShowUnowned", String(v));
+  }
+  function setShowStatusIconsList(v: boolean) {
+    showStatusIconsList.value = v;
+    localStorage.setItem("libShowStatusIconsList", String(v));
+  }
+  function setShowStatusIconsTile(v: boolean) {
+    showStatusIconsTile.value = v;
+    localStorage.setItem("libShowStatusIconsTile", String(v));
+  }
+  function setOnlyOwned(v: boolean) {
+    onlyOwned.value = v;
+    localStorage.setItem("libOnlyOwned", String(v));
   }
   function setGroupBy(v: GroupBy) {
     groupBy.value = v;
@@ -90,6 +113,9 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     mainOnly,
     highlightComplete,
     showUnowned,
+    showStatusIconsList,
+    showStatusIconsTile,
+    onlyOwned,
     groupBy,
     sortDirection,
     setView,
@@ -98,6 +124,9 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     setMainOnly,
     setHighlightComplete,
     setShowUnowned,
+    setShowStatusIconsList,
+    setShowStatusIconsTile,
+    setOnlyOwned,
     setGroupBy,
     setSortDirection,
   };

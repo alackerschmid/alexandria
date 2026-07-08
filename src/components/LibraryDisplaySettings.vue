@@ -44,6 +44,40 @@
     </div>
 
     <button
+      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
+      @click="showStatusIcons = !showStatusIcons"
+    >
+      <span class="min-w-0">
+        <span class="block text-xs text-text-primary">{{
+          $t("library.show_status_icons")
+        }}</span>
+        <span
+          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
+          >{{ $t("library.show_status_icons_sub") }}</span
+        >
+      </span>
+      <span :class="track(showStatusIcons)"
+        ><span :class="knob(showStatusIcons)"
+      /></span>
+    </button>
+
+    <button
+      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
+      @click="onlyOwned = !onlyOwned"
+    >
+      <span class="min-w-0">
+        <span class="block text-xs text-text-primary">{{
+          $t("library.only_owned")
+        }}</span>
+        <span
+          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
+          >{{ $t("library.only_owned_sub") }}</span
+        >
+      </span>
+      <span :class="track(onlyOwned)"><span :class="knob(onlyOwned)" /></span>
+    </button>
+
+    <button
       v-if="seriesContext"
       class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
       @click="mainOnly = !mainOnly"
@@ -98,13 +132,6 @@
       /></span>
     </button>
 
-    <p
-      v-if="!seriesContext"
-      class="text-[10px] text-text-secondary py-3.5 leading-snug"
-    >
-      {{ $t("library.display_series_hint") }}
-    </p>
-
     <slot name="extra" />
   </div>
 </template>
@@ -115,6 +142,10 @@ const highlightComplete = defineModel<boolean>("highlightComplete", {
   required: true,
 });
 const showUnowned = defineModel<boolean>("showUnowned", { required: true });
+const showStatusIcons = defineModel<boolean>("showStatusIcons", {
+  required: true,
+});
+const onlyOwned = defineModel<boolean>("onlyOwned", { required: true });
 const viewMode = defineModel<"list" | "tile">("viewMode");
 
 withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {

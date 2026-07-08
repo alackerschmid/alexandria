@@ -4,6 +4,7 @@ export type GroupBy =
   | "series"
   | "genre"
   | "status"
+  | "owning"
   | "publisher"
   | "language"
   | "form"

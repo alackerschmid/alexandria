@@ -9,6 +9,7 @@ import {
   fetchCustomFields,
   attachCustomFields,
   VALID_STATUSES,
+  VALID_OWNING_STATUSES,
   getBookByIsbn,
   parseIntOr,
 } from "../library-query";
@@ -53,7 +54,11 @@ scans.get("/", async (c) => {
 });
 
 scans.post("/", async (c) => {
-  const body = await c.req.json<{ isbn: string; status?: string }>();
+  const body = await c.req.json<{
+    isbn: string;
+    status?: string;
+    owning_status?: string;
+  }>();
   if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
   // Format-only check (not checksum): a scanner misread that gets one check digit wrong must
@@ -64,6 +69,11 @@ scans.post("/", async (c) => {
   )
     ? body.status
     : "unread";
+  const initialOwningStatus = (
+    VALID_OWNING_STATUSES as readonly string[]
+  ).includes(body.owning_status ?? "")
+    ? body.owning_status
+    : "owned";
 
   const userId = c.get("userId");
   const db = c.env.DB;
@@ -100,8 +110,10 @@ scans.post("/", async (c) => {
   let result;
   try {
     result = await db
-      .prepare("INSERT INTO scans (user_id, book_id, status) VALUES (?, ?, ?)")
-      .bind(userId, book.id, initialStatus)
+      .prepare(
+        "INSERT INTO scans (user_id, book_id, status, owning_status) VALUES (?, ?, ?, ?)",
+      )
+      .bind(userId, book.id, initialStatus, initialOwningStatus)
       .run();
   } catch (e: any) {
     if (e.message?.includes("UNIQUE constraint failed")) {
@@ -150,25 +162,66 @@ scans.get("/:id", async (c) => {
 });
 
 scans.patch("/:id", async (c) => {
-  const { status } = await c.req.json();
-  if (!VALID_STATUSES.includes(status)) {
+  const rawBody = await c.req.json();
+  if (typeof rawBody !== "object" || rawBody === null) {
+    return c.json({ error: "status or owning_status is required" }, 400);
+  }
+  const body = rawBody as { status?: string; owning_status?: string };
+  const hasStatus = "status" in body;
+  const hasOwningStatus = "owning_status" in body;
+
+  if (!hasStatus && !hasOwningStatus) {
+    return c.json({ error: "status or owning_status is required" }, 400);
+  }
+  if (
+    hasStatus &&
+    !(VALID_STATUSES as readonly string[]).includes(body.status ?? "")
+  ) {
     return c.json(
       { error: "status must be one of: unread, reading, read, dnf" },
       400,
     );
   }
+  if (
+    hasOwningStatus &&
+    !(VALID_OWNING_STATUSES as readonly string[]).includes(
+      body.owning_status ?? "",
+    )
+  ) {
+    return c.json(
+      {
+        error: "owning_status must be one of: owned, unowned, want, lent_out",
+      },
+      400,
+    );
+  }
+
+  const sets: string[] = [];
+  const binds: string[] = [];
+  if (hasStatus) {
+    sets.push("status = ?");
+    binds.push(body.status!);
+  }
+  if (hasOwningStatus) {
+    sets.push("owning_status = ?");
+    binds.push(body.owning_status!);
+  }
 
   const result = await c.env.DB.prepare(
-    "UPDATE scans SET status = ? WHERE id = ? AND user_id = ?",
+    `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
   )
-    .bind(status, c.req.param("id"), c.get("userId"))
+    .bind(...binds, c.req.param("id"), c.get("userId"))
     .run();
 
   if (!result.meta.changes) {
     return c.json({ error: "Book not found" }, 404);
   }
 
-  return c.json({ id: Number(c.req.param("id")), status });
+  return c.json({
+    id: Number(c.req.param("id")),
+    ...(hasStatus ? { status: body.status } : {}),
+    ...(hasOwningStatus ? { owning_status: body.owning_status } : {}),
+  });
 });
 
 // Switch a scan to a different edition (ISBN) of the same work. Reading status and custom

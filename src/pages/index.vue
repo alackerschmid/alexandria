@@ -321,6 +321,8 @@
               v-model:main-only="mainOnly"
               v-model:highlight-complete="highlightComplete"
               v-model:show-unowned="showUnowned"
+              v-model:show-status-icons="showStatusIcons"
+              v-model:only-owned="onlyOwned"
               :series-context="seriesContext"
             >
               <template #extra>
@@ -502,6 +504,8 @@
           v-model:main-only="mainOnly"
           v-model:highlight-complete="highlightComplete"
           v-model:show-unowned="showUnowned"
+          v-model:show-status-icons="showStatusIcons"
+          v-model:only-owned="onlyOwned"
           v-model:view-mode="viewMode"
           show-view-row
           :series-context="seriesContext"
@@ -643,7 +647,9 @@
               :ordinal="entry.ordinal"
               :owned="entry.owned"
               :status="entry.status"
+              :owning-status="entry.owningStatus"
               :author="entry.author"
+              :hide-status="!showStatusIcons"
               @select="onEntrySelect(entry)"
             />
           </div>
@@ -654,6 +660,7 @@
               <LibraryRowCard
                 v-if="entry.book"
                 :book="entry.book"
+                :hide-status="!showStatusIcons"
                 @cycle-status="cycleStatus(entry.book)"
                 @select="openDetail(entry.book)"
               />
@@ -693,7 +700,9 @@
           :ordinal="null"
           :owned="true"
           :status="book.status"
+          :owning-status="book.owning_status"
           :author="authorDisplayName(book)"
+          :hide-status="!showStatusIcons"
           @select="openDetail(book)"
         />
       </div>
@@ -704,6 +713,7 @@
           v-for="book in pagedBooks"
           :key="book.id"
           :book="book"
+          :hide-status="!showStatusIcons"
           @cycle-status="cycleStatus(book)"
           @select="openDetail(book)"
         />
@@ -734,6 +744,7 @@
       "
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
+      @set-owning-status="(s) => setOwningStatus(selectedBook!, s)"
       @delete="
         closeDetail();
         openDeleteDialog(selectedBook!);
@@ -814,7 +825,7 @@ import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
-import type { Book, ReadStatus } from "@/types/book";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import type { GroupBy } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
@@ -838,7 +849,11 @@ const themeStore = useThemeStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
 const { apiFetch } = useApi();
-const { setStatus: applyStatus, cycleStatus: applyCycle } = useScanStatus();
+const {
+  setStatus: applyStatus,
+  cycleStatus: applyCycle,
+  setOwningStatus: applyOwningStatus,
+} = useScanStatus();
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const {
@@ -890,8 +905,21 @@ watch([search, groupBy, sortDirection], () => {
   statusOverrides.value.clear();
 });
 
+// Declared ahead of useLibrarySearch (rather than alongside the other persisted
+// display settings below) because the search pipeline needs it at setup time.
+const onlyOwned = computed({
+  get: () => libraryDefaultsStore.onlyOwned,
+  set: (v) => libraryDefaultsStore.setOnlyOwned(v),
+});
+
 const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
-  useLibrarySearch({ books: allBooks, search, customFieldMetas, statusOf });
+  useLibrarySearch({
+    books: allBooks,
+    search,
+    customFieldMetas,
+    statusOf,
+    onlyOwned,
+  });
 
 // Filtered and sorted — used by tile view and all non-series groupings.
 const filteredBooks = computed<Book[]>(() =>
@@ -918,6 +946,20 @@ const highlightComplete = computed({
 const showUnowned = computed({
   get: () => libraryDefaultsStore.showUnowned,
   set: (v) => libraryDefaultsStore.setShowUnowned(v),
+});
+// Backed by a separate persisted default per view (list vs tile) — see
+// showStatusIconsList/Tile in libraryDefaults.ts — so the toggle always reflects
+// and updates whichever view is currently active.
+const showStatusIcons = computed({
+  get: () =>
+    viewMode.value === "tile"
+      ? libraryDefaultsStore.showStatusIconsTile
+      : libraryDefaultsStore.showStatusIconsList,
+  set: (v) => {
+    if (viewMode.value === "tile")
+      libraryDefaultsStore.setShowStatusIconsTile(v);
+    else libraryDefaultsStore.setShowStatusIconsList(v);
+  },
 });
 const displayMenu = ref(false);
 const displayMenuDesktop = ref(false);
@@ -1004,7 +1046,13 @@ const searchFocused = ref(false);
 const activeIndex = ref(-1);
 const tokenSelecting = ref(false);
 const showAllPrefixes = ref(false);
-const CORE_PREFIX_KEYS = new Set(["status", "author", "genre", "series"]);
+const CORE_PREFIX_KEYS = new Set([
+  "status",
+  "owning",
+  "author",
+  "genre",
+  "series",
+]);
 
 type SuggestionPrefix = {
   kind: "prefix";
@@ -1038,6 +1086,11 @@ const PREFIXES = computed(() => [
     key: "status",
     icon: "mdi-progress-check",
     label: t("library.filter_status"),
+  },
+  {
+    key: "owning",
+    icon: "mdi-bookshelf",
+    label: t("library.filter_owning"),
   },
   {
     key: "author",
@@ -1415,6 +1468,7 @@ interface ShelfEntry {
   ordinal: number | null;
   owned: boolean;
   status?: ReadStatus;
+  owningStatus?: OwningStatus;
   author?: string | null;
   book?: Book;
   seriesId?: number | null;
@@ -1442,6 +1496,7 @@ const bookToEntry = (b: Book): ShelfEntry => ({
   ordinal: b.series_ordinal ?? null,
   owned: true,
   status: b.status,
+  owningStatus: b.owning_status,
   author: authorDisplayName(b),
   book: b,
   seriesId: b.series_id ?? null,
@@ -1455,6 +1510,10 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
       const mainMembers = members.filter(
         (e) => e.ordinal != null && Number.isInteger(e.ordinal),
       );
+      // Completeness reflects actual possession (worker-computed `owned`, which now
+      // requires owning_status 'owned'/'lent_out') and is intentionally independent of the
+      // "Owned books only" / `owning:` display filters below — narrowing visible tiles
+      // shouldn't change the underlying completeness fact, any more than a text search does.
       const ownedTotal = members.filter((e) => e.owned).length;
       const ownedMain = mainMembers.filter((e) => e.owned).length;
       const denom = mainOnly.value ? mainMembers.length : members.length;
@@ -1462,21 +1521,34 @@ const shelfGroups = computed<ShelfGroup[]>(() =>
       const complete = highlightComplete.value && denom > 0 && numer === denom;
       const pool = mainOnly.value ? mainMembers : members;
       const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
-      const entries: ShelfEntry[] = visible.map((e) => {
-        const book =
-          e.scan_id != null ? bookById.value.get(e.scan_id) : undefined;
-        return {
-          key: `m${e.work_id}`,
-          title: e.title,
-          cover_url: book?.cover_url ?? e.cover_url ?? null,
-          ordinal: e.ordinal,
-          owned: !!e.owned,
-          status: book?.status,
-          author: book ? authorDisplayName(book) : null,
-          book,
-          seriesId: g.seriesId,
-        };
-      });
+      // "Owned books only" and the `owning:` search token both filter by owning_status —
+      // a display filter, distinct from the FRBR ownership (`e.owned`) that drives
+      // showUnowned/completeness above, so it's applied after entries are built.
+      const owningFilter = parsedSearch.value.owning;
+      const entries: ShelfEntry[] = visible
+        .map((e) => {
+          const book =
+            e.scan_id != null ? bookById.value.get(e.scan_id) : undefined;
+          return {
+            key: `m${e.work_id}`,
+            title: e.title,
+            cover_url: book?.cover_url ?? e.cover_url ?? null,
+            ordinal: e.ordinal,
+            owned: !!e.owned,
+            status: book?.status,
+            owningStatus: book?.owning_status,
+            author: book ? authorDisplayName(book) : null,
+            book,
+            seriesId: g.seriesId,
+          };
+        })
+        .filter((entry) => {
+          if (onlyOwned.value && entry.book && entry.book.owning_status !== "owned")
+            return false;
+          if (owningFilter && entry.book?.owning_status !== owningFilter)
+            return false;
+          return true;
+        });
       return {
         key: g.key,
         label: g.label,
@@ -1603,6 +1675,10 @@ const cycleStatus = (book: Book) => {
 const setStatus = (book: Book, newStatus: ReadStatus) => {
   pinStatus(book);
   return applyStatus(book, newStatus).catch(notifyStatusError);
+};
+
+const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
+  return applyOwningStatus(book, newStatus).catch(notifyStatusError);
 };
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
