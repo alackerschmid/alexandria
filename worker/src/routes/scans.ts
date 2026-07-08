@@ -210,7 +210,7 @@ function validatePatchBody(
 async function resolveEffectiveStatus(
   db: D1Database,
   scanId: string,
-  userId: string,
+  userId: number,
   hasStatus: boolean,
   bodyStatus?: string,
 ): Promise<string | undefined> {
