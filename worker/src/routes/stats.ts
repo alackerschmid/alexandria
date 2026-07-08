@@ -418,7 +418,7 @@ stats.get("/", async (c) => {
       JOIN books b ON s.book_id = b.id
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
       LEFT JOIN works wk ON wk.id = b.work_id
-      WHERE s.user_id = ?
+      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
     `,
       )
         .bind(userId)
@@ -433,7 +433,7 @@ stats.get("/", async (c) => {
       JOIN work_series ws ON ws.work_id = wk.id
       JOIN series ser ON ser.id = ws.series_id
       LEFT JOIN series_names sn ON sn.series_id = ser.id AND sn.language = ?
-      WHERE s.user_id = ?
+      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
       GROUP BY ser.id
       ORDER BY count DESC
       LIMIT 15
@@ -450,6 +450,7 @@ stats.get("/", async (c) => {
       JOIN scans s ON s.book_id = bcf.book_id AND s.user_id = bcf.user_id
       WHERE bcf.user_id = ?
       AND ufd.field_type NOT IN ('date', 'integer')
+      AND s.owning_status IN ('owned', 'lent_out')
     `,
       )
         .bind(userId)
@@ -461,7 +462,8 @@ stats.get("/", async (c) => {
       FROM scans s
       JOIN books b ON s.book_id = b.id
       JOIN works wk ON wk.id = b.work_id
-      WHERE s.user_id = ? AND wk.first_line IS NOT NULL AND wk.first_line != ''
+      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+        AND wk.first_line IS NOT NULL AND wk.first_line != ''
       ORDER BY RANDOM()
       LIMIT 1
     `,

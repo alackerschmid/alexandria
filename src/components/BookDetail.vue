@@ -509,6 +509,50 @@
                     </div>
                   </div>
 
+                  <!-- owning status picker -->
+                  <div
+                    v-if="!readonly"
+                    class="py-4 border-b border-charcoal-border/50"
+                  >
+                    <div
+                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-3"
+                    >
+                      {{ $t("owning.label") }}
+                    </div>
+                    <div
+                      class="relative flex w-full rounded-full p-1"
+                      style="background: rgba(255, 255, 255, 0.045)"
+                      role="radiogroup"
+                      :aria-label="$t('owning.label')"
+                    >
+                      <div
+                        class="absolute top-1 bottom-1 rounded-full transition-[left] duration-200 ease-out"
+                        :style="owningThumbStyle"
+                      />
+                      <button
+                        v-for="s in OWNING_ORDER"
+                        :key="s"
+                        type="button"
+                        role="radio"
+                        :aria-checked="book.owning_status === s"
+                        class="relative z-10 flex-1 py-2 text-[10px] tracking-[0.13em] uppercase font-semibold transition-colors"
+                        :class="
+                          book.owning_status !== s
+                            ? 'text-text-secondary/60 hover:text-text-secondary'
+                            : ''
+                        "
+                        :style="
+                          book.owning_status === s
+                            ? { color: OWNING_META[s].color }
+                            : ''
+                        "
+                        @click="$emit('set-owning-status', s)"
+                      >
+                        {{ owningLabels[s] }}
+                      </button>
+                    </div>
+                  </div>
+
                   <div class="pb-4 border-b border-charcoal-border/50">
                     <div
                       class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
@@ -811,6 +855,11 @@ import {
   STATUS_ORDER,
   STATUS_META,
 } from "@/composables/useBookStatus";
+import {
+  useOwningStatus,
+  OWNING_ORDER,
+  OWNING_META,
+} from "@/composables/useOwningStatus";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { bookYear } from "@/utils/book-display";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
@@ -823,7 +872,7 @@ import BookEditForm, {
   type EditForm,
 } from "@/components/book-detail/BookEditForm.vue";
 import OverrideDot from "@/components/OverrideDot.vue";
-import type { Book, ReadStatus } from "@/types/book";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 export interface CustomFieldValue {
   field_def_id: number;
@@ -852,12 +901,14 @@ const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   "cycle-status": [];
   "set-status": [status: ReadStatus];
+  "set-owning-status": [status: OwningStatus];
   delete: [];
   refreshed: [updated: Partial<BookWithOverrides>];
 }>();
 
 const { apiFetch } = useApi();
 const { statusConfig: STATUS_CONFIG, statusLabels } = useBookStatus();
+const { owningLabels } = useOwningStatus();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
@@ -875,16 +926,35 @@ function expand() {
 
 const publishYear = computed(() => bookYear(props.book) || "—");
 
-const statusThumbStyle = computed(() => {
-  const index = STATUS_ORDER.indexOf(props.book.status);
-  const meta = STATUS_META[props.book.status];
-  const n = STATUS_ORDER.length;
+// Shared geometry for the segmented-picker thumb (reading status + owning status).
+function segmentedThumbStyle(index: number, n: number, tint: string, color: string) {
   return {
     left: `calc(4px + ${index} * (100% - 8px) / ${n})`,
     width: `calc((100% - 8px) / ${n})`,
-    background: meta.tint,
-    border: `1px solid ${meta.color}`,
+    background: tint,
+    border: `1px solid ${color}`,
   };
+}
+
+const statusThumbStyle = computed(() => {
+  const meta = STATUS_META[props.book.status];
+  return segmentedThumbStyle(
+    STATUS_ORDER.indexOf(props.book.status),
+    STATUS_ORDER.length,
+    meta.tint,
+    meta.color,
+  );
+});
+
+const owningThumbStyle = computed(() => {
+  const status = props.book.owning_status ?? "owned";
+  const meta = OWNING_META[status];
+  return segmentedThumbStyle(
+    OWNING_ORDER.indexOf(status),
+    OWNING_ORDER.length,
+    meta.tint,
+    meta.color,
+  );
 });
 
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");

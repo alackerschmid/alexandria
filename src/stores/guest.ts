@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
-import type { Book, ReadStatus } from "@/types/book";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 const STORAGE_KEY = "guest_scans";
 const MAX_GUEST_SCANS = 3;
@@ -9,7 +9,9 @@ const API_BASE = import.meta.env.VITE_API_URL || "";
 
 function load(): Book[] {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    const scans: Book[] = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    for (const scan of scans) scan.owning_status ??= "owned";
+    return scans;
   } catch {
     return [];
   }
@@ -28,8 +30,9 @@ export const useGuestStore = defineStore("guest", () => {
   const isAtLimit = computed(() => scans.value.length >= MAX_GUEST_SCANS);
 
   function addScan(
-    book: Omit<Book, "id" | "status" | "created_at">,
+    book: Omit<Book, "id" | "status" | "owning_status" | "created_at">,
     status: ReadStatus = "unread",
+    owningStatus: OwningStatus = "owned",
   ): "ok" | "duplicate" | "limit_reached" {
     if (isAtLimit.value) return "limit_reached";
     if (scans.value.some((s) => s.isbn === book.isbn)) return "duplicate";
@@ -39,6 +42,7 @@ export const useGuestStore = defineStore("guest", () => {
       ...book,
       id,
       status,
+      owning_status: owningStatus,
       created_at: new Date().toISOString(),
     });
     persist();
@@ -64,6 +68,13 @@ export const useGuestStore = defineStore("guest", () => {
     persist();
   }
 
+  function setOwningStatus(isbn: string, owningStatus: OwningStatus) {
+    const scan = scans.value.find((s) => s.isbn === isbn);
+    if (!scan) return;
+    scan.owning_status = owningStatus;
+    persist();
+  }
+
   async function syncToAccount(token: string): Promise<void> {
     const toSync = [...scans.value].reverse(); // oldest first
     const failedIsbns = new Set<string>();
@@ -75,7 +86,11 @@ export const useGuestStore = defineStore("guest", () => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ isbn: scan.isbn, status: scan.status }),
+          body: JSON.stringify({
+            isbn: scan.isbn,
+            status: scan.status,
+            owning_status: scan.owning_status,
+          }),
         });
         // 409 duplicate → already in account, fine
         if (!res.ok && res.status !== 409) failedIsbns.add(scan.isbn);
@@ -101,6 +116,7 @@ export const useGuestStore = defineStore("guest", () => {
     removeScan,
     cycleStatus,
     setStatus,
+    setOwningStatus,
     syncToAccount,
     clear,
   };

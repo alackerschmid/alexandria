@@ -16,6 +16,7 @@ export interface DimensionOption {
 // Must match the builtin search/group keys used in index.vue to avoid slug collisions
 const BUILTIN_SLUGS = new Set([
   "status",
+  "owning",
   "author",
   "genre",
   "series",
@@ -52,6 +53,7 @@ export function useGroupDimensions() {
     { value: "series", label: t("library.group_series") },
     { value: "genre", label: t("library.group_genre") },
     { value: "status", label: t("library.group_status") },
+    { value: "owning", label: t("library.group_owning") },
     { value: "publisher", label: t("library.group_publisher") },
     { value: "language", label: t("library.group_language") },
     { value: "form", label: t("library.group_form") },

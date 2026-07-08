@@ -782,6 +782,29 @@
                 </button>
               </div>
 
+              <!-- Owning status picker -->
+              <p
+                class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+              >
+                {{ $t("owning.label") }}
+              </p>
+              <div class="flex gap-2 mb-6">
+                <button
+                  v-for="s in OWNING_ORDER"
+                  :key="s"
+                  type="button"
+                  class="flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] tracking-[0.14em] uppercase transition-colors"
+                  :style="
+                    selectedOwning === s
+                      ? `border: 1px solid ${OWNING_META[s].color}; background: ${OWNING_META[s].tint}; color: #f0ede8`
+                      : 'border: 1px solid #2e2b28; color: #8a8078'
+                  "
+                  @click="selectedOwning = s"
+                >
+                  {{ owningLabels[s] }}
+                </button>
+              </div>
+
               <LoadingButton
                 :loading="scanState === 'saving'"
                 class="bg-orange-neon text-black mb-3"
@@ -1083,8 +1106,13 @@ import {
   STATUS_META,
   STATUS_ORDER,
 } from "@/composables/useBookStatus";
+import {
+  useOwningStatus,
+  OWNING_META,
+  OWNING_ORDER,
+} from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
-import type { ReadStatus } from "@/types/book";
+import type { OwningStatus, ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
 import LoadingButton from "@/components/LoadingButton.vue";
@@ -1097,6 +1125,7 @@ const libraryDefaultsStore = useLibraryDefaultsStore();
 const { mdAndUp } = useDisplay();
 const { apiFetch } = useApi();
 const { statusLabels } = useBookStatus();
+const { owningLabels } = useOwningStatus();
 
 const isGuest = computed(() => !authStore.isAuthenticated);
 const API_BASE = import.meta.env.VITE_API_URL || "";
@@ -1124,9 +1153,14 @@ interface BookPreview {
   currentStatus?: ReadStatus;
 }
 
+// Single source of truth for the scanner's owning-status default — referenced by every
+// reset point below instead of scattering the "owned" literal.
+const DEFAULT_OWNING_STATUS: OwningStatus = "owned";
+
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
 const selectedStatus = ref<ReadStatus>("read");
+const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
 const flash = ref(false);
 
 // Metadata chips for the detected-book sheet (year · pages · language · publisher).
@@ -1404,6 +1438,7 @@ const selectCandidate = async (candidate: EditionCandidate) => {
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };
   selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
+  selectedOwning.value = DEFAULT_OWNING_STATUS;
   scanState.value = "preview";
 
   if (duplicate) sessionScanned.add(isbn);
@@ -1473,6 +1508,7 @@ const onBarcodeDetected = async (isbn: string) => {
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };
   selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
+  selectedOwning.value = DEFAULT_OWNING_STATUS;
   scanState.value = "preview";
 
   // A duplicate gets shown once, then suppressed for the rest of the session.
@@ -1484,6 +1520,7 @@ const onBarcodeDetected = async (isbn: string) => {
 interface QueuedBook {
   isbn: string;
   status?: ReadStatus;
+  owning_status?: OwningStatus;
 }
 
 const QUEUE_KEY = "bookscan_queue_v3";
@@ -1506,6 +1543,7 @@ function postScanRequest(
       body: JSON.stringify({
         isbn: book.isbn,
         status: book.status ?? libraryDefaultsStore.defaultScanStatus,
+        owning_status: book.owning_status ?? DEFAULT_OWNING_STATUS,
       }),
     },
     opts,
@@ -1568,6 +1606,7 @@ const saveBook = async () => {
   if (!detectedBook.value) return;
   const book = detectedBook.value;
   const status = selectedStatus.value;
+  const owningStatus = selectedOwning.value;
 
   // Guest path
   if (isGuest.value) {
@@ -1581,6 +1620,7 @@ const saveBook = async () => {
         publish_date: book.year ? `${book.year}` : null,
       },
       status,
+      owningStatus,
     );
     if (result === "ok") {
       sessionScanned.add(book.isbn);
@@ -1595,7 +1635,11 @@ const saveBook = async () => {
 
   // Authenticated path
   scanState.value = "saving";
-  const queued: QueuedBook = { isbn: book.isbn, status };
+  const queued: QueuedBook = {
+    isbn: book.isbn,
+    status,
+    owning_status: owningStatus,
+  };
   try {
     const { result, id } = await postScan(queued);
     sessionScanned.add(book.isbn);
@@ -1626,6 +1670,7 @@ const saveBook = async () => {
 const scanAgain = () => {
   detectedBook.value = null;
   selectedStatus.value = "read";
+  selectedOwning.value = DEFAULT_OWNING_STATUS;
   clearManualFields();
   scanState.value = "scanning";
 };

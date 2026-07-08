@@ -163,6 +163,7 @@
     "
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
+    @set-owning-status="(s) => setDetailOwningStatus(s)"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
   />
@@ -217,13 +218,14 @@ import { useRoute } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useDetailRoute } from "@/composables/useDetailRoute";
+import { useScanStatus } from "@/composables/useScanStatus";
 import { useLocaleStore } from "@/stores/locale";
 import { useThemeStore } from "@/stores/theme";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
-import type { Book, ReadStatus } from "@/types/book";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";
 
@@ -248,6 +250,7 @@ const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
 const { detailIsbn, openDetail, closeDetail } = useDetailRoute();
+const { setOwningStatus: applyOwningStatus } = useScanStatus();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
@@ -311,6 +314,9 @@ async function loadDetail(entry: SeriesEntry) {
       author: raw.author,
       cover_url: entry.cover_url ?? raw.cover_url,
       status: "unread",
+      // This is a reference edition the user hasn't scanned — "unowned" reflects that
+      // honestly (the picker itself never renders here since detailReadonly is true).
+      owning_status: "unowned",
       created_at: raw.fetched_at ?? "",
       language: raw.language,
       publish_date: raw.publish_date,
@@ -364,6 +370,11 @@ function cycleDetailStatus() {
 
 function setDetailStatus(s: ReadStatus) {
   updateDetailStatus(s);
+}
+
+function setDetailOwningStatus(newStatus: OwningStatus) {
+  if (!detailBook.value || detailReadonly.value) return;
+  return applyOwningStatus(detailBook.value, newStatus).catch(() => {});
 }
 
 async function load() {

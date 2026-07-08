@@ -6,6 +6,7 @@ import { parseTagList } from "@/utils/tags";
 import { bookCustomValue } from "@/utils/custom-fields";
 import { sortByCreatedAt, authorNames } from "@/utils/book-display";
 import { languageDisplayFormatter } from "@/utils/language";
+import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { Book, ReadStatus } from "@/types/book";
 import type { GroupBy, SortOption } from "@/types/library";
 
@@ -159,6 +160,18 @@ export function useLibraryGrouping(options: {
           key: s,
           label: t(`book.${s}`),
           books: books.filter((b) => statusOf(b) === s),
+        }))
+        .filter((g) => g.books.length);
+    }
+
+    if (gb === "owning") {
+      const order =
+        dir === "asc" ? OWNING_ORDER : [...OWNING_ORDER].reverse();
+      return order
+        .map((s) => ({
+          key: s,
+          label: t(`owning.${s}`),
+          books: books.filter((b) => b.owning_status === s),
         }))
         .filter((g) => g.books.length);
     }

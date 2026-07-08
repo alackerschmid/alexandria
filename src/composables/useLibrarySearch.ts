@@ -6,15 +6,18 @@ import { bookCustomValue } from "@/utils/custom-fields";
 import { languageDisplayFormatter } from "@/utils/language";
 import { authorNames } from "@/utils/book-display";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
-import type { Book, ReadStatus } from "@/types/book";
+import { OWNING_ORDER } from "@/composables/useOwningStatus";
+import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import type { CustomFieldMeta } from "@/composables/useGroupDimensions";
 
 // Structured search keys with first-class handling (status:, author:, genre:, …).
 // Custom-field slugs are appended at runtime.
 const STATUS_VALUES = new Set<ReadStatus>(STATUS_ORDER);
+const OWNING_VALUES = new Set<OwningStatus>(OWNING_ORDER);
 
 const BUILTIN_KEYS = [
   "status",
+  "owning",
   "author",
   "genre",
   "series",
@@ -31,6 +34,7 @@ const BUILTIN_KEYS = [
 
 export interface ParsedSearch {
   status: ReadStatus | null;
+  owning: OwningStatus | null;
   series: string;
   award: string;
   author: string;
@@ -89,12 +93,16 @@ export function useLibrarySearch(options: {
   /** Resolves the status used for `status:` filtering — lets callers freeze a book's
    *  bucket membership after an in-place status edit instead of using the live value. */
   statusOf?: (b: Book) => ReadStatus;
+  /** When true, restricts the whole pipeline (results, groups, facets) to owned books —
+   *  backs the "owned books only" display setting. */
+  onlyOwned?: ComputedRef<boolean> | Ref<boolean>;
 }) {
   const {
     books,
     search,
     customFieldMetas,
     statusOf = (b: Book) => b.status,
+    onlyOwned,
   } = options;
   const { t } = useI18n();
   const localeStore = useLocaleStore();
@@ -115,6 +123,7 @@ export function useLibrarySearch(options: {
   const parsedSearch = computed<ParsedSearch>(() => {
     const parts = tokenize(search.value.trim());
     let status: ReadStatus | null = null;
+    let owning: OwningStatus | null = null;
     let series = "";
     let award = "";
     let author = "";
@@ -131,6 +140,21 @@ export function useLibrarySearch(options: {
     const remaining: string[] = [];
     const tokens: string[] = [];
 
+    // Fields that just capture their raw value verbatim (no enum validation) — folded into
+    // a lookup to keep this loop's complexity in check as more facets are added.
+    const simpleFields = new Map<string, (v: string) => void>([
+      ["author", (v) => (author = v)],
+      ["genre", (v) => (genre = v)],
+      ["publisher", (v) => (publisher = v)],
+      ["language", (v) => (language = v)],
+      ["original_language", (v) => (originalLanguage = v)],
+      ["form", (v) => (form = v)],
+      ["country", (v) => (country = v)],
+      ["year", (v) => (year = v)],
+      ["subject", (v) => (subject = v)],
+      ["location", (v) => (location = v)],
+    ]);
+
     for (const part of parts) {
       const colon = part.indexOf(":");
       if (colon === -1) {
@@ -143,41 +167,17 @@ export function useLibrarySearch(options: {
       if (key === "status" && STATUS_VALUES.has(val as ReadStatus)) {
         status = val as ReadStatus;
         tokens.push(part.toLowerCase());
+      } else if (key === "owning" && OWNING_VALUES.has(val as OwningStatus)) {
+        owning = val as OwningStatus;
+        tokens.push(part.toLowerCase());
       } else if (key === "series" && val) {
         series = val;
         tokens.push(part.toLowerCase());
       } else if (key === "award" && val) {
         award = val;
         tokens.push(part.toLowerCase());
-      } else if (key === "author" && val) {
-        author = val;
-        tokens.push(part);
-      } else if (key === "genre" && val) {
-        genre = val;
-        tokens.push(part);
-      } else if (key === "publisher" && val) {
-        publisher = val;
-        tokens.push(part);
-      } else if (key === "language" && val) {
-        language = val;
-        tokens.push(part);
-      } else if (key === "original_language" && val) {
-        originalLanguage = val;
-        tokens.push(part);
-      } else if (key === "form" && val) {
-        form = val;
-        tokens.push(part);
-      } else if (key === "country" && val) {
-        country = val;
-        tokens.push(part);
-      } else if (key === "year" && val) {
-        year = val;
-        tokens.push(part);
-      } else if (key === "subject" && val) {
-        subject = val;
-        tokens.push(part);
-      } else if (key === "location" && val) {
-        location = val;
+      } else if (simpleFields.has(key) && val) {
+        simpleFields.get(key)!(val);
         tokens.push(part);
       } else if (customSlugMap.value.has(key) && val) {
         custom[key] = val;
@@ -190,6 +190,7 @@ export function useLibrarySearch(options: {
 
     return {
       status,
+      owning,
       series,
       award,
       author,
@@ -219,6 +220,7 @@ export function useLibrarySearch(options: {
   const baseFiltered = computed<Book[]>(() => {
     const {
       status,
+      owning,
       series,
       award,
       author,
@@ -236,8 +238,14 @@ export function useLibrarySearch(options: {
     } = parsedSearch.value;
     let list = books.value;
 
+    if (onlyOwned?.value) {
+      list = list.filter((b) => b.owning_status === "owned");
+    }
     if (status) {
       list = list.filter((b) => statusOf(b) === status);
+    }
+    if (owning) {
+      list = list.filter((b) => b.owning_status === owning);
     }
     if (series) {
       list = list.filter((b) => b.series_name?.toLowerCase().includes(series));
@@ -319,6 +327,7 @@ export function useLibrarySearch(options: {
   const facetEntries = computed<SuggestionFacet[]>(() => {
     const pool = baseFiltered.value;
     const statusLabel = t("library.filter_status");
+    const owningLabel = t("library.filter_owning");
     const authorLabel = t("library.group_author");
     const genreLabel = t("library.group_genre");
     const seriesLabel = t("library.group_series");
@@ -348,6 +357,19 @@ export function useLibrarySearch(options: {
           icon: "mdi-progress-check",
           label,
           typeLabel: statusLabel,
+        });
+    }
+
+    // Same, for owning status
+    const presentOwning = new Set(pool.map((b) => b.owning_status));
+    for (const val of OWNING_ORDER) {
+      if (presentOwning.has(val))
+        entries.push({
+          kind: "facet",
+          token: `owning:${val}`,
+          icon: "mdi-bookshelf",
+          label: t(`owning.${val}`),
+          typeLabel: owningLabel,
         });
     }
 

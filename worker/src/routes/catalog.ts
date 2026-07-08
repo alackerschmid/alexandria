@@ -174,7 +174,9 @@ series.get("/", async (c) => {
     SELECT ws.series_id AS series_id,
            COALESCE(sn.name, s.canonical_name) AS series_name,
            w.id AS work_id, ws.ordinal, w.canonical_title AS title,
-           MAX(sc.id IS NOT NULL) AS owned,
+           -- "owned" (drives completeness/showUnowned) requires actual possession — a scan
+           -- marked 'want' or 'unowned' doesn't count, but 'lent_out' still does.
+           MAX(sc.id IS NOT NULL AND sc.owning_status IN ('owned', 'lent_out')) AS owned,
            COALESCE(MAX(CASE WHEN sc.id IS NOT NULL THEN b.isbn END), MAX(b.isbn)) AS isbn,
            COALESCE(MAX(CASE WHEN sc.id IS NOT NULL THEN b.cover_url END), MAX(b.cover_url)) AS cover_url,
            MAX(sc.id) AS scan_id
@@ -234,7 +236,7 @@ series.get("/:seriesId", async (c) => {
   const { results: entries } = await c.env.DB.prepare(
     `
     SELECT w.id AS work_id, ws.ordinal, w.canonical_title AS title,
-           MAX(sc.id IS NOT NULL) AS owned,
+           MAX(sc.id IS NOT NULL AND sc.owning_status IN ('owned', 'lent_out')) AS owned,
            COALESCE(MAX(CASE WHEN sc.id IS NOT NULL THEN b.isbn END), MAX(b.isbn)) AS isbn,
            COALESCE(MAX(CASE WHEN sc.id IS NOT NULL THEN b.cover_url END), MAX(b.cover_url)) AS cover_url,
            MAX(sc.id) AS scan_id

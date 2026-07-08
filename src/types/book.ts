@@ -1,4 +1,5 @@
 export type ReadStatus = "unread" | "reading" | "read" | "dnf";
+export type OwningStatus = "owned" | "unowned" | "want" | "lent_out";
 
 export interface AuthorRef {
   name: string;
@@ -13,6 +14,7 @@ export interface Book {
   authors?: AuthorRef[];
   cover_url: string | null;
   status: ReadStatus;
+  owning_status: OwningStatus;
   created_at: string;
   language?: string | null;
   publish_date?: string | null;
