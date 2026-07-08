@@ -170,34 +170,26 @@ scans.get("/:id", async (c) => {
   return c.json(attachCustomFields(scan, defs, valuesByBook));
 });
 
-scans.patch("/:id", async (c) => {
-  const rawBody = await c.req.json();
-  if (typeof rawBody !== "object" || rawBody === null) {
-    return c.json({ error: "status or owning_status is required" }, 400);
-  }
-  const body = rawBody as {
-    status?: string;
-    owning_status?: string;
-    rating?: number | null;
-  };
-  const hasStatus = "status" in body;
-  const hasOwningStatus = "owning_status" in body;
-  const hasRating = "rating" in body;
+interface PatchScanBody {
+  status?: string;
+  owning_status?: string;
+  rating?: number | null;
+}
 
+function validatePatchBody(
+  body: PatchScanBody,
+  hasStatus: boolean,
+  hasOwningStatus: boolean,
+  hasRating: boolean,
+): string | null {
   if (!hasStatus && !hasOwningStatus && !hasRating) {
-    return c.json(
-      { error: "status, owning_status, or rating is required" },
-      400,
-    );
+    return "status, owning_status, or rating is required";
   }
   if (
     hasStatus &&
     !(VALID_STATUSES as readonly string[]).includes(body.status ?? "")
   ) {
-    return c.json(
-      { error: "status must be one of: unread, reading, read, dnf" },
-      400,
-    );
+    return "status must be one of: unread, reading, read, dnf";
   }
   if (
     hasOwningStatus &&
@@ -205,16 +197,48 @@ scans.patch("/:id", async (c) => {
       body.owning_status ?? "",
     )
   ) {
-    return c.json(
-      {
-        error: "owning_status must be one of: owned, unowned, want, lent_out",
-      },
-      400,
-    );
+    return "owning_status must be one of: owned, unowned, want, lent_out";
   }
   if (hasRating && body.rating !== null && !isValidRating(body.rating)) {
-    return c.json({ error: "rating must be an integer 0-10 or null" }, 400);
+    return "rating must be an integer 0-10 or null";
   }
+  return null;
+}
+
+// Resolves the status a scan will have after this PATCH is applied — either the incoming
+// value, or (when this request doesn't touch status) the scan's current stored status.
+async function resolveEffectiveStatus(
+  db: D1Database,
+  scanId: string,
+  userId: string,
+  hasStatus: boolean,
+  bodyStatus?: string,
+): Promise<string | undefined> {
+  if (hasStatus) return bodyStatus;
+  const row = await db
+    .prepare("SELECT status FROM scans WHERE id = ? AND user_id = ?")
+    .bind(scanId, userId)
+    .first<{ status: string }>();
+  return row?.status;
+}
+
+scans.patch("/:id", async (c) => {
+  const rawBody = await c.req.json();
+  if (typeof rawBody !== "object" || rawBody === null) {
+    return c.json({ error: "status or owning_status is required" }, 400);
+  }
+  const body = rawBody as PatchScanBody;
+  const hasStatus = "status" in body;
+  const hasOwningStatus = "owning_status" in body;
+  const hasRating = "rating" in body;
+
+  const validationError = validatePatchBody(
+    body,
+    hasStatus,
+    hasOwningStatus,
+    hasRating,
+  );
+  if (validationError) return c.json({ error: validationError }, 400);
 
   const userId = c.get("userId");
   const scanId = c.req.param("id");
@@ -223,15 +247,13 @@ scans.patch("/:id", async (c) => {
   // holds regardless of caller (frontend gates the rating UI on status==='read', but a
   // direct API call must not be able to leave a rating on a non-read scan).
   if (hasRating && body.rating != null) {
-    const effectiveStatus = hasStatus
-      ? body.status
-      : (
-          await c.env.DB.prepare(
-            "SELECT status FROM scans WHERE id = ? AND user_id = ?",
-          )
-            .bind(scanId, userId)
-            .first<{ status: string }>()
-        )?.status;
+    const effectiveStatus = await resolveEffectiveStatus(
+      c.env.DB,
+      scanId,
+      userId,
+      hasStatus,
+      body.status,
+    );
     if (effectiveStatus !== "read") {
       return c.json(
         { error: "rating can only be set on a book marked as read" },

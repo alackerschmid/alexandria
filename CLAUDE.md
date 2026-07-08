@@ -275,11 +275,13 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 [release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release.
 
 ## Verification
-Always run type-checks after code edits and verify they pass before considering a task complete:
+Always run type-checks and lint after code edits and verify they pass before considering a task complete:
 ```bash
 npm run type-check
+npm run lint
 cd worker && npm test   # if you touched worker pure-logic functions covered by worker/test/*.spec.ts
 ```
+This applies to code review as well: a `/code-review` pass (and any fixes applied from one) isn't done until these commands have actually been run and shown to pass — don't stop at static-analysis findings.
 
 ## Troubleshooting
 
