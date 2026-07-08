@@ -325,6 +325,17 @@
           <!-- view mode -->
           <template v-if="!editing">
             <div
+              v-if="book.work_id"
+              class="w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10 pt-8"
+            >
+              <EditionCarousel
+                :work-id="book.work_id"
+                :active-isbn="book.isbn"
+                :edition-count="book.editionCount"
+                @select="onSelectEdition"
+              />
+            </div>
+            <div
               class="w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10 py-10 md:py-14 flex flex-col md:flex-row items-start gap-10 lg:gap-14"
             >
               <!-- cover column (desktop only) -->
@@ -936,6 +947,7 @@ import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import { ratingDots } from "@/composables/useRating";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
+import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";
 import BookEditForm, {
@@ -975,6 +987,7 @@ const emit = defineEmits<{
   "set-rating": [rating: number | null];
   delete: [];
   refreshed: [updated: Partial<BookWithOverrides>];
+  "switch-edition": [payload: { isbn: string; scanId: number }];
 }>();
 
 const { apiFetch } = useApi();
@@ -1081,6 +1094,10 @@ function goToSeries() {
   router.push(`/series/${props.book.series_id}`);
 }
 
+function onSelectEdition(isbn: string, scanId: number) {
+  emit("switch-edition", { isbn, scanId });
+}
+
 function filterBy(
   field:
     | "author"
@@ -1097,10 +1114,15 @@ function filterBy(
 
 // ── Watchers ──────────────────────────────────────────────────────────────────
 
+// Tracks the previous book's work_id so switching editions of the *same* work (via the
+// carousel) doesn't snap the view back to card mode — only opening an unrelated book should.
+let lastWorkId = props.book.work_id;
 watch(
   () => props.book.isbn,
   () => {
-    mode.value = "card";
+    const sameWork = props.book.work_id != null && props.book.work_id === lastWorkId;
+    lastWorkId = props.book.work_id;
+    if (!sameWork) mode.value = "card";
     descriptionExpanded.value = false;
     recognitionExpanded.value = false;
     editing.value = false;

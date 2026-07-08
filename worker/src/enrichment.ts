@@ -8,7 +8,7 @@ import {
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
-export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 4;
+export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 5;
 
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
 const WIKIDATA_UA =
@@ -243,6 +243,7 @@ async function fetchBookInfo(
 // Uses one subquery per property to avoid cartesian-product explosion when a work has many values.
 async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   const empty: WorkDetails = {
+    title: null,
     genres: [],
     originalPubDate: null,
     awards: [],
@@ -268,11 +269,14 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   }
   console.log("[fetchWorkDetails] fetching details for", workQid);
   const query = `
-    SELECT ?genres ?originalPubDate ?awards ?nominations
+    SELECT ?titleEn ?titleDe ?genres ?originalPubDate ?awards ?nominations
            ?mainSubject ?formOfWork ?languageOfWork ?languageOfWorkCode ?firstLine ?epigraph
            ?narrativeLocations ?countriesOfOrigin
            ?subtitle ?translators ?illustrators ?characters
            ?olWorkId ?refPageCount WHERE {
+      { SELECT (SAMPLE(?tEn) AS ?titleEn) (SAMPLE(?tDe) AS ?titleDe) WHERE {
+          OPTIONAL { wd:${workQid} rdfs:label ?tEn. FILTER(LANG(?tEn) = "en") }
+          OPTIONAL { wd:${workQid} rdfs:label ?tDe. FILTER(LANG(?tDe) = "de") } } }
       { SELECT (GROUP_CONCAT(DISTINCT ?genreLabel; separator="|") AS ?genres) WHERE {
           OPTIONAL { wd:${workQid} wdt:P136 ?genre.
                      ?genre rdfs:label ?genreLabel. FILTER(LANG(?genreLabel) = "en") } } }
@@ -326,6 +330,7 @@ async function fetchWorkDetails(workQid: string): Promise<WorkDetails> {
   console.log("[fetchWorkDetails] raw row:", JSON.stringify(row ?? null));
   const result = parseWorkDetailsRow(row);
   console.log("[fetchWorkDetails] parsed:", {
+    title: result.title,
     genres: result.genres,
     originalPubDate: result.originalPubDate,
     awards: result.awards.length,
@@ -378,6 +383,7 @@ function parseWorkDetailsListFields(row: any) {
 
 function parseWorkDetailsScalarFields(row: any) {
   return {
+    title: strOrNull(row?.titleEn?.value) ?? strOrNull(row?.titleDe?.value),
     originalPubDate: yearFrom(row?.originalPubDate?.value),
     mainSubject: strOrNull(row?.mainSubject?.value),
     formOfWork: strOrNull(row?.formOfWork?.value),
@@ -830,6 +836,7 @@ async function persistWorkDetails(
       enrichment_attempts       = 0,
       enrichment_started_at     = NULL,
       enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
+      canonical_title           = ${coalesce("canonical_title")},
       genres                    = ${coalesce("genres")},
       original_pub_date         = ${coalesce("original_pub_date")},
       awards                    = ${coalesce("awards")},
@@ -851,6 +858,7 @@ async function persistWorkDetails(
     WHERE id = ?`,
     )
     .bind(
+      nullish(details?.title),
       genresJson,
       pubDate,
       awardsJson,

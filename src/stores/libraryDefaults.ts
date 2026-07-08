@@ -33,6 +33,10 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     boolFrom("libShowStatusIconsTile", false),
   );
   const onlyOwned = ref<boolean>(boolFrom("libOnlyOwned", false));
+  const highlightOwningBorder = ref<boolean>(
+    boolFrom("libHighlightOwningBorder", false),
+  );
+  const groupEditions = ref<boolean>(boolFrom("libGroupEditions", true));
 
   const VALID_GROUP_BY: GroupBy[] = [
     "none",
@@ -82,6 +86,14 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     onlyOwned.value = v;
     localStorage.setItem("libOnlyOwned", String(v));
   }
+  function setHighlightOwningBorder(v: boolean) {
+    highlightOwningBorder.value = v;
+    localStorage.setItem("libHighlightOwningBorder", String(v));
+  }
+  function setGroupEditions(v: boolean) {
+    groupEditions.value = v;
+    localStorage.setItem("libGroupEditions", String(v));
+  }
   function setGroupBy(v: GroupBy) {
     groupBy.value = v;
     localStorage.setItem("libGroupBy", v);
@@ -116,6 +128,8 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     showStatusIconsList,
     showStatusIconsTile,
     onlyOwned,
+    highlightOwningBorder,
+    groupEditions,
     groupBy,
     sortDirection,
     setView,
@@ -127,6 +141,8 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     setShowStatusIconsList,
     setShowStatusIconsTile,
     setOnlyOwned,
+    setHighlightOwningBorder,
+    setGroupEditions,
     setGroupBy,
     setSortDirection,
   };

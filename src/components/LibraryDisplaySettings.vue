@@ -115,7 +115,7 @@
 
     <button
       v-if="seriesContext"
-      class="flex items-center justify-between gap-5 w-full text-left py-3.5"
+      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
       @click="showUnowned = !showUnowned"
     >
       <span class="min-w-0">
@@ -129,6 +129,42 @@
       </span>
       <span :class="track(showUnowned)"
         ><span :class="knob(showUnowned)"
+      /></span>
+    </button>
+
+    <button
+      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
+      @click="highlightOwningBorder = !highlightOwningBorder"
+    >
+      <span class="min-w-0">
+        <span class="block text-xs text-text-primary">{{
+          $t("library.highlight_owning_border")
+        }}</span>
+        <span
+          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
+          >{{ $t("library.highlight_owning_border_sub") }}</span
+        >
+      </span>
+      <span :class="track(highlightOwningBorder)"
+        ><span :class="knob(highlightOwningBorder)"
+      /></span>
+    </button>
+
+    <button
+      class="flex items-center justify-between gap-5 w-full text-left py-3.5"
+      @click="groupEditions = !groupEditions"
+    >
+      <span class="min-w-0">
+        <span class="block text-xs text-text-primary">{{
+          $t("library.group_editions")
+        }}</span>
+        <span
+          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
+          >{{ $t("library.group_editions_sub") }}</span
+        >
+      </span>
+      <span :class="track(groupEditions)"
+        ><span :class="knob(groupEditions)"
       /></span>
     </button>
 
@@ -146,6 +182,12 @@ const showStatusIcons = defineModel<boolean>("showStatusIcons", {
   required: true,
 });
 const onlyOwned = defineModel<boolean>("onlyOwned", { required: true });
+const highlightOwningBorder = defineModel<boolean>("highlightOwningBorder", {
+  required: true,
+});
+const groupEditions = defineModel<boolean>("groupEditions", {
+  required: true,
+});
 const viewMode = defineModel<"list" | "tile">("viewMode");
 
 withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {

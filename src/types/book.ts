@@ -24,6 +24,12 @@ export interface Book {
   description?: string | null;
   publisher?: string | null;
   work_id?: number | null;
+  work_canonical_title?: string | null;
+  /** Client-only: set by useEditionGrouping to this work's owned-edition count (1 if only one).
+   *  Undefined when grouping hasn't run over this book at all. */
+  editionCount?: number;
+  /** Client-only: the full set of owned editions this card represents, representative first. */
+  editions?: Book[];
   series_id?: number | null;
   series_name?: string | null;
   series_ordinal?: number | null;

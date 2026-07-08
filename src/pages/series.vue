@@ -153,7 +153,7 @@
 
   <BookDetail
     v-if="detailBook"
-    :model-value="!!detailIsbn && !!detailBook"
+    :model-value="!!detailEditionIsbn && !!detailBook"
     :book="detailBook"
     :readonly="detailReadonly"
     @update:model-value="
@@ -167,6 +167,7 @@
     @set-rating="(r) => setDetailRating(r)"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
+    @switch-edition="onSwitchEdition"
   />
 
   <!-- Delete confirmation -->
@@ -250,7 +251,8 @@ const route = useRoute();
 const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
-const { detailIsbn, openDetail, closeDetail } = useDetailRoute();
+const { detailEditionIsbn, detailScanId, openDetail, closeDetail } =
+  useDetailRoute();
 const { setOwningStatus: applyOwningStatus, setRating: applyRating } =
   useScanStatus();
 
@@ -294,54 +296,72 @@ const {
 });
 
 function openEntry(entry: SeriesEntry) {
-  if (entry.isbn) openDetail(entry.isbn);
+  if (!entry.isbn) return;
+  openDetail(entry.work_id, entry.isbn, entry.scan_id);
 }
 
-async function loadDetail(entry: SeriesEntry) {
-  if (entry.scan_id) {
+function onSwitchEdition(payload: { isbn: string; scanId: number }) {
+  openDetail(detailBook.value?.work_id ?? null, payload.isbn, payload.scanId);
+}
+
+async function loadDetailByIsbn(
+  isbn: string,
+  scanId: number | null,
+  fallback: { title: string | null; cover_url: string | null } | null,
+) {
+  if (scanId != null) {
     const res = await apiFetch(
-      `/api/scans/${entry.scan_id}?locale=${localeStore.locale}`,
+      `/api/scans/${scanId}?locale=${localeStore.locale}`,
     );
     if (!res.ok) return;
     detailBook.value = (await res.json()) as Book;
     detailReadonly.value = false;
-  } else if (entry.isbn) {
-    const res = await apiFetch(`/api/books/lookup?isbn=${entry.isbn}`);
-    if (!res.ok) return;
-    const raw = (await res.json()) as any;
-    detailBook.value = {
-      id: raw.id,
-      isbn: raw.isbn,
-      title: entry.title ?? raw.title,
-      author: raw.author,
-      cover_url: entry.cover_url ?? raw.cover_url,
-      status: "unread",
-      // This is a reference edition the user hasn't scanned — "unowned" reflects that
-      // honestly (the picker itself never renders here since detailReadonly is true).
-      owning_status: "unowned",
-      rating: null,
-      created_at: raw.fetched_at ?? "",
-      language: raw.language,
-      publish_date: raw.publish_date,
-      number_of_pages_median: raw.number_of_pages_median,
-      description: raw.description,
-      publisher: raw.publisher,
-      work_id: raw.work_id,
-    };
-    detailReadonly.value = true;
+    return;
   }
+  const res = await apiFetch(`/api/books/lookup?isbn=${isbn}`);
+  if (!res.ok) return;
+  const raw = (await res.json()) as any;
+  detailBook.value = {
+    id: raw.id,
+    isbn: raw.isbn,
+    title: fallback?.title ?? raw.title,
+    author: raw.author,
+    cover_url: fallback?.cover_url ?? raw.cover_url,
+    status: "unread",
+    // This is a reference edition the user hasn't scanned — "unowned" reflects that
+    // honestly (the picker itself never renders here since detailReadonly is true).
+    owning_status: "unowned",
+    rating: null,
+    created_at: raw.fetched_at ?? "",
+    language: raw.language,
+    publish_date: raw.publish_date,
+    number_of_pages_median: raw.number_of_pages_median,
+    description: raw.description,
+    publisher: raw.publisher,
+    work_id: raw.work_id,
+  };
+  detailReadonly.value = true;
 }
 
-// Drive detail open/close from the URL — handles click, Back/Forward, and deep links
+// Drive detail open/close from the URL — handles click, Back/Forward, and deep links.
+// The scan id round-trips through the `scan` query param (see useDetailRoute), so a
+// non-representative edition reached via the carousel resolves correctly even on a cold
+// reload/deep link, not just an in-session switch.
 watch(
-  [detailIsbn, entries],
+  [detailEditionIsbn, entries],
   ([isbn]) => {
     if (!isbn) {
       detailBook.value = null;
       return;
     }
+    if (detailBook.value?.isbn === isbn) return;
     const entry = entries.value.find((e) => e.isbn === isbn);
-    if (entry && detailBook.value?.isbn !== isbn) loadDetail(entry);
+    const scanId = entry?.scan_id ?? detailScanId.value;
+    loadDetailByIsbn(
+      isbn,
+      scanId,
+      entry ? { title: entry.title, cover_url: entry.cover_url } : null,
+    );
   },
   { immediate: true },
 );
