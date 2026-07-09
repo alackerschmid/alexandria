@@ -350,7 +350,9 @@
       "type_date": "Datum"
     },
     "export": {
-      "heading": "Daten & Export",
+      "heading": "Import & Export",
+      "import_description": "Importiere deine Bibliothek aus einem Goodreads-CSV-Export.",
+      "import_button": "Aus Goodreads importieren",
       "description": "Lade alle deine Bücher und eigene Felder als CSV- oder JSON-Datei herunter.",
       "button": "Daten exportieren ↓",
       "coming_soon": "Export folgt bald"
@@ -379,6 +381,102 @@
       "dialog_password_label": "Passwort",
       "dialog_confirm": "Endgültig löschen",
       "dialog_cancel": "Abbrechen"
+    }
+  },
+  "import": {
+    "heading": "Aus Goodreads importieren.",
+    "subheading": "Lade deinen Goodreads-Bibliotheksexport hoch, um deine Bücher in Alexandria zu übernehmen.",
+    "leave_confirm": "Ein Import läuft noch. Diese Seite trotzdem verlassen?",
+    "upload": {
+      "instructions": "Exportiere deine Bibliothek bei Goodreads (Meine Bücher → Import/Export) und lade die CSV-Datei hier hoch.",
+      "choose_file": "Datei auswählen",
+      "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast."
+    },
+    "mapping": {
+      "instructions": "Prüfe vor dem Import, wie jedes Goodreads-Regal auf Status und Besitzstatus abgebildet wird.",
+      "count": "{n} Bücher",
+      "start": "Import starten"
+    },
+    "importing": {
+      "progress": "{done} von {total} verarbeitet",
+      "imported": "Importiert: {n}",
+      "duplicate": "Duplikat: {n}",
+      "failed": "Fehlgeschlagen: {n}"
+    },
+    "header": {
+      "eyebrow": "Import aus Goodreads",
+      "matched": "{n} zugeordnet",
+      "needs_attention": "{n} zu prüfen",
+      "cancel": "Import abbrechen",
+      "finalize": "Import abschließen",
+      "finalize_blocked": "Noch {n} zu klären"
+    },
+    "tabs": {
+      "matched": "Zugeordnet ({n})",
+      "attention": "Zu prüfen ({n}, {open} offen)",
+      "attention_all_resolved": "Zu prüfen ({n} — alle geklärt)",
+      "not_imported": "Nicht importiert ({n})"
+    },
+    "table": {
+      "book": "Buch",
+      "edition": "Ausgabe",
+      "rating": "Bewertung",
+      "rating_source": "Bewertung (aus Goodreads)",
+      "status": "Status",
+      "owning": "Besitz"
+    },
+    "row": {
+      "rating_needs_read": "Zum Bewerten als gelesen markieren"
+    },
+    "review": {
+      "none": "Alle Bücher wurden zugeordnet — nichts zu prüfen.",
+      "resolve": "Klären →",
+      "resolve_heading": "Treffer klären",
+      "undo": "Rückgängig",
+      "skipped_note": "Übersprungen — wird nicht importiert",
+      "reason_no_isbn": "Keine ISBN im Export — wähle eine Ausgabe",
+      "reason_invalid_isbn": "ISBN nicht validierbar — wähle eine Ausgabe",
+      "as_imported": "ISBN: {isbn} · wie aus Goodreads importiert",
+      "search_placeholder": "Nach Titel, Autor oder ISBN suchen",
+      "use_this": "Auswählen",
+      "no_search_results": "Keine automatischen Treffer. Verfeinere die Suche oben oder überspringe dieses Buch.",
+      "search_unavailable": "Die Buchsuche ist vorübergehend nicht verfügbar — das ist kein Ergebnis zu deinem Buch. Versuche es gleich noch einmal.",
+      "search_online": "Online suchen",
+      "invalid_isbn_note": "Die ISBN im Export konnte nicht validiert werden — wähle unten die richtige Ausgabe.",
+      "loading": "Suche nach Treffern…",
+      "no_matches": "Keine Treffer gefunden.",
+      "retry": "Erneut suchen",
+      "skip": "Dieses Buch überspringen"
+    },
+    "summary": {
+      "enrichment_note": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "imported_empty": "Es wurden keine Bücher importiert.",
+      "cancel_confirm": "Alle {n} importierten Bücher entfernen? Das kann nicht rückgängig gemacht werden.",
+      "card": {
+        "remove": "Entfernen",
+        "unknown_publisher": "Verlag unbekannt",
+        "error_duplicate": "Diese Ausgabe ist bereits in deiner Bibliothek.",
+        "error_failed": "Ausgabe konnte nicht gewechselt werden — bitte erneut versuchen.",
+        "error_remove_failed": "Buch konnte nicht entfernt werden — bitte erneut versuchen.",
+        "error_orphaned_duplicate": "Ausgabe gewechselt, aber das alte Exemplar konnte nicht entfernt werden — bitte Bibliothek auf ein Duplikat prüfen."
+      },
+      "list": {
+        "heading": "Nicht importiert",
+        "filter_all": "Alle",
+        "filter_duplicate": "Duplikat",
+        "filter_failed": "Fehlgeschlagen",
+        "filter_skipped": "Übersprungen",
+        "empty": "Keine Bücher in dieser Kategorie.",
+        "reason": {
+          "direct": "Importiert",
+          "review_match": "Importiert (bei der Überprüfung zugeordnet)",
+          "in_file": "Duplikat — kommt zweimal im Export vor",
+          "in_library": "Bereits in deiner Bibliothek",
+          "request_failed": "Import fehlgeschlagen",
+          "invalid_isbn": "Ungültige ISBN — übersprungen",
+          "no_isbn": "Keine ISBN — übersprungen"
+        }
+      }
     }
   },
   "welcome": {

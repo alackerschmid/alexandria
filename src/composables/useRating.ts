@@ -3,7 +3,9 @@ import type { CSSProperties } from "vue";
 // Rating uses its own accent (distinct from any read/owning status color) since it's an
 // independent, orthogonal axis of "your record" rather than another state in those enums.
 export const RATING_COLOR = "#d9ac4e";
-const RATING_TRACK = "rgba(255,255,255,0.14)";
+// Neutral grey rather than white-alpha: the empty-dot track has to stay visible on the light
+// theme too, otherwise an unrated book renders as an invisible, unclickable row of dots.
+const RATING_TRACK = "rgba(128,128,128,0.4)";
 
 const DOT_SIZES = { sm: "6px", md: "9px", lg: "14px" } as const;
 

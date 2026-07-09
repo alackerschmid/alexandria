@@ -94,4 +94,10 @@ export async function scheduled(
   )
     .bind(Date.now() - RATE_LIMIT_PRUNE_GRACE_MS)
     .run();
+
+  // Keep search_cache from growing unbounded — expired entries are dead weight (a stale row is
+  // never served, `handleTitleSearch` filters on expires_at > now), just wasted storage.
+  await env.DB.prepare("DELETE FROM search_cache WHERE expires_at < ?")
+    .bind(Date.now())
+    .run();
 }

@@ -111,9 +111,7 @@
               class="flex items-center gap-1.5 mt-3"
               @click="ratingDialogOpen = true"
             >
-              <span class="flex items-center gap-1">
-                <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
-              </span>
+              <RatingDots :rating="book.rating" size="md" />
               <span class="font-mono text-[11px] text-text-secondary">
                 {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
               </span>
@@ -122,9 +120,7 @@
               v-else-if="readonly && book.status === 'read'"
               class="flex items-center gap-1.5 mt-3"
             >
-              <span class="flex items-center gap-1">
-                <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
-              </span>
+              <RatingDots :rating="book.rating" size="md" />
               <span class="font-mono text-[11px] text-text-secondary">
                 {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
               </span>
@@ -611,13 +607,7 @@
                       {{ $t("detail.rating") }}
                     </span>
                     <span class="flex items-center gap-2">
-                      <span class="flex items-center gap-0.5">
-                        <span
-                          v-for="d in ratingRowDots"
-                          :key="d.n"
-                          :style="d.style"
-                        />
-                      </span>
+                      <RatingDots :rating="book.rating" size="sm" />
                       <span class="font-mono text-[13px] text-text-primary">
                         {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
                       </span>
@@ -945,7 +935,7 @@ import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
-import { ratingDots } from "@/composables/useRating";
+import RatingDots from "@/components/RatingDots.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
@@ -1041,9 +1031,6 @@ const owningThumbStyle = computed(() => {
     meta.color,
   );
 });
-
-const ratingRowDots = computed(() => ratingDots(props.book.rating, "sm"));
-const cardRatingDots = computed(() => ratingDots(props.book.rating, "md"));
 
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 

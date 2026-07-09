@@ -70,6 +70,12 @@ const router = createRouter({
       meta: { mobileNav: true, requiresAuth: true },
     },
     {
+      path: "/import",
+      name: "import",
+      component: () => import("@/pages/import.vue"),
+      meta: { requiresAuth: true },
+    },
+    {
       path: "/privacy",
       name: "privacy",
       component: () => import("@/pages/privacy.vue"),

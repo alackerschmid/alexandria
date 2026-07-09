@@ -12,6 +12,8 @@ import {
   VALID_OWNING_STATUSES,
   isValidRating,
   getBookByIsbn,
+  findExistingScan,
+  isUniqueConstraintError,
   parseIntOr,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
@@ -92,12 +94,8 @@ scans.post("/", async (c) => {
   // external metadata APIs — a duplicate scan is a cheap, common case (e.g. rescanning a shelf)
   // and shouldn't cost the user part of their scan-rate budget.
   const existingBook = await getBookByIsbn(db, isbn);
-  if (existingBook) {
-    const dup = await db
-      .prepare("SELECT 1 FROM scans WHERE user_id = ? AND book_id = ?")
-      .bind(userId, existingBook.id)
-      .first();
-    if (dup) return c.json({ error: "Already in your list" }, 409);
+  if (existingBook && (await findExistingScan(db, userId, existingBook.id))) {
+    return c.json({ error: "Already in your list" }, 409);
   }
 
   const blocked = await rateLimitOrReject(
@@ -124,8 +122,8 @@ scans.post("/", async (c) => {
       )
       .bind(userId, book.id, initialStatus, initialOwningStatus, initialRating)
       .run();
-  } catch (e: any) {
-    if (e.message?.includes("UNIQUE constraint failed")) {
+  } catch (e) {
+    if (isUniqueConstraintError(e)) {
       return c.json({ error: "Already in your list" }, 409);
     }
     console.error("[POST /api/scans] scan INSERT failed:", e);

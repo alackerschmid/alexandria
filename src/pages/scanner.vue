@@ -812,15 +812,12 @@
                 >
                   {{ $t("scanner.rate_as") }}
                 </p>
-                <div class="flex gap-2 mb-6">
-                  <div
-                    v-for="d in scannerRatingDots"
-                    :key="d.n"
-                    class="cursor-pointer"
-                    :style="d.style"
-                    @click="
-                      selectedRating = selectedRating === d.n ? null : d.n
-                    "
+                <div class="mb-6">
+                  <RatingDots
+                    :rating="selectedRating"
+                    size="lg"
+                    interactive
+                    @update:rating="selectedRating = $event"
                   />
                 </div>
               </template>
@@ -1132,7 +1129,7 @@ import {
   OWNING_ORDER,
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
-import { ratingDots } from "@/composables/useRating";
+import RatingDots from "@/components/RatingDots.vue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
 import AppToast, { type ToastType } from "@/components/AppToast.vue";
@@ -1183,7 +1180,6 @@ const detectedBook = ref<BookPreview | null>(null);
 const selectedStatus = ref<ReadStatus>("read");
 const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
 const selectedRating = ref<number | null>(null);
-const scannerRatingDots = computed(() => ratingDots(selectedRating.value, "lg"));
 
 // The picker is hidden for any non-"read" status — drop a pending selection so it can't be
 // silently saved against a status where it no longer makes sense.

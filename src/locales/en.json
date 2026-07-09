@@ -350,7 +350,9 @@
       "type_date": "Date"
     },
     "export": {
-      "heading": "Data & export",
+      "heading": "Import & export",
+      "import_description": "Import your library from a Goodreads CSV export.",
+      "import_button": "Import from Goodreads",
       "description": "Download all your books and custom fields as a CSV or JSON file.",
       "button": "Export data ↓",
       "coming_soon": "Export coming soon"
@@ -379,6 +381,102 @@
       "dialog_password_label": "Password",
       "dialog_confirm": "Delete permanently",
       "dialog_cancel": "Cancel"
+    }
+  },
+  "import": {
+    "heading": "Import from Goodreads.",
+    "subheading": "Upload your Goodreads library export to bring your books into Alexandria.",
+    "leave_confirm": "An import is still in progress. Leave this page anyway?",
+    "upload": {
+      "instructions": "Export your library from Goodreads (My Books → Import/Export) and upload the CSV file here.",
+      "choose_file": "Choose file",
+      "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file."
+    },
+    "mapping": {
+      "instructions": "Review how each Goodreads shelf maps to a status and owning status before importing.",
+      "count": "{n} books",
+      "start": "Start import"
+    },
+    "importing": {
+      "progress": "{done} of {total} processed",
+      "imported": "Imported: {n}",
+      "duplicate": "Duplicate: {n}",
+      "failed": "Failed: {n}"
+    },
+    "header": {
+      "eyebrow": "Import from Goodreads",
+      "matched": "{n} matched",
+      "needs_attention": "{n} need attention",
+      "cancel": "Cancel import",
+      "finalize": "Finalize import",
+      "finalize_blocked": "Resolve {n} to finish"
+    },
+    "tabs": {
+      "matched": "Matched ({n})",
+      "attention": "Needs attention ({n}, {open} open)",
+      "attention_all_resolved": "Needs attention ({n} — all resolved)",
+      "not_imported": "Not imported ({n})"
+    },
+    "table": {
+      "book": "Book",
+      "edition": "Edition",
+      "rating": "Rating",
+      "rating_source": "Rating (from Goodreads)",
+      "status": "Status",
+      "owning": "Owning"
+    },
+    "row": {
+      "rating_needs_read": "Mark as read to rate"
+    },
+    "review": {
+      "none": "Every book matched — nothing to review.",
+      "resolve": "Resolve →",
+      "resolve_heading": "Resolve match",
+      "undo": "Undo",
+      "skipped_note": "Skipped — won't be imported",
+      "reason_no_isbn": "No ISBN in the export — pick an edition",
+      "reason_invalid_isbn": "ISBN couldn't be validated — pick an edition",
+      "as_imported": "ISBN: {isbn} · as imported from Goodreads",
+      "search_placeholder": "Search by title, author or ISBN",
+      "use_this": "Use this",
+      "no_search_results": "No automatic matches. Try refining your search above, or skip this book.",
+      "search_unavailable": "Book search is temporarily unavailable — this isn't a result for your book. Try again in a moment.",
+      "search_online": "Search online",
+      "invalid_isbn_note": "The ISBN in the export couldn't be validated — pick the right edition below.",
+      "loading": "Searching for matches…",
+      "no_matches": "No matches found.",
+      "retry": "Retry search",
+      "skip": "Skip this book"
+    },
+    "summary": {
+      "enrichment_note": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
+      "imported_empty": "No books were imported.",
+      "cancel_confirm": "Remove all {n} imported books? This can't be undone.",
+      "card": {
+        "remove": "Remove",
+        "unknown_publisher": "Unknown publisher",
+        "error_duplicate": "That edition is already in your library.",
+        "error_failed": "Couldn't switch edition — please try again.",
+        "error_remove_failed": "Couldn't remove this book — please try again.",
+        "error_orphaned_duplicate": "Edition switched, but the old copy couldn't be removed — check your library for a duplicate."
+      },
+      "list": {
+        "heading": "Not imported",
+        "filter_all": "All",
+        "filter_duplicate": "Duplicate",
+        "filter_failed": "Failed",
+        "filter_skipped": "Skipped",
+        "empty": "No books in this category.",
+        "reason": {
+          "direct": "Imported",
+          "review_match": "Imported (matched during review)",
+          "in_file": "Duplicate — appears twice in the export",
+          "in_library": "Already in your library",
+          "request_failed": "Import request failed",
+          "invalid_isbn": "Invalid ISBN — skipped",
+          "no_isbn": "No ISBN — skipped"
+        }
+      }
     }
   },
   "welcome": {

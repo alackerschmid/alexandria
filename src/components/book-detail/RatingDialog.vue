@@ -19,13 +19,12 @@
           $t("detail.of_ten")
         }}</span>
       </div>
-      <div class="flex gap-2 mb-5">
-        <div
-          v-for="d in dots"
-          :key="d.n"
-          class="cursor-pointer"
-          :style="d.style"
-          @click="pick(d.n)"
+      <div class="mb-5">
+        <RatingDots
+          :rating="rating"
+          size="lg"
+          interactive
+          @update:rating="$emit('set-rating', $event)"
         />
       </div>
       <div class="flex items-center justify-between">
@@ -37,7 +36,7 @@
         </button>
         <button
           class="text-[11px] tracking-[0.08em] uppercase font-semibold bg-text-primary px-4.5 py-2 hover:opacity-90 transition-opacity"
-          style="color: #111110"
+          style="color: var(--color-charcoal)"
           @click="$emit('update:modelValue', false)"
         >
           {{ $t("detail.done") }}
@@ -48,22 +47,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { RATING_COLOR, ratingDots } from "@/composables/useRating";
+import RatingDots from "@/components/RatingDots.vue";
+import { RATING_COLOR } from "@/composables/useRating";
 
-const props = defineProps<{
+defineProps<{
   modelValue: boolean;
   rating: number | null;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   "update:modelValue": [value: boolean];
   "set-rating": [rating: number | null];
 }>();
-
-const dots = computed(() => ratingDots(props.rating, "lg"));
-
-function pick(n: number) {
-  emit("set-rating", props.rating === n ? null : n);
-}
 </script>

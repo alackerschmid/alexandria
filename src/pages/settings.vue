@@ -389,9 +389,29 @@
             </div>
           </section>
 
-          <!-- ── EXPORT ───────────────────────────────────────────────────── -->
+          <!-- ── IMPORT & EXPORT ──────────────────────────────────────────── -->
           <section id="export" ref="sectionRefs.export">
             <SectionHeading :title="$t('settings.export.heading')" />
+
+            <div
+              class="flex items-center justify-between gap-6 border border-charcoal-border p-6 mb-4"
+            >
+              <div>
+                <p class="text-[15px] text-text-primary font-medium">
+                  {{ $t("settings.export.import_description") }}
+                </p>
+              </div>
+              <router-link
+                :to="{ name: 'import' }"
+                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
+                :style="{
+                  color: 'rgb(var(--v-theme-on-background))',
+                  borderColor: accentStore.color,
+                }"
+              >
+                {{ $t("settings.export.import_button") }}
+              </router-link>
+            </div>
 
             <div
               class="flex items-center justify-between gap-6 border border-charcoal-border p-6"
@@ -441,7 +461,7 @@
                     { value: 'de', label: 'Deutsch' },
                   ]"
                   :model-value="localeStore.locale"
-                  @update:model-value="localeStore.set($event)"
+                  @update:model-value="localeStore.set($event as 'en' | 'de')"
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.theme')">
@@ -641,6 +661,7 @@ import { useApi } from "@/composables/useApi";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
+import SegControl from "@/components/SegControl.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -1049,51 +1070,6 @@ const DefaultRow = defineComponent({
   },
 });
 
-const SegControl = defineComponent({
-  props: {
-    options: {
-      type: Array as () => { value: string; label: string }[],
-      required: true,
-    },
-    modelValue: { type: String, required: true },
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    return () =>
-      h(
-        "div",
-        {
-          class:
-            "inline-flex border border-charcoal-border overflow-hidden flex-wrap",
-        },
-        props.options.map((opt, k) =>
-          h(
-            "button",
-            {
-              key: opt.value,
-              onClick: () => emit("update:modelValue", opt.value),
-              class: [
-                "px-4 py-2 font-mono text-[10px] tracking-[0.1em] uppercase transition-colors",
-                k > 0 ? "border-l border-charcoal-border" : "",
-              ].join(" "),
-              style:
-                opt.value === props.modelValue
-                  ? {
-                      background: accentStore.color,
-                      color: "#111110",
-                      fontWeight: 700,
-                    }
-                  : {
-                      background: "transparent",
-                      color: "rgb(var(--v-theme-text-secondary))",
-                    },
-            },
-            opt.label,
-          ),
-        ),
-      );
-  },
-});
 </script>
 
 <style scoped>

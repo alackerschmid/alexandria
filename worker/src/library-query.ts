@@ -17,6 +17,26 @@ export function getBookByIsbn(db: D1Database, isbn: string) {
     .first<{ id: number }>();
 }
 
+// Shared "does this user already own this book" check, used by both the scan-queue and
+// Goodreads-import insert paths ahead of their respective duplicate-outcome responses.
+export async function findExistingScan(
+  db: D1Database,
+  userId: number,
+  bookId: number,
+): Promise<boolean> {
+  const dup = await db
+    .prepare("SELECT 1 FROM scans WHERE user_id = ? AND book_id = ?")
+    .bind(userId, bookId)
+    .first();
+  return !!dup;
+}
+
+// D1 surfaces a UNIQUE constraint violation as a generic Error with this substring in its
+// message — there's no typed error class to check against.
+export function isUniqueConstraintError(e: unknown): boolean {
+  return e instanceof Error && e.message.includes("UNIQUE constraint failed");
+}
+
 // author is intentionally excluded — authors are managed via the works/authors model, not per-user overrides.
 export const OVERRIDE_FIELDS = [
   "title",

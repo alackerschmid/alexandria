@@ -14,15 +14,104 @@ async function fetchWithTimeout(
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Thrown when Google Books couldn't be reached or refused the request (429/5xx/network). */
+export class UpstreamSearchError extends Error {
+  constructor(
+    readonly status: number,
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(`Google Books upstream failed with status ${status}`);
+    this.name = "UpstreamSearchError";
+  }
+}
+
+// A cap on Retry-After: on a *daily* quota 429 Google may ask for hours, and a Worker can't wait
+// that long. Backing off a second and failing cleanly beats hanging the request.
+const MAX_RETRY_AFTER_MS = 2000;
+
+const MAX_ATTEMPTS_5XX = 4;
+// 429 covers both per-minute rate limiting (worth one retry) and the daily quota (retrying is
+// pure waste — it can only fail). One extra attempt splits the difference.
+const MAX_ATTEMPTS_429 = 2;
+
+interface GoogleBooksResult {
+  data: any;
+  status: number;
+  /** false = the request failed; `data` is meaningless. Distinguishes failure from "0 results". */
+  ok: boolean;
+  retryAfterSeconds?: number;
+}
+
+interface GoogleBooksOptions {
+  /**
+   * Whether transient failures (429 rate-limit, 5xx) are worth retrying at all. True only for
+   * callers with no fallback (title search). The ISBN lookup falls back to OpenLibrary, so it
+   * should fail fast on any transient error instead of spending seconds backing off — that
+   * reasoning applies to a 5xx blip just as much as a 429.
+   */
+  retryTransient: boolean;
+}
+
+// Google Books' backend intermittently returns 5xx ("Service temporarily unavailable") for
+// otherwise-valid queries, sometimes on consecutive requests — retry a few times with
+// increasing backoff before giving up.
+//
+// Callers must check `ok`: a 429/5xx response body is `{error: {...}}` with no `items`, which is
+// otherwise indistinguishable from a legitimate zero-result search.
+async function fetchGoogleBooksJson(
+  url: string,
+  { retryTransient }: GoogleBooksOptions,
+): Promise<GoogleBooksResult> {
+  let status = 0;
+  let retryAfterSeconds: number | undefined;
+
+  for (let attempt = 0; attempt < MAX_ATTEMPTS_5XX; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url);
+      status = res.status;
+
+      const retryable =
+        retryTransient &&
+        (status >= 500 || (status === 429 && attempt < MAX_ATTEMPTS_429 - 1));
+
+      if (status === 429 || status >= 500) {
+        const hinted = Number(res.headers.get("Retry-After"));
+        if (Number.isFinite(hinted) && hinted > 0) retryAfterSeconds = hinted;
+        if (retryable && attempt < MAX_ATTEMPTS_5XX - 1) {
+          const backoff = 300 * (attempt + 1);
+          const hintedMs = retryAfterSeconds ? retryAfterSeconds * 1000 : 0;
+          await sleep(Math.min(Math.max(backoff, hintedMs), MAX_RETRY_AFTER_MS));
+          continue;
+        }
+        return { data: undefined, status, ok: false, retryAfterSeconds };
+      }
+
+      if (!res.ok) return { data: undefined, status, ok: false };
+      return { data: await res.json(), status, ok: true };
+    } catch {
+      if (attempt < MAX_ATTEMPTS_5XX - 1) continue;
+      return { data: undefined, status, ok: false };
+    }
+  }
+  return { data: undefined, status, ok: false };
+}
+
 async function fetchFromGoogleBooks(
   isbn: string,
   apiKey: string,
 ): Promise<BookMetadata | null> {
-  const res = await fetchWithTimeout(
+  // retryTransient: false — fetchBookMetadata runs OpenLibrary in parallel and merges, so a
+  // quota-rejected or 5xx-failing Google call should give up immediately rather than delay the
+  // whole row waiting on backoff.
+  const { data } = await fetchGoogleBooksJson(
     `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}&key=${apiKey}`,
+    { retryTransient: false },
   );
-  const data: any = await res.json();
-  const info = data.items?.[0]?.volumeInfo;
+  const info = data?.items?.[0]?.volumeInfo;
   if (!info) return null;
   // Google's categories are often BISAC-style ("Fiction / Fantasy / General") — split on the
   // separator and dedupe so they're usable as flat genre tags when Wikidata has no P136 genres.
@@ -142,6 +231,50 @@ export type EditionCandidate = {
   publisher: string | null;
 };
 
+// Escapes LIKE's own wildcards so a title/author containing a literal "%" or "_" (rare, but not
+// impossible) is matched as text rather than as a pattern.
+function escapeLike(s: string): string {
+  return s.replace(/[\\%_]/g, String.raw`\$&`);
+}
+
+// Checked before spending Google Books quota — as the catalog grows, a meaningful share of
+// title searches turn out to already be sitting in `books` (someone else scanned/imported the
+// same title). Deliberately a plain substring match against the raw stored title/author, not
+// `normalizeStr`'d: SQLite's LIKE is already case-insensitive for ASCII, and there's no
+// normalized column to match against without a schema change. A miss here (e.g. a diacritic
+// mismatch) just falls through to Google, same as an empty catalog would.
+export async function searchLocalBooks(
+  db: D1Database,
+  title: string,
+  author: string | undefined,
+  publisher: string | undefined,
+  limit = 20,
+): Promise<EditionCandidate[]> {
+  const conditions = [String.raw`title LIKE ? ESCAPE '\'`];
+  const binds: string[] = [`%${escapeLike(title)}%`];
+  if (author) {
+    conditions.push(String.raw`author LIKE ? ESCAPE '\'`);
+    binds.push(`%${escapeLike(author)}%`);
+  }
+  if (publisher) {
+    conditions.push(String.raw`publisher LIKE ? ESCAPE '\'`);
+    binds.push(`%${escapeLike(publisher)}%`);
+  }
+
+  const { results } = await db
+    .prepare(
+      `SELECT isbn, title, author, cover_url, publish_date, publisher
+       FROM books
+       WHERE ${conditions.join(" AND ")}
+       ORDER BY fetched_at DESC
+       LIMIT ?`,
+    )
+    .bind(...binds, limit)
+    .all<EditionCandidate>();
+
+  return results;
+}
+
 export async function searchBooksByTitle(
   title: string,
   author: string | undefined,
@@ -149,21 +282,33 @@ export async function searchBooksByTitle(
   limit = 20,
   publisher?: string,
 ): Promise<EditionCandidate[]> {
-  try {
-    let q = `intitle:"${encodeURIComponent(title)}"`;
-    if (author) q += `+inauthor:"${encodeURIComponent(author)}"`;
-    if (publisher) q += `+inpublisher:"${encodeURIComponent(publisher)}"`;
-    const res = await fetchWithTimeout(
-      `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=20&key=${apiKey}`,
-    );
-    const data: any = await res.json();
-    if (!Array.isArray(data.items)) return [];
+  let q = `intitle:"${encodeURIComponent(title)}"`;
+  if (author) q += `+inauthor:"${encodeURIComponent(author)}"`;
+  if (publisher) q += `+inpublisher:"${encodeURIComponent(publisher)}"`;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=20&key=${apiKey}`;
 
-    const seen = new Set<string>();
-    const results: EditionCandidate[] = [];
+  // retryTransient: true — Google Books is the only source of title-search candidates; there's
+  // no fallback to soften a transient rate-limit or 5xx rejection.
+  const { data, status, ok, retryAfterSeconds } = await fetchGoogleBooksJson(
+    url,
+    { retryTransient: true },
+  );
 
-    for (const item of data.items) {
-      if (results.length >= limit) break;
+  // Fail loudly rather than returning []: a quota/rate-limit rejection is not the same answer as
+  // "this title doesn't exist", and callers (and users) need to tell them apart.
+  if (!ok) throw new UpstreamSearchError(status, retryAfterSeconds);
+
+  // A genuine zero-result search: Google returns 200 with `totalItems: 0` and no `items` key.
+  if (!Array.isArray(data?.items)) return [];
+
+  const seen = new Set<string>();
+  const results: EditionCandidate[] = [];
+
+  for (const item of data.items) {
+    if (results.length >= limit) break;
+    // A single malformed entry (unexpected shape from Google) shouldn't fail the whole search —
+    // skip it and keep processing the rest, mirroring the old catch-all's graceful degradation.
+    try {
       const info = item.volumeInfo;
       if (!info) continue;
 
@@ -184,12 +329,12 @@ export async function searchBooksByTitle(
         publish_date: info.publishedDate ?? null,
         publisher: info.publisher ?? null,
       });
+    } catch (e) {
+      console.error("[searchBooksByTitle] skipping malformed item:", e);
     }
-
-    return results;
-  } catch {
-    return [];
   }
+
+  return results;
 }
 
 // ── Related editions (OpenLibrary works/editions) ────────────────────────────────
