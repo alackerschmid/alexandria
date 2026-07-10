@@ -6,7 +6,7 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 
 - implement select field options properly
 - add support for 2nd accent color, set central color scheme for stuff like read / dnf / unowned / lent etc. (also want color is hardcoded to orange)
-- add star review field
+- ~~add star review field~~
 - add text review field (optional?)
 - ~~implement proper CI deploy workflow~~
 - add confirmation for switch
@@ -14,6 +14,8 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 - change the base page's random books to a curated batch (boolean flag in database column)
 - add focus styling from settings to all other relevant fields (isbn title search)
 - add proper backfill from other editions for stuff like description
+- add support for numeric filters / groupby (page count, rating)
+- ~~improve grouping visuals (fill rows)~~
 
 ## bugfixes
 
