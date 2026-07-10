@@ -577,62 +577,181 @@
       <p class="text-sm text-text-secondary">{{ $t("library.no_results") }}</p>
     </div>
 
-    <!-- ── Grouped shelves (one row per group, expandable) ────────────────────── -->
-    <div v-else-if="!loading && isGrouped" class="flex-1 pb-28 pt-9">
-      <div
-        v-for="group in pagedGroups"
-        :key="group.key"
-        class="px-6 md:px-10 mb-9"
-      >
-        <div>
-          <!-- Group header -->
+    <!-- ── Grouped shelves. Desktop packs short groups into a shared row instead of
+         leaving gaps; mobile keeps the classic one-section-per-group layout below —
+         packing several groups' tiny headers into one cramped mobile row reads as noise,
+         not a fix, so packing is scoped to `md` and up. ── -->
+    <div v-else-if="!loading && isGrouped" class="flex-1 px-6 md:px-10 pt-9 pb-28">
+      <!-- Desktop: packed rows -->
+      <template v-if="display.mdAndUp.value">
+      <!-- Tile shelf -->
+      <div v-if="viewMode === 'tile'">
+        <div v-for="row in packedTileRows" :key="row.key" class="mb-7">
+          <!-- Header strip: one segment per group represented in this row, sized to the
+               columns it occupies. The divider only draws when a segment spans >1 card. -->
+          <div
+            v-if="row.segments.some((s) => s.groupLabel)"
+            class="grid gap-x-3 md:gap-x-4 mb-2"
+            :style="{
+              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
+            }"
+          >
+            <div
+              v-for="seg in row.segments"
+              :key="seg.key"
+              class="min-w-0 flex items-baseline gap-2"
+              :style="{ gridColumn: `span ${seg.span}` }"
+            >
+              <LibraryGroupHeader
+                v-if="seg.groupLabel"
+                :text="seg.groupLabel.text"
+                :series-id="seg.groupLabel.seriesId"
+                :complete="seg.groupLabel.complete"
+                :count-label="seg.groupLabel.countLabel"
+                :show-divider="seg.span > 1"
+                @select="onGroupLabelSelect(seg.groupLabel.seriesId)"
+              />
+            </div>
+          </div>
+
+          <!-- Cards -->
+          <div
+            class="grid gap-x-3 md:gap-x-4 gap-y-6"
+            :style="{
+              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
+            }"
+          >
+            <template v-for="seg in row.segments" :key="seg.key">
+              <template v-for="slot in seg.slots" :key="slot.key">
+                <LibraryCoverCard
+                  v-if="slot.type === 'entry'"
+                  :title="slot.entry.title"
+                  :cover-url="slot.entry.cover_url"
+                  :ordinal="slot.entry.ordinal"
+                  :owned="slot.entry.owned"
+                  :status="slot.entry.status"
+                  :owning-status="slot.entry.owningStatus"
+                  :author="slot.entry.author"
+                  :hide-status="!showStatusIcons"
+                  :edition-count="slot.entry.editionCount"
+                  :expanded="!!slot.entry.book && expandedCards.has(slot.entry.book.id)"
+                  @select="onEntrySelect(slot.entry)"
+                  @toggle-editions="slot.entry.book && toggleCardExpand(slot.entry.book.id)"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="flex flex-col min-w-0"
+                  @click="toggleExpand(slot.groupKey)"
+                >
+                  <span
+                    class="flex-1 aspect-2/3 flex flex-col items-center justify-center gap-1 border border-dashed border-charcoal-border text-text-secondary hover:text-text-primary hover:border-charcoal-border/60 transition-colors font-mono text-[9px] tracking-[0.1em] uppercase text-center px-1"
+                  >
+                    <v-icon :icon="slot.expanded ? 'mdi-minus' : 'mdi-plus'" size="14" />
+                    {{
+                      slot.expanded
+                        ? $t("library.collapse")
+                        : $t("library.show_all", { n: slot.count })
+                    }}
+                  </span>
+                </button>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- List shelf -->
+      <div v-else>
+        <div v-for="row in packedListRows" :key="row.key" class="mb-7">
+          <div
+            v-if="row.segments.some((s) => s.groupLabel)"
+            class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-2"
+          >
+            <div
+              v-for="seg in row.segments"
+              :key="seg.key"
+              class="min-w-0 flex items-baseline gap-2"
+              :style="{ gridColumn: `span ${seg.span}` }"
+            >
+              <LibraryGroupHeader
+                v-if="seg.groupLabel"
+                :text="seg.groupLabel.text"
+                :series-id="seg.groupLabel.seriesId"
+                :complete="seg.groupLabel.complete"
+                :count-label="seg.groupLabel.countLabel"
+                :show-divider="seg.span > 1"
+                @select="onGroupLabelSelect(seg.groupLabel.seriesId)"
+              />
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+            <template v-for="seg in row.segments" :key="seg.key">
+              <template v-for="slot in seg.slots" :key="slot.key">
+                <LibraryRowCard
+                  v-if="slot.type === 'entry' && slot.entry.book"
+                  :book="slot.entry.book"
+                  :hide-status="!showStatusIcons"
+                  :expanded="expandedCards.has(slot.entry.book.id)"
+                  :highlight-owning-border="highlightOwningBorder"
+                  @cycle-status="cycleStatus(slot.entry.book)"
+                  @select="openDetail(slot.entry.book)"
+                  @select-edition="openDetail($event)"
+                  @toggle-editions="toggleCardExpand(slot.entry.book.id)"
+                />
+                <LibraryGhostRow
+                  v-else-if="slot.type === 'entry'"
+                  :title="slot.entry.title"
+                  :ordinal="slot.entry.ordinal"
+                  @select="onEntrySelect(slot.entry)"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="flex items-center justify-center gap-2 p-4 border border-dashed border-charcoal-border text-text-secondary hover:text-text-primary hover:border-charcoal-border/60 transition-colors font-mono text-[10px] tracking-[0.12em] uppercase"
+                  @click="toggleExpand(slot.groupKey)"
+                >
+                  <v-icon :icon="slot.expanded ? 'mdi-minus' : 'mdi-plus'" size="14" />
+                  {{
+                    slot.expanded
+                      ? $t("library.collapse")
+                      : $t("library.show_all", { n: slot.count })
+                  }}
+                </button>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+      </template>
+
+      <!-- Mobile: classic layout — one full-width header per group, one grid per group,
+           no cross-group packing. -->
+      <template v-else>
+        <div v-for="group in pagedGroups" :key="group.key" class="mb-9">
           <div class="flex items-baseline gap-3 pb-4">
-            <h2 class="contents">
+            <LibraryGroupHeader
+              :text="group.label"
+              :series-id="group.seriesId ?? null"
+              :complete="group.complete"
+              :count-label="group.countLabel"
+              size="full"
+              :link-highlights-complete="false"
+              @select="onGroupLabelSelect(group.seriesId ?? null)"
+            >
               <button
-                v-if="group.seriesId != null"
-                class="font-heading text-2xl font-bold hover:text-orange-neon transition-colors text-left min-w-0 truncate"
-                :class="'text-text-primary'"
-                @click="$router.push(`/series/${group.seriesId}`)"
+                v-if="shelfHasMore(group)"
+                class="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
+                @click="toggleExpand(group.key)"
               >
-                {{ group.label }}
+                {{
+                  expanded[group.key]
+                    ? $t("library.collapse")
+                    : $t("library.show_all", { n: shelfTotal(group) })
+                }}
               </button>
-              <span
-                v-else
-                class="font-heading text-2xl font-bold min-w-0 truncate"
-                :class="
-                  group.complete ? 'text-orange-neon' : 'text-text-primary'
-                "
-              >
-                {{ group.label }}
-              </span>
-            </h2>
-            <span
-              class="font-mono text-[10px] text-text-secondary/50 shrink-0"
-              >{{ group.countLabel }}</span
-            >
-            <span
-              v-if="group.complete"
-              class="shrink-0 font-mono text-[8px] tracking-[0.16em] uppercase text-orange-neon border border-orange-neon/40 bg-orange-neon/10 px-1.5 py-0.5"
-            >
-              {{ $t("library.complete") }}
-            </span>
-            <span
-              class="flex-1 h-px"
-              :class="
-                group.complete ? 'bg-orange-neon/25' : 'bg-charcoal-border'
-              "
-            />
-            <button
-              v-if="shelfHasMore(group)"
-              class="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
-              @click="toggleExpand(group.key)"
-            >
-              {{
-                expanded[group.key]
-                  ? $t("library.collapse")
-                  : $t("library.show_all", { n: shelfTotal(group) })
-              }}
-            </button>
+            </LibraryGroupHeader>
           </div>
 
           <!-- Tile shelf -->
@@ -644,7 +763,7 @@
             }"
           >
             <LibraryCoverCard
-              v-for="entry in shelfVisible(group).flatMap(expandEntry)"
+              v-for="entry in shelfVisible(group).flatMap((entry) => expandEntry(entry))"
               :key="entry.key"
               :title="entry.title"
               :cover-url="entry.cover_url"
@@ -663,10 +782,7 @@
 
           <!-- List shelf -->
           <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <template
-              v-for="entry in shelfVisible(group)"
-              :key="entry.key"
-            >
+            <template v-for="entry in shelfVisible(group)" :key="entry.key">
               <LibraryRowCard
                 v-if="entry.book"
                 :book="entry.book"
@@ -687,7 +803,7 @@
             </template>
           </div>
         </div>
-      </div>
+      </template>
 
       <AppPagination
         :current-page="currentPage"
@@ -857,6 +973,7 @@ import AppFooter from "@/components/AppFooter.vue";
 import LibraryRowCard from "@/components/LibraryRowCard.vue";
 import LibraryCoverCard from "@/components/LibraryCoverCard.vue";
 import LibraryGhostRow from "@/components/LibraryGhostRow.vue";
+import LibraryGroupHeader from "@/components/LibraryGroupHeader.vue";
 import LibraryDisplaySettings from "@/components/LibraryDisplaySettings.vue";
 import LibraryGroupTabs from "@/components/LibraryGroupTabs.vue";
 import AppSelect from "@/components/AppSelect.vue";
@@ -1678,9 +1795,163 @@ const shelfTotal = (g: ShelfGroup): number => g.entries.length;
 const shelfHasMore = (g: ShelfGroup): boolean =>
   !hasActiveSearch.value && shelfTotal(g) > shelfRowSize.value;
 
+// Desktop packed rendering only: when collapsed, show one fewer raw entry than the row
+// threshold whenever a trailing "show all" tile will also be shown, so cards+tile
+// together total exactly one row's width in the common case. This is a best-effort fit,
+// not a hard guarantee: `expandEntry` (tile shelf only) can inject extra edition-card
+// slots for an already-visible entry *after* this cap is applied, growing the row beyond
+// this count — `packRows`'s unconditional flush at the end of a `hasMore` group is what
+// actually prevents the tile from bleeding into the next group's row in that case (see
+// its comment). Mobile's classic layout doesn't need any of this: its "show all" control
+// lives in the header line, not the card grid.
+// `hasMore` is passed in (rather than recomputed here) so packRows — which already needs
+// it to decide whether to append the trailing tile — computes it exactly once per group.
+const packedShelfVisible = (g: ShelfGroup, hasMore: boolean): ShelfEntry[] => {
+  if (hasActiveSearch.value || expanded.value[g.key]) return g.entries;
+  const rowSize = shelfRowSize.value;
+  const cap = hasMore ? rowSize - 1 : rowSize;
+  return g.entries.slice(0, cap);
+};
+
 function onEntrySelect(entry: ShelfEntry) {
   if (entry.book) openDetail(entry.book);
   else if (entry.seriesId != null) router.push(`/series/${entry.seriesId}`);
+}
+
+// ── Packed grouped-shelf rendering ───────────────────────────────────────────
+// Groups no longer force their own row: a short group's cards share a physical grid
+// row with the next group's cards instead of leaving the rest of that row empty.
+// Each row is bin-packed into column-spanning "segments" (one per group represented
+// in that row); a segment carries the old header treatment (title, count, complete
+// badge, divider) sized to the columns it actually occupies — the divider itself only
+// draws when the segment holds more than one card, since a single card doesn't need
+// an underline. The header is shown once, on a group's first row only — collapsed
+// `hasMore` groups usually fit in exactly one row (see packedShelfVisible), so a bare
+// continuation row with no header reads more cleanly than a repeated one in the rarer
+// case where a group still spans multiple rows (fully expanded, an exact-width wrap, or
+// edition-expansion pushing a collapsed group past its row — see packRows below). A
+// trailing "show all / collapse" tile is appended to whichever group has more entries
+// than are visible; `packRows` always ends a `hasMore` group on its own row so that tile
+// (and any overflow cards) can never bleed into the next group's row.
+interface GroupCaption {
+  text: string;
+  seriesId: number | null;
+  complete: boolean;
+  countLabel: string;
+}
+type PackedSlot =
+  | { type: "entry"; key: string; entry: ShelfEntry }
+  | {
+      type: "more";
+      key: string;
+      groupKey: string;
+      expanded: boolean;
+      count: number;
+    };
+interface RowSegment {
+  key: string;
+  span: number;
+  groupLabel: GroupCaption | null;
+  slots: PackedSlot[];
+}
+interface PackedRow {
+  key: string;
+  segments: RowSegment[];
+}
+
+function packRows(
+  cols: number,
+  entriesFor: (g: ShelfGroup, hasMore: boolean) => ShelfEntry[],
+): PackedRow[] {
+  const rows: PackedRow[] = [];
+  let curRow: RowSegment[] = [];
+  let curCol = 0;
+  let rowIndex = 0;
+
+  function flushRow() {
+    if (curRow.length) rows.push({ key: `row-${rowIndex++}`, segments: curRow });
+    curRow = [];
+    curCol = 0;
+  }
+
+  for (const g of pagedGroups.value) {
+    const hasMore = shelfHasMore(g);
+    const slots: PackedSlot[] = entriesFor(g, hasMore).map((entry) => ({
+      type: "entry",
+      key: entry.key,
+      entry,
+    }));
+    if (hasMore) {
+      slots.push({
+        type: "more",
+        key: `more-${g.key}`,
+        groupKey: g.key,
+        expanded: !!expanded.value[g.key],
+        count: shelfTotal(g),
+      });
+      // entriesFor (packedShelfVisible) trims this group's raw entries to `cols - 1` so
+      // cards+tile usually total exactly `cols` — but the tile shelf expands entries
+      // *after* that trim (see packedShelfVisible's comment), which can push this
+      // group's slot count past `cols`. Starting fresh here (rather than wherever the
+      // previous group left off) still holds regardless: it just means this group may
+      // need more than one row instead of exactly one.
+      if (curCol > 0) flushRow();
+    }
+
+    let isFirstChunk = true;
+    let i = 0;
+    while (i < slots.length) {
+      const take = Math.min(cols - curCol, slots.length - i);
+      const chunk = slots.slice(i, i + take);
+      curRow.push({
+        key: `${g.key}-${i}`,
+        span: take,
+        // Shown once, on the group's first row only. Collapsed `hasMore` groups usually
+        // fit in exactly one row (see above), so the only way a group still spans
+        // multiple rows is fully expanded, an exact-width wrap, or edition-expansion
+        // overflow — a bare continuation row with no header reads more cleanly than a
+        // repeated one.
+        groupLabel: isFirstChunk
+          ? {
+              text: g.label,
+              seriesId: g.seriesId ?? null,
+              complete: g.complete,
+              countLabel: g.countLabel,
+            }
+          : null,
+        slots: chunk,
+      });
+      isFirstChunk = false;
+      curCol += take;
+      i += take;
+      if (curCol >= cols) flushRow();
+    }
+    // A `hasMore` group always ends its own row here, even if it didn't exactly fill
+    // it (edition-expansion can leave a partial row) — this is what actually guarantees
+    // the "more" tile (and any overflow cards) can never bleed into the next group's row.
+    if (hasMore) flushRow();
+  }
+  flushRow();
+  return rows;
+}
+
+// Recomputes every group's row placement whenever any single group's collapse state
+// (`expanded`) or any single card's edition state (`expandedCards`) changes, not just
+// the touched group's — because packing is cross-group (a group's row-count change
+// shifts where every later group starts), that recompute is inherent to sharing rows
+// across groups at all, not something a finer-grained cache could avoid without
+// abandoning the packing itself.
+const packedTileRows = computed<PackedRow[]>(() =>
+  packRows(coverPerRow.value, (g, hasMore) =>
+    packedShelfVisible(g, hasMore).flatMap((entry) => expandEntry(entry)),
+  ),
+);
+const packedListRows = computed<PackedRow[]>(() =>
+  packRows(listPerRow.value, packedShelfVisible),
+);
+
+function onGroupLabelSelect(seriesId: number | null) {
+  if (seriesId != null) router.push(`/series/${seriesId}`);
 }
 
 // ── ⌘K keyboard shortcut ─────────────────────────────────────────────────────
@@ -1745,28 +2016,44 @@ const notifyStatusError = () => {
   errorToast.value = true;
 };
 
+// The book objects flowing through shelf/list rendering (bookToEntry, useEditionGrouping)
+// are freshly spread copies rebuilt on every recompute, not the canonical reactive item in
+// serverBooks/guestStore. Mutating a copy in place either doesn't trigger a re-render (plain
+// object) or never makes it back to the source of truth (so it's lost on the next recompute,
+// e.g. returning from the detail view). Resolve to the canonical instance before mutating.
+const booksById = computed(() => {
+  const m = new Map<number, Book>();
+  for (const b of allBooks.value) m.set(b.id, b);
+  return m;
+});
+function resolveBook(book: Book): Book {
+  return booksById.value.get(book.id) ?? book;
+}
+
 const cycleStatus = (book: Book) => {
-  pinStatus(book);
-  return applyCycle(book).catch(notifyStatusError);
+  const target = resolveBook(book);
+  pinStatus(target);
+  return applyCycle(target).catch(notifyStatusError);
 };
 
 const setStatus = (book: Book, newStatus: ReadStatus) => {
-  pinStatus(book);
-  return applyStatus(book, newStatus).catch(notifyStatusError);
+  const target = resolveBook(book);
+  pinStatus(target);
+  return applyStatus(target, newStatus).catch(notifyStatusError);
 };
 
 const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
-  return applyOwningStatus(book, newStatus).catch(notifyStatusError);
+  return applyOwningStatus(resolveBook(book), newStatus).catch(notifyStatusError);
 };
 
 const setRating = (book: Book, rating: number | null) => {
-  return applyRating(book, rating).catch(notifyStatusError);
+  return applyRating(resolveBook(book), rating).catch(notifyStatusError);
 };
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 
 const openDetail = (book: Book) => {
-  selectedBook.value = book;
+  selectedBook.value = resolveBook(book);
   openDetailRoute(book.work_id, book.isbn);
 };
 
