@@ -1133,9 +1133,16 @@ import {
   OWNING_ORDER,
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
+import { useBarcodeScanner } from "@/composables/useBarcodeScanner";
 import { ratingDots } from "@/composables/useRating";
+import {
+  readQueue,
+  writeQueue,
+  enqueueBook,
+  removeFromQueue,
+  type QueuedBook,
+} from "@/utils/offline-queue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
-import Quagga from "@ericblade/quagga2";
 import AppToast from "@/components/AppToast.vue";
 import LoadingButton from "@/components/LoadingButton.vue";
 
@@ -1388,10 +1395,7 @@ const useCamera = () => {
 // Mobile: open the manual-entry screen from the camera view.
 const enterManualEntry = () => {
   manualOverride.value = true;
-  if (scannerStarted) {
-    Quagga.stop();
-    scannerStarted = false;
-  }
+  if (scannerRunning()) stopScanner();
   focusManualEntry();
 };
 
@@ -1545,22 +1549,8 @@ const onBarcodeDetected = async (isbn: string) => {
 };
 
 // ── Offline queue ─────────────────────────────────────────────────────────────
-
-interface QueuedBook {
-  isbn: string;
-  status?: ReadStatus;
-  owning_status?: OwningStatus;
-  rating?: number | null;
-}
-
-const QUEUE_KEY = "bookscan_queue_v3";
-
-function enqueue(book: QueuedBook) {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
-  if (!q.some((b) => b.isbn === book.isbn)) {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify([...q, book]));
-  }
-}
+// Queue persistence + dedupe primitives live in utils/offline-queue; the request
+// building and drain orchestration stay here (they need apiFetch + session state).
 
 function postScanRequest(
   book: QueuedBook,
@@ -1592,7 +1582,7 @@ async function postScan(
 }
 
 async function drainQueue() {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  const q = readQueue();
   if (!q.length) return;
   const remaining: QueuedBook[] = [];
   let authExpired = false;
@@ -1626,9 +1616,7 @@ async function drainQueue() {
   if (authExpired) {
     showToast(t("scanner.toast_session_expired"), "warning");
   }
-  remaining.length
-    ? localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining))
-    : localStorage.removeItem(QUEUE_KEY);
+  writeQueue(remaining);
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -1684,7 +1672,7 @@ const saveBook = async () => {
     }
   } catch {
     if (!navigator.onLine) {
-      enqueue(queued);
+      enqueueBook(queued);
       sessionScanned.add(book.isbn);
       libraryBooks.set(book.isbn, status);
       recordSession(book, status);
@@ -1712,14 +1700,6 @@ const scanAgain = () => {
 
 // ── Removing session books ──────────────────────────────────────────────────────
 
-function dequeue(isbn: string) {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
-  const filtered = q.filter((b) => b.isbn !== isbn);
-  filtered.length
-    ? localStorage.setItem(QUEUE_KEY, JSON.stringify(filtered))
-    : localStorage.removeItem(QUEUE_KEY);
-}
-
 async function removeSessionBook(book: SessionBook) {
   // Optimistically drop it from the session UI and the local indices.
   sessionBooks.value = sessionBooks.value.filter((b) => b.isbn !== book.isbn);
@@ -1738,7 +1718,7 @@ async function removeSessionBook(book: SessionBook) {
     } catch {}
   } else {
     // Saved offline and still pending — drop it from the sync queue.
-    dequeue(book.isbn);
+    removeFromQueue(book.isbn);
   }
 }
 
@@ -1781,66 +1761,22 @@ function onSwipeCancel() {
 // ── Camera lifecycle ──────────────────────────────────────────────────────────
 
 const scannerContainer = ref<HTMLDivElement | null>(null);
-let scannerStarted = false;
 
-// Require 2 consecutive reads of the same code before firing — filters noise
-// without adding perceptible delay at typical camera frame rates.
-const detectionBuffer: string[] = [];
-const REQUIRED_HITS = 2;
-
-const onQuaggaDetected = (result: { codeResult: { code: string | null } }) => {
-  const code = result.codeResult.code;
-  if (!code) return;
-
-  detectionBuffer.push(code);
-  if (detectionBuffer.length > REQUIRED_HITS) detectionBuffer.shift();
-
-  if (
-    detectionBuffer.length === REQUIRED_HITS &&
-    detectionBuffer.every((c) => c === code)
-  ) {
-    detectionBuffer.length = 0;
-    onBarcodeDetected(code);
-  }
-};
-
-const startScanner = () => {
-  if (!scannerContainer.value || scannerStarted) return;
-
-  Quagga.init(
-    {
-      inputStream: {
-        type: "LiveStream",
-        target: scannerContainer.value,
-        constraints: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      },
-      locator: { patchSize: "medium", halfSample: true },
-      // numOfWorkers: 0 avoids Vite/worker-blob compatibility issues
-      numOfWorkers: 0,
-      decoder: { readers: ["ean_reader", "ean_8_reader"] },
-      locate: true,
-    },
-    (err: unknown) => {
-      if (err) {
-        console.error(err);
-        showToast(t("scanner.camera_error"), "error");
-        if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
-          cameraFailed.value = true;
-          focusManualEntry();
-        }
-        return;
-      }
-      Quagga.start();
-      scannerStarted = true;
-    },
-  );
-
-  Quagga.onDetected(onQuaggaDetected);
-};
+const {
+  start: startScanner,
+  stop: stopScanner,
+  isRunning: scannerRunning,
+} = useBarcodeScanner({
+  container: scannerContainer,
+  onDetect: onBarcodeDetected,
+  onError: () => {
+    showToast(t("scanner.camera_error"), "error");
+    if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
+      cameraFailed.value = true;
+      focusManualEntry();
+    }
+  },
+});
 
 onMounted(() => {
   document.documentElement.style.overflow = "hidden";
@@ -1860,8 +1796,7 @@ onBeforeUnmount(() => {
   document.documentElement.style.overflow = "";
   document.body.style.overflow = "";
   window.removeEventListener("online", drainQueue);
-  Quagga.offDetected(onQuaggaDetected);
-  if (scannerStarted) Quagga.stop();
+  stopScanner();
 });
 
 // ── Focus management for the custom bottom-sheet overlays ────────────────────
