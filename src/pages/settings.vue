@@ -441,7 +441,7 @@
                     { value: 'de', label: 'Deutsch' },
                   ]"
                   :model-value="localeStore.locale"
-                  @update:model-value="localeStore.set($event)"
+                  @update:model-value="localeStore.set($event as 'en' | 'de')"
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.theme')">
@@ -600,8 +600,6 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  defineComponent,
-  h,
 } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -616,6 +614,10 @@ import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
+import SettingsField from "@/components/settings/SettingsField.vue";
+import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
+import SegControl from "@/components/settings/SettingsSegControl.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -954,122 +956,6 @@ const {
 onMounted(() => {
   fieldDefsStore.loaded = false;
   fieldDefsStore.load();
-});
-
-// ── Inline sub-components ─────────────────────────────────────────────────────
-
-const SectionHeading = defineComponent({
-  props: { title: String, description: String },
-  setup(props) {
-    return () =>
-      h("div", { class: "mb-6" }, [
-        h("div", { class: "flex items-baseline gap-4 mb-1.5" }, [
-          h(
-            "h2",
-            {
-              class:
-                "font-heading font-black text-[22px] text-text-primary leading-none",
-            },
-            props.title,
-          ),
-          h("span", { class: "flex-1 h-px bg-charcoal-border" }),
-        ]),
-        props.description
-          ? h(
-              "p",
-              {
-                class:
-                  "text-[13px] text-text-secondary max-w-lg leading-relaxed",
-              },
-              props.description,
-            )
-          : null,
-      ]);
-  },
-});
-
-const SettingsField = defineComponent({
-  props: { label: String },
-  setup(props, ctx) {
-    return () =>
-      h("label", { class: "flex flex-col gap-2" }, [
-        h(
-          "span",
-          {
-            class:
-              "font-mono text-[10px] tracking-[0.16em] uppercase text-text-secondary",
-          },
-          props.label,
-        ),
-        ctx.slots.default?.(),
-      ]);
-  },
-});
-
-const DefaultRow = defineComponent({
-  props: { label: String, first: Boolean },
-  setup(props, ctx) {
-    return () =>
-      h(
-        "div",
-        {
-          class: [
-            "flex items-center justify-between gap-6 py-4",
-            !props.first ? "border-t border-charcoal-border/60" : "",
-          ].join(" "),
-        },
-        [
-          h("span", { class: "text-[14px] text-text-primary" }, props.label),
-          ctx.slots.default?.(),
-        ],
-      );
-  },
-});
-
-const SegControl = defineComponent({
-  props: {
-    options: {
-      type: Array as () => { value: string; label: string }[],
-      required: true,
-    },
-    modelValue: { type: String, required: true },
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    return () =>
-      h(
-        "div",
-        {
-          class:
-            "inline-flex border border-charcoal-border overflow-hidden flex-wrap",
-        },
-        props.options.map((opt, k) =>
-          h(
-            "button",
-            {
-              key: opt.value,
-              onClick: () => emit("update:modelValue", opt.value),
-              class: [
-                "px-4 py-2 font-mono text-[10px] tracking-[0.1em] uppercase transition-colors",
-                k > 0 ? "border-l border-charcoal-border" : "",
-              ].join(" "),
-              style:
-                opt.value === props.modelValue
-                  ? {
-                      background: accentStore.color,
-                      color: "#111110",
-                      fontWeight: 700,
-                    }
-                  : {
-                      background: "transparent",
-                      color: "rgb(var(--v-theme-text-secondary))",
-                    },
-            },
-            opt.label,
-          ),
-        ),
-      );
-  },
 });
 </script>
 
