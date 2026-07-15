@@ -729,6 +729,12 @@ import { useScanStatus } from "@/composables/useScanStatus";
 import { useLibrarySearch } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useEditionGrouping } from "@/composables/useEditionGrouping";
+import { useShelfGroups, type SeriesEntry } from "@/composables/useShelfGroups";
+import {
+  packRows,
+  type ShelfEntry,
+  type PackedRow,
+} from "@/utils/shelf-packing";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
@@ -949,15 +955,6 @@ function expandEntry(e: ShelfEntry): ShelfEntry[] {
 }
 
 // Series membership for grouped-by-series shelves (unowned reveal + completeness)
-type SeriesEntry = {
-  work_id: number;
-  ordinal: number | null;
-  title: string | null;
-  owned: number;
-  isbn: string | null;
-  cover_url: string | null;
-  scan_id: number | null;
-};
 const seriesMemberships = ref<
   Record<number, { id: number; name: string | null; entries: SeriesEntry[] }>
 >({});
@@ -1033,291 +1030,36 @@ function changePage(p: number) {
 }
 
 // ── Shelf enrichment (counts, completeness, unowned reveal) ─────────────────────
-
-interface ShelfEntry {
-  key: string;
-  title: string | null;
-  cover_url: string | null;
-  ordinal: number | null;
-  owned: boolean;
-  status?: ReadStatus;
-  owningStatus?: OwningStatus;
-  author?: string | null;
-  book?: Book;
-  seriesId?: number | null;
-  editionCount?: number;
-}
-
-interface ShelfGroup {
-  key: string;
-  label: string;
-  seriesId?: number | null;
-  complete: boolean;
-  countLabel: string;
-  entries: ShelfEntry[];
-}
-
-// Keyed by work_id so a work with multiple owned scans resolves to one representative
-// (via useEditionGrouping's priority rule) — deliberately built from the unfiltered
-// allBooks, since series-shelf entries below aren't meant to react to the active search.
-const booksByWorkId = computed(() => {
-  const m = new Map<number, Book>();
-  for (const b of groupedAllBooks.value) if (b.work_id != null) m.set(b.work_id, b);
-  return m;
+const {
+  bookToEntry,
+  shelfGroups,
+  pagedGroups,
+  shelfVisible,
+  shelfTotal,
+  shelfHasMore,
+  packedShelfVisible,
+} = useShelfGroups({
+  allGroups,
+  groupedAllBooks,
+  seriesMemberships,
+  parsedSearch,
+  search,
+  mainOnly,
+  highlightComplete,
+  showUnowned,
+  onlyOwned,
+  shelfRowSize,
+  expanded,
+  currentPage,
+  pageSize,
 });
-
-const bookToEntry = (b: Book): ShelfEntry => ({
-  key: `b${b.id}`,
-  title: b.title || b.isbn,
-  cover_url: b.cover_url ?? null,
-  ordinal: b.series_ordinal ?? null,
-  owned: true,
-  status: b.status,
-  owningStatus: b.owning_status,
-  author: authorDisplayName(b),
-  book: b,
-  seriesId: b.series_id ?? null,
-  editionCount: b.editionCount,
-});
-
-const shelfGroups = computed<ShelfGroup[]>(() =>
-  allGroups.value.map((g): ShelfGroup => {
-    // Series group with full membership → counts + completeness + unowned reveal.
-    if (g.seriesId != null && seriesMemberships.value[g.seriesId]) {
-      const members = seriesMemberships.value[g.seriesId].entries;
-      const mainMembers = members.filter(
-        (e) => e.ordinal != null && Number.isInteger(e.ordinal),
-      );
-      // Completeness reflects actual possession (worker-computed `owned`, which now
-      // requires owning_status 'owned'/'lent_out') and is intentionally independent of the
-      // "Owned books only" / `owning:` display filters below — narrowing visible tiles
-      // shouldn't change the underlying completeness fact, any more than a text search does.
-      const ownedTotal = members.filter((e) => e.owned).length;
-      const ownedMain = mainMembers.filter((e) => e.owned).length;
-      const denom = mainOnly.value ? mainMembers.length : members.length;
-      const numer = mainOnly.value ? ownedMain : ownedTotal;
-      const complete = highlightComplete.value && denom > 0 && numer === denom;
-      const pool = mainOnly.value ? mainMembers : members;
-      const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
-      // "Owned books only" and the `owning:` search token both filter by owning_status —
-      // a display filter, distinct from the FRBR ownership (`e.owned`) that drives
-      // showUnowned/completeness above, so it's applied after entries are built.
-      const owningFilter = parsedSearch.value.owning;
-      const entries: ShelfEntry[] = visible
-        .map((e) => {
-          const book = booksByWorkId.value.get(e.work_id);
-          return {
-            key: `m${e.work_id}`,
-            title: e.title,
-            cover_url: book?.cover_url ?? e.cover_url ?? null,
-            ordinal: e.ordinal,
-            owned: !!e.owned,
-            status: book?.status,
-            owningStatus: book?.owning_status,
-            author: book ? authorDisplayName(book) : null,
-            book,
-            seriesId: g.seriesId,
-            editionCount: book?.editionCount,
-          };
-        })
-        .filter((entry) => {
-          if (onlyOwned.value && entry.book && entry.book.owning_status !== "owned")
-            return false;
-          if (owningFilter && entry.book?.owning_status !== owningFilter)
-            return false;
-          return true;
-        });
-      return {
-        key: g.key,
-        label: g.label,
-        seriesId: g.seriesId,
-        complete,
-        countLabel: `${numer} / ${denom}`,
-        entries,
-      };
-    }
-    // Series fallback (membership not loaded yet) — owned-only against series_total.
-    if (g.seriesId != null) {
-      const total = g.seriesTotal ?? g.books.length;
-      const complete =
-        highlightComplete.value && total > 0 && g.books.length === total;
-      return {
-        key: g.key,
-        label: g.label,
-        seriesId: g.seriesId,
-        complete,
-        countLabel: `${g.books.length} / ${total}`,
-        entries: g.books.map((b) => bookToEntry(b)),
-      };
-    }
-    // Non-series groups (author/genre/standalone/…): plain count.
-    return {
-      key: g.key,
-      label: g.label,
-      seriesId: g.seriesId ?? null,
-      complete: false,
-      countLabel: String(g.books.length),
-      entries: g.books.map((b) => bookToEntry(b)),
-    };
-  }),
-);
-
-const pagedGroups = computed<ShelfGroup[]>(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return shelfGroups.value.slice(start, start + pageSize.value);
-});
-
-// Collapsed shelves show one row; expanded show everything.
-// While a search is active, always show all matches — no collapsing.
-const hasActiveSearch = computed(() => search.value.trim().length > 0);
-const shelfVisible = (g: ShelfGroup): ShelfEntry[] =>
-  hasActiveSearch.value || expanded.value[g.key]
-    ? g.entries
-    : g.entries.slice(0, shelfRowSize.value);
-const shelfTotal = (g: ShelfGroup): number => g.entries.length;
-const shelfHasMore = (g: ShelfGroup): boolean =>
-  !hasActiveSearch.value && shelfTotal(g) > shelfRowSize.value;
-
-// Desktop packed rendering only: when collapsed, show one fewer raw entry than the row
-// threshold whenever a trailing "show all" tile will also be shown, so cards+tile
-// together total exactly one row's width in the common case. This is a best-effort fit,
-// not a hard guarantee: `expandEntry` (tile shelf only) can inject extra edition-card
-// slots for an already-visible entry *after* this cap is applied, growing the row beyond
-// this count — `packRows`'s unconditional flush at the end of a `hasMore` group is what
-// actually prevents the tile from bleeding into the next group's row in that case (see
-// its comment). Mobile's classic layout doesn't need any of this: its "show all" control
-// lives in the header line, not the card grid.
-// `hasMore` is passed in (rather than recomputed here) so packRows — which already needs
-// it to decide whether to append the trailing tile — computes it exactly once per group.
-const packedShelfVisible = (g: ShelfGroup, hasMore: boolean): ShelfEntry[] => {
-  if (hasActiveSearch.value || expanded.value[g.key]) return g.entries;
-  const rowSize = shelfRowSize.value;
-  const cap = hasMore ? rowSize - 1 : rowSize;
-  return g.entries.slice(0, cap);
-};
 
 function onEntrySelect(entry: ShelfEntry) {
   if (entry.book) openDetail(entry.book);
   else if (entry.seriesId != null) router.push(`/series/${entry.seriesId}`);
 }
 
-// ── Packed grouped-shelf rendering ───────────────────────────────────────────
-// Groups no longer force their own row: a short group's cards share a physical grid
-// row with the next group's cards instead of leaving the rest of that row empty.
-// Each row is bin-packed into column-spanning "segments" (one per group represented
-// in that row); a segment carries the old header treatment (title, count, complete
-// badge, divider) sized to the columns it actually occupies — the divider itself only
-// draws when the segment holds more than one card, since a single card doesn't need
-// an underline. The header is shown once, on a group's first row only — collapsed
-// `hasMore` groups usually fit in exactly one row (see packedShelfVisible), so a bare
-// continuation row with no header reads more cleanly than a repeated one in the rarer
-// case where a group still spans multiple rows (fully expanded, an exact-width wrap, or
-// edition-expansion pushing a collapsed group past its row — see packRows below). A
-// trailing "show all / collapse" tile is appended to whichever group has more entries
-// than are visible; `packRows` always ends a `hasMore` group on its own row so that tile
-// (and any overflow cards) can never bleed into the next group's row.
-interface GroupCaption {
-  text: string;
-  seriesId: number | null;
-  complete: boolean;
-  countLabel: string;
-}
-type PackedSlot =
-  | { type: "entry"; key: string; entry: ShelfEntry }
-  | {
-      type: "more";
-      key: string;
-      groupKey: string;
-      expanded: boolean;
-      count: number;
-    };
-interface RowSegment {
-  key: string;
-  span: number;
-  groupLabel: GroupCaption | null;
-  slots: PackedSlot[];
-}
-interface PackedRow {
-  key: string;
-  segments: RowSegment[];
-}
-
-function packRows(
-  cols: number,
-  entriesFor: (g: ShelfGroup, hasMore: boolean) => ShelfEntry[],
-): PackedRow[] {
-  const rows: PackedRow[] = [];
-  let curRow: RowSegment[] = [];
-  let curCol = 0;
-  let rowIndex = 0;
-
-  function flushRow() {
-    if (curRow.length) rows.push({ key: `row-${rowIndex++}`, segments: curRow });
-    curRow = [];
-    curCol = 0;
-  }
-
-  for (const g of pagedGroups.value) {
-    const hasMore = shelfHasMore(g);
-    const slots: PackedSlot[] = entriesFor(g, hasMore).map((entry) => ({
-      type: "entry",
-      key: entry.key,
-      entry,
-    }));
-    if (hasMore) {
-      slots.push({
-        type: "more",
-        key: `more-${g.key}`,
-        groupKey: g.key,
-        expanded: !!expanded.value[g.key],
-        count: shelfTotal(g),
-      });
-      // entriesFor (packedShelfVisible) trims this group's raw entries to `cols - 1` so
-      // cards+tile usually total exactly `cols` — but the tile shelf expands entries
-      // *after* that trim (see packedShelfVisible's comment), which can push this
-      // group's slot count past `cols`. Starting fresh here (rather than wherever the
-      // previous group left off) still holds regardless: it just means this group may
-      // need more than one row instead of exactly one.
-      if (curCol > 0) flushRow();
-    }
-
-    let isFirstChunk = true;
-    let i = 0;
-    while (i < slots.length) {
-      const take = Math.min(cols - curCol, slots.length - i);
-      const chunk = slots.slice(i, i + take);
-      curRow.push({
-        key: `${g.key}-${i}`,
-        span: take,
-        // Shown once, on the group's first row only. Collapsed `hasMore` groups usually
-        // fit in exactly one row (see above), so the only way a group still spans
-        // multiple rows is fully expanded, an exact-width wrap, or edition-expansion
-        // overflow — a bare continuation row with no header reads more cleanly than a
-        // repeated one.
-        groupLabel: isFirstChunk
-          ? {
-              text: g.label,
-              seriesId: g.seriesId ?? null,
-              complete: g.complete,
-              countLabel: g.countLabel,
-            }
-          : null,
-        slots: chunk,
-      });
-      isFirstChunk = false;
-      curCol += take;
-      i += take;
-      if (curCol >= cols) flushRow();
-    }
-    // A `hasMore` group always ends its own row here, even if it didn't exactly fill
-    // it (edition-expansion can leave a partial row) — this is what actually guarantees
-    // the "more" tile (and any overflow cards) can never bleed into the next group's row.
-    if (hasMore) flushRow();
-  }
-  flushRow();
-  return rows;
-}
-
+// ── Packed grouped-shelf rendering (bin-packer: see packRows in utils/shelf-packing) ─
 // Recomputes every group's row placement whenever any single group's collapse state
 // (`expanded`) or any single card's edition state (`expandedCards`) changes, not just
 // the touched group's — because packing is cross-group (a group's row-count change
@@ -1325,12 +1067,23 @@ function packRows(
 // across groups at all, not something a finer-grained cache could avoid without
 // abandoning the packing itself.
 const packedTileRows = computed<PackedRow[]>(() =>
-  packRows(coverPerRow.value, (g, hasMore) =>
-    packedShelfVisible(g, hasMore).flatMap((entry) => expandEntry(entry)),
+  packRows(
+    coverPerRow.value,
+    pagedGroups.value,
+    (g, hasMore) =>
+      packedShelfVisible(g, hasMore).flatMap((entry) => expandEntry(entry)),
+    shelfHasMore,
+    (g) => !!expanded.value[g.key],
   ),
 );
 const packedListRows = computed<PackedRow[]>(() =>
-  packRows(listPerRow.value, packedShelfVisible),
+  packRows(
+    listPerRow.value,
+    pagedGroups.value,
+    packedShelfVisible,
+    shelfHasMore,
+    (g) => !!expanded.value[g.key],
+  ),
 );
 
 function onGroupLabelSelect(seriesId: number | null) {
