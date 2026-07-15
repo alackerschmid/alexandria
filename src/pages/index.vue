@@ -664,47 +664,23 @@
     />
 
     <!-- Delete confirmation -->
-    <v-dialog v-model="deleteDialog" max-width="360">
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-        <v-card-title
-          class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
-        >
-          {{ $t("library.remove_heading") }}
-        </v-card-title>
-        <v-card-text class="px-6 text-sm text-text-secondary">
-          {{
-            $t("library.remove_body", {
-              title: bookToDelete?.title || bookToDelete?.isbn,
-            })
-          }}
-          <p v-if="deleteFailed" class="text-error mt-2">
-            {{ $t("library.error_delete") }}
-          </p>
-        </v-card-text>
-        <v-card-actions class="px-4 pb-4 gap-2">
-          <v-spacer />
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary px-1.5"
-            @click="deleteDialog = false"
-          >
-            {{ $t("library.cancel") }}
-          </v-btn>
-          <v-btn
-            variant="flat"
-            size="small"
-            color="error"
-            rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase px-1.5"
-            :loading="deleting"
-            @click="confirmDelete"
-          >
-            {{ $t("library.remove") }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <ConfirmDialog
+      v-model="deleteDialog"
+      :title="$t('library.remove_heading')"
+      :confirm-label="$t('library.remove')"
+      :cancel-label="$t('library.cancel')"
+      :loading="deleting"
+      @confirm="confirmDelete"
+    >
+      {{
+        $t("library.remove_body", {
+          title: bookToDelete?.title || bookToDelete?.isbn,
+        })
+      }}
+      <p v-if="deleteFailed" class="text-error mt-2">
+        {{ $t("library.error_delete") }}
+      </p>
+    </ConfirmDialog>
 
     <AppToast
       v-model="errorToast"
@@ -720,12 +696,12 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
+import { useToast } from "@/composables/useToast";
 import { useLibrarySearch } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useEditionGrouping } from "@/composables/useEditionGrouping";
@@ -754,6 +730,7 @@ import LibraryGroupTabs from "@/components/LibraryGroupTabs.vue";
 import AppSelect from "@/components/AppSelect.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import AppPagination from "@/components/AppPagination.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useDisplay } from "vuetify";
 
@@ -761,7 +738,6 @@ const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const themeStore = useThemeStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
 const { apiFetch } = useApi();
@@ -980,8 +956,11 @@ const seriesContext = computed(() => groupBy.value === "series");
 
 const selectedBook = ref<Book | null>(null);
 
-const errorToast = ref(false);
-const errorMessage = ref("");
+const {
+  visible: errorToast,
+  message: errorMessage,
+  showToast,
+} = useToast();
 
 let fetchSeq = 0;
 
@@ -1136,8 +1115,7 @@ const fetchMemberships = async () => {
 // ── Status cycling ────────────────────────────────────────────────────────────
 
 const notifyStatusError = () => {
-  errorMessage.value = t("library.error_update_status");
-  errorToast.value = true;
+  showToast(t("library.error_update_status"), "error");
 };
 
 // The book objects flowing through shelf/list rendering (bookToEntry, useEditionGrouping)

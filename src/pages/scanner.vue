@@ -1121,6 +1121,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import {
   useBookStatus,
   STATUS_META,
@@ -1135,7 +1136,7 @@ import { useFocusTrap } from "@/composables/useFocusTrap";
 import { ratingDots } from "@/composables/useRating";
 import type { OwningStatus, ReadStatus } from "@/types/book";
 import Quagga from "@ericblade/quagga2";
-import AppToast, { type ToastType } from "@/components/AppToast.vue";
+import AppToast from "@/components/AppToast.vue";
 import LoadingButton from "@/components/LoadingButton.vue";
 
 const { t } = useI18n();
@@ -1476,15 +1477,12 @@ const selectCandidate = async (candidate: EditionCandidate) => {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-const toast = ref(false);
-const toastMessage = ref("");
-const toastType = ref<ToastType>("success");
-
-const showToast = (message: string, type: ToastType = "success") => {
-  toastMessage.value = message;
-  toastType.value = type;
-  toast.value = true;
-};
+const {
+  visible: toast,
+  message: toastMessage,
+  type: toastType,
+  showToast,
+} = useToast();
 
 // ── Book lookup ───────────────────────────────────────────────────────────────
 

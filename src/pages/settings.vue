@@ -541,80 +541,53 @@
     </div>
 
     <!-- ── Delete account dialog ────────────────────────────────────────── -->
-    <v-dialog v-model="deleteDialog" max-width="400">
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-        <v-card-title
-          class="font-heading text-xl pt-6 px-6 font-black text-text-primary"
+    <ConfirmDialog
+      v-model="deleteDialog"
+      danger
+      :max-width="400"
+      :title="$t('settings.danger.dialog_heading')"
+      :confirm-label="$t('settings.danger.dialog_confirm')"
+      :cancel-label="$t('settings.danger.dialog_cancel')"
+      :loading="deletingAccount"
+      :confirm-disabled="
+        deleteConfirmEmail.toLowerCase() !==
+          (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
+      "
+      @confirm="confirmDeleteAccount"
+      @cancel="resetDeleteDialog"
+    >
+      {{ $t("settings.danger.dialog_body") }}
+      <div class="flex flex-col gap-3 mt-5">
+        <SettingsField :label="$t('settings.danger.dialog_email_label')">
+          <input
+            v-model="deleteConfirmEmail"
+            type="email"
+            class="settings-input"
+            autocomplete="off"
+          />
+        </SettingsField>
+        <SettingsField :label="$t('settings.danger.dialog_password_label')">
+          <input
+            v-model="deleteConfirmPassword"
+            type="password"
+            class="settings-input"
+            autocomplete="current-password"
+          />
+        </SettingsField>
+        <p
+          v-if="deleteError"
+          class="text-[11px]"
           style="color: rgb(var(--v-theme-error))"
         >
-          {{ $t("settings.danger.dialog_heading") }}
-        </v-card-title>
-        <v-card-text class="px-6 text-sm text-text-secondary leading-relaxed">
-          {{ $t("settings.danger.dialog_body") }}
-          <div class="flex flex-col gap-3 mt-5">
-            <SettingsField :label="$t('settings.danger.dialog_email_label')">
-              <input
-                v-model="deleteConfirmEmail"
-                type="email"
-                class="settings-input"
-                autocomplete="off"
-              />
-            </SettingsField>
-            <SettingsField :label="$t('settings.danger.dialog_password_label')">
-              <input
-                v-model="deleteConfirmPassword"
-                type="password"
-                class="settings-input"
-                autocomplete="current-password"
-              />
-            </SettingsField>
-            <p
-              v-if="deleteError"
-              class="text-[11px]"
-              style="color: rgb(var(--v-theme-error))"
-            >
-              {{ deleteError }}
-            </p>
-          </div>
-        </v-card-text>
-        <v-card-actions class="px-4 pb-4 gap-2">
-          <v-spacer />
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-            @click="
-              deleteDialog = false;
-              deleteConfirmEmail = '';
-              deleteConfirmPassword = '';
-              deleteError = '';
-            "
-          >
-            {{ $t("settings.danger.dialog_cancel") }}
-          </v-btn>
-          <v-btn
-            variant="flat"
-            size="small"
-            color="error"
-            rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase"
-            :loading="deletingAccount"
-            :disabled="
-              deleteConfirmEmail.toLowerCase() !==
-                (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
-            "
-            @click="confirmDeleteAccount"
-          >
-            {{ $t("settings.danger.dialog_confirm") }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          {{ deleteError }}
+        </p>
+      </div>
+    </ConfirmDialog>
 
     <AppToast
-      v-model="toast.show"
-      :message="toast.message"
-      :type="toast.type"
+      v-model="toastShow"
+      :message="toastMessage"
+      :type="toastType"
       :timeout="3500"
     />
   </div>
@@ -638,9 +611,11 @@ import { useAccentStore } from "@/stores/accent";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -934,6 +909,12 @@ const deleteConfirmPassword = ref("");
 const deleteError = ref("");
 const deletingAccount = ref(false);
 
+function resetDeleteDialog() {
+  deleteConfirmEmail.value = "";
+  deleteConfirmPassword.value = "";
+  deleteError.value = "";
+}
+
 async function confirmDeleteAccount() {
   deleteError.value = "";
   deletingAccount.value = true;
@@ -961,16 +942,12 @@ async function confirmDeleteAccount() {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-const toast = reactive({
-  show: false,
-  message: "",
-  type: "error" as "error" | "success",
-});
-function showToast(message: string, type: "error" | "success" = "error") {
-  toast.message = message;
-  toast.type = type;
-  toast.show = true;
-}
+const {
+  visible: toastShow,
+  message: toastMessage,
+  type: toastType,
+  showToast,
+} = useToast();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
