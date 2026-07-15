@@ -441,7 +441,7 @@
                     { value: 'de', label: 'Deutsch' },
                   ]"
                   :model-value="localeStore.locale"
-                  @update:model-value="localeStore.set($event)"
+                  @update:model-value="localeStore.set($event as 'en' | 'de')"
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.theme')">
@@ -541,80 +541,53 @@
     </div>
 
     <!-- ── Delete account dialog ────────────────────────────────────────── -->
-    <v-dialog v-model="deleteDialog" max-width="400">
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-        <v-card-title
-          class="font-heading text-xl pt-6 px-6 font-black text-text-primary"
+    <ConfirmDialog
+      v-model="deleteDialog"
+      danger
+      :max-width="400"
+      :title="$t('settings.danger.dialog_heading')"
+      :confirm-label="$t('settings.danger.dialog_confirm')"
+      :cancel-label="$t('settings.danger.dialog_cancel')"
+      :loading="deletingAccount"
+      :confirm-disabled="
+        deleteConfirmEmail.toLowerCase() !==
+          (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
+      "
+      @confirm="confirmDeleteAccount"
+      @cancel="resetDeleteDialog"
+    >
+      {{ $t("settings.danger.dialog_body") }}
+      <div class="flex flex-col gap-3 mt-5">
+        <SettingsField :label="$t('settings.danger.dialog_email_label')">
+          <input
+            v-model="deleteConfirmEmail"
+            type="email"
+            class="settings-input"
+            autocomplete="off"
+          />
+        </SettingsField>
+        <SettingsField :label="$t('settings.danger.dialog_password_label')">
+          <input
+            v-model="deleteConfirmPassword"
+            type="password"
+            class="settings-input"
+            autocomplete="current-password"
+          />
+        </SettingsField>
+        <p
+          v-if="deleteError"
+          class="text-[11px]"
           style="color: rgb(var(--v-theme-error))"
         >
-          {{ $t("settings.danger.dialog_heading") }}
-        </v-card-title>
-        <v-card-text class="px-6 text-sm text-text-secondary leading-relaxed">
-          {{ $t("settings.danger.dialog_body") }}
-          <div class="flex flex-col gap-3 mt-5">
-            <SettingsField :label="$t('settings.danger.dialog_email_label')">
-              <input
-                v-model="deleteConfirmEmail"
-                type="email"
-                class="settings-input"
-                autocomplete="off"
-              />
-            </SettingsField>
-            <SettingsField :label="$t('settings.danger.dialog_password_label')">
-              <input
-                v-model="deleteConfirmPassword"
-                type="password"
-                class="settings-input"
-                autocomplete="current-password"
-              />
-            </SettingsField>
-            <p
-              v-if="deleteError"
-              class="text-[11px]"
-              style="color: rgb(var(--v-theme-error))"
-            >
-              {{ deleteError }}
-            </p>
-          </div>
-        </v-card-text>
-        <v-card-actions class="px-4 pb-4 gap-2">
-          <v-spacer />
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-            @click="
-              deleteDialog = false;
-              deleteConfirmEmail = '';
-              deleteConfirmPassword = '';
-              deleteError = '';
-            "
-          >
-            {{ $t("settings.danger.dialog_cancel") }}
-          </v-btn>
-          <v-btn
-            variant="flat"
-            size="small"
-            color="error"
-            rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase"
-            :loading="deletingAccount"
-            :disabled="
-              deleteConfirmEmail.toLowerCase() !==
-                (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
-            "
-            @click="confirmDeleteAccount"
-          >
-            {{ $t("settings.danger.dialog_confirm") }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          {{ deleteError }}
+        </p>
+      </div>
+    </ConfirmDialog>
 
     <AppToast
-      v-model="toast.show"
-      :message="toast.message"
-      :type="toast.type"
+      v-model="toastShow"
+      :message="toastMessage"
+      :type="toastType"
       :timeout="3500"
     />
   </div>
@@ -627,8 +600,6 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  defineComponent,
-  h,
 } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -638,9 +609,15 @@ import { useAccentStore } from "@/stores/accent";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
+import SettingsField from "@/components/settings/SettingsField.vue";
+import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
+import SegControl from "@/components/settings/SettingsSegControl.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -934,6 +911,12 @@ const deleteConfirmPassword = ref("");
 const deleteError = ref("");
 const deletingAccount = ref(false);
 
+function resetDeleteDialog() {
+  deleteConfirmEmail.value = "";
+  deleteConfirmPassword.value = "";
+  deleteError.value = "";
+}
+
 async function confirmDeleteAccount() {
   deleteError.value = "";
   deletingAccount.value = true;
@@ -961,138 +944,18 @@ async function confirmDeleteAccount() {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-const toast = reactive({
-  show: false,
-  message: "",
-  type: "error" as "error" | "success",
-});
-function showToast(message: string, type: "error" | "success" = "error") {
-  toast.message = message;
-  toast.type = type;
-  toast.show = true;
-}
+const {
+  visible: toastShow,
+  message: toastMessage,
+  type: toastType,
+  showToast,
+} = useToast();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 onMounted(() => {
   fieldDefsStore.loaded = false;
   fieldDefsStore.load();
-});
-
-// ── Inline sub-components ─────────────────────────────────────────────────────
-
-const SectionHeading = defineComponent({
-  props: { title: String, description: String },
-  setup(props) {
-    return () =>
-      h("div", { class: "mb-6" }, [
-        h("div", { class: "flex items-baseline gap-4 mb-1.5" }, [
-          h(
-            "h2",
-            {
-              class:
-                "font-heading font-black text-[22px] text-text-primary leading-none",
-            },
-            props.title,
-          ),
-          h("span", { class: "flex-1 h-px bg-charcoal-border" }),
-        ]),
-        props.description
-          ? h(
-              "p",
-              {
-                class:
-                  "text-[13px] text-text-secondary max-w-lg leading-relaxed",
-              },
-              props.description,
-            )
-          : null,
-      ]);
-  },
-});
-
-const SettingsField = defineComponent({
-  props: { label: String },
-  setup(props, ctx) {
-    return () =>
-      h("label", { class: "flex flex-col gap-2" }, [
-        h(
-          "span",
-          {
-            class:
-              "font-mono text-[10px] tracking-[0.16em] uppercase text-text-secondary",
-          },
-          props.label,
-        ),
-        ctx.slots.default?.(),
-      ]);
-  },
-});
-
-const DefaultRow = defineComponent({
-  props: { label: String, first: Boolean },
-  setup(props, ctx) {
-    return () =>
-      h(
-        "div",
-        {
-          class: [
-            "flex items-center justify-between gap-6 py-4",
-            !props.first ? "border-t border-charcoal-border/60" : "",
-          ].join(" "),
-        },
-        [
-          h("span", { class: "text-[14px] text-text-primary" }, props.label),
-          ctx.slots.default?.(),
-        ],
-      );
-  },
-});
-
-const SegControl = defineComponent({
-  props: {
-    options: {
-      type: Array as () => { value: string; label: string }[],
-      required: true,
-    },
-    modelValue: { type: String, required: true },
-  },
-  emits: ["update:modelValue"],
-  setup(props, { emit }) {
-    return () =>
-      h(
-        "div",
-        {
-          class:
-            "inline-flex border border-charcoal-border overflow-hidden flex-wrap",
-        },
-        props.options.map((opt, k) =>
-          h(
-            "button",
-            {
-              key: opt.value,
-              onClick: () => emit("update:modelValue", opt.value),
-              class: [
-                "px-4 py-2 font-mono text-[10px] tracking-[0.1em] uppercase transition-colors",
-                k > 0 ? "border-l border-charcoal-border" : "",
-              ].join(" "),
-              style:
-                opt.value === props.modelValue
-                  ? {
-                      background: accentStore.color,
-                      color: "#111110",
-                      fontWeight: 700,
-                    }
-                  : {
-                      background: "transparent",
-                      color: "rgb(var(--v-theme-text-secondary))",
-                    },
-            },
-            opt.label,
-          ),
-        ),
-      );
-  },
 });
 </script>
 

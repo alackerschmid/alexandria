@@ -1,4 +1,4 @@
-import { computed, type ComputedRef } from "vue";
+import { computed, type ComputedRef, type Ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLocaleStore } from "@/stores/locale";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
@@ -84,8 +84,8 @@ function groupByValues(
 export function useLibraryGrouping(options: {
   baseFiltered: ComputedRef<Book[]>;
   filteredBooks: ComputedRef<Book[]>;
-  groupBy: ComputedRef<GroupBy>;
-  sortDirection: ComputedRef<SortOption>;
+  groupBy: Ref<GroupBy>;
+  sortDirection: Ref<SortOption>;
   /** Resolves the status used for the "group by status" bucket — lets callers freeze
    *  a book's shelf after an in-place status edit instead of using the live value. */
   statusOf?: (b: Book) => ReadStatus;

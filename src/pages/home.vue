@@ -429,6 +429,7 @@ import AppSelect from "@/components/AppSelect.vue";
 import AppToast from "@/components/AppToast.vue";
 import LoadingButton from "@/components/LoadingButton.vue";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { STATUS_META } from "@/composables/useBookStatus";
 import { BCP47 } from "@/plugins/i18n";
@@ -448,8 +449,11 @@ const { dimensionOptions } = useGroupDimensions();
 
 const statsData = ref<CollectionStats | null>(null);
 const loading = ref(false);
-const errorToast = ref(false);
-const errorMessage = ref("");
+const {
+  visible: errorToast,
+  message: errorMessage,
+  showToast,
+} = useToast();
 const randomQuote = ref<{ title: string; firstLine: string } | null>(null);
 
 function normalizeStats(payload: any): CollectionStats {
@@ -851,8 +855,7 @@ const fetchStats = async () => {
       randomQuote.value = data.randomFirstLine;
     }
   } catch (err: any) {
-    errorMessage.value = err.message;
-    errorToast.value = true;
+    showToast(err.message, "error");
   }
 };
 

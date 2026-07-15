@@ -84,11 +84,12 @@ cd worker && npx wrangler d1 migrations apply bookscan --remote
 ```bash
 npm run type-check          # Verify TypeScript (required before commit)
 npm run lint                # ESLint — the root flat config covers both src/ and worker/src/
+npm test                    # Vitest (root) — frontend pure-logic tests (search-parse, shelf-packing, offline-queue)
 cd worker && npm test       # Vitest — pure-logic unit tests (isbn, library-query, editions, enrichment, auth, password)
 cd worker && npx vitest run test/enrichment.spec.ts   # run a single test file
 ```
 
-Note: The worker has unit tests (`worker/test/*.spec.ts`, `vitest run`) covering pure logic only — no D1/miniflare, so anything requiring a DB is untested (deliberate scope decision). The frontend has no test suite; type-checking is its primary verification mechanism.
+Note: Both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`, `vitest run`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests.
 
 ## Architecture
 
@@ -116,16 +117,22 @@ Vue 3 + TypeScript + Vite.
   - `settings.vue` — custom field management (`/settings`)
   - `login.vue`, `scanner.vue`, `privacy.vue`, `NotFound.vue`
 - `src/components/` —
-  - App chrome/shared: `AppHeader`, `AppFooter`, `AppToast`, `AppPagination`, `AppSelect`, `MobileTabBar`, `LoadingButton`, `OverrideDot`, `PlaceholderCover`
-  - Library page: `LibraryCoverCard`, `LibraryRowCard`, `LibraryGhostRow`, `LibraryGroupTabs`, `LibraryDisplaySettings`
-  - `BookDetail.vue` plus its subcomponents in `src/components/book-detail/`: `AuthorChips`, `BookEditForm`, `CustomFieldsPanel`, `EditionCarousel`, `EditionDetails`, `EditionsDialog`, `EnrichmentBadge`, `RatingDialog`, `TagInput`
+  - App chrome/shared: `AppHeader`, `AppFooter`, `AppToast`, `AppPagination`, `AppSelect`, `MobileTabBar`, `LoadingButton`, `OverrideDot`, `PlaceholderCover`, `ConfirmDialog` (shared destructive-confirm dialog — title/body/danger/loading/confirm-disabled + default slot; used by the library delete + settings account-delete flows)
+  - Library page: `LibrarySearchBar` (the smart-search widget — hero, highlight overlay, autocomplete dropdown, token pills, ⌘K; backed by `useSearchSuggestions`), `LibraryCoverCard`, `LibraryRowCard`, `LibraryGhostRow`, `LibraryGroupHeader` (one shelf-group header — packed `compact` / mobile `full` sizes), `LibraryGroupTabs`, `LibraryDisplaySettings`
+  - `BookDetail.vue` (card/full mode switch + shared edit/enrichment/edition state) plus its subcomponents in `src/components/book-detail/`: `BookDetailCard` (the compact card-mode view), `AuthorChips`, `BookEditForm`, `CustomFieldsPanel`, `EditionCarousel`, `EditionDetails`, `EditionsDialog`, `EnrichmentBadge`, `RatingDialog`, `TagInput`
+  - `src/components/settings/` — settings section building blocks (formerly inline `defineComponent`s): `SettingsSectionHeading`, `SettingsField`, `SettingsDefaultRow`, `SettingsSegControl`
 - `src/composables/` — shared logic extracted from pages:
   - `useApi.ts` — **the canonical API client.** `useApi().apiFetch(path, init?, opts?)` prepends `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user out on a 401 (opt out with `{ on401: "ignore" }`). All authenticated frontend API calls must go through it — don't hand-roll `fetch`.
+  - `useLibraryData.ts` — the library page's server data: paginated `GET /api/scans` (with a sequence guard against overlapping fetches) + `GET /api/series` membership map, exposing `serverBooks`/`seriesMemberships`/`error`
   - `useLibrarySearch.ts` / `useLibraryGrouping.ts` / `useEditionGrouping.ts` — the library display pipeline: text/filter search → collapse same-work editions into one synthetic card per work (must run downstream of search, so filters match real per-edition fields) → group/sort. `useGroupDimensions.ts` supplies the group-by dimensions incl. custom fields.
+  - `useSearchSuggestions.ts` — the library search bar's autocomplete engine (prefix chips, facet-value + title matches, highlight segmentation); reads `useLibrarySearch`'s outputs
+  - `useShelfGroups.ts` — turns `useLibraryGrouping`'s output into display-ready shelves (series completeness counts, unowned reveal, collapse/"show all" helpers) consumed by the packed-row layout
   - `useEnrichmentPoll.ts` — polls `GET /api/scans/:id` with backoff while enrichment is `pending`
   - `useBookStatus.ts` / `useOwningStatus.ts` / `useRating.ts` / `useScanStatus.ts` — status/owning/rating config + ordering (locale-reactive)
+  - `useToast.ts` — per-page toast state (`visible`/`message`/`type` + `showToast`) bound to `AppToast`
+  - `useBarcodeScanner.ts` — Quagga2 live-camera lifecycle (init/start/stop + consecutive-read buffer) for the scanner page
   - `useDetailRoute.ts` (detail dialog state in route query params), `useNavLinks.ts`, `useFocusTrap.ts`
-- `src/utils/` — pure helpers: `book-display.ts`, `cover.ts`, `custom-fields.ts`, `language.ts`, `tags.ts`
+- `src/utils/` — pure helpers: `book-display.ts`, `cover.ts`, `custom-fields.ts`, `language.ts`, `tags.ts`, `search-parse.ts` (search fragment/highlight parsers), `shelf-packing.ts` (grouped-shelf bin-packer `packRows` + shelf/packing types), `offline-queue.ts` (scanner offline-scan localStorage queue). The last three are unit-tested (`test/*.spec.ts`).
 - `src/stores/` — Pinia stores:
   - `auth.ts` — JWT + email + firstname in localStorage; exports `WELCOME_SEEN_KEY`
   - `guest.ts` — **guest mode:** unauthenticated users can save up to 3 scans to localStorage; on register/login, `syncToAccount()` migrates them to the user's account server-side
@@ -343,6 +350,7 @@ Always run type-checks and lint after code edits and verify they pass before con
 ```bash
 npm run type-check
 npm run lint
+npm test                # if you touched frontend pure-logic helpers covered by root test/*.spec.ts
 cd worker && npm test   # if you touched worker pure-logic functions covered by worker/test/*.spec.ts
 ```
 
