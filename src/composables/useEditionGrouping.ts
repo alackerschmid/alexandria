@@ -1,4 +1,4 @@
-import { computed, type ComputedRef } from "vue";
+import { computed, type ComputedRef, type Ref } from "vue";
 import { pickRepresentativeEdition } from "@/utils/book-display";
 import type { Book } from "@/types/book";
 
@@ -16,7 +16,7 @@ import type { Book } from "@/types/book";
  */
 export function useEditionGrouping(
   books: ComputedRef<Book[]>,
-  enabled: ComputedRef<boolean> | boolean = true,
+  enabled: Ref<boolean> | boolean = true,
 ): ComputedRef<Book[]> {
   return computed(() => {
     const isEnabled = typeof enabled === "boolean" ? enabled : enabled.value;

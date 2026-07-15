@@ -732,6 +732,7 @@ import BookDetail from "@/components/BookDetail.vue";
 import AppPagination from "@/components/AppPagination.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
+import { storeToRefs } from "pinia";
 import { useDisplay } from "vuetify";
 
 const { t } = useI18n();
@@ -765,18 +766,20 @@ const loading = ref(false);
 const error = ref("");
 
 const search = ref("");
-const groupBy = computed({
-  get: () => libraryDefaultsStore.groupBy,
-  set: (v) => libraryDefaultsStore.setGroupBy(v),
-});
-const sortDirection = computed({
-  get: () => libraryDefaultsStore.sortDirection,
-  set: (v) => libraryDefaultsStore.setSortDirection(v),
-});
-const viewMode = computed({
-  get: () => libraryDefaultsStore.defaultView,
-  set: (v) => libraryDefaultsStore.setView(v),
-});
+// Persisted display settings bind straight to the store's writable refs (each
+// persists to localStorage on set — see libraryDefaults.ts). onlyOwned/groupEditions
+// are pulled here, ahead of the search pipeline below, because it needs them at setup.
+const {
+  groupBy,
+  sortDirection,
+  defaultView: viewMode,
+  onlyOwned,
+  groupEditions,
+  mainOnly,
+  highlightComplete,
+  showUnowned,
+  highlightOwningBorder,
+} = storeToRefs(libraryDefaultsStore);
 
 // ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
 const allBooks = computed<Book[]>(() =>
@@ -795,18 +798,6 @@ function pinStatus(book: Book) {
 }
 watch([search, groupBy, sortDirection], () => {
   statusOverrides.value.clear();
-});
-
-// Declared ahead of useLibrarySearch (rather than alongside the other persisted
-// display settings below) because the search pipeline needs it at setup time.
-const onlyOwned = computed({
-  get: () => libraryDefaultsStore.onlyOwned,
-  set: (v) => libraryDefaultsStore.setOnlyOwned(v),
-});
-// Same reasoning — needed by the useEditionGrouping calls right below.
-const groupEditions = computed({
-  get: () => libraryDefaultsStore.groupEditions,
-  set: (v) => libraryDefaultsStore.setGroupEditions(v),
 });
 
 const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
@@ -844,22 +835,6 @@ const { allGroups } = useLibraryGrouping({
 const groupedAllBooks = useEditionGrouping(allBooks, true);
 
 // ── Display settings (persisted) ───────────────────────────────────────────────
-const mainOnly = computed({
-  get: () => libraryDefaultsStore.mainOnly,
-  set: (v) => libraryDefaultsStore.setMainOnly(v),
-});
-const highlightComplete = computed({
-  get: () => libraryDefaultsStore.highlightComplete,
-  set: (v) => libraryDefaultsStore.setHighlightComplete(v),
-});
-const showUnowned = computed({
-  get: () => libraryDefaultsStore.showUnowned,
-  set: (v) => libraryDefaultsStore.setShowUnowned(v),
-});
-const highlightOwningBorder = computed({
-  get: () => libraryDefaultsStore.highlightOwningBorder,
-  set: (v) => libraryDefaultsStore.setHighlightOwningBorder(v),
-});
 // Backed by a separate persisted default per view (list vs tile) — see
 // showStatusIconsList/Tile in libraryDefaults.ts — so the toggle always reflects
 // and updates whichever view is currently active.
@@ -870,8 +845,8 @@ const showStatusIcons = computed({
       : libraryDefaultsStore.showStatusIconsList,
   set: (v) => {
     if (viewMode.value === "tile")
-      libraryDefaultsStore.setShowStatusIconsTile(v);
-    else libraryDefaultsStore.setShowStatusIconsList(v);
+      libraryDefaultsStore.showStatusIconsTile = v;
+    else libraryDefaultsStore.showStatusIconsList = v;
   },
 });
 const displayMenu = ref(false);
