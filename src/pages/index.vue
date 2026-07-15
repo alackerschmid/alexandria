@@ -698,14 +698,14 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
-import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
 import { useToast } from "@/composables/useToast";
+import { useLibraryData } from "@/composables/useLibraryData";
 import { useLibrarySearch } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useEditionGrouping } from "@/composables/useEditionGrouping";
-import { useShelfGroups, type SeriesEntry } from "@/composables/useShelfGroups";
+import { useShelfGroups } from "@/composables/useShelfGroups";
 import {
   packRows,
   type ShelfEntry,
@@ -741,7 +741,6 @@ const router = useRouter();
 const authStore = useAuthStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
-const { apiFetch } = useApi();
 const {
   setStatus: applyStatus,
   cycleStatus: applyCycle,
@@ -761,9 +760,9 @@ const isGuest = computed(() => !authStore.isAuthenticated);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const serverBooks = ref<Book[]>([]);
 const loading = ref(false);
-const error = ref("");
+const { serverBooks, seriesMemberships, error, fetchBooks, fetchMemberships } =
+  useLibraryData();
 
 const search = ref("");
 // Persisted display settings bind straight to the store's writable refs (each
@@ -905,11 +904,6 @@ function expandEntry(e: ShelfEntry): ShelfEntry[] {
   return expandBook(book).map((b) => (b.id === book.id ? e : bookToEntry(b)));
 }
 
-// Series membership for grouped-by-series shelves (unowned reveal + completeness)
-const seriesMemberships = ref<
-  Record<number, { id: number; name: string | null; entries: SeriesEntry[] }>
->({});
-
 // Responsive shelf row sizing (collapsed = one row).
 const display = useDisplay();
 const coverPerRow = computed(() => {
@@ -936,8 +930,6 @@ const {
   message: errorMessage,
   showToast,
 } = useToast();
-
-let fetchSeq = 0;
 
 const perPage = ref<string>(String(libraryDefaultsStore.defaultPageSize));
 
@@ -1043,49 +1035,6 @@ const packedListRows = computed<PackedRow[]>(() =>
 function onGroupLabelSelect(seriesId: number | null) {
   if (seriesId != null) router.push(`/series/${seriesId}`);
 }
-
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-const PAGE_SIZE = 500;
-// Hard ceiling so a pagination/sort-stability bug (pages that never shrink below PAGE_SIZE)
-// can't spin the loop forever — 40 pages is 20,000 books, far beyond any real library.
-const MAX_PAGES = 40;
-
-const fetchBooks = async () => {
-  const seq = ++fetchSeq;
-  try {
-    const allBooks: Book[] = [];
-    let offset = 0;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const res = await apiFetch(
-        `/api/scans?limit=${PAGE_SIZE}&offset=${offset}&locale=${localeStore.locale}`,
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch books");
-      if (seq !== fetchSeq) return;
-      allBooks.push(...data);
-      if (data.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
-    }
-    serverBooks.value = allBooks;
-    statusOverrides.value.clear();
-  } catch (err: any) {
-    if (seq !== fetchSeq) return;
-    error.value = err.message;
-  }
-};
-
-// Full series membership (incl. unowned entries) for the grouped-by-series shelves.
-// Failure here is non-fatal: shelves fall back to owned-only counts.
-const fetchMemberships = async () => {
-  try {
-    const res = await apiFetch(`/api/series?locale=${localeStore.locale}`);
-    if (!res.ok) return;
-    seriesMemberships.value = await res.json();
-  } catch {
-    /* non-fatal */
-  }
-};
 
 // ── Status cycling ────────────────────────────────────────────────────────────
 
@@ -1207,11 +1156,14 @@ watch(search, (val) => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+// Freshly fetched rows supersede any pinned status buckets from in-place edits.
+const clearStatusPins = () => statusOverrides.value.clear();
+
 onMounted(async () => {
   if (authStore.isAuthenticated) {
     loading.value = true;
     await Promise.all([
-      fetchBooks(),
+      fetchBooks(clearStatusPins),
       fetchMemberships(),
       fieldDefsStore.load(),
     ]);
@@ -1224,7 +1176,7 @@ watch(
   async () => {
     if (!authStore.isAuthenticated) return;
     loading.value = true;
-    await Promise.all([fetchBooks(), fetchMemberships()]);
+    await Promise.all([fetchBooks(clearStatusPins), fetchMemberships()]);
     loading.value = false;
   },
 );
