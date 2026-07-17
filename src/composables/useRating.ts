@@ -3,7 +3,7 @@ import type { CSSProperties } from "vue";
 // Rating uses its own accent (distinct from any read/owning status color) since it's an
 // independent, orthogonal axis of "your record" rather than another state in those enums.
 export const RATING_COLOR = "#d9ac4e";
-const RATING_TRACK = "rgba(255,255,255,0.14)";
+const RATING_TRACK = "var(--color-rating-track)";
 
 const DOT_SIZES = { sm: "6px", md: "9px", lg: "14px" } as const;
 

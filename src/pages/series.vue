@@ -171,47 +171,23 @@
   />
 
   <!-- Delete confirmation -->
-  <v-dialog v-model="deleteDialog" max-width="360">
-    <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-      <v-card-title
-        class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
-      >
-        {{ $t("library.remove_heading") }}
-      </v-card-title>
-      <v-card-text class="px-6 text-sm text-text-secondary">
-        {{
-          $t("library.remove_body", {
-            title: bookToDelete?.title || bookToDelete?.isbn,
-          })
-        }}
-        <p v-if="deleteFailed" class="text-error mt-2">
-          {{ $t("library.error_delete") }}
-        </p>
-      </v-card-text>
-      <v-card-actions class="px-4 pb-4 gap-2">
-        <v-spacer />
-        <v-btn
-          variant="text"
-          size="small"
-          class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-          @click="deleteDialog = false"
-        >
-          {{ $t("library.cancel") }}
-        </v-btn>
-        <v-btn
-          variant="flat"
-          size="small"
-          color="error"
-          rounded="0"
-          class="text-[10px] tracking-[0.2em] uppercase"
-          :loading="deleting"
-          @click="confirmDelete"
-        >
-          {{ $t("library.remove") }}
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+  <ConfirmDialog
+    v-model="deleteDialog"
+    :title="$t('library.remove_heading')"
+    :confirm-label="$t('library.remove')"
+    :cancel-label="$t('library.cancel')"
+    :loading="deleting"
+    @confirm="confirmDelete"
+  >
+    {{
+      $t("library.remove_body", {
+        title: bookToDelete?.title || bookToDelete?.isbn,
+      })
+    }}
+    <p v-if="deleteFailed" class="text-error mt-2">
+      {{ $t("library.error_delete") }}
+    </p>
+  </ConfirmDialog>
 </template>
 
 <script lang="ts" setup>
@@ -222,10 +198,10 @@ import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useScanStatus } from "@/composables/useScanStatus";
 import { useLocaleStore } from "@/stores/locale";
-import { useThemeStore } from "@/stores/theme";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
@@ -250,7 +226,6 @@ interface SeriesResponse {
 const route = useRoute();
 const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
-const themeStore = useThemeStore();
 const { detailEditionIsbn, detailScanId, openDetail, closeDetail } =
   useDetailRoute();
 const { setOwningStatus: applyOwningStatus, setRating: applyRating } =

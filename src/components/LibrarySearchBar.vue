@@ -430,6 +430,10 @@ defineExpose({ focus: () => searchRef.value?.focus() });
 <style scoped>
 /* Orange selection highlight when a whole token was selected via backspace */
 input.token-selecting::selection {
-  background-color: rgba(255, 102, 0, 0.35);
+  background-color: color-mix(
+    in srgb,
+    var(--color-orange-neon) 35%,
+    transparent
+  );
 }
 </style>

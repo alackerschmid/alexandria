@@ -36,12 +36,9 @@
             </button>
           </template>
           <div
-            class="py-1 border border-charcoal-border"
+            class="py-1 border border-charcoal-border bg-menu-surface"
             role="menu"
-            :style="{
-              background: themeStore.isDark ? '#1c1b19' : '#f5f2ed',
-              minWidth: '180px',
-            }"
+            style="min-width: 180px"
           >
             <button
               role="menuitem"

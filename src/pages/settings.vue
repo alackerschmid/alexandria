@@ -281,21 +281,14 @@
                     role="switch"
                     :aria-checked="def.required"
                     :aria-label="$t('settings.fields.col_required')"
-                    class="w-9 h-5 rounded-full relative transition-colors flex-none"
-                    :style="{
-                      background: def.required
-                        ? accentStore.color
-                        : 'rgba(138,128,120,0.3)',
-                    }"
+                    class="flex-none"
                     @click="
                       fieldDefsStore.update(def.id, { required: !def.required })
                     "
                   >
-                    <span
-                      class="absolute top-0.5 w-4 h-4 rounded-full bg-charcoal transition-all duration-150"
-                      :style="{
-                        left: def.required ? 'calc(100% - 18px)' : '2px',
-                      }"
+                    <AppToggle
+                      :model-value="!!def.required"
+                      :on-color="accentStore.color"
                     />
                   </button>
                 </div>
@@ -613,6 +606,7 @@ import { useToast } from "@/composables/useToast";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
+import AppToggle from "@/components/AppToggle.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
