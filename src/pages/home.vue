@@ -143,7 +143,7 @@
         <div class="flex-1 min-w-0 flex flex-col gap-5">
           <!-- Collection at a glance -->
           <div
-            class="bg-charcoal-light border border-charcoal-border px-[22px] py-[18px] md:px-[26px] md:py-[22px] shrink-0"
+            class="border border-charcoal-border px-[22px] py-[18px] md:px-[26px] md:py-[22px] shrink-0"
           >
             <div class="flex justify-between items-baseline mb-4">
               <span
@@ -189,7 +189,7 @@
           <div
             class="flex flex-col md:flex-row gap-5 md:gap-0 flex-1 md:min-h-0"
           >
-            <div class="md:w-[280px] md:shrink-0 flex flex-col justify-center">
+            <div class="md:w-[280px] md:shrink-0 flex flex-col justify-start">
               <p
                 class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mb-2.5"
               >
@@ -237,7 +237,7 @@
               </p>
             </div>
             <div
-              class="md:flex-1 border-t md:border-t-0 md:border-l border-charcoal-border pt-4 md:pt-0 md:pl-9 flex flex-col justify-center"
+              class="md:flex-1 border-t md:border-t-0 border-charcoal-border pt-4 md:pt-0 md:pl-9 flex flex-col justify-start"
             >
               <div
                 v-for="item in trioItems"

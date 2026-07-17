@@ -70,7 +70,10 @@ export function buildScanSelect(locale: string): string {
          COALESCE(o.language, b.language)                    AS language,
          COALESCE(o.publish_date, b.publish_date)            AS publish_date,
          COALESCE(o.number_of_pages_median, b.number_of_pages_median) AS number_of_pages_median,
-         COALESCE(o.description, b.description)              AS description,
+         COALESCE(o.description, b.description,
+           (SELECT b2.description FROM books b2
+            WHERE b2.work_id = b.work_id AND b2.id != b.id AND b2.description IS NOT NULL
+            ORDER BY b2.id LIMIT 1))                          AS description,
          COALESCE(o.publisher, b.publisher)                  AS publisher,
          b.physical_format                                   AS physical_format,
          b.edition_name                                      AS edition_name,
