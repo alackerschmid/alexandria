@@ -205,7 +205,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Lo
 
 **Public:**
 
-- `GET /api/books/sample?limit=` — random sample of catalogued books (powers the marketing preview, max 12)
+- `GET /api/books/sample?limit=` — random sample of hand-picked catalogued books, i.e. `is_featured = 1` (powers the marketing preview, max 12); the flag is set manually (no UI/endpoint — e.g. `wrangler d1 execute`)
 
 **Protected:**
 
@@ -235,7 +235,7 @@ Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the i
 
 **`users`** — `id`, `email` (UNIQUE), `password_hash`, `firstname`
 
-**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `categories` (JSON array, Google Books BISAC categories — used only as a fallback for `works.genres` when Wikidata has none), `fetched_at`, `work_id` → `works`
+**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `categories` (JSON array, Google Books BISAC categories — used only as a fallback for `works.genres` when Wikidata has none), `is_featured` (INTEGER 0/1, DEFAULT 0 — manually flipped to hand-pick books for the landing page preview; see `GET /api/books/sample`), `fetched_at`, `work_id` → `works`
 
 **`book_overrides`** — per-user field overrides: `user_id` → `users`, `book_id` → `books`, same nullable fields as `books` (except `author` — not overridable), `updated_at`. Unique on `(user_id, book_id)`.
 
