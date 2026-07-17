@@ -12,6 +12,19 @@
   --color-search-border: #e2ddd8;
   --color-text-primary: #0f0f0f;
   --color-text-secondary: #7a736e;
+  /* Warm raised surface for menus/dialogs that sit above the page (account
+     menu, onboarding dialog) — distinct from charcoal-light's neutral white. */
+  --color-menu-surface: #f5f2ed;
+  --color-rating-track: rgba(0, 0, 0, 0.14);
+  /* Chart-neutral bar colors (home.vue's stat/breakdown bars) — no existing
+     semantic token matches these muted tones in both themes. */
+  --color-chart-muted: #8a7a6f;
+  --color-chart-total: #8a7a6f;
+  /* Reading-status accents: intentionally theme-independent — consumed by the
+     always-dark scanner overlay as well as themed dialogs/cards, so they must
+     stay legible against both a near-black and a near-white surface. */
+  --color-status-read: #22c55e;
+  --color-status-dnf: #d9a441;
 
   --font-heading: "Playfair Display", Georgia, serif;
   --font-body: "Roboto", system-ui, sans-serif;
@@ -45,6 +58,10 @@
   --color-search-border: #232220;
   --color-text-primary: #f0ede8;
   --color-text-secondary: #8a8078;
+  --color-menu-surface: #1c1b19;
+  --color-rating-track: rgba(255, 255, 255, 0.14);
+  --color-chart-muted: #5c544e;
+  --color-chart-total: #c9c1b8;
 }
 
 @custom-variant light (&:where(.v-theme--light, .v-theme--light *));

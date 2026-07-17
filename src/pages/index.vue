@@ -87,7 +87,7 @@
             </button>
           </template>
           <div
-            class="bg-[#1a1917] border border-charcoal-border shadow-xl p-4 w-80"
+            class="bg-charcoal-light border border-charcoal-border shadow-xl p-4 w-80"
           >
             <LibraryDisplaySettings
               v-model:main-only="mainOnly"

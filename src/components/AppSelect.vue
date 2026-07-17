@@ -20,7 +20,7 @@
       </button>
     </template>
 
-    <div class="bg-[#1a1917] border border-charcoal-border shadow-xl py-1">
+    <div class="bg-charcoal-light border border-charcoal-border shadow-xl py-1">
       <button
         v-for="opt in options"
         :key="String(opt.value)"

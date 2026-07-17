@@ -26,11 +26,8 @@
     <div class="flex flex-col items-center gap-1 flex-1 py-1">
       <router-link
         to="/scanner"
-        class="flex flex-col items-center justify-center -mt-7 w-16 h-16 rounded-full shrink-0"
-        style="
-          background: rgb(var(--v-theme-primary));
-          box-shadow: 0 8px 22px rgba(255, 102, 0, 0.4);
-        "
+        class="flex flex-col items-center justify-center -mt-7 w-16 h-16 rounded-full shrink-0 shadow-[0_8px_22px_var(--tw-shadow-color)] shadow-orange-neon/40"
+        style="background: rgb(var(--v-theme-primary))"
         :aria-label="$t('home.start_scanning')"
       >
         <v-icon icon="mdi-barcode" size="30" style="color: #111110" />

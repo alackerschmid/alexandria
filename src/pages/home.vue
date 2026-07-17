@@ -361,7 +361,7 @@
 
     <!-- First-name onboarding dialog -->
     <v-dialog v-model="firstnameDialog" max-width="420" persistent>
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#f5f2ed'">
+      <v-card rounded="0" class="bg-menu-surface">
         <v-card-text class="px-8 pt-8 pb-8">
           <p
             class="font-mono text-[10px] tracking-[0.3em] uppercase text-text-secondary mb-3"
@@ -573,10 +573,6 @@ const colorRamp = computed<string[]>(() =>
       ],
 );
 
-function secondaryBarColor(): string {
-  return themeStore.isDark ? "#5c544e" : "#8a7a6f";
-}
-
 // ── Dimension data helper ─────────────────────────────────────────────────────
 
 const langFmt = computed(() => languageDisplayFormatter(localeStore.locale));
@@ -734,7 +730,7 @@ const mostRepresentedData = computed(() => {
       mostRepMode.value === "author" && i === 0
         ? "rgb(var(--v-theme-primary))"
         : mostRepMode.value === "author"
-          ? secondaryBarColor()
+          ? "var(--color-chart-muted)"
           : (ramp[i] ?? ramp.at(-1)),
   }));
 });
@@ -745,7 +741,7 @@ const statTiles = computed(() => {
   if (!statsData.value) return [];
   const { total, byStatus } = statsData.value;
   const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
-  const totalColor = themeStore.isDark ? "#c9c1b8" : "#8a7a6f";
+  const totalColor = "var(--color-chart-total)";
   return [
     {
       key: "total",

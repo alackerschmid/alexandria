@@ -61,43 +61,10 @@
           <!-- Scanner widget -->
           <button
             type="button"
-            class="relative flex items-center justify-center w-full md:w-[300px] bg-charcoal-light border border-charcoal-border shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-            style="height: 110px"
+            class="shrink-0 cursor-pointer hover:opacity-80 transition-opacity w-full md:w-[300px]"
             @click="$router.push('/scanner')"
           >
-            <!-- Barcode -->
-            <div
-              class="w-[168px] h-14 opacity-80"
-              style="
-                background: repeating-linear-gradient(
-                  90deg,
-                  #e8e4dd 0 3px,
-                  transparent 3px 7px,
-                  #e8e4dd 7px 9px,
-                  transparent 9px 12px,
-                  #e8e4dd 12px 16px,
-                  transparent 16px 22px
-                );
-              "
-            />
-            <!-- Corner brackets -->
-            <div
-              class="absolute top-3.5 left-3.5 w-5 h-5 border-l-2 border-t-2 border-text-primary"
-            />
-            <div
-              class="absolute top-3.5 right-3.5 w-5 h-5 border-r-2 border-t-2 border-text-primary"
-            />
-            <div
-              class="absolute bottom-3.5 left-3.5 w-5 h-5 border-l-2 border-b-2 border-text-primary"
-            />
-            <div
-              class="absolute bottom-3.5 right-3.5 w-5 h-5 border-r-2 border-b-2 border-text-primary"
-            />
-            <!-- Animated scan line -->
-            <div
-              class="scanner-line absolute h-[2px] w-[180px]"
-              style="left: 50%; background: rgba(255, 102, 0, 0.7)"
-            />
+            <ScannerPreview size="sm" :dark="false" />
           </button>
 
           <!-- CTAs: desktop only; orange band covers mobile -->
@@ -254,6 +221,7 @@ import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
+import ScannerPreview from "@/components/ScannerPreview.vue";
 
 const { t } = useI18n();
 const themeStore = useThemeStore();
@@ -324,20 +292,3 @@ function statusColor(s: "read" | "reading" | "unread"): string {
   return "rgba(138,128,120,0.35)";
 }
 </script>
-
-<style scoped>
-@keyframes scanline {
-  0%,
-  100% {
-    transform: translate(-50%, -22px);
-    opacity: 0.65;
-  }
-  50% {
-    transform: translate(-50%, 22px);
-    opacity: 0.15;
-  }
-}
-.scanner-line {
-  animation: scanline 2.4s ease-in-out infinite;
-}
-</style>

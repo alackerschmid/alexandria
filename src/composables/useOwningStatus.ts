@@ -45,8 +45,8 @@ export const OWNING_META: Record<OwningStatus, OwningMeta> = {
   want: {
     borderClass: "border-2 border-dashed border-orange-neon/50",
     icon: "mdi-heart-outline",
-    color: "#ff6600",
-    tint: "rgba(255,102,0,0.10)",
+    color: "var(--color-orange-neon)",
+    tint: "color-mix(in srgb, var(--color-orange-neon) 10%, transparent)",
   },
   lent_out: {
     borderClass: "border-2 border-dashed border-[#d4a017]/50",

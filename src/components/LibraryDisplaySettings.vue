@@ -56,9 +56,7 @@
           >{{ $t("library.show_status_icons_sub") }}</span
         >
       </span>
-      <span :class="track(showStatusIcons)"
-        ><span :class="knob(showStatusIcons)"
-      /></span>
+      <AppToggle :model-value="showStatusIcons" />
     </button>
 
     <button
@@ -74,7 +72,7 @@
           >{{ $t("library.only_owned_sub") }}</span
         >
       </span>
-      <span :class="track(onlyOwned)"><span :class="knob(onlyOwned)" /></span>
+      <AppToggle :model-value="onlyOwned" />
     </button>
 
     <button
@@ -91,7 +89,7 @@
           >{{ $t("library.main_entries_only_sub") }}</span
         >
       </span>
-      <span :class="track(mainOnly)"><span :class="knob(mainOnly)" /></span>
+      <AppToggle :model-value="mainOnly" />
     </button>
 
     <button
@@ -108,9 +106,7 @@
           >{{ $t("library.highlight_complete_sub") }}</span
         >
       </span>
-      <span :class="track(highlightComplete)"
-        ><span :class="knob(highlightComplete)"
-      /></span>
+      <AppToggle :model-value="highlightComplete" />
     </button>
 
     <button
@@ -127,9 +123,7 @@
           >{{ $t("library.show_unowned_sub") }}</span
         >
       </span>
-      <span :class="track(showUnowned)"
-        ><span :class="knob(showUnowned)"
-      /></span>
+      <AppToggle :model-value="showUnowned" />
     </button>
 
     <button
@@ -145,9 +139,7 @@
           >{{ $t("library.highlight_owning_border_sub") }}</span
         >
       </span>
-      <span :class="track(highlightOwningBorder)"
-        ><span :class="knob(highlightOwningBorder)"
-      /></span>
+      <AppToggle :model-value="highlightOwningBorder" />
     </button>
 
     <button
@@ -163,9 +155,7 @@
           >{{ $t("library.group_editions_sub") }}</span
         >
       </span>
-      <span :class="track(groupEditions)"
-        ><span :class="knob(groupEditions)"
-      /></span>
+      <AppToggle :model-value="groupEditions" />
     </button>
 
     <slot name="extra" />
@@ -173,6 +163,8 @@
 </template>
 
 <script lang="ts" setup>
+import AppToggle from "@/components/AppToggle.vue";
+
 const mainOnly = defineModel<boolean>("mainOnly", { required: true });
 const highlightComplete = defineModel<boolean>("highlightComplete", {
   required: true,
@@ -193,9 +185,4 @@ const viewMode = defineModel<"list" | "tile">("viewMode");
 withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {
   showViewRow: false,
 });
-
-const track = (on: boolean) =>
-  `shrink-0 w-9 h-5 rounded-full relative transition-colors ${on ? "bg-orange-neon" : "bg-charcoal-border"}`;
-const knob = (on: boolean) =>
-  `absolute top-0.5 w-4 h-4 rounded-full bg-charcoal transition-all ${on ? "left-[18px]" : "left-0.5"}`;
 </script>

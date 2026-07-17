@@ -4,7 +4,7 @@
     :max-width="maxWidth"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
+    <v-card rounded="0" class="bg-charcoal-light">
       <v-card-title
         class="font-heading text-xl pt-6 px-6 text-text-primary"
         :class="danger ? 'font-black' : 'font-bold'"
@@ -43,8 +43,6 @@
 </template>
 
 <script setup lang="ts">
-import { useThemeStore } from "@/stores/theme";
-
 withDefaults(
   defineProps<{
     modelValue: boolean;
@@ -67,8 +65,6 @@ const emit = defineEmits<{
   confirm: [];
   cancel: [];
 }>();
-
-const themeStore = useThemeStore();
 
 function onCancel() {
   emit("cancel");
