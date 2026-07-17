@@ -140,18 +140,14 @@
             </div>
 
             <div class="mt-6 flex items-center gap-4">
-              <v-btn
-                variant="flat"
-                color="primary"
-                rounded="0"
-                elevation="0"
-                size="small"
-                class="text-[10px] tracking-[0.16em] uppercase font-bold px-2"
+              <AppButton
+                variant="primary"
+                size="sm"
                 :loading="savingAccount"
                 @click="saveAccount"
               >
                 {{ $t("settings.account.save") }}
-              </v-btn>
+              </AppButton>
               <transition name="fade">
                 <span
                   v-if="accountSaved"
@@ -359,26 +355,22 @@
 
             <div class="mt-4 flex items-center gap-4">
               <button
-                class="inline-flex items-center gap-2 border border-dashed border-charcoal-border px-[18px] py-3 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors hover:border-orange-neon"
+                class="inline-flex items-center gap-2 border border-dashed border-control-border px-[18px] py-3 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors hover:border-orange-neon"
                 :style="{ color: accentStore.color }"
                 @click="startAddField"
               >
                 <span class="text-sm leading-none">+</span>
                 {{ $t("settings.fields.add") }}
               </button>
-              <v-btn
+              <AppButton
                 v-if="addingField"
-                variant="flat"
-                color="primary"
-                rounded="0"
-                elevation="0"
-                size="small"
-                class="text-[10px] tracking-[0.16em] uppercase px-2"
+                variant="primary"
+                size="sm"
                 :loading="savingField"
                 @click="confirmAddField"
               >
                 {{ $t("settings.account.save") }}
-              </v-btn>
+              </AppButton>
             </div>
           </section>
 
@@ -428,7 +420,7 @@
                 :label="$t('settings.defaults.language')"
                 :first="true"
               >
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'en', label: 'English' },
                     { value: 'de', label: 'Deutsch' },
@@ -438,7 +430,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.theme')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     {
                       value: 'light',
@@ -458,7 +450,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.view')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'list', label: $t('settings.defaults.view_list') },
                     { value: 'tile', label: $t('settings.defaults.view_tile') },
@@ -470,7 +462,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.scan_status')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'unread', label: $t('book.unread') },
                     { value: 'reading', label: $t('book.reading') },
@@ -517,16 +509,15 @@
                   {{ $t("settings.danger.delete_body") }}
                 </p>
               </div>
-              <button
-                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 transition-colors whitespace-nowrap hover:opacity-80"
-                style="
-                  color: rgb(var(--v-theme-error));
-                  border-color: rgb(var(--v-theme-error));
-                "
+              <AppButton
+                variant="danger"
+                outlined
+                size="md"
+                class="flex-none"
                 @click="deleteDialog = true"
               >
                 {{ $t("settings.danger.delete_button") }}
-              </button>
+              </AppButton>
             </div>
           </section>
         </div>
@@ -605,13 +596,14 @@ import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
+import AppButton from "@/components/AppButton.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppToggle from "@/components/AppToggle.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
 import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
-import SegControl from "@/components/settings/SettingsSegControl.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();

@@ -1,6 +1,6 @@
 <template>
   <article
-    class="group relative flex flex-col p-4 cursor-pointer transition-colors"
+    class="group relative flex flex-col p-4 cursor-pointer transition-colors bg-row-card-surface"
     :class="
       highlightOwningBorder && owningBorderClass
         ? owningBorderClass

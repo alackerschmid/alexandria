@@ -212,20 +212,13 @@
     <div
       class="border-t border-charcoal-border flex items-center justify-between px-5 py-4 bg-charcoal/30"
     >
-      <button
-        class="flex items-center gap-2 bg-orange-neon px-5 py-3 text-[12px] tracking-[0.14em] uppercase font-bold hover:opacity-90 transition-opacity"
-        style="color: #111110"
-        @click="$emit('expand')"
-      >
+      <AppButton variant="primary" size="md" @click="$emit('expand')">
         {{ $t("detail.expand") }}
-        <v-icon icon="mdi-arrow-expand" size="14" style="color: #111110" />
-      </button>
-      <button
-        class="text-[11px] tracking-[0.16em] uppercase text-text-secondary hover:text-text-primary transition-colors"
-        @click="$emit('close')"
-      >
+        <v-icon icon="mdi-arrow-expand" size="14" />
+      </AppButton>
+      <AppButton variant="ghost" size="sm" @click="$emit('close')">
         {{ $t("detail.close") }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
@@ -236,6 +229,7 @@ import { useBookStatus } from "@/composables/useBookStatus";
 import { useOwningStatus, OWNING_META } from "@/composables/useOwningStatus";
 import { ratingDots } from "@/composables/useRating";
 import { bookYear } from "@/utils/book-display";
+import AppButton from "@/components/AppButton.vue";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";

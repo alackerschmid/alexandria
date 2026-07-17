@@ -396,16 +396,18 @@
               @keyup.enter="saveFirstname"
             />
           </div>
-          <LoadingButton
+          <AppButton
+            variant="primary"
+            size="md"
+            block
             :loading="savingFirstname"
             :disabled="!firstnameInput.trim()"
-            class="bg-text-primary text-charcoal hover:opacity-80"
             @click="saveFirstname"
           >
             {{
               savingFirstname ? $t("detail.saving") : $t("home.firstname_save")
             }}
-          </LoadingButton>
+          </AppButton>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -429,7 +431,7 @@ import { useFieldDefsStore } from "@/stores/fieldDefs";
 import AppHeader from "@/components/AppHeader.vue";
 import AppSelect from "@/components/AppSelect.vue";
 import AppToast from "@/components/AppToast.vue";
-import LoadingButton from "@/components/LoadingButton.vue";
+import AppButton from "@/components/AppButton.vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";

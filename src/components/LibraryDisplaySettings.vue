@@ -13,34 +13,23 @@
       <span class="text-xs text-text-primary">{{
         $t("library.view_label")
       }}</span>
-      <div class="flex">
-        <button
-          class="flex items-center gap-1.5 h-8 px-3.5 border -ml-px first:ml-0 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors"
-          :class="
-            viewMode === 'list'
-              ? 'border-charcoal-border text-orange-neon bg-charcoal'
-              : 'border-charcoal-border text-text-secondary'
-          "
-          :aria-pressed="viewMode === 'list'"
-          @click="viewMode = 'list'"
-        >
-          <v-icon icon="mdi-view-list" size="14" />
-          {{ $t("settings.defaults.view_list") }}
-        </button>
-        <button
-          class="flex items-center gap-1.5 h-8 px-3.5 border -ml-px first:ml-0 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors"
-          :class="
-            viewMode === 'tile'
-              ? 'border-charcoal-border text-orange-neon bg-charcoal'
-              : 'border-charcoal-border text-text-secondary'
-          "
-          :aria-pressed="viewMode === 'tile'"
-          @click="viewMode = 'tile'"
-        >
-          <v-icon icon="mdi-view-grid" size="14" />
-          {{ $t("settings.defaults.view_tile") }}
-        </button>
-      </div>
+      <AppSegmented
+        v-model="viewMode"
+        variant="highlight"
+        size="sm"
+        :options="[
+          {
+            value: 'list',
+            label: $t('settings.defaults.view_list'),
+            icon: 'mdi-view-list',
+          },
+          {
+            value: 'tile',
+            label: $t('settings.defaults.view_tile'),
+            icon: 'mdi-view-grid',
+          },
+        ]"
+      />
     </div>
 
     <button
@@ -164,6 +153,7 @@
 
 <script lang="ts" setup>
 import AppToggle from "@/components/AppToggle.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 
 const mainOnly = defineModel<boolean>("mainOnly", { required: true });
 const highlightComplete = defineModel<boolean>("highlightComplete", {
@@ -180,7 +170,7 @@ const highlightOwningBorder = defineModel<boolean>("highlightOwningBorder", {
 const groupEditions = defineModel<boolean>("groupEditions", {
   required: true,
 });
-const viewMode = defineModel<"list" | "tile">("viewMode");
+const viewMode = defineModel<"list" | "tile">("viewMode", { default: "list" });
 
 withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {
   showViewRow: false,
