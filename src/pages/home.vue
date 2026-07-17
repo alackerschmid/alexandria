@@ -143,7 +143,7 @@
         <div class="flex-1 min-w-0 flex flex-col gap-5">
           <!-- Collection at a glance -->
           <div
-            class="bg-charcoal-light border border-charcoal-border px-[22px] py-[18px] md:px-[26px] md:py-[22px] shrink-0"
+            class="border border-charcoal-border px-[22px] py-[18px] md:px-[26px] md:py-[22px] shrink-0"
           >
             <div class="flex justify-between items-baseline mb-4">
               <span
@@ -189,41 +189,41 @@
           <div
             class="flex flex-col md:flex-row gap-5 md:gap-0 flex-1 md:min-h-0"
           >
-            <div class="md:w-[280px] md:shrink-0 flex flex-col justify-center">
+            <div class="md:w-[280px] md:shrink-0 flex flex-col justify-start">
               <p
-                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mb-2.5"
+                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mb-2.5 md:mb-[clamp(2px,0.5svh,10px)]"
               >
                 {{ $t("home.median_year") }}
               </p>
               <p
                 v-if="statsData.medianYear != null"
-                class="font-heading font-black text-[3.5rem] md:text-[82px] leading-[0.85] tracking-[-0.02em] text-text-primary"
+                class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
               >
                 {{ statsData.medianYear }}
               </p>
               <p
                 v-else
-                class="font-heading font-black text-[3.5rem] md:text-[82px] leading-none text-text-secondary"
+                class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
               >
                 —
               </p>
-              <p class="text-[13px] text-text-secondary leading-snug mt-3">
+              <p class="text-[13px] text-text-secondary leading-snug mt-3 md:mt-[clamp(2px,0.6svh,12px)]">
                 {{ $t("home.median_year_desc") }}
               </p>
               <p
-                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mt-4 pt-4 border-t border-charcoal-border mb-2.5"
+                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mt-4 pt-4 md:mt-[clamp(6px,1.6svh,16px)] md:pt-[clamp(6px,1.6svh,16px)] border-t border-charcoal-border mb-2.5 md:mb-[clamp(2px,0.5svh,10px)]"
               >
                 {{ $t("home.avg_length") }}
               </p>
               <p class="flex items-baseline gap-2">
                 <span
                   v-if="statsData.avgPages != null"
-                  class="font-heading font-black text-[3.5rem] md:text-[82px] leading-[0.85] tracking-[-0.02em] text-text-primary"
+                  class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
                   >{{ formatCount(statsData.avgPages) }}</span
                 >
                 <span
                   v-else
-                  class="font-heading font-black text-[3.5rem] md:text-[82px] leading-none text-text-secondary"
+                  class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
                   >—</span
                 >
                 <span
@@ -232,17 +232,17 @@
                   >{{ $t("home.unit_pp") }}</span
                 >
               </p>
-              <p class="text-[13px] text-text-secondary leading-snug mt-3">
+              <p class="text-[13px] text-text-secondary leading-snug mt-3 md:mt-[clamp(2px,0.6svh,12px)]">
                 {{ $t("home.avg_length_desc") }}
               </p>
             </div>
             <div
-              class="md:flex-1 border-t md:border-t-0 md:border-l border-charcoal-border pt-4 md:pt-0 md:pl-9 flex flex-col justify-center"
+              class="md:flex-1 border-t md:border-t-0 border-charcoal-border pt-4 md:pt-0 md:pl-9 flex flex-col justify-start"
             >
               <div
                 v-for="item in trioItems"
                 :key="item.key"
-                class="flex items-baseline justify-between py-[13px] border-b border-charcoal-border"
+                class="flex items-baseline justify-between py-[13px] md:py-[clamp(2px,0.8svh,13px)] border-b border-charcoal-border"
               >
                 <span
                   class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary"
@@ -250,7 +250,7 @@
                 >
                 <span class="flex items-baseline gap-1.5">
                   <span
-                    class="font-heading font-black text-[28px] leading-none text-text-primary"
+                    class="font-heading font-black text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
                     >{{ item.value ?? "—" }}</span
                   >
                   <span
@@ -268,7 +268,9 @@
         <div
           class="md:w-[330px] md:shrink-0 border-t md:border-t-0 md:border-l border-charcoal-border pt-5 md:pt-0 md:pl-9 flex flex-col"
         >
-          <div class="flex justify-between items-baseline mb-5">
+          <div
+            class="flex justify-between items-baseline mb-5 md:mb-[clamp(8px,1.5svh,20px)]"
+          >
             <span
               class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon"
               >{{ $t("home.most_represented") }}</span
@@ -279,7 +281,7 @@
               :min-width="140"
             />
           </div>
-          <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-4 md:gap-[clamp(6px,1.2svh,16px)]">
             <div
               v-for="(item, i) in mostRepresentedData"
               :key="item.name"
@@ -305,7 +307,7 @@
           <!-- Translation ratio -->
           <div
             v-if="statsData.translationRatio"
-            class="mt-5 pt-2 border-t border-charcoal-border"
+            class="mt-5 pt-2 md:mt-[clamp(8px,1.5svh,20px)] md:pt-[clamp(4px,0.8svh,8px)] border-t border-charcoal-border"
           >
             <div class="flex items-baseline justify-between">
               <span
@@ -314,7 +316,7 @@
               >
               <span class="flex items-baseline gap-1.5">
                 <span
-                  class="font-heading font-black text-[28px] leading-none text-text-primary"
+                  class="font-heading font-black text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
                   >{{ statsData.translationRatio.pct }}</span
                 >
                 <span
@@ -337,7 +339,7 @@
           <!-- Decade × genre rotator -->
           <div
             v-if="currentDecadeGenre"
-            class="mt-5 pt-4 border-t border-charcoal-border"
+            class="mt-5 pt-4 md:mt-[clamp(8px,1.5svh,20px)] md:pt-[clamp(6px,1.2svh,16px)] border-t border-charcoal-border"
           >
             <transition name="fade" mode="out-in">
               <p
