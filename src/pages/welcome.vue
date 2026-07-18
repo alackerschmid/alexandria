@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { useRouter } from "vue-router";
 import { useAuthStore, WELCOME_SEEN_KEY } from "@/stores/auth";
+import ScannerPreview from "@/components/ScannerPreview.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -89,14 +90,7 @@ function start() {
                 {{ $t("welcome.f1_body_short") }}
               </div>
             </div>
-            <div class="scanner-viewport scanner-viewport--sm">
-              <div class="barcode"></div>
-              <span class="corner tl"></span>
-              <span class="corner tr"></span>
-              <span class="corner bl"></span>
-              <span class="corner br"></span>
-              <div class="scan-beam"></div>
-            </div>
+            <ScannerPreview size="sm" />
           </div>
 
           <!-- Feature rows 02–05 -->
@@ -123,8 +117,7 @@ function start() {
               </div>
             </div>
             <div
-              class="shrink-0 flex items-center gap-1.5 px-2.5 py-2"
-              style="border: 1px dashed rgba(255, 102, 0, 0.5)"
+              class="shrink-0 flex items-center gap-1.5 px-2.5 py-2 border border-dashed border-orange-neon/50"
             >
               <span
                 class="font-mono text-xs text-orange-neon font-bold leading-none"
@@ -174,8 +167,7 @@ function start() {
                 >
               </span>
               <span
-                class="inline-flex items-center gap-1.5 px-2 py-[3px]"
-                style="border: 1px solid rgba(255, 102, 0, 0.5)"
+                class="inline-flex items-center gap-1.5 px-2 py-[3px] border border-orange-neon/50"
               >
                 <span
                   class="w-1.5 h-1.5 rounded-full"
@@ -313,14 +305,7 @@ function start() {
               {{ $t("welcome.f1_body") }}
             </p>
             <div class="flex-1 flex items-center justify-center min-h-0">
-              <div class="scanner-viewport scanner-viewport--lg">
-                <div class="barcode barcode--lg"></div>
-                <span class="corner corner--lg tl"></span>
-                <span class="corner corner--lg tr"></span>
-                <span class="corner corner--lg bl"></span>
-                <span class="corner corner--lg br"></span>
-                <div class="scan-beam scan-beam--lg"></div>
-              </div>
+              <ScannerPreview size="lg" />
             </div>
           </div>
 
@@ -376,11 +361,7 @@ function start() {
                 >
               </div>
               <div
-                class="flex items-center gap-2 px-3 py-[9px] border-t border-dashed"
-                style="
-                  border-color: rgba(255, 102, 0, 0.4);
-                  background: rgba(255, 102, 0, 0.06);
-                "
+                class="flex items-center gap-2 px-3 py-[9px] border-t border-dashed border-orange-neon/40 bg-orange-neon/6"
               >
                 <span
                   class="font-mono text-xs text-orange-neon font-bold leading-none"
@@ -428,8 +409,7 @@ function start() {
                 >
               </div>
               <div
-                class="inline-flex items-center gap-2 self-start px-3 py-1.5 bg-charcoal"
-                style="border: 1px solid rgba(255, 102, 0, 0.5)"
+                class="inline-flex items-center gap-2 self-start px-3 py-1.5 bg-charcoal border border-orange-neon/50"
               >
                 <span
                   class="w-[7px] h-[7px] rounded-full"
@@ -599,17 +579,6 @@ function start() {
 </template>
 
 <style scoped>
-@keyframes scanline {
-  0%,
-  100% {
-    transform: translate(-50%, -24px);
-    opacity: 0.6;
-  }
-  50% {
-    transform: translate(-50%, 24px);
-    opacity: 0.12;
-  }
-}
 @keyframes blink {
   0%,
   100% {
@@ -618,108 +587,6 @@ function start() {
   50% {
     opacity: 0.25;
   }
-}
-
-/* Scanner viewport */
-.scanner-viewport {
-  position: relative;
-  background: #111110;
-  border: 1px solid #2e2b28;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-.scanner-viewport--sm {
-  width: 100%;
-  height: 104px;
-}
-.scanner-viewport--lg {
-  width: 300px;
-  height: 170px;
-}
-
-/* Barcode strip */
-.barcode {
-  width: 172px;
-  height: 60px;
-  opacity: 0.9;
-  background: repeating-linear-gradient(
-    90deg,
-    #e8e4dd 0 3px,
-    transparent 3px 7px,
-    #e8e4dd 7px 9px,
-    transparent 9px 12px,
-    #e8e4dd 12px 16px,
-    transparent 16px 22px
-  );
-}
-.barcode--lg {
-  height: 64px;
-}
-
-/* Corner brackets */
-.corner {
-  position: absolute;
-  border-color: #f0ede8;
-  border-style: solid;
-  width: 20px;
-  height: 20px;
-}
-.corner.tl {
-  top: 14px;
-  left: 14px;
-  border-width: 2px 0 0 2px;
-}
-.corner.tr {
-  top: 14px;
-  right: 14px;
-  border-width: 2px 2px 0 0;
-}
-.corner.bl {
-  bottom: 14px;
-  left: 14px;
-  border-width: 0 0 2px 2px;
-}
-.corner.br {
-  bottom: 14px;
-  right: 14px;
-  border-width: 0 2px 2px 0;
-}
-
-.corner--lg {
-  width: 28px;
-  height: 28px;
-}
-.corner--lg.tl {
-  top: 18px;
-  left: 18px;
-}
-.corner--lg.tr {
-  top: 18px;
-  right: 18px;
-}
-.corner--lg.bl {
-  bottom: 18px;
-  left: 18px;
-}
-.corner--lg.br {
-  bottom: 18px;
-  right: 18px;
-}
-
-/* Scan beam */
-.scan-beam {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 188px;
-  height: 2px;
-  background: rgba(255, 102, 0, 0.75);
-  animation: scanline 2.4s ease-in-out infinite;
-}
-.scan-beam--lg {
-  width: 200px;
 }
 
 /* Blinking cursor in search preview */

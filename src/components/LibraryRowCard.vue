@@ -1,6 +1,6 @@
 <template>
   <article
-    class="group relative flex flex-col p-4 cursor-pointer transition-colors"
+    class="group relative flex flex-col p-4 cursor-pointer transition-colors bg-row-card-surface"
     :class="
       highlightOwningBorder && owningBorderClass
         ? owningBorderClass
@@ -27,12 +27,12 @@
       >
         <template v-if="hasEditions">
           <div
-            class="absolute w-10 h-15 border border-charcoal-border"
-            style="top: 4px; left: 4px; background: #232019"
+            class="absolute w-10 h-15 border border-charcoal-border bg-text-secondary/15"
+            style="top: 4px; left: 4px"
           />
           <div
-            class="absolute w-10 h-15 border border-charcoal-border"
-            style="top: 2px; left: 2px; background: #1c1a16"
+            class="absolute w-10 h-15 border border-charcoal-border bg-text-secondary/30"
+            style="top: 2px; left: 2px"
           />
         </template>
         <div
@@ -56,8 +56,7 @@
         </div>
         <span
           v-if="hasEditions"
-          class="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center font-mono text-[8px] bg-charcoal-light"
-          style="border: 1px solid #403a33; color: #cfc7be"
+          class="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center font-mono text-[8px] bg-charcoal-light border border-charcoal-border text-text-secondary"
         >
           {{ book.editionCount }}
         </span>
@@ -93,10 +92,13 @@
           </button>
           <span
             v-if="owningTag"
-            class="inline-flex items-center gap-[3px] font-mono text-[8.5px] tracking-[0.08em] uppercase border px-[5px] py-[2px]"
-            style="color: #a89a86; border-color: #33302a"
+            class="inline-flex items-center gap-[3px] font-mono text-[8.5px] tracking-[0.08em] uppercase border border-charcoal-border text-text-secondary px-[5px] py-[2px]"
           >
-            <v-icon :icon="owningTag.icon" size="10" color="#a89a86" />
+            <v-icon
+              :icon="owningTag.icon"
+              size="10"
+              color="var(--color-text-secondary)"
+            />
             {{ owningTag.label }}
           </span>
           <span

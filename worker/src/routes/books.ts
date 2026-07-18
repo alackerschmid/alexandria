@@ -188,10 +188,10 @@ books.get("/guest-search", async (c) => {
   return handleTitleSearch(c);
 });
 
-// Public sample of random catalogued books — powers the marketing preview. No auth.
+// Public sample of hand-picked catalogued books — powers the marketing preview. No auth.
+// Only books with is_featured = 1 (set manually, e.g. via wrangler d1 execute) are eligible.
 // Cached in the Workers edge cache (keyed by limit) so anonymous/bot traffic doesn't
-// re-run the ORDER BY RANDOM() full scan on every hit. A 10-min-stale random sample is
-// fine for a marketing preview.
+// re-run the query on every hit. A 10-min-stale sample is fine for a marketing preview.
 books.get("/sample", async (c) => {
   const limit = Math.min(Math.max(parseIntOr(c.req.query("limit"), 3), 1), 12);
   const db = c.env.DB;
@@ -206,7 +206,7 @@ books.get("/sample", async (c) => {
   const [{ results }, total] = await Promise.all([
     db
       .prepare(
-        "SELECT title, author, cover_url FROM books WHERE title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?",
+        "SELECT title, author, cover_url FROM books WHERE is_featured = 1 AND title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?",
       )
       .bind(limit)
       .all<{
@@ -215,7 +215,7 @@ books.get("/sample", async (c) => {
         cover_url: string | null;
       }>(),
     db
-      .prepare("SELECT COUNT(*) AS n FROM books WHERE title IS NOT NULL")
+      .prepare("SELECT COUNT(*) AS n FROM books WHERE is_featured = 1 AND title IS NOT NULL")
       .first<{ n: number }>(),
   ]);
 

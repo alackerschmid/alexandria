@@ -1,121 +1,114 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { customRef, type Ref } from "vue";
 import type { ReadStatus } from "@/types/book";
 import type { GroupBy, SortOption } from "@/types/library";
 
-export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
-  const defaultView = ref<"list" | "tile">(
-    (localStorage.getItem("defaultView") as "list" | "tile") || "list",
-  );
-  const defaultScanStatus = ref<ReadStatus>(
-    (localStorage.getItem("defaultScanStatus") as ReadStatus) || "unread",
-  );
-  const defaultPageSize = ref<number>(
-    parseInt(localStorage.getItem("defaultPageSize") ?? "24", 10) || 24,
-  );
+// A writable ref that persists to localStorage on every set — so pages can bind the
+// setting directly (v-model / storeToRefs) without a per-setting computed wrapper or
+// setX method.
+function persistedBool(key: string, fallback: boolean): Ref<boolean> {
+  const stored = localStorage.getItem(key);
+  let value = stored === null ? fallback : stored === "true";
+  return customRef((track, trigger) => ({
+    get() {
+      track();
+      return value;
+    },
+    set(v) {
+      value = v;
+      localStorage.setItem(key, String(v));
+      trigger();
+    },
+  }));
+}
 
-  const boolFrom = (key: string, fallback: boolean) => {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === "true";
-  };
-  const mainOnly = ref<boolean>(boolFrom("libMainOnly", true));
-  const highlightComplete = ref<boolean>(
-    boolFrom("libHighlightComplete", true),
+function persistedStr<T extends string>(
+  key: string,
+  fallback: T,
+  isValid?: (v: string) => v is T,
+): Ref<T> {
+  const stored = localStorage.getItem(key);
+  let value: T =
+    stored !== null && (!isValid || isValid(stored)) ? (stored as T) : fallback;
+  return customRef((track, trigger) => ({
+    get() {
+      track();
+      return value;
+    },
+    set(v) {
+      value = v;
+      localStorage.setItem(key, v);
+      trigger();
+    },
+  }));
+}
+
+function persistedNum(key: string, fallback: number): Ref<number> {
+  const parsed = parseInt(localStorage.getItem(key) ?? "", 10);
+  let value = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return customRef((track, trigger) => ({
+    get() {
+      track();
+      return value;
+    },
+    set(v) {
+      value = v;
+      localStorage.setItem(key, String(v));
+      trigger();
+    },
+  }));
+}
+
+const VALID_GROUP_BY: GroupBy[] = [
+  "none",
+  "author",
+  "series",
+  "genre",
+  "status",
+  "owning",
+  "publisher",
+  "language",
+  "form",
+  "country",
+  "decade",
+  "subject",
+];
+const isValidGroupBy = (v: string): v is GroupBy =>
+  (VALID_GROUP_BY as string[]).includes(v) || /^cf:\d+$/.test(v);
+
+export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
+  const defaultView = persistedStr<"list" | "tile">("defaultView", "list");
+  const defaultScanStatus = persistedStr<ReadStatus>(
+    "defaultScanStatus",
+    "unread",
   );
-  const showUnowned = ref<boolean>(boolFrom("libShowUnowned", false));
+  const defaultPageSize = persistedNum("defaultPageSize", 24);
+
+  const mainOnly = persistedBool("libMainOnly", true);
+  const highlightComplete = persistedBool("libHighlightComplete", true);
+  const showUnowned = persistedBool("libShowUnowned", false);
   // Independent per-view defaults: the reading-status dot is the primary signal in
   // list view but visual clutter in the denser tile grid, so each view remembers
   // its own preference rather than sharing one flag.
-  const showStatusIconsList = ref<boolean>(
-    boolFrom("libShowStatusIconsList", true),
-  );
-  const showStatusIconsTile = ref<boolean>(
-    boolFrom("libShowStatusIconsTile", false),
-  );
-  const onlyOwned = ref<boolean>(boolFrom("libOnlyOwned", false));
-  const highlightOwningBorder = ref<boolean>(
-    boolFrom("libHighlightOwningBorder", false),
-  );
-  const groupEditions = ref<boolean>(boolFrom("libGroupEditions", true));
+  const showStatusIconsList = persistedBool("libShowStatusIconsList", true);
+  const showStatusIconsTile = persistedBool("libShowStatusIconsTile", false);
+  const onlyOwned = persistedBool("libOnlyOwned", false);
+  const highlightOwningBorder = persistedBool("libHighlightOwningBorder", false);
+  const groupEditions = persistedBool("libGroupEditions", true);
 
-  const VALID_GROUP_BY: GroupBy[] = [
-    "none",
-    "author",
-    "series",
-    "genre",
-    "status",
-    "owning",
-    "publisher",
-    "language",
-    "form",
-    "country",
-    "decade",
-    "subject",
-  ];
-  const rawGroupBy = localStorage.getItem("libGroupBy") ?? "none";
-  const isValidGroupBy = (v: string): v is GroupBy =>
-    (VALID_GROUP_BY as string[]).includes(v) || /^cf:\d+$/.test(v);
-  const groupBy = ref<GroupBy>(
-    isValidGroupBy(rawGroupBy) ? rawGroupBy : "none",
-  );
-  const sortDirection = ref<SortOption>(
-    (localStorage.getItem("libSortDirection") as SortOption) || "desc",
-  );
+  const groupBy = persistedStr<GroupBy>("libGroupBy", "none", isValidGroupBy);
+  const sortDirection = persistedStr<SortOption>("libSortDirection", "desc");
 
-  function setMainOnly(v: boolean) {
-    mainOnly.value = v;
-    localStorage.setItem("libMainOnly", String(v));
-  }
-  function setHighlightComplete(v: boolean) {
-    highlightComplete.value = v;
-    localStorage.setItem("libHighlightComplete", String(v));
-  }
-  function setShowUnowned(v: boolean) {
-    showUnowned.value = v;
-    localStorage.setItem("libShowUnowned", String(v));
-  }
-  function setShowStatusIconsList(v: boolean) {
-    showStatusIconsList.value = v;
-    localStorage.setItem("libShowStatusIconsList", String(v));
-  }
-  function setShowStatusIconsTile(v: boolean) {
-    showStatusIconsTile.value = v;
-    localStorage.setItem("libShowStatusIconsTile", String(v));
-  }
-  function setOnlyOwned(v: boolean) {
-    onlyOwned.value = v;
-    localStorage.setItem("libOnlyOwned", String(v));
-  }
-  function setHighlightOwningBorder(v: boolean) {
-    highlightOwningBorder.value = v;
-    localStorage.setItem("libHighlightOwningBorder", String(v));
-  }
-  function setGroupEditions(v: boolean) {
-    groupEditions.value = v;
-    localStorage.setItem("libGroupEditions", String(v));
-  }
-  function setGroupBy(v: GroupBy) {
-    groupBy.value = v;
-    localStorage.setItem("libGroupBy", v);
-  }
-  function setSortDirection(v: SortOption) {
-    sortDirection.value = v;
-    localStorage.setItem("libSortDirection", v);
-  }
-
+  // Retained as methods because they're called from other pages (settings, the
+  // per-page-size watch) rather than bound directly.
   function setView(v: "list" | "tile") {
     defaultView.value = v;
-    localStorage.setItem("defaultView", v);
   }
-
   function setStatus(s: ReadStatus) {
     defaultScanStatus.value = s;
-    localStorage.setItem("defaultScanStatus", s);
   }
-
   function setPageSize(n: number) {
     defaultPageSize.value = n;
-    localStorage.setItem("defaultPageSize", String(n));
   }
 
   return {
@@ -135,15 +128,5 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     setView,
     setStatus,
     setPageSize,
-    setMainOnly,
-    setHighlightComplete,
-    setShowUnowned,
-    setShowStatusIconsList,
-    setShowStatusIconsTile,
-    setOnlyOwned,
-    setHighlightOwningBorder,
-    setGroupEditions,
-    setGroupBy,
-    setSortDirection,
   };
 });

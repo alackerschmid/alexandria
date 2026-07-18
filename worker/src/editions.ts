@@ -145,14 +145,30 @@ async function fetchFromGoogleBooks(
   };
 }
 
+// OpenLibrary edition records frequently have no description of their own — it lives on the
+// work record instead. Best-effort: failures/timeouts just leave the description null.
+async function fetchOpenLibraryWorkDescription(
+  workKey: string,
+): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`https://openlibrary.org${workKey}.json`);
+    const work: any = await res.json();
+    return typeof work.description === "string"
+      ? work.description
+      : (work.description?.value ?? null);
+  } catch {
+    return null;
+  }
+}
+
 async function fetchFromOpenLibrary(
   isbn: string,
 ): Promise<BookMetadata | null> {
   const bibkey = `ISBN:${isbn}`;
   const base = `https://openlibrary.org/api/books?bibkeys=${encodeURIComponent(bibkey)}&format=json`;
 
-  // Fetch data (existing fields) and details (physical_dimensions, edition_name) in parallel.
-  // details fetch is best-effort; failures leave those fields null.
+  // Fetch data (existing fields) and details (physical_dimensions, edition_name, work link) in
+  // parallel. details fetch is best-effort; failures leave those fields null.
   const [dataJson, detailsJson] = await Promise.all([
     fetchWithTimeout(`${base}&jscmd=data`).then(
       (r) => r.json() as Promise<any>,
@@ -167,6 +183,14 @@ async function fetchFromOpenLibrary(
   const details: any = detailsJson[bibkey]?.details ?? null;
 
   const pdRaw = details?.physical_dimensions;
+  let description =
+    typeof book.description === "string"
+      ? book.description
+      : (book.description?.value ?? null);
+  const workKey = details?.works?.[0]?.key;
+  if (!description && workKey)
+    description = await fetchOpenLibraryWorkDescription(workKey);
+
   return {
     title: book.title ?? null,
     author: book.authors?.[0]?.name ?? null,
@@ -175,10 +199,7 @@ async function fetchFromOpenLibrary(
     publish_date: book.publish_date ?? null,
     number_of_pages_median:
       book.number_of_pages > 0 ? book.number_of_pages : null,
-    description:
-      typeof book.description === "string"
-        ? book.description
-        : (book.description?.value ?? null),
+    description,
     publisher: book.publishers?.[0]?.name ?? null,
     physical_format: book.physical_format ?? null,
     edition_name: details?.edition_name ?? null,

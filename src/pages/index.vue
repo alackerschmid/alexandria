@@ -16,269 +16,31 @@
         }}</span>
       </div>
       <div class="flex gap-2 shrink-0">
-        <v-btn
-          variant="text"
-          size="small"
-          color="primary"
-          class="text-[10px] tracking-[0.15em] uppercase px-4"
-          @click="$router.push('/login')"
-        >
+        <AppButton variant="ghost" size="sm" @click="$router.push('/login')">
           {{ $t("guest.sign_in") }}
-        </v-btn>
-        <v-btn
-          variant="flat"
-          size="small"
-          color="primary"
-          rounded="0"
-          elevation="0"
-          class="text-[10px] tracking-[0.15em] uppercase px-4"
+        </AppButton>
+        <AppButton
+          variant="primary"
+          size="sm"
           @click="$router.push('/login?mode=register')"
         >
           {{ $t("guest.register") }}
-        </v-btn>
+        </AppButton>
       </div>
     </div>
 
-    <!-- Scrim (sits above page content, below search dropdown) -->
-    <v-fade-transition>
-      <div
-        v-if="searchFocused"
-        class="fixed inset-0 z-[50] bg-black/30 backdrop-blur-[2px] cursor-default"
-        @click="searchFocused = false"
-      />
-    </v-fade-transition>
-
-    <!-- ── Search hero ──────────────────────────────────────────────────────── -->
-    <div
-      class="border-b border-charcoal-border px-6 md:px-10 pt-10 md:pt-14 pb-8 md:pb-10 flex flex-col items-center shrink-0"
-    >
-      <!-- Heading + count -->
-      <div class="flex items-baseline gap-4 mb-7 self-start md:self-center">
-        <h1
-          class="font-heading text-4xl md:text-5xl font-bold text-text-primary leading-none"
-        >
-          {{ $t("library.heading") }}
-        </h1>
-        <span
-          class="font-mono text-[11px] text-text-secondary/60 tracking-[0.08em]"
-        >
-          {{ $t("library.total_count", { n: allBooks.length }) }}
-        </span>
-      </div>
-
-      <!-- Search wrapper (lifts above scrim when focused) -->
-      <div
-        class="w-full max-w-2xl relative"
-        :class="searchFocused ? 'z-[60]' : 'z-[2]'"
-      >
-        <!-- Bar -->
-        <div
-          class="flex items-center gap-3 border bg-search-bg px-5 py-4 cursor-text transition-all duration-200"
-          :class="
-            searchFocused
-              ? 'border-orange-neon -translate-y-[3px] scale-[1.012] shadow-[0_22px_55px_-14px_rgba(0,0,0,0.6)] ring-4 ring-orange-neon/10'
-              : 'border-search-border'
-          "
-          @click="onSearchBarClick"
-        >
-          <span class="text-orange-neon text-lg leading-none shrink-0">⌕</span>
-          <!-- Input + highlight overlay wrapper -->
-          <div class="flex-1 min-w-0 relative">
-            <!-- Highlight overlay (behind the input, synced via translateX on scroll) -->
-            <div
-              aria-hidden="true"
-              class="absolute inset-0 flex items-center pointer-events-none overflow-hidden"
-            >
-              <div
-                class="whitespace-pre text-base"
-                :style="{ transform: `translateX(-${searchScrollLeft}px)` }"
-              >
-                <template v-for="(seg, i) in searchSegments" :key="i">
-                  <span v-if="seg.role === 'key'" class="text-orange-neon">{{
-                    seg.text
-                  }}</span>
-                  <span v-else class="text-text-primary">{{ seg.text }}</span>
-                </template>
-              </div>
-            </div>
-            <!-- Actual input — text is transparent so overlay shows through -->
-            <input
-              ref="searchRef"
-              v-model="search"
-              type="text"
-              role="combobox"
-              :aria-label="$t('library.search_field_label')"
-              :aria-expanded="searchFocused"
-              aria-autocomplete="list"
-              aria-controls="library-search-listbox"
-              :aria-activedescendant="
-                searchFocused && activeIndex >= 0
-                  ? `library-search-option-${activeIndex}`
-                  : undefined
-              "
-              :placeholder="$t('library.search_placeholder_smart')"
-              class="relative w-full bg-transparent text-transparent caret-text-primary text-base outline-none focus-ring-none placeholder:text-text-secondary/40"
-              :class="{ 'token-selecting': tokenSelecting }"
-              @focus="searchFocused = true"
-              @blur="onSearchBlur"
-              @keydown="onSearchKeydown"
-              @mousedown="tokenSelecting = false"
-              @scroll="
-                searchScrollLeft = ($event.target as HTMLInputElement)
-                  .scrollLeft
-              "
-            />
-          </div>
-          <button
-            v-if="search"
-            class="text-text-secondary hover:text-text-primary transition-colors shrink-0"
-            :aria-label="$t('library.clear_search')"
-            @mousedown.prevent
-            @click.stop="
-              search = '';
-              searchRef?.focus();
-            "
-          >
-            <v-icon icon="mdi-close" size="15" />
-          </button>
-          <kbd
-            v-else
-            class="hidden md:flex shrink-0 font-mono text-[10px] text-text-secondary/40 tracking-[0.1em] border border-charcoal-border px-1.5 py-0.5 leading-none"
-          >
-            ⌘K
-          </kbd>
-        </div>
-
-        <!-- Autocomplete dropdown -->
-        <v-slide-y-transition>
-          <div
-            v-if="searchFocused"
-            id="library-search-listbox"
-            role="listbox"
-            class="absolute top-full left-0 right-0 mt-3 bg-charcoal-light border border-charcoal-border shadow-[0_28px_64px_-18px_rgba(0,0,0,0.85)] overflow-hidden"
-            @mousedown.prevent
-          >
-            <!-- Header -->
-            <div
-              class="flex items-center justify-between px-[18px] py-[13px] border-b border-charcoal-border/60"
-            >
-              <span
-                class="font-mono text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-                >{{ dropdownHeading }}</span
-              >
-              <span class="font-mono text-[10px] text-text-secondary/50">{{
-                $t("library.filtered_count", { n: groupedFiltered.length })
-              }}</span>
-            </div>
-
-            <!-- Prefix chips (empty state) -->
-            <div
-              v-if="suggestions[0]?.kind === 'prefix'"
-              class="flex flex-wrap gap-2.5 px-[18px] py-4 border-b border-charcoal-border/40"
-            >
-              <button
-                v-for="(s, i) in suggestions"
-                :id="`library-search-option-${i}`"
-                :key="s.token"
-                role="option"
-                :aria-selected="i === activeIndex"
-                class="flex items-center gap-2 px-3 py-2 border bg-charcoal-light transition-colors"
-                :class="
-                  i === activeIndex
-                    ? 'border-orange-neon text-orange-neon'
-                    : 'border-charcoal-border hover:border-orange-neon'
-                "
-                @mousedown.prevent="applySuggestion(s)"
-              >
-                <v-icon :icon="s.icon" size="12" color="primary" />
-                <span
-                  class="font-mono text-[13px] text-orange-neon tracking-[0.02em]"
-                  >{{ s.token }}</span
-                >
-              </button>
-            </div>
-
-            <!-- Stacked suggestion rows -->
-            <template v-else>
-              <div
-                v-for="(s, i) in suggestions"
-                :id="`library-search-option-${i}`"
-                :key="i"
-                role="option"
-                :aria-selected="i === activeIndex"
-                class="flex items-center gap-3.5 px-[18px] py-[13px] cursor-pointer border-b border-charcoal-border/30 transition-colors"
-                :class="
-                  i === activeIndex
-                    ? 'bg-white/[0.04]'
-                    : 'hover:bg-white/[0.03]'
-                "
-                @mousedown.prevent="applySuggestion(s)"
-              >
-                <v-icon
-                  :icon="s.icon"
-                  size="13"
-                  :color="s.kind === 'book' ? undefined : 'primary'"
-                  class="shrink-0 w-[22px]"
-                  :class="s.kind === 'book' ? 'text-text-secondary/50' : ''"
-                />
-                <!-- <span v-if="s.kind !== 'book'" class="font-mono text-[13px] text-orange-neon tracking-[0.02em] shrink-0 whitespace-nowrap">{{ s.token }}:</span> -->
-                <span
-                  class="text-[14px] text-text-primary min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
-                  >{{ s.label }}</span
-                >
-                <span
-                  class="ml-auto text-[11px] text-text-secondary/70 shrink-0 whitespace-nowrap"
-                  >{{ s.typeLabel }}</span
-                >
-              </div>
-            </template>
-
-            <!-- Footer -->
-            <div
-              class="flex items-center gap-4 px-[18px] py-[11px] bg-charcoal/80"
-            >
-              <span class="font-mono text-[10px] text-text-secondary/60"
-                ><span class="text-text-secondary">↑↓</span>
-                {{ $t("library.kbd_navigate") }}</span
-              >
-              <span class="font-mono text-[10px] text-text-secondary/60"
-                ><span class="text-text-secondary">↵</span>
-                {{ $t("library.kbd_select") }}</span
-              >
-              <span class="font-mono text-[10px] text-text-secondary/60"
-                ><span class="text-text-secondary">esc</span>
-                {{ $t("library.kbd_dismiss") }}</span
-              >
-            </div>
-          </div>
-        </v-slide-y-transition>
-      </div>
-
-      <!-- Active parsed-token pills -->
-      <div
-        v-if="parsedSearch.tokens.length"
-        class="flex items-center gap-2 mt-3 w-full max-w-2xl flex-wrap"
-      >
-        <span
-          class="text-[10px] text-text-secondary/50 tracking-[0.18em] uppercase"
-          >{{ $t("library.search_active") }}</span
-        >
-        <span
-          v-for="tok in parsedSearch.tokens"
-          :key="tok"
-          class="inline-flex items-center gap-1.5 text-[10px] tracking-[0.1em] uppercase text-text-primary border border-charcoal-border/60 bg-charcoal-light px-2.5 py-1"
-        >
-          {{ tok }}
-          <button
-            class="text-text-secondary/60 hover:text-text-primary ml-1"
-            :aria-label="$t('library.remove_filter', { token: tok })"
-            @click="removeToken(tok)"
-          >
-            ×
-          </button>
-        </span>
-      </div>
-    </div>
+    <LibrarySearchBar
+      v-model="search"
+      :known-keys="knownKeys"
+      :parsed-search="parsedSearch"
+      :facet-entries="facetEntries"
+      :base-filtered="baseFiltered"
+      :custom-field-metas="customFieldMetas"
+      :total-count="allBooks.length"
+      :filtered-count="groupedFiltered.length"
+      :remove-token="removeToken"
+      @select-book="openDetail"
+    />
 
     <!-- ── Desktop control bar: group tabs + display + view ──────────────────── -->
     <div
@@ -315,7 +77,7 @@
             </button>
           </template>
           <div
-            class="bg-[#1a1917] border border-charcoal-border shadow-xl p-4 w-80"
+            class="bg-charcoal-light border border-charcoal-border shadow-xl p-4 w-80"
           >
             <LibraryDisplaySettings
               v-model:main-only="mainOnly"
@@ -346,34 +108,24 @@
         </v-menu>
 
         <!-- View toggle -->
-        <div class="flex">
-          <button
-            class="flex items-center justify-center w-8.5 h-7.5 border -ml-px first:ml-0 transition-colors"
-            :class="
-              viewMode === 'list'
-                ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
-                : 'border-charcoal-border text-text-secondary hover:text-text-primary'
-            "
-            :aria-label="$t('library.view_list')"
-            :aria-pressed="viewMode === 'list'"
-            @click="viewMode = 'list'"
-          >
-            <v-icon icon="mdi-view-list" size="16" />
-          </button>
-          <button
-            class="flex items-center justify-center w-8.5 h-7.5 border -ml-px first:ml-0 transition-colors"
-            :class="
-              viewMode === 'tile'
-                ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
-                : 'border-charcoal-border text-text-secondary hover:text-text-primary'
-            "
-            :aria-label="$t('library.view_tile')"
-            :aria-pressed="viewMode === 'tile'"
-            @click="viewMode = 'tile'"
-          >
-            <v-icon icon="mdi-view-grid" size="16" />
-          </button>
-        </div>
+        <AppSegmented
+          v-model="viewMode"
+          variant="highlight"
+          size="md"
+          :aria-label="$t('library.view_label')"
+          :options="[
+            {
+              value: 'list',
+              icon: 'mdi-view-list',
+              ariaLabel: $t('library.view_list'),
+            },
+            {
+              value: 'tile',
+              icon: 'mdi-view-grid',
+              ariaLabel: $t('library.view_tile'),
+            },
+          ]"
+        />
       </div>
     </div>
 
@@ -577,62 +329,181 @@
       <p class="text-sm text-text-secondary">{{ $t("library.no_results") }}</p>
     </div>
 
-    <!-- ── Grouped shelves (one row per group, expandable) ────────────────────── -->
-    <div v-else-if="!loading && isGrouped" class="flex-1 pb-28 pt-9">
-      <div
-        v-for="group in pagedGroups"
-        :key="group.key"
-        class="px-6 md:px-10 mb-9"
-      >
-        <div>
-          <!-- Group header -->
+    <!-- ── Grouped shelves. Desktop packs short groups into a shared row instead of
+         leaving gaps; mobile keeps the classic one-section-per-group layout below —
+         packing several groups' tiny headers into one cramped mobile row reads as noise,
+         not a fix, so packing is scoped to `md` and up. ── -->
+    <div v-else-if="!loading && isGrouped" class="flex-1 px-6 md:px-10 pt-9 pb-28">
+      <!-- Desktop: packed rows -->
+      <template v-if="display.mdAndUp.value">
+      <!-- Tile shelf -->
+      <div v-if="viewMode === 'tile'">
+        <div v-for="row in packedTileRows" :key="row.key" class="mb-7">
+          <!-- Header strip: one segment per group represented in this row, sized to the
+               columns it occupies. The divider only draws when a segment spans >1 card. -->
+          <div
+            v-if="row.segments.some((s) => s.groupLabel)"
+            class="grid gap-x-3 md:gap-x-4 mb-2"
+            :style="{
+              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
+            }"
+          >
+            <div
+              v-for="seg in row.segments"
+              :key="seg.key"
+              class="min-w-0 flex items-baseline gap-2"
+              :style="{ gridColumn: `span ${seg.span}` }"
+            >
+              <LibraryGroupHeader
+                v-if="seg.groupLabel"
+                :text="seg.groupLabel.text"
+                :series-id="seg.groupLabel.seriesId"
+                :complete="seg.groupLabel.complete"
+                :count-label="seg.groupLabel.countLabel"
+                :show-divider="seg.span > 1"
+                @select="onGroupLabelSelect(seg.groupLabel.seriesId)"
+              />
+            </div>
+          </div>
+
+          <!-- Cards -->
+          <div
+            class="grid gap-x-3 md:gap-x-4 gap-y-6"
+            :style="{
+              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
+            }"
+          >
+            <template v-for="seg in row.segments" :key="seg.key">
+              <template v-for="slot in seg.slots" :key="slot.key">
+                <LibraryCoverCard
+                  v-if="slot.type === 'entry'"
+                  :title="slot.entry.title"
+                  :cover-url="slot.entry.cover_url"
+                  :ordinal="slot.entry.ordinal"
+                  :owned="slot.entry.owned"
+                  :status="slot.entry.status"
+                  :owning-status="slot.entry.owningStatus"
+                  :author="slot.entry.author"
+                  :hide-status="!showStatusIcons"
+                  :edition-count="slot.entry.editionCount"
+                  :expanded="!!slot.entry.book && expandedCards.has(slot.entry.book.id)"
+                  @select="onEntrySelect(slot.entry)"
+                  @toggle-editions="slot.entry.book && toggleCardExpand(slot.entry.book.id)"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="flex flex-col min-w-0"
+                  @click="toggleExpand(slot.groupKey)"
+                >
+                  <span
+                    class="flex-1 aspect-2/3 flex flex-col items-center justify-center gap-1 border border-dashed border-charcoal-border text-text-secondary hover:text-text-primary hover:border-charcoal-border/60 transition-colors font-mono text-[9px] tracking-[0.1em] uppercase text-center px-1"
+                  >
+                    <v-icon :icon="slot.expanded ? 'mdi-minus' : 'mdi-plus'" size="14" />
+                    {{
+                      slot.expanded
+                        ? $t("library.collapse")
+                        : $t("library.show_all", { n: slot.count })
+                    }}
+                  </span>
+                </button>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+
+      <!-- List shelf -->
+      <div v-else>
+        <div v-for="row in packedListRows" :key="row.key" class="mb-7">
+          <div
+            v-if="row.segments.some((s) => s.groupLabel)"
+            class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-2"
+          >
+            <div
+              v-for="seg in row.segments"
+              :key="seg.key"
+              class="min-w-0 flex items-baseline gap-2"
+              :style="{ gridColumn: `span ${seg.span}` }"
+            >
+              <LibraryGroupHeader
+                v-if="seg.groupLabel"
+                :text="seg.groupLabel.text"
+                :series-id="seg.groupLabel.seriesId"
+                :complete="seg.groupLabel.complete"
+                :count-label="seg.groupLabel.countLabel"
+                :show-divider="seg.span > 1"
+                @select="onGroupLabelSelect(seg.groupLabel.seriesId)"
+              />
+            </div>
+          </div>
+
+          <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+            <template v-for="seg in row.segments" :key="seg.key">
+              <template v-for="slot in seg.slots" :key="slot.key">
+                <LibraryRowCard
+                  v-if="slot.type === 'entry' && slot.entry.book"
+                  :book="slot.entry.book"
+                  :hide-status="!showStatusIcons"
+                  :expanded="expandedCards.has(slot.entry.book.id)"
+                  :highlight-owning-border="highlightOwningBorder"
+                  @cycle-status="cycleStatus(slot.entry.book)"
+                  @select="openDetail(slot.entry.book)"
+                  @select-edition="openDetail($event)"
+                  @toggle-editions="toggleCardExpand(slot.entry.book.id)"
+                />
+                <LibraryGhostRow
+                  v-else-if="slot.type === 'entry'"
+                  :title="slot.entry.title"
+                  :ordinal="slot.entry.ordinal"
+                  @select="onEntrySelect(slot.entry)"
+                />
+                <button
+                  v-else
+                  type="button"
+                  class="flex items-center justify-center gap-2 p-4 border border-dashed border-charcoal-border text-text-secondary hover:text-text-primary hover:border-charcoal-border/60 transition-colors font-mono text-[10px] tracking-[0.12em] uppercase"
+                  @click="toggleExpand(slot.groupKey)"
+                >
+                  <v-icon :icon="slot.expanded ? 'mdi-minus' : 'mdi-plus'" size="14" />
+                  {{
+                    slot.expanded
+                      ? $t("library.collapse")
+                      : $t("library.show_all", { n: slot.count })
+                  }}
+                </button>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+      </template>
+
+      <!-- Mobile: classic layout — one full-width header per group, one grid per group,
+           no cross-group packing. -->
+      <template v-else>
+        <div v-for="group in pagedGroups" :key="group.key" class="mb-9">
           <div class="flex items-baseline gap-3 pb-4">
-            <h2 class="contents">
+            <LibraryGroupHeader
+              :text="group.label"
+              :series-id="group.seriesId ?? null"
+              :complete="group.complete"
+              :count-label="group.countLabel"
+              size="full"
+              :link-highlights-complete="false"
+              @select="onGroupLabelSelect(group.seriesId ?? null)"
+            >
               <button
-                v-if="group.seriesId != null"
-                class="font-heading text-2xl font-bold hover:text-orange-neon transition-colors text-left min-w-0 truncate"
-                :class="'text-text-primary'"
-                @click="$router.push(`/series/${group.seriesId}`)"
+                v-if="shelfHasMore(group)"
+                class="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
+                @click="toggleExpand(group.key)"
               >
-                {{ group.label }}
+                {{
+                  expanded[group.key]
+                    ? $t("library.collapse")
+                    : $t("library.show_all", { n: shelfTotal(group) })
+                }}
               </button>
-              <span
-                v-else
-                class="font-heading text-2xl font-bold min-w-0 truncate"
-                :class="
-                  group.complete ? 'text-orange-neon' : 'text-text-primary'
-                "
-              >
-                {{ group.label }}
-              </span>
-            </h2>
-            <span
-              class="font-mono text-[10px] text-text-secondary/50 shrink-0"
-              >{{ group.countLabel }}</span
-            >
-            <span
-              v-if="group.complete"
-              class="shrink-0 font-mono text-[8px] tracking-[0.16em] uppercase text-orange-neon border border-orange-neon/40 bg-orange-neon/10 px-1.5 py-0.5"
-            >
-              {{ $t("library.complete") }}
-            </span>
-            <span
-              class="flex-1 h-px"
-              :class="
-                group.complete ? 'bg-orange-neon/25' : 'bg-charcoal-border'
-              "
-            />
-            <button
-              v-if="shelfHasMore(group)"
-              class="shrink-0 font-mono text-[9px] tracking-[0.14em] uppercase text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
-              @click="toggleExpand(group.key)"
-            >
-              {{
-                expanded[group.key]
-                  ? $t("library.collapse")
-                  : $t("library.show_all", { n: shelfTotal(group) })
-              }}
-            </button>
+            </LibraryGroupHeader>
           </div>
 
           <!-- Tile shelf -->
@@ -644,7 +515,7 @@
             }"
           >
             <LibraryCoverCard
-              v-for="entry in shelfVisible(group).flatMap(expandEntry)"
+              v-for="entry in shelfVisible(group).flatMap((entry) => expandEntry(entry))"
               :key="entry.key"
               :title="entry.title"
               :cover-url="entry.cover_url"
@@ -663,10 +534,7 @@
 
           <!-- List shelf -->
           <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
-            <template
-              v-for="entry in shelfVisible(group)"
-              :key="entry.key"
-            >
+            <template v-for="entry in shelfVisible(group)" :key="entry.key">
               <LibraryRowCard
                 v-if="entry.book"
                 :book="entry.book"
@@ -687,7 +555,7 @@
             </template>
           </div>
         </div>
-      </div>
+      </template>
 
       <AppPagination
         :current-page="currentPage"
@@ -776,47 +644,23 @@
     />
 
     <!-- Delete confirmation -->
-    <v-dialog v-model="deleteDialog" max-width="360">
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-        <v-card-title
-          class="font-heading text-xl pt-6 px-6 font-bold text-text-primary"
-        >
-          {{ $t("library.remove_heading") }}
-        </v-card-title>
-        <v-card-text class="px-6 text-sm text-text-secondary">
-          {{
-            $t("library.remove_body", {
-              title: bookToDelete?.title || bookToDelete?.isbn,
-            })
-          }}
-          <p v-if="deleteFailed" class="text-error mt-2">
-            {{ $t("library.error_delete") }}
-          </p>
-        </v-card-text>
-        <v-card-actions class="px-4 pb-4 gap-2">
-          <v-spacer />
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary px-1.5"
-            @click="deleteDialog = false"
-          >
-            {{ $t("library.cancel") }}
-          </v-btn>
-          <v-btn
-            variant="flat"
-            size="small"
-            color="error"
-            rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase px-1.5"
-            :loading="deleting"
-            @click="confirmDelete"
-          >
-            {{ $t("library.remove") }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <ConfirmDialog
+      v-model="deleteDialog"
+      :title="$t('library.remove_heading')"
+      :confirm-label="$t('library.remove')"
+      :cancel-label="$t('library.cancel')"
+      :loading="deleting"
+      @confirm="confirmDelete"
+    >
+      {{
+        $t("library.remove_body", {
+          title: bookToDelete?.title || bookToDelete?.isbn,
+        })
+      }}
+      <p v-if="deleteFailed" class="text-error mt-2">
+        {{ $t("library.error_delete") }}
+      </p>
+    </ConfirmDialog>
 
     <AppToast
       v-model="errorToast"
@@ -828,23 +672,25 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import { useThemeStore } from "@/stores/theme";
 import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
-import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
-import {
-  useLibrarySearch,
-  cfIcon,
-  type SuggestionFacet,
-} from "@/composables/useLibrarySearch";
+import { useToast } from "@/composables/useToast";
+import { useLibraryData } from "@/composables/useLibraryData";
+import { useLibrarySearch } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useEditionGrouping } from "@/composables/useEditionGrouping";
+import { useShelfGroups } from "@/composables/useShelfGroups";
+import {
+  packRows,
+  type ShelfEntry,
+  type PackedRow,
+} from "@/utils/shelf-packing";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
@@ -852,27 +698,31 @@ import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import type { GroupBy } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
+import AppButton from "@/components/AppButton.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import LibraryRowCard from "@/components/LibraryRowCard.vue";
 import LibraryCoverCard from "@/components/LibraryCoverCard.vue";
 import LibraryGhostRow from "@/components/LibraryGhostRow.vue";
+import LibraryGroupHeader from "@/components/LibraryGroupHeader.vue";
+import LibrarySearchBar from "@/components/LibrarySearchBar.vue";
 import LibraryDisplaySettings from "@/components/LibraryDisplaySettings.vue";
 import LibraryGroupTabs from "@/components/LibraryGroupTabs.vue";
 import AppSelect from "@/components/AppSelect.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import AppPagination from "@/components/AppPagination.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
+import { storeToRefs } from "pinia";
 import { useDisplay } from "vuetify";
 
 const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const themeStore = useThemeStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
-const { apiFetch } = useApi();
 const {
   setStatus: applyStatus,
   cycleStatus: applyCycle,
@@ -892,24 +742,25 @@ const isGuest = computed(() => !authStore.isAuthenticated);
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
-const serverBooks = ref<Book[]>([]);
 const loading = ref(false);
-const error = ref("");
+const { serverBooks, seriesMemberships, error, fetchBooks, fetchMemberships } =
+  useLibraryData();
 
 const search = ref("");
-const groupBy = computed({
-  get: () => libraryDefaultsStore.groupBy,
-  set: (v) => libraryDefaultsStore.setGroupBy(v),
-});
-const sortDirection = computed({
-  get: () => libraryDefaultsStore.sortDirection,
-  set: (v) => libraryDefaultsStore.setSortDirection(v),
-});
-const viewMode = computed({
-  get: () => libraryDefaultsStore.defaultView,
-  set: (v) => libraryDefaultsStore.setView(v),
-});
-const searchRef = ref<HTMLInputElement | null>(null);
+// Persisted display settings bind straight to the store's writable refs (each
+// persists to localStorage on set — see libraryDefaults.ts). onlyOwned/groupEditions
+// are pulled here, ahead of the search pipeline below, because it needs them at setup.
+const {
+  groupBy,
+  sortDirection,
+  defaultView: viewMode,
+  onlyOwned,
+  groupEditions,
+  mainOnly,
+  highlightComplete,
+  showUnowned,
+  highlightOwningBorder,
+} = storeToRefs(libraryDefaultsStore);
 
 // ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
 const allBooks = computed<Book[]>(() =>
@@ -928,18 +779,6 @@ function pinStatus(book: Book) {
 }
 watch([search, groupBy, sortDirection], () => {
   statusOverrides.value.clear();
-});
-
-// Declared ahead of useLibrarySearch (rather than alongside the other persisted
-// display settings below) because the search pipeline needs it at setup time.
-const onlyOwned = computed({
-  get: () => libraryDefaultsStore.onlyOwned,
-  set: (v) => libraryDefaultsStore.setOnlyOwned(v),
-});
-// Same reasoning — needed by the useEditionGrouping calls right below.
-const groupEditions = computed({
-  get: () => libraryDefaultsStore.groupEditions,
-  set: (v) => libraryDefaultsStore.setGroupEditions(v),
 });
 
 const { knownKeys, parsedSearch, baseFiltered, facetEntries, removeToken } =
@@ -977,22 +816,6 @@ const { allGroups } = useLibraryGrouping({
 const groupedAllBooks = useEditionGrouping(allBooks, true);
 
 // ── Display settings (persisted) ───────────────────────────────────────────────
-const mainOnly = computed({
-  get: () => libraryDefaultsStore.mainOnly,
-  set: (v) => libraryDefaultsStore.setMainOnly(v),
-});
-const highlightComplete = computed({
-  get: () => libraryDefaultsStore.highlightComplete,
-  set: (v) => libraryDefaultsStore.setHighlightComplete(v),
-});
-const showUnowned = computed({
-  get: () => libraryDefaultsStore.showUnowned,
-  set: (v) => libraryDefaultsStore.setShowUnowned(v),
-});
-const highlightOwningBorder = computed({
-  get: () => libraryDefaultsStore.highlightOwningBorder,
-  set: (v) => libraryDefaultsStore.setHighlightOwningBorder(v),
-});
 // Backed by a separate persisted default per view (list vs tile) — see
 // showStatusIconsList/Tile in libraryDefaults.ts — so the toggle always reflects
 // and updates whichever view is currently active.
@@ -1003,8 +826,8 @@ const showStatusIcons = computed({
       : libraryDefaultsStore.showStatusIconsList,
   set: (v) => {
     if (viewMode.value === "tile")
-      libraryDefaultsStore.setShowStatusIconsTile(v);
-    else libraryDefaultsStore.setShowStatusIconsList(v);
+      libraryDefaultsStore.showStatusIconsTile = v;
+    else libraryDefaultsStore.showStatusIconsList = v;
   },
 });
 const displayMenu = ref(false);
@@ -1063,20 +886,6 @@ function expandEntry(e: ShelfEntry): ShelfEntry[] {
   return expandBook(book).map((b) => (b.id === book.id ? e : bookToEntry(b)));
 }
 
-// Series membership for grouped-by-series shelves (unowned reveal + completeness)
-type SeriesEntry = {
-  work_id: number;
-  ordinal: number | null;
-  title: string | null;
-  owned: number;
-  isbn: string | null;
-  cover_url: string | null;
-  scan_id: number | null;
-};
-const seriesMemberships = ref<
-  Record<number, { id: number; name: string | null; entries: SeriesEntry[] }>
->({});
-
 // Responsive shelf row sizing (collapsed = one row).
 const display = useDisplay();
 const coverPerRow = computed(() => {
@@ -1098,10 +907,11 @@ const seriesContext = computed(() => groupBy.value === "series");
 
 const selectedBook = ref<Book | null>(null);
 
-const errorToast = ref(false);
-const errorMessage = ref("");
-
-let fetchSeq = 0;
+const {
+  visible: errorToast,
+  message: errorMessage,
+  showToast,
+} = useToast();
 
 const perPage = ref<string>(String(libraryDefaultsStore.defaultPageSize));
 
@@ -1112,391 +922,6 @@ const PAGE_SIZE_OPTIONS = [
   { value: "96", label: "96" },
   { value: "10000", label: t("library.per_page_all") },
 ];
-
-// ── Autocomplete ──────────────────────────────────────────────────────────────
-
-const searchFocused = ref(false);
-const activeIndex = ref(-1);
-const tokenSelecting = ref(false);
-const showAllPrefixes = ref(false);
-const CORE_PREFIX_KEYS = new Set([
-  "status",
-  "owning",
-  "author",
-  "genre",
-  "series",
-]);
-
-type SuggestionPrefix = {
-  kind: "prefix";
-  token: string;
-  icon: string;
-  label: string;
-  typeLabel: string;
-};
-type SuggestionBook = {
-  kind: "book";
-  book: Book;
-  icon: string;
-  label: string;
-  typeLabel: string;
-  token: "";
-};
-type SuggestionExpand = {
-  kind: "expand";
-  token: string;
-  icon: string;
-  label: string;
-  typeLabel: string;
-};
-type Suggestion =
-  SuggestionPrefix | SuggestionFacet | SuggestionBook | SuggestionExpand;
-
-// ── Autocomplete prefix chips ───────────────────────────────────────────────────
-
-const PREFIXES = computed(() => [
-  {
-    key: "status",
-    icon: "mdi-progress-check",
-    label: t("library.filter_status"),
-  },
-  {
-    key: "owning",
-    icon: "mdi-bookshelf",
-    label: t("library.filter_owning"),
-  },
-  {
-    key: "author",
-    icon: "mdi-account-outline",
-    label: t("library.group_author"),
-  },
-  { key: "genre", icon: "mdi-tag-outline", label: t("library.group_genre") },
-  { key: "series", icon: "mdi-bookshelf", label: t("library.group_series") },
-  { key: "publisher", icon: "mdi-domain", label: t("library.group_publisher") },
-  {
-    key: "language",
-    icon: "mdi-translate",
-    label: t("library.group_language"),
-  },
-  {
-    key: "award",
-    icon: "mdi-trophy-outline",
-    label: t("library.filter_awards"),
-  },
-  { key: "form", icon: "mdi-text-box-outline", label: t("library.group_form") },
-  { key: "country", icon: "mdi-earth", label: t("library.group_country") },
-  { key: "year", icon: "mdi-calendar-range", label: t("library.group_year") },
-  {
-    key: "subject",
-    icon: "mdi-lightbulb-outline",
-    label: t("library.group_subject"),
-  },
-  {
-    key: "location",
-    icon: "mdi-map-marker-outline",
-    label: t("library.group_location"),
-  },
-  ...customFieldMetas.value
-    .filter((m) => m.def.type !== "date" && m.def.type !== "integer")
-    .map((m) => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),
-]);
-
-// ── Search highlight overlay ───────────────────────────────────────────────────
-
-const HIGHLIGHT_PATTERN = computed(
-  () => String.raw`((?:${[...knownKeys.value].join("|")}):)("(?:[^"]*)"?|\S*)`,
-);
-
-interface SearchSegment {
-  text: string;
-  role: "key" | "plain";
-}
-
-// Keys whose handling doesn't affect the current text selection
-const PRESERVES_SELECTION = new Set([
-  "ArrowUp",
-  "ArrowDown",
-  "Tab",
-  "Escape",
-  "Shift",
-  "Control",
-  "Alt",
-  "Meta",
-]);
-
-const searchSegments = computed<SearchSegment[]>(() => {
-  const s = search.value;
-  if (!s) return [];
-  const re = new RegExp(HIGHLIGHT_PATTERN.value, "gi");
-  const segments: SearchSegment[] = [];
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    const [, key, val] = m;
-    if (m.index > last)
-      segments.push({ text: s.slice(last, m.index), role: "plain" });
-    segments.push({ text: key, role: "key" });
-    if (val) segments.push({ text: val, role: "plain" });
-    last = re.lastIndex;
-  }
-  if (last < s.length) segments.push({ text: s.slice(last), role: "plain" });
-  return segments;
-});
-
-const searchScrollLeft = ref(0);
-
-// The trailing chunk the user is currently typing (after the last complete token)
-const searchFragment = computed(() => {
-  const s = search.value;
-  // Find where the last *committed* structured token ends (key:value with a non-empty value).
-  // Everything after that is the trailing fragment the user is still building (may contain spaces).
-  const re = /\S+:"[^"]*"|"[^"]*"|\S+/g;
-  let lastStructuredEnd = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(s)) !== null) {
-    const part = m[0];
-    const colonIdx = part.indexOf(":");
-    if (colonIdx > 0) {
-      const key = part.slice(0, colonIdx).toLowerCase();
-      const val = part
-        .slice(colonIdx + 1)
-        .replace(/^"|"$/g, "")
-        .toLowerCase();
-      if (knownKeys.value.has(key) && val)
-        lastStructuredEnd = m.index + part.length;
-    }
-  }
-  return s.slice(lastStructuredEnd).replace(/^\s+/, "");
-});
-
-const suggestions = computed<Suggestion[]>(() => {
-  const frag = searchFragment.value.trim().toLowerCase();
-  const titleLabel = t("library.facet_title");
-
-  if (!frag) {
-    // Empty/idle → show prefix chips, collapsed to the core set until expanded
-    const list = showAllPrefixes.value
-      ? PREFIXES.value
-      : PREFIXES.value.filter((p) => CORE_PREFIX_KEYS.has(p.key));
-    const chips: Suggestion[] = list.map((p) => ({
-      kind: "prefix" as const,
-      token: `${p.key}:`,
-      icon: p.icon,
-      label: p.label,
-      typeLabel: p.label,
-    }));
-    if (!showAllPrefixes.value) {
-      const remaining = PREFIXES.value.length - CORE_PREFIX_KEYS.size;
-      chips.push({
-        kind: "expand",
-        token: t("library.search_show_more", { n: remaining }),
-        icon: "mdi-dots-horizontal",
-        label: t("library.search_show_more", { n: remaining }),
-        typeLabel: "",
-      });
-    }
-    return chips;
-  }
-
-  const results: Suggestion[] = [];
-  const MAX = 8;
-
-  // Typing inside a known key: eg "author:pyn"
-  const matchedPrefix = PREFIXES.value.find((p) =>
-    frag.startsWith(`${p.key}:`),
-  );
-  if (matchedPrefix) {
-    const val = frag.slice(matchedPrefix.key.length + 1);
-    const filtered = facetEntries.value
-      .filter(
-        (e) =>
-          e.token.startsWith(`${matchedPrefix.key}:`) &&
-          e.label.toLowerCase().includes(val),
-      )
-      .slice(0, MAX);
-    return filtered.length
-      ? filtered
-      : [
-          {
-            kind: "facet",
-            token: `${matchedPrefix.key}:`,
-            icon: matchedPrefix.icon,
-            label: t("library.search_no_matches"),
-            typeLabel: matchedPrefix.label,
-          },
-        ];
-  }
-
-  // Free typing: match prefix words, facet values, and titles
-  for (const p of PREFIXES.value) {
-    if (p.key.startsWith(frag) || p.label.toLowerCase().startsWith(frag)) {
-      results.push({
-        kind: "prefix",
-        token: `${p.key}:`,
-        icon: p.icon,
-        label: p.label,
-        typeLabel: p.label,
-      });
-    }
-  }
-  for (const e of facetEntries.value) {
-    if (e.label.toLowerCase().includes(frag)) {
-      results.push(e);
-      if (results.length >= MAX) break;
-    }
-  }
-  if (results.length < MAX) {
-    for (const b of baseFiltered.value) {
-      if (b.title?.toLowerCase().includes(frag)) {
-        results.push({
-          kind: "book",
-          book: b,
-          icon: "mdi-book-outline",
-          label: b.title!,
-          typeLabel: titleLabel,
-          token: "",
-        });
-        if (results.length >= MAX) break;
-      }
-    }
-  }
-  return results;
-});
-
-const dropdownHeading = computed(() => {
-  const frag = searchFragment.value.trim().toLowerCase();
-  if (!frag) return t("library.search_refine");
-  const pm = PREFIXES.value.find((p) => frag.startsWith(`${p.key}:`));
-  if (pm) return t("library.search_values", { facet: pm.label });
-  return t("library.search_matches");
-});
-
-function applySuggestion(s: Suggestion) {
-  if (s.kind === "book") {
-    openDetail(s.book);
-    searchFocused.value = false;
-    return;
-  }
-  if (s.kind === "expand") {
-    showAllPrefixes.value = true;
-    return;
-  }
-  const head = search.value.slice(
-    0,
-    search.value.length - searchFragment.value.length,
-  );
-  if (s.kind === "prefix") {
-    search.value = head + s.token;
-  } else {
-    search.value = head + s.token + " ";
-  }
-  activeIndex.value = -1;
-  searchRef.value?.focus();
-}
-
-function onSearchBarClick() {
-  searchRef.value?.focus();
-  searchFocused.value = true;
-}
-
-function onSearchBlur() {
-  searchFocused.value = false;
-}
-
-function onSearchKeydown(e: KeyboardEvent) {
-  if (!PRESERVES_SELECTION.has(e.key)) tokenSelecting.value = false;
-  if (e.key === "Backspace") {
-    const el = searchRef.value;
-    if (!el) return;
-    const { selectionStart, selectionEnd } = el;
-    // If there's already a selection, let the browser delete it
-    if (selectionStart !== selectionEnd) return;
-    const cursor = selectionStart ?? 0;
-    // Only intercept when cursor is at the very end
-    if (cursor !== search.value.length) return;
-    const s = search.value;
-    // Skip trailing spaces to figure out what to select
-    let contentEnd = cursor;
-    while (contentEnd > 0 && s[contentEnd - 1] === " ") contentEnd--;
-    if (contentEnd === 0) return;
-    const char = s[contentEnd - 1];
-    let selectStart: number;
-    if (char === '"') {
-      // Closing quote → select the quoted value ("…")
-      const openQuote = s.lastIndexOf('"', contentEnd - 2);
-      selectStart = openQuote !== -1 ? openQuote : contentEnd - 1;
-    } else if (char === ":") {
-      // Bare key: → select the entire key:
-      let i = contentEnd - 1;
-      while (i > 0 && s[i - 1] !== " ") i--;
-      selectStart = i;
-    } else {
-      // Plain text or unquoted value — find the chunk since the last space
-      const lastSpace = s.lastIndexOf(" ", contentEnd - 1);
-      const chunkStart = lastSpace === -1 ? 0 : lastSpace + 1;
-      const chunk = s.slice(chunkStart, contentEnd);
-      const colonIdx = chunk.indexOf(":");
-      if (
-        colonIdx > 0 &&
-        knownKeys.value.has(chunk.slice(0, colonIdx).toLowerCase())
-      ) {
-        // Known key:value → select only the value, leaving key: intact
-        selectStart = chunkStart + colonIdx + 1;
-      } else {
-        // Plain word or unknown token → select the whole chunk
-        selectStart = chunkStart;
-      }
-    }
-    e.preventDefault();
-    el.setSelectionRange(selectStart, cursor);
-    tokenSelecting.value = true;
-    return;
-  }
-  if (e.key === "Escape") {
-    if (searchFocused.value) {
-      searchFocused.value = false;
-      e.preventDefault();
-    } else {
-      search.value = "";
-    }
-    return;
-  }
-  if (e.key === "ArrowDown") {
-    e.preventDefault();
-    const len = suggestions.value.length;
-    activeIndex.value =
-      activeIndex.value >= len - 1 ? 0 : activeIndex.value + 1;
-    return;
-  }
-  if (e.key === "ArrowUp") {
-    e.preventDefault();
-    const len = suggestions.value.length;
-    activeIndex.value =
-      activeIndex.value <= 0 ? len - 1 : activeIndex.value - 1;
-    return;
-  }
-  if (e.key === "Enter") {
-    if (activeIndex.value >= 0 && suggestions.value[activeIndex.value]) {
-      e.preventDefault();
-      applySuggestion(suggestions.value[activeIndex.value]);
-    } else {
-      searchFocused.value = false;
-    }
-    return;
-  }
-  // Reset keyboard nav on any other key
-  activeIndex.value = -1;
-}
-
-// Reset activeIndex when suggestions change
-watch(suggestions, () => {
-  activeIndex.value = -1;
-});
-
-// Collapse the idle prefix chips back down once the user starts typing again
-watch(searchFragment, (frag) => {
-  if (frag) showAllPrefixes.value = false;
-});
 
 // ── Pagination ────────────────────────────────────────────────────────────────
 
@@ -1533,240 +958,110 @@ function changePage(p: number) {
 }
 
 // ── Shelf enrichment (counts, completeness, unowned reveal) ─────────────────────
-
-interface ShelfEntry {
-  key: string;
-  title: string | null;
-  cover_url: string | null;
-  ordinal: number | null;
-  owned: boolean;
-  status?: ReadStatus;
-  owningStatus?: OwningStatus;
-  author?: string | null;
-  book?: Book;
-  seriesId?: number | null;
-  editionCount?: number;
-}
-
-interface ShelfGroup {
-  key: string;
-  label: string;
-  seriesId?: number | null;
-  complete: boolean;
-  countLabel: string;
-  entries: ShelfEntry[];
-}
-
-// Keyed by work_id so a work with multiple owned scans resolves to one representative
-// (via useEditionGrouping's priority rule) — deliberately built from the unfiltered
-// allBooks, since series-shelf entries below aren't meant to react to the active search.
-const booksByWorkId = computed(() => {
-  const m = new Map<number, Book>();
-  for (const b of groupedAllBooks.value) if (b.work_id != null) m.set(b.work_id, b);
-  return m;
+const {
+  bookToEntry,
+  shelfGroups,
+  pagedGroups,
+  shelfVisible,
+  shelfTotal,
+  shelfHasMore,
+  packedShelfVisible,
+} = useShelfGroups({
+  allGroups,
+  groupedAllBooks,
+  seriesMemberships,
+  parsedSearch,
+  search,
+  mainOnly,
+  highlightComplete,
+  showUnowned,
+  onlyOwned,
+  shelfRowSize,
+  expanded,
+  currentPage,
+  pageSize,
 });
-
-const bookToEntry = (b: Book): ShelfEntry => ({
-  key: `b${b.id}`,
-  title: b.title || b.isbn,
-  cover_url: b.cover_url ?? null,
-  ordinal: b.series_ordinal ?? null,
-  owned: true,
-  status: b.status,
-  owningStatus: b.owning_status,
-  author: authorDisplayName(b),
-  book: b,
-  seriesId: b.series_id ?? null,
-  editionCount: b.editionCount,
-});
-
-const shelfGroups = computed<ShelfGroup[]>(() =>
-  allGroups.value.map((g): ShelfGroup => {
-    // Series group with full membership → counts + completeness + unowned reveal.
-    if (g.seriesId != null && seriesMemberships.value[g.seriesId]) {
-      const members = seriesMemberships.value[g.seriesId].entries;
-      const mainMembers = members.filter(
-        (e) => e.ordinal != null && Number.isInteger(e.ordinal),
-      );
-      // Completeness reflects actual possession (worker-computed `owned`, which now
-      // requires owning_status 'owned'/'lent_out') and is intentionally independent of the
-      // "Owned books only" / `owning:` display filters below — narrowing visible tiles
-      // shouldn't change the underlying completeness fact, any more than a text search does.
-      const ownedTotal = members.filter((e) => e.owned).length;
-      const ownedMain = mainMembers.filter((e) => e.owned).length;
-      const denom = mainOnly.value ? mainMembers.length : members.length;
-      const numer = mainOnly.value ? ownedMain : ownedTotal;
-      const complete = highlightComplete.value && denom > 0 && numer === denom;
-      const pool = mainOnly.value ? mainMembers : members;
-      const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
-      // "Owned books only" and the `owning:` search token both filter by owning_status —
-      // a display filter, distinct from the FRBR ownership (`e.owned`) that drives
-      // showUnowned/completeness above, so it's applied after entries are built.
-      const owningFilter = parsedSearch.value.owning;
-      const entries: ShelfEntry[] = visible
-        .map((e) => {
-          const book = booksByWorkId.value.get(e.work_id);
-          return {
-            key: `m${e.work_id}`,
-            title: e.title,
-            cover_url: book?.cover_url ?? e.cover_url ?? null,
-            ordinal: e.ordinal,
-            owned: !!e.owned,
-            status: book?.status,
-            owningStatus: book?.owning_status,
-            author: book ? authorDisplayName(book) : null,
-            book,
-            seriesId: g.seriesId,
-            editionCount: book?.editionCount,
-          };
-        })
-        .filter((entry) => {
-          if (onlyOwned.value && entry.book && entry.book.owning_status !== "owned")
-            return false;
-          if (owningFilter && entry.book?.owning_status !== owningFilter)
-            return false;
-          return true;
-        });
-      return {
-        key: g.key,
-        label: g.label,
-        seriesId: g.seriesId,
-        complete,
-        countLabel: `${numer} / ${denom}`,
-        entries,
-      };
-    }
-    // Series fallback (membership not loaded yet) — owned-only against series_total.
-    if (g.seriesId != null) {
-      const total = g.seriesTotal ?? g.books.length;
-      const complete =
-        highlightComplete.value && total > 0 && g.books.length === total;
-      return {
-        key: g.key,
-        label: g.label,
-        seriesId: g.seriesId,
-        complete,
-        countLabel: `${g.books.length} / ${total}`,
-        entries: g.books.map((b) => bookToEntry(b)),
-      };
-    }
-    // Non-series groups (author/genre/standalone/…): plain count.
-    return {
-      key: g.key,
-      label: g.label,
-      seriesId: g.seriesId ?? null,
-      complete: false,
-      countLabel: String(g.books.length),
-      entries: g.books.map((b) => bookToEntry(b)),
-    };
-  }),
-);
-
-const pagedGroups = computed<ShelfGroup[]>(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return shelfGroups.value.slice(start, start + pageSize.value);
-});
-
-// Collapsed shelves show one row; expanded show everything.
-// While a search is active, always show all matches — no collapsing.
-const hasActiveSearch = computed(() => search.value.trim().length > 0);
-const shelfVisible = (g: ShelfGroup): ShelfEntry[] =>
-  hasActiveSearch.value || expanded.value[g.key]
-    ? g.entries
-    : g.entries.slice(0, shelfRowSize.value);
-const shelfTotal = (g: ShelfGroup): number => g.entries.length;
-const shelfHasMore = (g: ShelfGroup): boolean =>
-  !hasActiveSearch.value && shelfTotal(g) > shelfRowSize.value;
 
 function onEntrySelect(entry: ShelfEntry) {
   if (entry.book) openDetail(entry.book);
   else if (entry.seriesId != null) router.push(`/series/${entry.seriesId}`);
 }
 
-// ── ⌘K keyboard shortcut ─────────────────────────────────────────────────────
+// ── Packed grouped-shelf rendering (bin-packer: see packRows in utils/shelf-packing) ─
+// Recomputes every group's row placement whenever any single group's collapse state
+// (`expanded`) or any single card's edition state (`expandedCards`) changes, not just
+// the touched group's — because packing is cross-group (a group's row-count change
+// shifts where every later group starts), that recompute is inherent to sharing rows
+// across groups at all, not something a finer-grained cache could avoid without
+// abandoning the packing itself.
+const packedTileRows = computed<PackedRow[]>(() =>
+  packRows(
+    coverPerRow.value,
+    pagedGroups.value,
+    (g, hasMore) =>
+      packedShelfVisible(g, hasMore).flatMap((entry) => expandEntry(entry)),
+    shelfHasMore,
+    (g) => !!expanded.value[g.key],
+  ),
+);
+const packedListRows = computed<PackedRow[]>(() =>
+  packRows(
+    listPerRow.value,
+    pagedGroups.value,
+    packedShelfVisible,
+    shelfHasMore,
+    (g) => !!expanded.value[g.key],
+  ),
+);
 
-function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key === "k") {
-    e.preventDefault();
-    searchRef.value?.focus();
-    searchRef.value?.select();
-  }
+function onGroupLabelSelect(seriesId: number | null) {
+  if (seriesId != null) router.push(`/series/${seriesId}`);
 }
-onMounted(() => document.addEventListener("keydown", onKeydown));
-onUnmounted(() => document.removeEventListener("keydown", onKeydown));
-
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-const PAGE_SIZE = 500;
-// Hard ceiling so a pagination/sort-stability bug (pages that never shrink below PAGE_SIZE)
-// can't spin the loop forever — 40 pages is 20,000 books, far beyond any real library.
-const MAX_PAGES = 40;
-
-const fetchBooks = async () => {
-  const seq = ++fetchSeq;
-  try {
-    const allBooks: Book[] = [];
-    let offset = 0;
-    for (let page = 0; page < MAX_PAGES; page++) {
-      const res = await apiFetch(
-        `/api/scans?limit=${PAGE_SIZE}&offset=${offset}&locale=${localeStore.locale}`,
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to fetch books");
-      if (seq !== fetchSeq) return;
-      allBooks.push(...data);
-      if (data.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
-    }
-    serverBooks.value = allBooks;
-    statusOverrides.value.clear();
-  } catch (err: any) {
-    if (seq !== fetchSeq) return;
-    error.value = err.message;
-  }
-};
-
-// Full series membership (incl. unowned entries) for the grouped-by-series shelves.
-// Failure here is non-fatal: shelves fall back to owned-only counts.
-const fetchMemberships = async () => {
-  try {
-    const res = await apiFetch(`/api/series?locale=${localeStore.locale}`);
-    if (!res.ok) return;
-    seriesMemberships.value = await res.json();
-  } catch {
-    /* non-fatal */
-  }
-};
 
 // ── Status cycling ────────────────────────────────────────────────────────────
 
 const notifyStatusError = () => {
-  errorMessage.value = t("library.error_update_status");
-  errorToast.value = true;
+  showToast(t("library.error_update_status"), "error");
 };
 
+// The book objects flowing through shelf/list rendering (bookToEntry, useEditionGrouping)
+// are freshly spread copies rebuilt on every recompute, not the canonical reactive item in
+// serverBooks/guestStore. Mutating a copy in place either doesn't trigger a re-render (plain
+// object) or never makes it back to the source of truth (so it's lost on the next recompute,
+// e.g. returning from the detail view). Resolve to the canonical instance before mutating.
+const booksById = computed(() => {
+  const m = new Map<number, Book>();
+  for (const b of allBooks.value) m.set(b.id, b);
+  return m;
+});
+function resolveBook(book: Book): Book {
+  return booksById.value.get(book.id) ?? book;
+}
+
 const cycleStatus = (book: Book) => {
-  pinStatus(book);
-  return applyCycle(book).catch(notifyStatusError);
+  const target = resolveBook(book);
+  pinStatus(target);
+  return applyCycle(target).catch(notifyStatusError);
 };
 
 const setStatus = (book: Book, newStatus: ReadStatus) => {
-  pinStatus(book);
-  return applyStatus(book, newStatus).catch(notifyStatusError);
+  const target = resolveBook(book);
+  pinStatus(target);
+  return applyStatus(target, newStatus).catch(notifyStatusError);
 };
 
 const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
-  return applyOwningStatus(book, newStatus).catch(notifyStatusError);
+  return applyOwningStatus(resolveBook(book), newStatus).catch(notifyStatusError);
 };
 
 const setRating = (book: Book, rating: number | null) => {
-  return applyRating(book, rating).catch(notifyStatusError);
+  return applyRating(resolveBook(book), rating).catch(notifyStatusError);
 };
 
 // ── Detail & delete ───────────────────────────────────────────────────────────
 
 const openDetail = (book: Book) => {
-  selectedBook.value = book;
+  selectedBook.value = resolveBook(book);
   openDetailRoute(book.work_id, book.isbn);
 };
 
@@ -1843,11 +1138,14 @@ watch(search, (val) => {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
+// Freshly fetched rows supersede any pinned status buckets from in-place edits.
+const clearStatusPins = () => statusOverrides.value.clear();
+
 onMounted(async () => {
   if (authStore.isAuthenticated) {
     loading.value = true;
     await Promise.all([
-      fetchBooks(),
+      fetchBooks(clearStatusPins),
       fetchMemberships(),
       fieldDefsStore.load(),
     ]);
@@ -1860,15 +1158,8 @@ watch(
   async () => {
     if (!authStore.isAuthenticated) return;
     loading.value = true;
-    await Promise.all([fetchBooks(), fetchMemberships()]);
+    await Promise.all([fetchBooks(clearStatusPins), fetchMemberships()]);
     loading.value = false;
   },
 );
 </script>
-
-<style scoped>
-/* Orange selection highlight when a whole token was selected via backspace */
-input.token-selecting::selection {
-  background-color: rgba(255, 102, 0, 0.35);
-}
-</style>

@@ -15,12 +15,12 @@
       />
 
       <!-- Manual mode: charcoal backdrop so nothing shows through -->
-      <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
+      <div v-if="manualMode" class="absolute inset-0 z-0 bg-[#111110]" />
 
       <!-- ── Top nav bar ──────────────────────────────────────────────────────── -->
       <div
         class="absolute top-0 inset-x-0 z-30 flex justify-between items-center px-4 md:px-6 py-3.5"
-        :class="manualMode ? 'bg-charcoal border-b border-charcoal-border' : ''"
+        :class="manualMode ? 'bg-[#111110] border-b border-[#2e2b28]' : ''"
         :style="
           manualMode
             ? ''
@@ -36,7 +36,7 @@
             class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
             :class="
               manualMode
-                ? 'bg-charcoal-light border border-charcoal-border text-text-primary'
+                ? 'bg-[#1c1b19] border border-[#2e2b28] text-[#f0ede8]'
                 : 'border border-white/15 text-white'
             "
             :style="manualMode ? '' : 'background: rgba(20,19,16,.7)'"
@@ -45,7 +45,7 @@
           </span>
           <span
             class="text-[10px] tracking-[0.22em] uppercase"
-            :class="manualMode ? 'text-text-secondary' : 'text-white/55'"
+            :class="manualMode ? 'text-[#8a8078]' : 'text-white/55'"
           >
             {{ $t("scanner.back_library") }}
           </span>
@@ -54,11 +54,8 @@
         <!-- Session counter pill -->
         <button
           v-if="sessionBooks.length"
-          class="flex items-center gap-2.5 px-3.5 py-2 hover:opacity-90 transition-opacity"
-          style="
-            background: rgba(20, 19, 16, 0.7);
-            border: 1px solid rgba(255, 102, 0, 0.45);
-          "
+          class="flex items-center gap-2.5 px-3.5 py-2 hover:opacity-90 transition-opacity border border-orange-neon/45"
+          style="background: rgba(20, 19, 16, 0.7)"
           @click="showReview = true"
         >
           <span
@@ -79,11 +76,11 @@
             manualMode &&
             (scanState === 'scanning' || scanState === 'detecting')
           "
-          class="absolute inset-0 z-25 bg-charcoal flex flex-col md:flex-row"
+          class="absolute inset-0 z-25 bg-[#111110] flex flex-col md:flex-row"
         >
           <!-- Entry form -->
           <div
-            class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-charcoal-border"
+            class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-[#2e2b28]"
           >
             <!-- Unified entry form -->
             <form
@@ -91,7 +88,7 @@
               @submit.prevent="submitManual"
             >
               <p
-                class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
+                class="text-[10px] text-[#8a8078] tracking-[0.3em] uppercase mb-3"
               >
                 {{
                   cameraFailed
@@ -100,7 +97,7 @@
                 }}
               </p>
               <h1
-                class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
+                class="font-heading text-5xl font-bold text-[#f0ede8] leading-[1.05] mb-5"
               >
                 {{ $t("scanner.manual_heading") }}
               </h1>
@@ -108,9 +105,9 @@
                 <v-icon
                   icon="mdi-book-search-outline"
                   size="15"
-                  class="text-text-secondary/70 mt-0.5 shrink-0"
+                  class="text-[#8a8078]/70 mt-0.5 shrink-0"
                 />
-                <p class="text-sm text-text-secondary leading-relaxed">
+                <p class="text-sm text-[#8a8078] leading-relaxed">
                   {{ $t("scanner.manual_hint") }}
                 </p>
               </div>
@@ -119,7 +116,7 @@
               <div
                 class="border-b mb-8 pb-2 transition-colors"
                 :class="{
-                  'border-charcoal-border': isbnState === 'hidden',
+                  'border-[#2e2b28]': isbnState === 'hidden',
                   'border-success': isbnState === 'valid',
                   'border-error': isbnState === 'invalid',
                 }"
@@ -128,7 +125,7 @@
                   for="scanner-isbn"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 transition-colors"
                   :class="{
-                    'text-text-secondary': isbnState === 'hidden',
+                    'text-[#8a8078]': isbnState === 'hidden',
                     'text-success': isbnState === 'valid',
                     'text-error': isbnState === 'invalid',
                   }"
@@ -143,26 +140,26 @@
                   inputmode="numeric"
                   :disabled="scanState === 'detecting'"
                   placeholder="978…"
-                  class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-[#f0ede8] text-lg font-mono tracking-wider placeholder:text-[#2e2b28] disabled:opacity-50"
                   @input="onIsbnInput"
                 />
               </div>
 
               <!-- OR divider -->
               <div class="flex items-center gap-3 mb-8">
-                <div class="flex-1 border-t border-charcoal-border" />
+                <div class="flex-1 border-t border-[#2e2b28]" />
                 <span
-                  class="text-[10px] text-text-secondary tracking-[0.2em] uppercase"
+                  class="text-[10px] text-[#8a8078] tracking-[0.2em] uppercase"
                   >{{ $t("scanner.or") }}</span
                 >
-                <div class="flex-1 border-t border-charcoal-border" />
+                <div class="flex-1 border-t border-[#2e2b28]" />
               </div>
 
               <!-- Title -->
-              <div class="border-b mb-6 pb-2 border-charcoal-border">
+              <div class="border-b mb-6 pb-2 border-[#2e2b28]">
                 <label
                   for="scanner-title"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
                 >
                   {{ $t("scanner.title_label") }}
                 </label>
@@ -172,15 +169,15 @@
                   type="text"
                   :placeholder="$t('scanner.title_label')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
                 />
               </div>
 
               <!-- Author (optional) -->
-              <div class="border-b mb-6 pb-2 border-charcoal-border">
+              <div class="border-b mb-6 pb-2 border-[#2e2b28]">
                 <label
                   for="scanner-author"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
                 >
                   {{ $t("scanner.author_label") }}
                 </label>
@@ -190,15 +187,15 @@
                   type="text"
                   :placeholder="$t('scanner.author_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
                 />
               </div>
 
               <!-- Publisher (optional) -->
-              <div class="border-b mb-10 pb-2 border-charcoal-border">
+              <div class="border-b mb-10 pb-2 border-[#2e2b28]">
                 <label
                   for="scanner-publisher"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
                 >
                   {{ $t("detail.publisher") }}
                 </label>
@@ -208,17 +205,19 @@
                   type="text"
                   :placeholder="$t('scanner.publisher_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
+                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
                 />
               </div>
 
-              <button
+              <AppButton
                 type="submit"
+                variant="primary"
+                size="lg"
+                block
                 :disabled="!canSubmit"
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
               >
                 {{ submitLabel }}
-              </button>
+              </AppButton>
 
               <!-- Status feedback -->
               <Transition name="fade">
@@ -226,11 +225,8 @@
                   v-if="
                     scanState === 'detecting' || searchState === 'searching'
                   "
-                  class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max"
-                  style="
-                    background: rgba(17, 17, 16, 0.88);
-                    border: 1px solid rgba(255, 102, 0, 0.55);
-                  "
+                  class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max border border-orange-neon/55"
+                  style="background: rgba(17, 17, 16, 0.88)"
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
@@ -248,7 +244,7 @@
               </Transition>
               <p
                 v-if="searchState === 'empty'"
-                class="mt-4 text-sm text-text-secondary/60"
+                class="mt-4 text-sm text-[#8a8078]/60"
               >
                 {{ $t("scanner.no_results") }}
               </p>
@@ -263,7 +259,7 @@
               <button
                 v-if="mdAndUp && !cameraFailed"
                 type="button"
-                class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+                class="mt-6 flex items-center gap-2 text-[10px] text-[#8a8078] tracking-[0.2em] uppercase hover:text-[#f0ede8] transition-colors"
                 @click="useCamera"
               >
                 <v-icon icon="mdi-camera-outline" size="14" />
@@ -274,7 +270,7 @@
               <button
                 v-if="!mdAndUp && manualOverride"
                 type="button"
-                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
+                class="mt-4 flex items-center gap-2 text-[10px] text-[#8a8078] tracking-[0.2em] uppercase hover:text-[#f0ede8] transition-colors"
                 @click="backToCamera"
               >
                 <v-icon icon="mdi-camera-outline" size="14" />
@@ -292,12 +288,12 @@
             <template v-if="showSearchResults">
               <div class="flex justify-between items-baseline mb-1">
                 <span
-                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
+                  class="text-[10px] text-[#8a8078] tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.add_label") }}
                 </span>
                 <button
-                  class="text-text-secondary/55 hover:text-text-primary transition-colors"
+                  class="text-[#8a8078]/55 hover:text-[#f0ede8] transition-colors"
                   :aria-label="$t('detail.close')"
                   @click="closeSearchResults"
                 >
@@ -305,7 +301,7 @@
                 </button>
               </div>
               <p
-                class="font-heading font-black text-lg text-text-primary leading-tight mb-4"
+                class="font-heading font-black text-lg text-[#f0ede8] leading-tight mb-4"
               >
                 {{ $t("scanner.search_results") }}
               </p>
@@ -314,7 +310,7 @@
                   v-for="candidate in searchResults"
                   :key="candidate.isbn"
                   type="button"
-                  class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
+                  class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-[#2e2b28] hover:bg-[#1c1b19] transition-colors"
                   @click="selectCandidate(candidate)"
                 >
                   <div
@@ -334,14 +330,14 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <p
-                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                      class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
                     >
                       {{ candidate.title || candidate.isbn }}
                     </p>
-                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                    <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
                       {{ candidate.author }}
                     </p>
-                    <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
+                    <p class="text-[10px] text-[#8a8078]/55 mt-1 truncate">
                       {{
                         [
                           candidate.publish_date?.slice(0, 4),
@@ -366,7 +362,7 @@
             <template v-else>
               <div class="flex justify-between items-baseline mb-1">
                 <span
-                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
+                  class="text-[10px] text-[#8a8078] tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.added_session") }}
                 </span>
@@ -378,14 +374,14 @@
               <div class="flex-1 min-h-0 overflow-y-auto">
                 <p
                   v-if="!sessionBooks.length"
-                  class="text-xs text-text-secondary/60 mt-6"
+                  class="text-xs text-[#8a8078]/60 mt-6"
                 >
                   {{ $t("scanner.point_at_barcode") }}
                 </p>
                 <div
                   v-for="b in sessionBooks"
                   :key="b.isbn"
-                  class="flex gap-3.5 items-start py-4 border-b border-charcoal-border"
+                  class="flex gap-3.5 items-start py-4 border-b border-[#2e2b28]"
                 >
                   <div
                     class="w-9 h-14 shrink-0 relative overflow-hidden"
@@ -404,11 +400,11 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <p
-                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                      class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
                     >
                       {{ b.title }}
                     </p>
-                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                    <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
                       {{ b.author }}
                     </p>
                     <span
@@ -424,12 +420,12 @@
                   </div>
                   <div class="flex flex-col items-end gap-1.5 shrink-0">
                     <span
-                      class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
+                      class="font-mono text-[9px] text-[#8a8078]/55 whitespace-nowrap pt-0.5"
                     >
                       {{ sessionTime(b.addedAt) }}
                     </span>
                     <button
-                      class="text-text-secondary/45 hover:text-error transition-colors"
+                      class="text-[#8a8078]/45 hover:text-error transition-colors"
                       :title="$t('scanner.remove')"
                       @click="removeSessionBook(b)"
                     >
@@ -441,7 +437,7 @@
 
               <button
                 v-if="sessionBooks.length"
-                class="shrink-0 mt-4 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                class="shrink-0 mt-4 border border-[#2e2b28] text-[#f0ede8] text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
                 @click="router.push('/library')"
               >
                 {{ $t("scanner.done_library") }}
@@ -495,7 +491,7 @@
           <!-- Horizontal scan line (visible while idle) -->
           <div
             v-if="scanState === 'scanning'"
-            class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-2px bg-orange-neon/50 scan-line"
+            class="absolute inset-x-4 top-1/2 -translate-y-1/2 h-[2px] bg-orange-neon/50 scan-line"
           />
 
           <!-- Manual entry button — anchored below the frame -->
@@ -518,11 +514,8 @@
           <Transition name="fade">
             <div
               v-if="scanState === 'detecting'"
-              class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none"
-              style="
-                background: rgba(17, 17, 16, 0.88);
-                border: 1px solid rgba(255, 102, 0, 0.55);
-              "
+              class="absolute top-full left-1/2 -translate-x-1/2 mt-6 flex items-center gap-2.5 px-5 py-2.5 whitespace-nowrap pointer-events-none border border-orange-neon/55"
+              style="background: rgba(17, 17, 16, 0.88)"
             >
               <span
                 class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
@@ -618,7 +611,7 @@
           <div
             ref="detectedSheetEl"
             tabindex="-1"
-            class="px-6 pt-6 pb-8 md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+            class="px-6 pt-6 pb-8 md:max-w-md md:w-full md:mb-12 md:border md:border-[#2e2b28] md:pointer-events-auto"
             style="background: #111110"
           >
             <!-- Drag handle (mobile) -->
@@ -723,12 +716,14 @@
                   {{ statusLabels[detectedBook.currentStatus] }}
                 </span>
               </div>
-              <button
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity hover:opacity-90"
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
                 @click="scanAgain"
               >
                 {{ $t("scanner.continue_scanning") }}
-              </button>
+              </AppButton>
             </template>
 
             <!-- Guest limit reached: prompt to create account -->
@@ -739,12 +734,15 @@
               <p class="text-xs text-white/50 mb-6">
                 {{ $t("guest.limit_body") }}
               </p>
-              <button
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3"
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
+                class="mb-3"
                 @click="router.push('/login?mode=register')"
               >
                 {{ $t("guest.register") }}
-              </button>
+              </AppButton>
               <button
                 class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
                 @click="scanAgain"
@@ -822,9 +820,12 @@
                 </div>
               </template>
 
-              <LoadingButton
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
                 :loading="scanState === 'saving'"
-                class="bg-orange-neon text-black mb-3"
+                class="mb-3"
                 @click="saveBook"
               >
                 {{
@@ -834,7 +835,7 @@
                       ? $t("scanner.save_isbn")
                       : $t("scanner.save_book")
                 }}
-              </LoadingButton>
+              </AppButton>
               <button
                 class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
                 :disabled="scanState === 'saving'"
@@ -856,14 +857,14 @@
           <div
             ref="reviewSheetEl"
             tabindex="-1"
-            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[85dvh] md:max-h-[80dvh] md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
+            class="bg-[#111110] border-t border-[#2e2b28] flex flex-col max-h-[85dvh] md:max-h-[80dvh] md:max-w-md md:w-full md:mb-12 md:border md:border-[#2e2b28] md:pointer-events-auto"
           >
             <!-- Header -->
             <div
-              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-[#2e2b28]"
             >
               <button
-                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                class="w-9 h-9 rounded-full bg-[#1c1b19] border border-[#2e2b28] flex items-center justify-center text-[#f0ede8] shrink-0 hover:opacity-80 transition-opacity"
                 :aria-label="$t('detail.close')"
                 @click="showReview = false"
               >
@@ -871,12 +872,12 @@
               </button>
               <div class="min-w-0">
                 <p
-                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
+                  class="text-[9px] text-[#8a8078] tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.this_session") }}
                 </p>
                 <p
-                  class="font-heading font-black text-lg text-text-primary leading-tight"
+                  class="font-heading font-black text-lg text-[#f0ede8] leading-tight"
                 >
                   {{
                     $t(
@@ -895,7 +896,7 @@
                 <div
                   v-for="b in sessionBooks"
                   :key="b.isbn"
-                  class="relative overflow-hidden border-b border-charcoal-border"
+                  class="relative overflow-hidden border-b border-[#2e2b28]"
                 >
                   <!-- Delete affordance, revealed while swiping left -->
                   <div
@@ -910,7 +911,7 @@
                   </div>
                   <!-- Row content (swipes on touch; delete button on desktop) -->
                   <div
-                    class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-charcoal"
+                    class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-[#111110]"
                     :class="swipeIsbn === b.isbn ? '' : 'swipe-snap'"
                     :style="{
                       transform: `translateX(${swipeIsbn === b.isbn ? swipeX : 0}px)`,
@@ -937,11 +938,11 @@
                     </div>
                     <div class="flex-1 min-w-0">
                       <p
-                        class="font-heading font-bold text-base text-text-primary leading-snug"
+                        class="font-heading font-bold text-base text-[#f0ede8] leading-snug"
                       >
                         {{ b.title }}
                       </p>
-                      <p class="text-xs text-text-secondary mt-1">
+                      <p class="text-xs text-[#8a8078] mt-1">
                         {{ b.author }}
                       </p>
                       <div class="flex items-center gap-3 mt-2.5">
@@ -956,7 +957,7 @@
                           {{ statusLabels[b.status] }}
                         </span>
                         <span
-                          class="font-mono text-[9px] text-text-secondary/55 tracking-wide"
+                          class="font-mono text-[9px] text-[#8a8078]/55 tracking-wide"
                         >
                           {{ b.isbn }}
                         </span>
@@ -964,12 +965,12 @@
                     </div>
                     <div class="flex flex-col items-end gap-2 shrink-0 pt-1">
                       <span
-                        class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap"
+                        class="font-mono text-[9px] text-[#8a8078]/55 whitespace-nowrap"
                       >
                         {{ sessionTime(b.addedAt) }}
                       </span>
                       <button
-                        class="hidden md:flex text-text-secondary/45 hover:text-error transition-colors"
+                        class="hidden md:flex text-[#8a8078]/45 hover:text-error transition-colors"
                         :title="$t('scanner.remove')"
                         @click="removeSessionBook(b)"
                       >
@@ -983,20 +984,22 @@
 
             <!-- Footer actions -->
             <div
-              class="shrink-0 px-4 md:px-6 py-4 border-t border-charcoal-border flex gap-3"
+              class="shrink-0 px-4 md:px-6 py-4 border-t border-[#2e2b28] flex gap-3"
             >
               <button
-                class="w-36 shrink-0 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                class="w-36 shrink-0 border border-[#2e2b28] text-[#f0ede8] text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
                 @click="showReview = false"
               >
                 {{ $t("scanner.scan_more") }}
               </button>
-              <button
-                class="flex-1 bg-orange-neon text-black text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-90 transition-opacity"
+              <AppButton
+                variant="primary"
+                size="lg"
+                class="flex-1"
                 @click="router.push('/library')"
               >
                 {{ $t("scanner.done_library") }}
-              </button>
+              </AppButton>
             </div>
           </div>
         </div>
@@ -1011,14 +1014,14 @@
           <div
             ref="mobileSearchSheetEl"
             tabindex="-1"
-            class="bg-charcoal border-t border-charcoal-border flex flex-col max-h-[80dvh]"
+            class="bg-[#111110] border-t border-[#2e2b28] flex flex-col max-h-[80dvh]"
           >
             <!-- Header -->
             <div
-              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-[#2e2b28]"
             >
               <button
-                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
+                class="w-9 h-9 rounded-full bg-[#1c1b19] border border-[#2e2b28] flex items-center justify-center text-[#f0ede8] shrink-0 hover:opacity-80 transition-opacity"
                 :aria-label="$t('detail.close')"
                 @click="closeSearchResults"
               >
@@ -1026,12 +1029,12 @@
               </button>
               <div class="min-w-0">
                 <p
-                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
+                  class="text-[9px] text-[#8a8078] tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.add_label") }}
                 </p>
                 <p
-                  class="font-heading font-black text-lg text-text-primary leading-tight"
+                  class="font-heading font-black text-lg text-[#f0ede8] leading-tight"
                 >
                   {{ $t("scanner.search_results") }}
                 </p>
@@ -1044,7 +1047,7 @@
                 v-for="candidate in searchResults"
                 :key="candidate.isbn"
                 type="button"
-                class="flex gap-3.5 items-start w-full text-left px-4 md:px-6 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
+                class="flex gap-3.5 items-start w-full text-left px-4 md:px-6 py-4 border-b border-[#2e2b28] hover:bg-[#1c1b19] transition-colors"
                 @click="selectCandidate(candidate)"
               >
                 <div
@@ -1064,14 +1067,14 @@
                 </div>
                 <div class="flex-1 min-w-0">
                   <p
-                    class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
+                    class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
                   >
                     {{ candidate.title || candidate.isbn }}
                   </p>
-                  <p class="text-[11px] text-text-secondary mt-0.5 truncate">
+                  <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
                     {{ candidate.author }}
                   </p>
-                  <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
+                  <p class="text-[10px] text-[#8a8078]/55 mt-1 truncate">
                     {{
                       [candidate.publish_date?.slice(0, 4), candidate.publisher]
                         .filter(Boolean)
@@ -1118,6 +1121,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import {
   useBookStatus,
   STATUS_META,
@@ -1130,10 +1134,17 @@ import {
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
 import RatingDots from "@/components/RatingDots.vue";
+import { useBarcodeScanner } from "@/composables/useBarcodeScanner";
+import {
+  readQueue,
+  writeQueue,
+  enqueueBook,
+  removeFromQueue,
+  type QueuedBook,
+} from "@/utils/offline-queue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
-import Quagga from "@ericblade/quagga2";
-import AppToast, { type ToastType } from "@/components/AppToast.vue";
-import LoadingButton from "@/components/LoadingButton.vue";
+import AppToast from "@/components/AppToast.vue";
+import AppButton from "@/components/AppButton.vue";
 
 const { t } = useI18n();
 const router = useRouter();
@@ -1383,10 +1394,7 @@ const useCamera = () => {
 // Mobile: open the manual-entry screen from the camera view.
 const enterManualEntry = () => {
   manualOverride.value = true;
-  if (scannerStarted) {
-    Quagga.stop();
-    scannerStarted = false;
-  }
+  if (scannerRunning()) stopScanner();
   focusManualEntry();
 };
 
@@ -1472,15 +1480,12 @@ const selectCandidate = async (candidate: EditionCandidate) => {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-const toast = ref(false);
-const toastMessage = ref("");
-const toastType = ref<ToastType>("success");
-
-const showToast = (message: string, type: ToastType = "success") => {
-  toastMessage.value = message;
-  toastType.value = type;
-  toast.value = true;
-};
+const {
+  visible: toast,
+  message: toastMessage,
+  type: toastType,
+  showToast,
+} = useToast();
 
 // ── Book lookup ───────────────────────────────────────────────────────────────
 
@@ -1543,22 +1548,8 @@ const onBarcodeDetected = async (isbn: string) => {
 };
 
 // ── Offline queue ─────────────────────────────────────────────────────────────
-
-interface QueuedBook {
-  isbn: string;
-  status?: ReadStatus;
-  owning_status?: OwningStatus;
-  rating?: number | null;
-}
-
-const QUEUE_KEY = "bookscan_queue_v3";
-
-function enqueue(book: QueuedBook) {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
-  if (!q.some((b) => b.isbn === book.isbn)) {
-    localStorage.setItem(QUEUE_KEY, JSON.stringify([...q, book]));
-  }
-}
+// Queue persistence + dedupe primitives live in utils/offline-queue; the request
+// building and drain orchestration stay here (they need apiFetch + session state).
 
 function postScanRequest(
   book: QueuedBook,
@@ -1590,7 +1581,7 @@ async function postScan(
 }
 
 async function drainQueue() {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  const q = readQueue();
   if (!q.length) return;
   const remaining: QueuedBook[] = [];
   let authExpired = false;
@@ -1624,9 +1615,7 @@ async function drainQueue() {
   if (authExpired) {
     showToast(t("scanner.toast_session_expired"), "warning");
   }
-  remaining.length
-    ? localStorage.setItem(QUEUE_KEY, JSON.stringify(remaining))
-    : localStorage.removeItem(QUEUE_KEY);
+  writeQueue(remaining);
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
@@ -1682,7 +1671,7 @@ const saveBook = async () => {
     }
   } catch {
     if (!navigator.onLine) {
-      enqueue(queued);
+      enqueueBook(queued);
       sessionScanned.add(book.isbn);
       libraryBooks.set(book.isbn, status);
       recordSession(book, status);
@@ -1710,14 +1699,6 @@ const scanAgain = () => {
 
 // ── Removing session books ──────────────────────────────────────────────────────
 
-function dequeue(isbn: string) {
-  const q: QueuedBook[] = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
-  const filtered = q.filter((b) => b.isbn !== isbn);
-  filtered.length
-    ? localStorage.setItem(QUEUE_KEY, JSON.stringify(filtered))
-    : localStorage.removeItem(QUEUE_KEY);
-}
-
 async function removeSessionBook(book: SessionBook) {
   // Optimistically drop it from the session UI and the local indices.
   sessionBooks.value = sessionBooks.value.filter((b) => b.isbn !== book.isbn);
@@ -1736,7 +1717,7 @@ async function removeSessionBook(book: SessionBook) {
     } catch {}
   } else {
     // Saved offline and still pending — drop it from the sync queue.
-    dequeue(book.isbn);
+    removeFromQueue(book.isbn);
   }
 }
 
@@ -1779,66 +1760,22 @@ function onSwipeCancel() {
 // ── Camera lifecycle ──────────────────────────────────────────────────────────
 
 const scannerContainer = ref<HTMLDivElement | null>(null);
-let scannerStarted = false;
 
-// Require 2 consecutive reads of the same code before firing — filters noise
-// without adding perceptible delay at typical camera frame rates.
-const detectionBuffer: string[] = [];
-const REQUIRED_HITS = 2;
-
-const onQuaggaDetected = (result: { codeResult: { code: string | null } }) => {
-  const code = result.codeResult.code;
-  if (!code) return;
-
-  detectionBuffer.push(code);
-  if (detectionBuffer.length > REQUIRED_HITS) detectionBuffer.shift();
-
-  if (
-    detectionBuffer.length === REQUIRED_HITS &&
-    detectionBuffer.every((c) => c === code)
-  ) {
-    detectionBuffer.length = 0;
-    onBarcodeDetected(code);
-  }
-};
-
-const startScanner = () => {
-  if (!scannerContainer.value || scannerStarted) return;
-
-  Quagga.init(
-    {
-      inputStream: {
-        type: "LiveStream",
-        target: scannerContainer.value,
-        constraints: {
-          facingMode: "environment",
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      },
-      locator: { patchSize: "medium", halfSample: true },
-      // numOfWorkers: 0 avoids Vite/worker-blob compatibility issues
-      numOfWorkers: 0,
-      decoder: { readers: ["ean_reader", "ean_8_reader"] },
-      locate: true,
-    },
-    (err: unknown) => {
-      if (err) {
-        console.error(err);
-        showToast(t("scanner.camera_error"), "error");
-        if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
-          cameraFailed.value = true;
-          focusManualEntry();
-        }
-        return;
-      }
-      Quagga.start();
-      scannerStarted = true;
-    },
-  );
-
-  Quagga.onDetected(onQuaggaDetected);
-};
+const {
+  start: startScanner,
+  stop: stopScanner,
+  isRunning: scannerRunning,
+} = useBarcodeScanner({
+  container: scannerContainer,
+  onDetect: onBarcodeDetected,
+  onError: () => {
+    showToast(t("scanner.camera_error"), "error");
+    if (FALLBACK_TO_MANUAL_ON_CAMERA_FAIL) {
+      cameraFailed.value = true;
+      focusManualEntry();
+    }
+  },
+});
 
 onMounted(() => {
   document.documentElement.style.overflow = "hidden";
@@ -1858,8 +1795,7 @@ onBeforeUnmount(() => {
   document.documentElement.style.overflow = "";
   document.body.style.overflow = "";
   window.removeEventListener("online", drainQueue);
-  Quagga.offDetected(onQuaggaDetected);
-  if (scannerStarted) Quagga.stop();
+  stopScanner();
 });
 
 // ── Focus management for the custom bottom-sheet overlays ────────────────────

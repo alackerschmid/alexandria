@@ -140,18 +140,14 @@
             </div>
 
             <div class="mt-6 flex items-center gap-4">
-              <v-btn
-                variant="flat"
-                color="primary"
-                rounded="0"
-                elevation="0"
-                size="small"
-                class="text-[10px] tracking-[0.16em] uppercase font-bold px-2"
+              <AppButton
+                variant="primary"
+                size="sm"
                 :loading="savingAccount"
                 @click="saveAccount"
               >
                 {{ $t("settings.account.save") }}
-              </v-btn>
+              </AppButton>
               <transition name="fade">
                 <span
                   v-if="accountSaved"
@@ -281,21 +277,14 @@
                     role="switch"
                     :aria-checked="def.required"
                     :aria-label="$t('settings.fields.col_required')"
-                    class="w-9 h-5 rounded-full relative transition-colors flex-none"
-                    :style="{
-                      background: def.required
-                        ? accentStore.color
-                        : 'rgba(138,128,120,0.3)',
-                    }"
+                    class="flex-none"
                     @click="
                       fieldDefsStore.update(def.id, { required: !def.required })
                     "
                   >
-                    <span
-                      class="absolute top-0.5 w-4 h-4 rounded-full bg-charcoal transition-all duration-150"
-                      :style="{
-                        left: def.required ? 'calc(100% - 18px)' : '2px',
-                      }"
+                    <AppToggle
+                      :model-value="!!def.required"
+                      :on-color="accentStore.color"
                     />
                   </button>
                 </div>
@@ -366,26 +355,22 @@
 
             <div class="mt-4 flex items-center gap-4">
               <button
-                class="inline-flex items-center gap-2 border border-dashed border-charcoal-border px-[18px] py-3 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors hover:border-orange-neon"
+                class="inline-flex items-center gap-2 border border-dashed border-control-border px-[18px] py-3 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors hover:border-orange-neon"
                 :style="{ color: accentStore.color }"
                 @click="startAddField"
               >
                 <span class="text-sm leading-none">+</span>
                 {{ $t("settings.fields.add") }}
               </button>
-              <v-btn
+              <AppButton
                 v-if="addingField"
-                variant="flat"
-                color="primary"
-                rounded="0"
-                elevation="0"
-                size="small"
-                class="text-[10px] tracking-[0.16em] uppercase px-2"
+                variant="primary"
+                size="sm"
                 :loading="savingField"
                 @click="confirmAddField"
               >
                 {{ $t("settings.account.save") }}
-              </v-btn>
+              </AppButton>
             </div>
           </section>
 
@@ -455,7 +440,7 @@
                 :label="$t('settings.defaults.language')"
                 :first="true"
               >
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'en', label: 'English' },
                     { value: 'de', label: 'Deutsch' },
@@ -465,7 +450,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.theme')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     {
                       value: 'light',
@@ -485,7 +470,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.view')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'list', label: $t('settings.defaults.view_list') },
                     { value: 'tile', label: $t('settings.defaults.view_tile') },
@@ -497,7 +482,7 @@
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.scan_status')">
-                <SegControl
+                <AppSegmented
                   :options="[
                     { value: 'unread', label: $t('book.unread') },
                     { value: 'reading', label: $t('book.reading') },
@@ -544,16 +529,15 @@
                   {{ $t("settings.danger.delete_body") }}
                 </p>
               </div>
-              <button
-                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 transition-colors whitespace-nowrap hover:opacity-80"
-                style="
-                  color: rgb(var(--v-theme-error));
-                  border-color: rgb(var(--v-theme-error));
-                "
+              <AppButton
+                variant="danger"
+                outlined
+                size="md"
+                class="flex-none"
                 @click="deleteDialog = true"
               >
                 {{ $t("settings.danger.delete_button") }}
-              </button>
+              </AppButton>
             </div>
           </section>
         </div>
@@ -561,80 +545,53 @@
     </div>
 
     <!-- ── Delete account dialog ────────────────────────────────────────── -->
-    <v-dialog v-model="deleteDialog" max-width="400">
-      <v-card rounded="0" :color="themeStore.isDark ? '#1c1b19' : '#ffffff'">
-        <v-card-title
-          class="font-heading text-xl pt-6 px-6 font-black text-text-primary"
+    <ConfirmDialog
+      v-model="deleteDialog"
+      danger
+      :max-width="400"
+      :title="$t('settings.danger.dialog_heading')"
+      :confirm-label="$t('settings.danger.dialog_confirm')"
+      :cancel-label="$t('settings.danger.dialog_cancel')"
+      :loading="deletingAccount"
+      :confirm-disabled="
+        deleteConfirmEmail.toLowerCase() !==
+          (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
+      "
+      @confirm="confirmDeleteAccount"
+      @cancel="resetDeleteDialog"
+    >
+      {{ $t("settings.danger.dialog_body") }}
+      <div class="flex flex-col gap-3 mt-5">
+        <SettingsField :label="$t('settings.danger.dialog_email_label')">
+          <input
+            v-model="deleteConfirmEmail"
+            type="email"
+            class="settings-input"
+            autocomplete="off"
+          />
+        </SettingsField>
+        <SettingsField :label="$t('settings.danger.dialog_password_label')">
+          <input
+            v-model="deleteConfirmPassword"
+            type="password"
+            class="settings-input"
+            autocomplete="current-password"
+          />
+        </SettingsField>
+        <p
+          v-if="deleteError"
+          class="text-[11px]"
           style="color: rgb(var(--v-theme-error))"
         >
-          {{ $t("settings.danger.dialog_heading") }}
-        </v-card-title>
-        <v-card-text class="px-6 text-sm text-text-secondary leading-relaxed">
-          {{ $t("settings.danger.dialog_body") }}
-          <div class="flex flex-col gap-3 mt-5">
-            <SettingsField :label="$t('settings.danger.dialog_email_label')">
-              <input
-                v-model="deleteConfirmEmail"
-                type="email"
-                class="settings-input"
-                autocomplete="off"
-              />
-            </SettingsField>
-            <SettingsField :label="$t('settings.danger.dialog_password_label')">
-              <input
-                v-model="deleteConfirmPassword"
-                type="password"
-                class="settings-input"
-                autocomplete="current-password"
-              />
-            </SettingsField>
-            <p
-              v-if="deleteError"
-              class="text-[11px]"
-              style="color: rgb(var(--v-theme-error))"
-            >
-              {{ deleteError }}
-            </p>
-          </div>
-        </v-card-text>
-        <v-card-actions class="px-4 pb-4 gap-2">
-          <v-spacer />
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-            @click="
-              deleteDialog = false;
-              deleteConfirmEmail = '';
-              deleteConfirmPassword = '';
-              deleteError = '';
-            "
-          >
-            {{ $t("settings.danger.dialog_cancel") }}
-          </v-btn>
-          <v-btn
-            variant="flat"
-            size="small"
-            color="error"
-            rounded="0"
-            class="text-[10px] tracking-[0.2em] uppercase"
-            :loading="deletingAccount"
-            :disabled="
-              deleteConfirmEmail.toLowerCase() !==
-                (authStore.email ?? '').toLowerCase() || !deleteConfirmPassword
-            "
-            @click="confirmDeleteAccount"
-          >
-            {{ $t("settings.danger.dialog_confirm") }}
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+          {{ deleteError }}
+        </p>
+      </div>
+    </ConfirmDialog>
 
     <AppToast
-      v-model="toast.show"
-      :message="toast.message"
-      :type="toast.type"
+      v-model="toastShow"
+      :message="toastMessage"
+      :type="toastType"
       :timeout="3500"
     />
   </div>
@@ -647,8 +604,6 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  defineComponent,
-  h,
 } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
@@ -658,10 +613,17 @@ import { useAccentStore } from "@/stores/accent";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useApi } from "@/composables/useApi";
+import { useToast } from "@/composables/useToast";
 import type { ReadStatus } from "@/types/book";
 import AppHeader from "@/components/AppHeader.vue";
+import AppButton from "@/components/AppButton.vue";
 import AppToast from "@/components/AppToast.vue";
-import SegControl from "@/components/SegControl.vue";
+import AppToggle from "@/components/AppToggle.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
+import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
+import SettingsField from "@/components/settings/SettingsField.vue";
+import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -955,6 +917,12 @@ const deleteConfirmPassword = ref("");
 const deleteError = ref("");
 const deletingAccount = ref(false);
 
+function resetDeleteDialog() {
+  deleteConfirmEmail.value = "";
+  deleteConfirmPassword.value = "";
+  deleteError.value = "";
+}
+
 async function confirmDeleteAccount() {
   deleteError.value = "";
   deletingAccount.value = true;
@@ -982,16 +950,12 @@ async function confirmDeleteAccount() {
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 
-const toast = reactive({
-  show: false,
-  message: "",
-  type: "error" as "error" | "success",
-});
-function showToast(message: string, type: "error" | "success" = "error") {
-  toast.message = message;
-  toast.type = type;
-  toast.show = true;
-}
+const {
+  visible: toastShow,
+  message: toastMessage,
+  type: toastType,
+  showToast,
+} = useToast();
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
@@ -999,77 +963,6 @@ onMounted(() => {
   fieldDefsStore.loaded = false;
   fieldDefsStore.load();
 });
-
-// ── Inline sub-components ─────────────────────────────────────────────────────
-
-const SectionHeading = defineComponent({
-  props: { title: String, description: String },
-  setup(props) {
-    return () =>
-      h("div", { class: "mb-6" }, [
-        h("div", { class: "flex items-baseline gap-4 mb-1.5" }, [
-          h(
-            "h2",
-            {
-              class:
-                "font-heading font-black text-[22px] text-text-primary leading-none",
-            },
-            props.title,
-          ),
-          h("span", { class: "flex-1 h-px bg-charcoal-border" }),
-        ]),
-        props.description
-          ? h(
-              "p",
-              {
-                class:
-                  "text-[13px] text-text-secondary max-w-lg leading-relaxed",
-              },
-              props.description,
-            )
-          : null,
-      ]);
-  },
-});
-
-const SettingsField = defineComponent({
-  props: { label: String },
-  setup(props, ctx) {
-    return () =>
-      h("label", { class: "flex flex-col gap-2" }, [
-        h(
-          "span",
-          {
-            class:
-              "font-mono text-[10px] tracking-[0.16em] uppercase text-text-secondary",
-          },
-          props.label,
-        ),
-        ctx.slots.default?.(),
-      ]);
-  },
-});
-
-const DefaultRow = defineComponent({
-  props: { label: String, first: Boolean },
-  setup(props, ctx) {
-    return () =>
-      h(
-        "div",
-        {
-          class: [
-            "flex items-center justify-between gap-6 py-4",
-            !props.first ? "border-t border-charcoal-border/60" : "",
-          ].join(" "),
-        },
-        [
-          h("span", { class: "text-[14px] text-text-primary" }, props.label),
-          ctx.slots.default?.(),
-        ],
-      );
-  },
-});
-
 </script>
 
 <style scoped>

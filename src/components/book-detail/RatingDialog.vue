@@ -35,8 +35,7 @@
           {{ $t("detail.clear_rating") }}
         </button>
         <button
-          class="text-[11px] tracking-[0.08em] uppercase font-semibold bg-text-primary px-4.5 py-2 hover:opacity-90 transition-opacity"
-          style="color: var(--color-charcoal)"
+          class="text-[11px] tracking-[0.08em] uppercase font-semibold bg-text-primary text-charcoal px-4.5 py-2 hover:opacity-90 transition-opacity"
           @click="$emit('update:modelValue', false)"
         >
           {{ $t("detail.done") }}

@@ -18,7 +18,7 @@
           </div>
           <div
             v-if="editions.length"
-            class="font-mono text-[11px] text-text-secondary/50"
+            class="font-mono text-[11px] text-primary/80"
           >
             {{
               $t(

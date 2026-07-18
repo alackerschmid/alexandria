@@ -3,15 +3,41 @@
 @import "tailwindcss/utilities" layer(tailwind-utilities);
 
 @theme {
-  --color-charcoal: #fafaf8;
-  --color-charcoal-light: #ffffff;
-  --color-charcoal-border: #e2ddd8;
+  --color-charcoal: #f7f1e8;
+  --color-charcoal-light: #fffcf6;
+  --color-charcoal-border: #e6dccb;
+  /* Border for interactive controls (segmented toggles, secondary buttons, the
+     "add field" affordance). Deliberately stronger than charcoal-border, which
+     is the subtle hairline used for dividers/card edges — at near-white light-mode
+     backgrounds that hairline is too faint to read as an actionable boundary. */
+  --color-control-border: #a89a89;
   --color-orange-neon: #ff6600;
   /* Search bar: a warm, slightly recessed surface */
-  --color-search-bg: #f6f4ef;
-  --color-search-border: #e2ddd8;
+  --color-search-bg: #efe7d8;
+  --color-search-border: #e6dccb;
   --color-text-primary: #0f0f0f;
   --color-text-secondary: #7a736e;
+  /* Warm raised surface for menus/dialogs that sit above the page (account
+     menu, onboarding dialog) — one notch deeper than charcoal-light so it
+     still reads as a distinct surface now that both are warm. */
+  --color-menu-surface: #f2e9d9;
+  /* LibraryRowCard's own surface — distinct from the page background in light
+     mode, where charcoal/charcoal-light are close enough to blend into each
+     other; in dark mode the border alone already reads clearly, so this falls
+     back to the plain page background (see the dark override below). Scoped to
+     this one component: unlike --color-menu-surface, other cards (BookDetailCard,
+     dialogs) use charcoal-light in both themes — don't reuse this for them. */
+  --color-row-card-surface: var(--color-charcoal-light);
+  --color-rating-track: rgba(0, 0, 0, 0.14);
+  /* Chart-neutral bar colors (home.vue's stat/breakdown bars) — no existing
+     semantic token matches these muted tones in both themes. */
+  --color-chart-muted: #8a7a6f;
+  --color-chart-total: #8a7a6f;
+  /* Reading-status accents: intentionally theme-independent — consumed by the
+     always-dark scanner overlay as well as themed dialogs/cards, so they must
+     stay legible against both a near-black and a near-white surface. */
+  --color-status-read: #22c55e;
+  --color-status-dnf: #d9a441;
 
   --font-heading: "Playfair Display", Georgia, serif;
   --font-body: "Roboto", system-ui, sans-serif;
@@ -41,10 +67,16 @@
   --color-charcoal: #0a0a09;
   --color-charcoal-light: #1c1b19;
   --color-charcoal-border: #2e2b28;
+  --color-control-border: #4a453f;
   --color-search-bg: #16150f;
   --color-search-border: #232220;
   --color-text-primary: #f0ede8;
   --color-text-secondary: #8a8078;
+  --color-menu-surface: #1c1b19;
+  --color-row-card-surface: var(--color-charcoal);
+  --color-rating-track: rgba(255, 255, 255, 0.14);
+  --color-chart-muted: #5c544e;
+  --color-chart-total: #c9c1b8;
 }
 
 @custom-variant light (&:where(.v-theme--light, .v-theme--light *));
