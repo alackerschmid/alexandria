@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { useAccentStore } from "@/stores/accent";
+import AppButton from "@/components/AppButton.vue";
 import { STATUS_META } from "@/composables/useBookStatus";
 import type { ReviewItem } from "@/composables/useGoodreadsImport";
 
@@ -9,7 +9,6 @@ const props = defineProps<{ item: ReviewItem }>();
 defineEmits<{ resolve: []; undo: [] }>();
 
 const { t } = useI18n();
-const accentStore = useAccentStore();
 
 const skipped = computed(() => props.item.status === "skipped");
 </script>
@@ -58,14 +57,14 @@ const skipped = computed(() => props.item.status === "skipped");
     >
       {{ t("import.review.undo") }}
     </button>
-    <button
+    <AppButton
       v-else
-      type="button"
-      class="flex-none font-mono text-[10px] font-bold tracking-[0.1em] uppercase px-4 py-2.5 whitespace-nowrap"
-      :style="{ background: accentStore.color, color: '#111110' }"
+      variant="primary"
+      size="sm"
+      class="flex-none"
       @click="$emit('resolve')"
     >
       {{ t("import.review.resolve") }}
-    </button>
+    </AppButton>
   </div>
 </template>

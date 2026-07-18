@@ -116,7 +116,7 @@ const editionLabel = computed(() => {
         </p>
         <button
           type="button"
-          class="flex items-center gap-1.5 w-full border border-charcoal-border px-2.5 py-2 font-mono text-[9.5px] text-text-secondary text-left hover:border-orange-neon transition-colors"
+          class="flex items-center gap-1.5 w-full border border-charcoal-border px-2.5 py-2 font-mono text-[9.5px] text-text-secondary text-left hover:border-primary transition-colors"
           @click="emit('toggle-edition')"
         >
           <span class="flex-1 truncate">{{ editionLabel }}</span>
@@ -154,7 +154,7 @@ const editionLabel = computed(() => {
               class="flex items-center gap-2.5 w-full text-left p-2 hover:bg-charcoal transition-colors disabled:opacity-40"
               :class="
                 candidate.isbn === item.isbn
-                  ? 'border-l-2 border-orange-neon'
+                  ? 'border-l-2 border-primary'
                   : 'border-l-2 border-transparent'
               "
               @click="emit('change-edition', candidate.isbn)"
@@ -191,7 +191,7 @@ const editionLabel = computed(() => {
               <button
                 type="button"
                 :disabled="item.loadingCandidates"
-                class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-orange-neon disabled:opacity-40"
+                class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-primary disabled:opacity-40"
                 @click="emit('retry-candidates')"
               >
                 {{

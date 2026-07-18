@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
-import { useAccentStore } from "@/stores/accent";
+import AppButton from "@/components/AppButton.vue";
 import { STATUS_META } from "@/composables/useBookStatus";
 
 const props = defineProps<{
@@ -13,7 +13,6 @@ const props = defineProps<{
 defineEmits<{ cancel: []; finalize: [] }>();
 
 const { t } = useI18n();
-const accentStore = useAccentStore();
 
 const canFinalize = computed(() => props.remaining === 0);
 const attentionColor = computed(() =>
@@ -60,24 +59,13 @@ const attentionColor = computed(() =>
     </div>
 
     <div class="flex items-center gap-3 flex-none">
-      <v-btn
-        variant="outlined"
-        rounded="0"
-        elevation="0"
-        size="small"
-        class="text-[10px] tracking-[0.14em] uppercase px-4"
-        @click="$emit('cancel')"
-      >
+      <AppButton variant="secondary" size="sm" @click="$emit('cancel')">
         {{ t("import.header.cancel") }}
-      </v-btn>
-      <button
-        type="button"
+      </AppButton>
+      <AppButton
+        variant="primary"
+        size="sm"
         :disabled="!canFinalize"
-        class="font-mono text-[10px] font-bold tracking-[0.14em] uppercase px-5 py-3 transition-opacity disabled:cursor-not-allowed"
-        :class="canFinalize ? '' : 'bg-charcoal-light text-text-secondary opacity-60'"
-        :style="
-          canFinalize ? { background: accentStore.color, color: '#111110' } : {}
-        "
         @click="$emit('finalize')"
       >
         {{
@@ -85,7 +73,7 @@ const attentionColor = computed(() =>
             ? t("import.header.finalize")
             : t("import.header.finalize_blocked", { n: remaining })
         }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>

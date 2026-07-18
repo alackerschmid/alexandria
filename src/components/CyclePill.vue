@@ -30,7 +30,7 @@ function next() {
   <button
     type="button"
     :title="title"
-    class="inline-flex items-center gap-1.5 w-full border border-charcoal-border px-2.5 py-2 font-mono text-[9.5px] tracking-[0.06em] uppercase text-text-secondary whitespace-nowrap hover:border-orange-neon transition-colors disabled:opacity-40"
+    class="inline-flex items-center gap-1.5 w-full border border-charcoal-border px-2.5 py-2 font-mono text-[9.5px] tracking-[0.06em] uppercase text-text-secondary whitespace-nowrap hover:border-primary transition-colors disabled:opacity-40"
     @click="next"
   >
     <span

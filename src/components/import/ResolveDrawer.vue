@@ -64,7 +64,7 @@ const { t } = useI18n();
           type="text"
           :value="item.searchQuery"
           :placeholder="t('import.review.search_placeholder')"
-          class="w-full bg-charcoal border border-charcoal-border text-text-primary text-[13px] px-3 py-2.5 focus:outline-none focus:border-orange-neon transition-colors"
+          class="w-full bg-charcoal border border-charcoal-border text-text-primary text-[13px] px-3 py-2.5 focus:outline-none focus:border-primary transition-colors"
           @input="
             emit(
               'update:query',
@@ -94,7 +94,7 @@ const { t } = useI18n();
           </p>
           <button
             type="button"
-            class="mt-3 font-mono text-[10px] tracking-[0.14em] uppercase text-orange-neon"
+            class="mt-3 font-mono text-[10px] tracking-[0.14em] uppercase text-primary"
             @click="emit('retry')"
           >
             {{ t("import.review.retry") }}
@@ -124,7 +124,7 @@ const { t } = useI18n();
           </div>
           <button
             type="button"
-            class="flex-none border border-orange-neon text-orange-neon font-mono text-[9.5px] tracking-[0.08em] uppercase px-3 py-2 whitespace-nowrap hover:bg-orange-neon/10 transition-colors"
+            class="flex-none border border-primary text-primary font-mono text-[9.5px] tracking-[0.08em] uppercase px-3 py-2 whitespace-nowrap hover:bg-primary/10 transition-colors"
             @click="emit('pick', candidate.isbn)"
           >
             {{ t("import.review.use_this") }}

@@ -3,7 +3,8 @@ import { ref, computed } from "vue";
 import { useRouter, onBeforeRouteLeave } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "@/components/AppHeader.vue";
-import SegControl from "@/components/SegControl.vue";
+import AppButton from "@/components/AppButton.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 import ImportHeaderBar from "@/components/import/ImportHeaderBar.vue";
 import MatchedRow from "@/components/import/MatchedRow.vue";
 import AttentionRow from "@/components/import/AttentionRow.vue";
@@ -13,7 +14,6 @@ import {
   MATCHED_GRID,
   MATCHED_ROW_PADDING,
 } from "@/components/import/matched-grid";
-import { useAccentStore } from "@/stores/accent";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import { useGoodreadsImport } from "@/composables/useGoodreadsImport";
@@ -27,7 +27,6 @@ import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const { t } = useI18n();
 const router = useRouter();
-const accentStore = useAccentStore();
 
 const {
   step,
@@ -250,18 +249,14 @@ const tabs = computed(() => [
             <p class="text-[13px] text-text-secondary max-w-sm">
               {{ t("import.upload.instructions") }}
             </p>
-            <v-btn
-              variant="flat"
-              color="primary"
-              rounded="0"
-              elevation="0"
-              size="small"
-              class="text-[10px] tracking-[0.16em] uppercase px-4"
+            <AppButton
+              variant="primary"
+              size="sm"
               :loading="uploading"
               @click="fileInputEl?.click()"
             >
               {{ t("import.upload.choose_file") }}
-            </v-btn>
+            </AppButton>
             <input
               ref="fileInputEl"
               type="file"
@@ -303,9 +298,10 @@ const tabs = computed(() => [
                   >
                     {{ t("library.filter_status") }}
                   </p>
-                  <SegControl
+                  <AppSegmented
                     :options="statusOptions"
                     :model-value="mapping[shelf]?.status"
+                    size="sm"
                     @update:model-value="
                       (v) => updateStatus(shelf, mapping[shelf], v)
                     "
@@ -317,9 +313,10 @@ const tabs = computed(() => [
                   >
                     {{ t("owning.label") }}
                   </p>
-                  <SegControl
+                  <AppSegmented
                     :options="owningOptions"
                     :model-value="mapping[shelf]?.owning_status"
+                    size="sm"
                     @update:model-value="
                       (v) => updateOwning(shelf, mapping[shelf], v)
                     "
@@ -328,17 +325,14 @@ const tabs = computed(() => [
               </div>
             </div>
           </div>
-          <v-btn
-            variant="flat"
-            color="primary"
-            rounded="0"
-            elevation="0"
-            size="small"
-            class="self-start text-[10px] tracking-[0.16em] uppercase px-4"
+          <AppButton
+            variant="primary"
+            size="sm"
+            class="self-start"
             @click="startImport"
           >
             {{ t("import.mapping.start") }}
-          </v-btn>
+          </AppButton>
         </section>
 
         <!-- ── Importing ──────────────────────────────────────────────────── -->
@@ -391,11 +385,8 @@ const tabs = computed(() => [
             class="flex-none py-3 mr-7 -mb-px font-mono text-[11px] tracking-[0.14em] uppercase whitespace-nowrap border-b-2 transition-colors"
             :class="
               activeTab === tab.value
-                ? 'text-text-primary'
+                ? 'text-text-primary border-primary'
                 : 'text-text-secondary border-transparent'
-            "
-            :style="
-              activeTab === tab.value ? { borderColor: accentStore.color } : {}
             "
             @click="activeTab = tab.value"
           >
@@ -472,9 +463,10 @@ const tabs = computed(() => [
             >
               {{ t("import.summary.list.heading") }}
             </p>
-            <SegControl
+            <AppSegmented
               :options="logFilterOptions"
               :model-value="logFilter"
+              size="sm"
               @update:model-value="updateLogFilter"
             />
           </div>

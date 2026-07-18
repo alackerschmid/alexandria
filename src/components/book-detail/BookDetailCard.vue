@@ -99,9 +99,7 @@
           class="flex items-center gap-1.5 mt-3"
           @click="$emit('open-rating')"
         >
-          <span class="flex items-center gap-1">
-            <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
-          </span>
+          <RatingDots :rating="book.rating" size="md" />
           <span class="font-mono text-[11px] text-text-secondary">
             {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
           </span>
@@ -110,9 +108,7 @@
           v-else-if="readonly && book.status === 'read'"
           class="flex items-center gap-1.5 mt-3"
         >
-          <span class="flex items-center gap-1">
-            <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
-          </span>
+          <RatingDots :rating="book.rating" size="md" />
           <span class="font-mono text-[11px] text-text-secondary">
             {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
           </span>
@@ -227,9 +223,9 @@
 import { computed } from "vue";
 import { useBookStatus } from "@/composables/useBookStatus";
 import { useOwningStatus, OWNING_META } from "@/composables/useOwningStatus";
-import { ratingDots } from "@/composables/useRating";
 import { bookYear } from "@/utils/book-display";
 import AppButton from "@/components/AppButton.vue";
+import RatingDots from "@/components/RatingDots.vue";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";
@@ -258,6 +254,5 @@ const { statusConfig: STATUS_CONFIG } = useBookStatus();
 const { owningLabels } = useOwningStatus();
 
 const publishYear = computed(() => bookYear(props.book) || "—");
-const cardRatingDots = computed(() => ratingDots(props.book.rating, "md"));
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 </script>
