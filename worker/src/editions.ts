@@ -657,9 +657,54 @@ export function normalizeStr(s: string | null | undefined): string {
     .trim();
 }
 
+// Identity key for a single author name. Deliberately more aggressive than normalizeStr: it drops
+// a trailing parenthetical qualifier, periods, and all whitespace, so "J. R. R. Tolkien",
+// "J.R.R. Tolkien" and "J.R.R.Tolkien" collapse to one key. Keys are never displayed —
+// authors.name holds the display form — so only cross-source stability matters, not readability.
+//
+// This only unifies names that differ in *formatting*. Names that differ in *content*
+// ("Mary Shelley" vs "Mary Wollstonecraft Shelley", "村上春樹" vs "Haruki Murakami") still produce
+// separate keys; those converge later via wikidata_qid in mergeWorks.
+//
+// Only truncates at '(' when there's name text before it (paren > 0) — a name that's *entirely*
+// a parenthetical fragment (a garbage row from the pre-fix splitAuthors, e.g. "(various)") would
+// otherwise truncate to "", colliding every such fragment onto one identity. Keeping the parens in
+// that case still lets "(various)" and "(anonymous)" key apart.
+//
+// Kept in exact sync with the SQL in migration 0040, which backfills the stored keys — truncating
+// at '(' rather than excising the span is what makes the two agree.
+export function normalizeAuthorKey(s: string | null | undefined): string {
+  const normalized = normalizeStr(s);
+  const paren = normalized.indexOf("(");
+  return (paren > 0 ? normalized.slice(0, paren) : normalized).replace(
+    /[.\s]/g,
+    "",
+  );
+}
+
 // Google Books joins multiple authors with ', '; OpenLibrary stores a single name.
 export function splitAuthors(author: string | null): string[] {
-  return (author ?? "")
+  // Parenthetical qualifiers are excised before splitting because they contain commas of their
+  // own — "Tolkien, John Ronald Reuel (Mythenforscher, Grossbritannien)" otherwise splits into
+  // fragments and lands a literal "Grossbritannien)" row in the authors table. Tracked by paren
+  // depth (not a regex) so a nested qualifier — "A (pseudonym of B (1900-1950)) C" — doesn't leave
+  // a stray unmatched ")" behind: a regex matching "\(...\)" non-recursively closes on the first
+  // ')' it meets, which is the *inner* one, and drops the outer ')' into the output untouched.
+  let stripped = "";
+  let depth = 0;
+  for (const ch of author ?? "") {
+    if (ch === "(") {
+      depth++;
+      continue;
+    }
+    if (ch === ")") {
+      if (depth > 0) depth--;
+      continue;
+    }
+    if (depth === 0) stripped += ch;
+  }
+  return stripped
+    .replace(/\s+/g, " ")
     .split(",")
     .map((a) => a.trim())
     .filter(Boolean);
@@ -671,7 +716,7 @@ export function splitAuthors(author: string | null): string[] {
 export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
   const authors = splitAuthors(book.author);
   const titlePart = normalizeStr(book.title) || `isbn:${book.isbn}`;
-  const matchKey = `${titlePart}|${normalizeStr(authors[0])}`;
+  const matchKey = `${titlePart}|${normalizeAuthorKey(authors[0])}`;
 
   await db
     .prepare(
@@ -696,7 +741,7 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
         .prepare(
           "INSERT OR IGNORE INTO authors (normalized_name, name) VALUES (?, ?)",
         )
-        .bind(normalizeStr(name), name),
+        .bind(normalizeAuthorKey(name), name),
     );
   }
   await db.batch(stmts);
@@ -707,7 +752,7 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
         .prepare(
           "INSERT OR IGNORE INTO work_authors (work_id, author_id, ordinal) SELECT ?, id, ? FROM authors WHERE normalized_name = ?",
         )
-        .bind(work.id, idx, normalizeStr(name)),
+        .bind(work.id, idx, normalizeAuthorKey(name)),
     );
     await db.batch(links);
   }

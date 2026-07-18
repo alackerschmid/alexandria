@@ -269,6 +269,7 @@
     "saving": "Saving…",
     "standalone": "Standalone",
     "enrichment_pending": "Series lookup pending",
+    "enrichment_queued": "Series lookup queued",
     "enrichment_failed": "Series lookup failed",
     "original_pub_date": "First published",
     "genres": "Genres",

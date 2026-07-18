@@ -114,6 +114,7 @@
         <EnrichmentBadge
           class="mt-1.5"
           :status="book.enrichment_status"
+          :timed-out="pollTimedOut"
           :guest="guest"
           :readonly="readonly"
         />
@@ -233,6 +234,7 @@ type FilterField = "author" | "genre";
 
 const props = defineProps<{
   book: BookWithOverrides;
+  pollTimedOut?: boolean;
   guest?: boolean;
   readonly?: boolean;
 }>();

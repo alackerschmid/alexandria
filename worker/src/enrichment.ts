@@ -2,7 +2,7 @@ import type { WorkRow, WorkDetails, SeriesHit } from "./types";
 import {
   splitAuthors,
   materializeEdition,
-  normalizeStr,
+  normalizeAuthorKey,
   discoverEditionsFromOpenLibrary,
 } from "./editions";
 
@@ -511,6 +511,12 @@ async function mergeWorks(
       )
       .bind(into, from),
     db.prepare("DELETE FROM work_series WHERE work_id = ?").bind(from),
+    db
+      .prepare(
+        "INSERT OR IGNORE INTO work_edition_isbns (work_id, isbn, title, language, cover_url, publish_date, publisher, source) SELECT ?, isbn, title, language, cover_url, publish_date, publisher, source FROM work_edition_isbns WHERE work_id = ?",
+      )
+      .bind(into, from),
+    db.prepare("DELETE FROM work_edition_isbns WHERE work_id = ?").bind(from),
     db.prepare("DELETE FROM works WHERE id = ?").bind(from),
   ]);
 }
@@ -731,7 +737,7 @@ async function resolveWorkIdentity(
           .prepare(
             "UPDATE authors SET wikidata_qid = ? WHERE normalized_name = ? AND wikidata_qid IS NULL",
           )
-          .bind(info.authorQid, normalizeStr(author))
+          .bind(info.authorQid, normalizeAuthorKey(author))
           .run()
           .then((authorResult) =>
             console.log(
@@ -969,9 +975,14 @@ export async function enrichWork(
     // after winning the claim — resetting before the claim risked leaving the work stuck
     // looking 'pending' forever if this call then lost the claim and the in-flight run it
     // deferred to later failed (which doesn't restore the status to 'done').
+    // next_retry_at is cleared too: a force refresh is an explicit "try again now", and leaving a
+    // previous failure's schedule in place would hide the work from the sweeper's due-time filter
+    // for up to LONG_COOLDOWN_MINUTES (2 days) if this run also fails.
     if (force)
       await db
-        .prepare("UPDATE works SET enrichment_status = 'pending' WHERE id = ?")
+        .prepare(
+          "UPDATE works SET enrichment_status = 'pending', next_retry_at = NULL WHERE id = ?",
+        )
         .bind(workId)
         .run();
 

@@ -9,6 +9,7 @@
     <template v-if="mode === 'card'">
       <BookDetailCard
         :book="book"
+        :poll-timed-out="pollTimedOut"
         :guest="guest"
         :readonly="readonly"
         @close="$emit('update:modelValue', false)"
@@ -191,6 +192,7 @@
                   <EnrichmentBadge
                     class="mb-6 -mt-4"
                     :status="book.enrichment_status"
+                    :timed-out="pollTimedOut"
                     :guest="guest"
                     :readonly="readonly"
                     :icon-size="11"
@@ -835,14 +837,25 @@ const form = ref<EditForm>({
 
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
-const { startEnrichmentPoll, clearPoll } = useEnrichmentPoll({
+// The poll ran its full schedule and the row was still pending — the work is queued behind the
+// sweeper's backlog, not failing. Local-only: the server state really is still 'pending', so this
+// must not be emitted as a `refreshed` patch.
+const pollTimedOut = ref(false);
+
+const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll({
   isOpen: () => props.modelValue,
   scanId: () => props.book.id,
   status: () => props.book.enrichment_status,
   guest: () => !!props.guest,
   readonly: () => !!props.readonly,
   onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
+  onExhausted: () => (pollTimedOut.value = true),
 });
+
+function startEnrichmentPoll() {
+  pollTimedOut.value = false;
+  runEnrichmentPoll();
+}
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 

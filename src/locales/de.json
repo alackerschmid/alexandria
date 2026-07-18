@@ -269,6 +269,7 @@
     "saving": "Speichert…",
     "standalone": "Einzelband",
     "enrichment_pending": "Reihenanreicherung ausstehend",
+    "enrichment_queued": "Reihenanreicherung eingereiht",
     "enrichment_failed": "Reihenanreicherung fehlgeschlagen",
     "original_pub_date": "Erstveröffentlichung",
     "genres": "Genres",
