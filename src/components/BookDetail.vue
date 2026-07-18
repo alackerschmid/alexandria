@@ -381,7 +381,7 @@
                       {{ $t("detail.rating") }}
                     </span>
                     <span class="flex items-center gap-2">
-                      <RatingDots :rating="book.rating" size="sm" />
+                      <RatingStars :rating="book.rating" size="sm" />
                       <span class="font-mono text-[13px] text-text-primary">
                         {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
                       </span>
@@ -709,7 +709,7 @@ import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
-import RatingDots from "@/components/RatingDots.vue";
+import RatingStars from "@/components/RatingStars.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";

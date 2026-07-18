@@ -12,7 +12,9 @@
       </div>
       <div
         class="font-mono text-[28px] mb-4"
-        :style="{ color: rating != null ? RATING_COLOR : '#6b625b' }"
+        :style="{
+          color: rating != null ? RATING_COLOR : 'var(--color-text-secondary)',
+        }"
       >
         {{ rating ?? 0
         }}<span class="text-[13px] text-text-secondary/60">{{
@@ -20,7 +22,7 @@
         }}</span>
       </div>
       <div class="mb-5">
-        <RatingDots
+        <RatingStars
           :rating="rating"
           size="lg"
           interactive
@@ -46,7 +48,7 @@
 </template>
 
 <script setup lang="ts">
-import RatingDots from "@/components/RatingDots.vue";
+import RatingStars from "@/components/RatingStars.vue";
 import { RATING_COLOR } from "@/composables/useRating";
 
 defineProps<{

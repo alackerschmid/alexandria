@@ -2,7 +2,7 @@
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import CyclePill from "@/components/CyclePill.vue";
-import RatingDots from "@/components/RatingDots.vue";
+import RatingStars from "@/components/RatingStars.vue";
 import { STATUS_ORDER, STATUS_META } from "@/composables/useBookStatus";
 import { OWNING_ORDER, OWNING_META } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
@@ -218,7 +218,7 @@ const editionLabel = computed(() => {
           class="flex items-center gap-2 hover:opacity-80 transition-opacity"
           @click="emit('open-rating')"
         >
-          <RatingDots :rating="item.rating" size="sm" />
+          <RatingStars :rating="item.rating" size="sm" />
           <span class="font-mono text-[11px] text-text-primary">
             {{ item.rating ?? "–" }}{{ t("detail.of_ten") }}
           </span>

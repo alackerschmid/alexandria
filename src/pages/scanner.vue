@@ -811,7 +811,7 @@
                   {{ $t("scanner.rate_as") }}
                 </p>
                 <div class="mb-6">
-                  <RatingDots
+                  <RatingStars
                     :rating="selectedRating"
                     size="lg"
                     interactive
@@ -1133,7 +1133,7 @@ import {
   OWNING_ORDER,
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
-import RatingDots from "@/components/RatingDots.vue";
+import RatingStars from "@/components/RatingStars.vue";
 import { useBarcodeScanner } from "@/composables/useBarcodeScanner";
 import {
   readQueue,
