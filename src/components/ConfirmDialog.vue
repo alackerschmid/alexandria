@@ -17,32 +17,26 @@
       </v-card-text>
       <v-card-actions class="px-4 pb-4 gap-2">
         <v-spacer />
-        <v-btn
-          variant="text"
-          size="small"
-          class="text-[10px] tracking-[0.2em] uppercase text-text-secondary px-1.5"
-          @click="onCancel"
-        >
+        <AppButton variant="ghost" size="sm" @click="onCancel">
           {{ cancelLabel }}
-        </v-btn>
-        <v-btn
-          variant="flat"
-          size="small"
-          color="error"
-          rounded="0"
-          class="text-[10px] tracking-[0.2em] uppercase px-1.5"
+        </AppButton>
+        <AppButton
+          variant="danger"
+          size="sm"
           :loading="loading"
           :disabled="confirmDisabled"
           @click="$emit('confirm')"
         >
           {{ confirmLabel }}
-        </v-btn>
+        </AppButton>
       </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
 
 <script setup lang="ts">
+import AppButton from "@/components/AppButton.vue";
+
 withDefaults(
   defineProps<{
     modelValue: boolean;

@@ -69,12 +69,14 @@
 
           <!-- CTAs: desktop only; orange band covers mobile -->
           <div class="hidden md:flex flex-col gap-3">
-            <button
-              class="w-full md:w-auto bg-text-primary text-charcoal text-xs font-bold tracking-[0.2em] uppercase py-3.75 px-7 hover:opacity-80 transition-opacity text-center"
+            <AppButton
+              variant="inverse"
+              size="md"
+              class="w-full md:w-auto"
               @click="$router.push('/scanner')"
             >
               {{ $t("marketing.cta_primary") }}
-            </button>
+            </AppButton>
             <button
               class="text-text-primary text-[11px] font-medium tracking-[0.2em] uppercase text-center hover:opacity-70 transition-opacity"
               @click="$router.push('/login')"
@@ -95,13 +97,14 @@
           >
             {{ $t("marketing.band_heading") }}
           </h2>
-          <button
-            class="self-start text-xs font-bold tracking-[0.2em] uppercase py-4 px-8 hover:opacity-80 transition-opacity"
-            style="background: #111110; color: #f0ede8"
+          <AppButton
+            variant="inverse"
+            size="lg"
+            class="self-start"
             @click="$router.push('/scanner')"
           >
             {{ $t("marketing.cta_primary") }}
-          </button>
+          </AppButton>
         </div>
       </div>
 
@@ -205,13 +208,14 @@
       >
         {{ $t("marketing.band_heading") }}
       </h2>
-      <button
-        class="shrink-0 text-xs font-bold tracking-[0.2em] uppercase py-4 px-8 hover:opacity-80 transition-opacity"
-        style="background: #111110; color: #f0ede8"
+      <AppButton
+        variant="inverse"
+        size="lg"
+        class="shrink-0"
         @click="$router.push('/scanner')"
       >
         {{ $t("marketing.cta_primary") }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
@@ -221,6 +225,7 @@ import { ref, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
+import AppButton from "@/components/AppButton.vue";
 import ScannerPreview from "@/components/ScannerPreview.vue";
 
 const { t } = useI18n();

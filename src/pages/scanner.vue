@@ -209,13 +209,15 @@
                 />
               </div>
 
-              <button
+              <AppButton
                 type="submit"
+                variant="primary"
+                size="lg"
+                block
                 :disabled="!canSubmit"
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity disabled:opacity-50"
               >
                 {{ submitLabel }}
-              </button>
+              </AppButton>
 
               <!-- Status feedback -->
               <Transition name="fade">
@@ -714,12 +716,14 @@
                   {{ statusLabels[detectedBook.currentStatus] }}
                 </span>
               </div>
-              <button
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase transition-opacity hover:opacity-90"
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
                 @click="scanAgain"
               >
                 {{ $t("scanner.continue_scanning") }}
-              </button>
+              </AppButton>
             </template>
 
             <!-- Guest limit reached: prompt to create account -->
@@ -730,12 +734,15 @@
               <p class="text-xs text-white/50 mb-6">
                 {{ $t("guest.limit_body") }}
               </p>
-              <button
-                class="w-full bg-orange-neon text-black py-4 text-xs font-bold tracking-[0.25em] uppercase mb-3"
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
+                class="mb-3"
                 @click="router.push('/login?mode=register')"
               >
                 {{ $t("guest.register") }}
-              </button>
+              </AppButton>
               <button
                 class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
                 @click="scanAgain"
@@ -816,9 +823,12 @@
                 </div>
               </template>
 
-              <LoadingButton
+              <AppButton
+                variant="primary"
+                size="lg"
+                block
                 :loading="scanState === 'saving'"
-                class="bg-orange-neon text-black mb-3"
+                class="mb-3"
                 @click="saveBook"
               >
                 {{
@@ -828,7 +838,7 @@
                       ? $t("scanner.save_isbn")
                       : $t("scanner.save_book")
                 }}
-              </LoadingButton>
+              </AppButton>
               <button
                 class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
                 :disabled="scanState === 'saving'"
@@ -985,12 +995,14 @@
               >
                 {{ $t("scanner.scan_more") }}
               </button>
-              <button
-                class="flex-1 bg-orange-neon text-black text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-90 transition-opacity"
+              <AppButton
+                variant="primary"
+                size="lg"
+                class="flex-1"
                 @click="router.push('/library')"
               >
                 {{ $t("scanner.done_library") }}
-              </button>
+              </AppButton>
             </div>
           </div>
         </div>
@@ -1135,7 +1147,7 @@ import {
 } from "@/utils/offline-queue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
 import AppToast from "@/components/AppToast.vue";
-import LoadingButton from "@/components/LoadingButton.vue";
+import AppButton from "@/components/AppButton.vue";
 
 const { t } = useI18n();
 const router = useRouter();

@@ -117,10 +117,13 @@
       </div>
 
       <!-- Submit -->
-      <LoadingButton
+      <AppButton
         type="submit"
+        variant="inverse"
+        size="lg"
+        block
         :loading="loading"
-        class="bg-text-primary text-charcoal mb-5 hover:opacity-80"
+        class="mb-5"
       >
         {{
           loading
@@ -129,18 +132,19 @@
               ? $t("auth.sign_in")
               : $t("auth.create_account")
         }}
-      </LoadingButton>
+      </AppButton>
 
       <!-- Continue as guest — secondary action, more prominent than a text link
            but quieter than the filled sign-in button above. -->
-      <button
-        type="button"
+      <AppButton
+        variant="secondary"
+        size="lg"
+        block
         :disabled="loading"
-        class="w-full border border-charcoal-border text-text-primary py-3.5 text-xs font-bold tracking-[0.25em] uppercase hover:border-text-primary transition-colors disabled:opacity-40"
         @click="continueAsGuest"
       >
         {{ $t("auth.continue_as_guest") }}
-      </button>
+      </AppButton>
     </form>
     <AppFooter />
   </div>
@@ -154,7 +158,7 @@ import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import AppFooter from "@/components/AppFooter.vue";
 import AppHeader from "@/components/AppHeader.vue";
-import LoadingButton from "@/components/LoadingButton.vue";
+import AppButton from "@/components/AppButton.vue";
 
 const router = useRouter();
 const route = useRoute();

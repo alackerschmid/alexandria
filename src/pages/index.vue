@@ -16,26 +16,16 @@
         }}</span>
       </div>
       <div class="flex gap-2 shrink-0">
-        <v-btn
-          variant="text"
-          size="small"
-          color="primary"
-          class="text-[10px] tracking-[0.15em] uppercase px-4"
-          @click="$router.push('/login')"
-        >
+        <AppButton variant="ghost" size="sm" @click="$router.push('/login')">
           {{ $t("guest.sign_in") }}
-        </v-btn>
-        <v-btn
-          variant="flat"
-          size="small"
-          color="primary"
-          rounded="0"
-          elevation="0"
-          class="text-[10px] tracking-[0.15em] uppercase px-4"
+        </AppButton>
+        <AppButton
+          variant="primary"
+          size="sm"
           @click="$router.push('/login?mode=register')"
         >
           {{ $t("guest.register") }}
-        </v-btn>
+        </AppButton>
       </div>
     </div>
 
@@ -118,34 +108,24 @@
         </v-menu>
 
         <!-- View toggle -->
-        <div class="flex">
-          <button
-            class="flex items-center justify-center w-8.5 h-7.5 border -ml-px first:ml-0 transition-colors"
-            :class="
-              viewMode === 'list'
-                ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
-                : 'border-charcoal-border text-text-secondary hover:text-text-primary'
-            "
-            :aria-label="$t('library.view_list')"
-            :aria-pressed="viewMode === 'list'"
-            @click="viewMode = 'list'"
-          >
-            <v-icon icon="mdi-view-list" size="16" />
-          </button>
-          <button
-            class="flex items-center justify-center w-8.5 h-7.5 border -ml-px first:ml-0 transition-colors"
-            :class="
-              viewMode === 'tile'
-                ? 'border-charcoal-border text-orange-neon bg-charcoal-light'
-                : 'border-charcoal-border text-text-secondary hover:text-text-primary'
-            "
-            :aria-label="$t('library.view_tile')"
-            :aria-pressed="viewMode === 'tile'"
-            @click="viewMode = 'tile'"
-          >
-            <v-icon icon="mdi-view-grid" size="16" />
-          </button>
-        </div>
+        <AppSegmented
+          v-model="viewMode"
+          variant="highlight"
+          size="md"
+          :aria-label="$t('library.view_label')"
+          :options="[
+            {
+              value: 'list',
+              icon: 'mdi-view-list',
+              ariaLabel: $t('library.view_list'),
+            },
+            {
+              value: 'tile',
+              icon: 'mdi-view-grid',
+              ariaLabel: $t('library.view_tile'),
+            },
+          ]"
+        />
       </div>
     </div>
 
@@ -718,6 +698,8 @@ import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import type { GroupBy } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
+import AppButton from "@/components/AppButton.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import LibraryRowCard from "@/components/LibraryRowCard.vue";

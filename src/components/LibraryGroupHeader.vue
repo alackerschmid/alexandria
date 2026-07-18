@@ -21,7 +21,7 @@
     </span>
   </h2>
   <span
-    class="font-mono text-text-secondary/50 shrink-0"
+    class="font-mono text-primary/80 shrink-0"
     :class="sizeClasses.count"
     >{{ countLabel }}</span
   >
