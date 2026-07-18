@@ -189,11 +189,12 @@ async function fetchBookInfo(
        ?work wdt:P50 ?author.`
     : "";
   const query = `
-    SELECT ?work ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe WHERE {
+    SELECT ?work ?titleRank ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe WHERE {
       SERVICE wikibase:mwapi {
         bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
                          mwapi:srsearch "${escapeSparql(title)}".
         ?work wikibase:apiOutputItem mwapi:title.
+        ?titleRank wikibase:apiOrdinal true.
       }
       ?work wdt:P31/wdt:P279* wd:Q47461344.
       ${authorBlock}
@@ -204,7 +205,7 @@ async function fetchBookInfo(
         OPTIONAL { ?series rdfs:label ?seriesLabelEn. FILTER(LANG(?seriesLabelEn) = "en") }
         OPTIONAL { ?series rdfs:label ?seriesLabelDe. FILTER(LANG(?seriesLabelDe) = "de") }
       }
-    } LIMIT 10`.trim();
+    } ORDER BY ASC(?titleRank) LIMIT 10`.trim();
 
   console.log("[fetchBookInfo] querying Wikidata for:", { title, author });
   const rows = await runSparql(query);
@@ -220,7 +221,11 @@ async function fetchBookInfo(
   console.log("[fetchBookInfo] workQid =", workQid);
   const authorQid = qidFromUri(rows[0].author?.value);
 
-  const withSeries = rows.find((r) => r.series?.value);
+  // Scoped to the chosen work: without this, a series match on some *other* candidate
+  // row (e.g. a same-titled but unrelated work) could get attached to the wrong workQid.
+  const withSeries = rows.find(
+    (r) => r.series?.value && qidFromUri(r.work?.value) === workQid,
+  );
   let series: SeriesHit | null = null;
   if (withSeries) {
     const seriesQid = qidFromUri(withSeries.series.value);
