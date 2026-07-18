@@ -11,11 +11,13 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 - ~~implement proper CI deploy workflow~~
 - add confirmation for switch
 - add description from reference book
-- ~~change the base page's random books to a curated batch (boolean flag in database column)~~
+- change the base page's random books to a curated batch (boolean flag in database column)
 - add focus styling from settings to all other relevant fields (isbn title search)
 - add proper backfill from other editions for stuff like description
 - add support for numeric filters / groupby (page count, rating)
-- ~~improve grouping visuals (fill rows)~~
+- on going to a detail page, changing the status, and going back to the library, the status does not update
+- the click cycle in the library still works, just doesnt update the visuals
+- improve grouping visuals (fill rows)
 
 ## bugfixes
 

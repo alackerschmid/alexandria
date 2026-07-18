@@ -374,9 +374,29 @@
             </div>
           </section>
 
-          <!-- ── EXPORT ───────────────────────────────────────────────────── -->
+          <!-- ── IMPORT & EXPORT ──────────────────────────────────────────── -->
           <section id="export" ref="sectionRefs.export">
             <SectionHeading :title="$t('settings.export.heading')" />
+
+            <div
+              class="flex items-center justify-between gap-6 border border-charcoal-border p-6 mb-4"
+            >
+              <div>
+                <p class="text-[15px] text-text-primary font-medium">
+                  {{ $t("settings.export.import_description") }}
+                </p>
+              </div>
+              <router-link
+                :to="{ name: 'import' }"
+                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
+                :style="{
+                  color: 'rgb(var(--v-theme-on-background))',
+                  borderColor: accentStore.color,
+                }"
+              >
+                {{ $t("settings.export.import_button") }}
+              </router-link>
+            </div>
 
             <div
               class="flex items-center justify-between gap-6 border border-charcoal-border p-6"

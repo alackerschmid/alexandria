@@ -91,37 +91,30 @@
             <v-icon :icon="OWNING_META[book.owning_status].icon" size="12" />
             {{ owningLabels[book.owning_status] }}
           </span>
-        </div>
 
-        <!-- rating (card view; read only — rating a book you haven't finished doesn't make sense) -->
-        <button
-          v-if="!readonly && book.status === 'read'"
-          class="flex items-center gap-1.5 mt-3"
-          @click="$emit('open-rating')"
-        >
-          <span class="flex items-center gap-1">
-            <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
+          <!-- rating (read only — rating a book you haven't finished doesn't make sense) -->
+          <button
+            v-if="!readonly && book.status === 'read'"
+            class="flex items-center"
+            :aria-label="$t('detail.rate_book')"
+            @click="$emit('open-rating')"
+          >
+            <RatingStars :rating="book.rating" size="md" />
+          </button>
+          <span
+            v-else-if="readonly && book.status === 'read'"
+            class="flex items-center"
+            :aria-label="`${$t('detail.rating')}: ${book.rating ?? 0}${$t('detail.of_ten')}`"
+          >
+            <RatingStars :rating="book.rating" size="md" />
           </span>
-          <span class="font-mono text-[11px] text-text-secondary">
-            {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
-          </span>
-        </button>
-        <span
-          v-else-if="readonly && book.status === 'read'"
-          class="flex items-center gap-1.5 mt-3"
-        >
-          <span class="flex items-center gap-1">
-            <span v-for="d in cardRatingDots" :key="d.n" :style="d.style" />
-          </span>
-          <span class="font-mono text-[11px] text-text-secondary">
-            {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
-          </span>
-        </span>
+        </div>
 
         <!-- enrichment indicator -->
         <EnrichmentBadge
           class="mt-1.5"
           :status="book.enrichment_status"
+          :timed-out="pollTimedOut"
           :guest="guest"
           :readonly="readonly"
         />
@@ -227,9 +220,9 @@
 import { computed } from "vue";
 import { useBookStatus } from "@/composables/useBookStatus";
 import { useOwningStatus, OWNING_META } from "@/composables/useOwningStatus";
-import { ratingDots } from "@/composables/useRating";
 import { bookYear } from "@/utils/book-display";
 import AppButton from "@/components/AppButton.vue";
+import RatingStars from "@/components/RatingStars.vue";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import PlaceholderCover from "@/components/PlaceholderCover.vue";
@@ -241,6 +234,7 @@ type FilterField = "author" | "genre";
 
 const props = defineProps<{
   book: BookWithOverrides;
+  pollTimedOut?: boolean;
   guest?: boolean;
   readonly?: boolean;
 }>();
@@ -258,6 +252,5 @@ const { statusConfig: STATUS_CONFIG } = useBookStatus();
 const { owningLabels } = useOwningStatus();
 
 const publishYear = computed(() => bookYear(props.book) || "—");
-const cardRatingDots = computed(() => ratingDots(props.book.rating, "md"));
 const firstGenre = computed(() => props.book.genres?.[0] ?? "—");
 </script>

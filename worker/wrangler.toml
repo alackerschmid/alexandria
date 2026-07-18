@@ -9,7 +9,9 @@ database_id = "5aa2cac9-de03-4ac0-a3b0-f51c9fe1c272"
 migrations_dir = "migrations"
 
 [triggers]
-crons = ["*/5 * * * *"]
+# Every 2 min rather than 5: BATCH_SIZE is capped by the per-invocation subrequest ceiling, so
+# interval is the only other throughput lever for draining a bulk-import backlog.
+crons = ["*/2 * * * *"]
 
 [observability.logs]
 enabled = true

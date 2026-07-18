@@ -9,6 +9,7 @@
     <template v-if="mode === 'card'">
       <BookDetailCard
         :book="book"
+        :poll-timed-out="pollTimedOut"
         :guest="guest"
         :readonly="readonly"
         @close="$emit('update:modelValue', false)"
@@ -191,6 +192,7 @@
                   <EnrichmentBadge
                     class="mb-6 -mt-4"
                     :status="book.enrichment_status"
+                    :timed-out="pollTimedOut"
                     :guest="guest"
                     :readonly="readonly"
                     :icon-size="11"
@@ -381,13 +383,7 @@
                       {{ $t("detail.rating") }}
                     </span>
                     <span class="flex items-center gap-2">
-                      <span class="flex items-center gap-0.5">
-                        <span
-                          v-for="d in ratingRowDots"
-                          :key="d.n"
-                          :style="d.style"
-                        />
-                      </span>
+                      <RatingStars :rating="book.rating" size="sm" />
                       <span class="font-mono text-[13px] text-text-primary">
                         {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
                       </span>
@@ -715,7 +711,7 @@ import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
-import { ratingDots } from "@/composables/useRating";
+import RatingStars from "@/components/RatingStars.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
@@ -810,8 +806,6 @@ const owningThumbStyle = computed(() => {
   );
 });
 
-const ratingRowDots = computed(() => ratingDots(props.book.rating, "sm"));
-
 const formattedAdded = computed(() => {
   if (!props.book.created_at) return "—";
   const loc = BCP47[localeStore.locale] ?? "en-GB";
@@ -843,14 +837,25 @@ const form = ref<EditForm>({
 
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
-const { startEnrichmentPoll, clearPoll } = useEnrichmentPoll({
+// The poll ran its full schedule and the row was still pending — the work is queued behind the
+// sweeper's backlog, not failing. Local-only: the server state really is still 'pending', so this
+// must not be emitted as a `refreshed` patch.
+const pollTimedOut = ref(false);
+
+const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll({
   isOpen: () => props.modelValue,
   scanId: () => props.book.id,
   status: () => props.book.enrichment_status,
   guest: () => !!props.guest,
   readonly: () => !!props.readonly,
   onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
+  onExhausted: () => (pollTimedOut.value = true),
 });
+
+function startEnrichmentPoll() {
+  pollTimedOut.value = false;
+  runEnrichmentPoll();
+}
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 

@@ -21,6 +21,7 @@ const DISCOVER_RATE_LIMIT = 20;
 type EditionRow = {
   isbn: string;
   title: string | null;
+  author: string | null;
   language: string | null;
   cover_url: string | null;
   publish_date: string | null;
@@ -34,7 +35,7 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
   const { results: materialized } = await db
     .prepare(
       `
-    SELECT b.isbn, b.title, b.language, b.cover_url, b.publish_date, b.publisher, s.id AS scan_id,
+    SELECT b.isbn, b.title, b.author, b.language, b.cover_url, b.publish_date, b.publisher, s.id AS scan_id,
            s.status
     FROM books b
     LEFT JOIN scans s ON s.book_id = b.id AND s.user_id = ?
@@ -45,6 +46,7 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
     .all<{
       isbn: string;
       title: string | null;
+      author: string | null;
       language: string | null;
       cover_url: string | null;
       publish_date: string | null;
@@ -75,6 +77,7 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
     ...materialized.map((r) => ({ ...r, materialized: true })),
     ...candidates.map((r) => ({
       ...r,
+      author: null,
       scan_id: null,
       status: null,
       materialized: false,

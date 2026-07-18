@@ -12,20 +12,21 @@
       </div>
       <div
         class="font-mono text-[28px] mb-4"
-        :style="{ color: rating != null ? RATING_COLOR : '#6b625b' }"
+        :style="{
+          color: rating != null ? RATING_COLOR : 'var(--color-text-secondary)',
+        }"
       >
         {{ rating ?? 0
         }}<span class="text-[13px] text-text-secondary/60">{{
           $t("detail.of_ten")
         }}</span>
       </div>
-      <div class="flex gap-2 mb-5">
-        <div
-          v-for="d in dots"
-          :key="d.n"
-          class="cursor-pointer"
-          :style="d.style"
-          @click="pick(d.n)"
+      <div class="mb-5">
+        <RatingStars
+          :rating="rating"
+          size="lg"
+          interactive
+          @update:rating="$emit('set-rating', $event)"
         />
       </div>
       <div class="flex items-center justify-between">
@@ -47,22 +48,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
-import { RATING_COLOR, ratingDots } from "@/composables/useRating";
+import RatingStars from "@/components/RatingStars.vue";
+import { RATING_COLOR } from "@/composables/useRating";
 
-const props = defineProps<{
+defineProps<{
   modelValue: boolean;
   rating: number | null;
 }>();
 
-const emit = defineEmits<{
+defineEmits<{
   "update:modelValue": [value: boolean];
   "set-rating": [rating: number | null];
 }>();
-
-const dots = computed(() => ratingDots(props.rating, "lg"));
-
-function pick(n: number) {
-  emit("set-rating", props.rating === n ? null : n);
-}
 </script>

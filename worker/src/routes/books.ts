@@ -1,11 +1,15 @@
 import { Hono } from "hono";
 import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
+import type { Context } from "hono";
 import {
   resolveEdition,
   fetchBookMetadata,
   linkWork,
   searchBooksByTitle,
+  searchLocalBooks,
+  normalizeStr,
+  UpstreamSearchError,
 } from "../editions";
 import { enrichWork } from "../enrichment";
 import {
@@ -23,6 +27,119 @@ const books = new Hono<Env>();
 // re-run (enrichWork force=true) — the most expensive call path in the app — so it gets a
 // tighter per-user cap than routine per-scan traffic.
 const REFRESH_RATE_LIMIT = 10;
+
+// Title search results are stable and identical for every user, and the Google Books project has a
+// hard daily query quota — so successful searches go in the Workers edge cache. Repeating a search
+// (retyping in the scanner, an import re-checking the same title across rows) then costs nothing.
+const SEARCH_CACHE_TTL_SECONDS = 6 * 60 * 60;
+
+// Normalized so trivially different spellings share an entry. Deliberately not keyed by user:
+// the response depends only on the query. Note this caches zero-result searches too — with
+// `searchBooksByTitle` now throwing on upstream failure, an empty array is a real answer.
+function searchCacheKeyString(
+  title: string,
+  author?: string,
+  publisher?: string,
+): string {
+  const params = new URLSearchParams({ title: normalizeStr(title) });
+  if (author) params.set("author", normalizeStr(author));
+  if (publisher) params.set("publisher", normalizeStr(publisher));
+  return params.toString();
+}
+
+function searchCacheKey(
+  title: string,
+  author?: string,
+  publisher?: string,
+): Request {
+  return new Request(
+    `https://bookscan-cache/search?${searchCacheKeyString(title, author, publisher)}`,
+  );
+}
+
+// Shared by /search and /guest-search — same query, same answer, same cache entry.
+//
+// Checked in order: the Workers edge cache (colo-local, fastest, no DB round-trip at all), then
+// our own catalog (free of Google quota, but an unindexed `LIKE '%...%'` substring scan of
+// `books` — SQLite can't use an index for a leading wildcard, so this is a full table scan and
+// worth skipping on a cache hit), then a D1-backed `search_cache` table (global — a search made
+// from one datacenter is a hit from every other, unlike the edge cache alone), then Google Books
+// itself. A D1 cache hit re-warms the edge cache so the next request from this colo skips the DB
+// round-trip too.
+//
+// Trade-off: a book added to the local catalog while an identical query is still edge-cached
+// (up to 6h) won't be surfaced as a local hit until that cache entry expires — same staleness
+// window the cache already accepts for Google results, just extended to the local check too.
+async function handleTitleSearch(c: Context<Env>): Promise<Response> {
+  const title = c.req.query("title")?.trim();
+  const author = c.req.query("author")?.trim() || undefined;
+  const publisher = c.req.query("publisher")?.trim() || undefined;
+  if (!title) return c.json({ error: "Title required" }, 400);
+
+  const cache = caches.default;
+  const cacheKey = searchCacheKey(title, author, publisher);
+  const cached = await cache.match(cacheKey);
+  // Re-wrap: cache.match responses have immutable headers, and the CORS middleware
+  // mutates response headers after the handler returns.
+  if (cached) return new Response(cached.body, cached);
+
+  // A local hit is returned outright — no upstream call, and nothing to cache since the
+  // catalog itself already is the up-to-date source. An empty result (new title, or a miss from
+  // not normalizing diacritics) falls through to the cached/live search below exactly as before.
+  const localResults = await searchLocalBooks(c.env.DB, title, author, publisher);
+  if (localResults.length > 0) return c.json(localResults);
+
+  const queryKey = searchCacheKeyString(title, author, publisher);
+  const dbCached = await c.env.DB.prepare(
+    "SELECT response FROM search_cache WHERE query_key = ? AND expires_at > ?",
+  )
+    .bind(queryKey, Date.now())
+    .first<{ response: string }>();
+  if (dbCached) {
+    const res = new Response(dbCached.response, {
+      headers: { "Content-Type": "application/json" },
+    });
+    res.headers.set("Cache-Control", `public, max-age=${SEARCH_CACHE_TTL_SECONDS}`);
+    c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()));
+    return res;
+  }
+
+  try {
+    const results = await searchBooksByTitle(
+      title,
+      author,
+      c.env.GOOGLE_BOOKS_API_KEY,
+      20,
+      publisher,
+    );
+    const body = JSON.stringify(results);
+    const res = new Response(body, {
+      headers: { "Content-Type": "application/json" },
+    });
+    res.headers.set("Cache-Control", `public, max-age=${SEARCH_CACHE_TTL_SECONDS}`);
+    c.executionCtx.waitUntil(
+      Promise.all([
+        cache.put(cacheKey, res.clone()),
+        c.env.DB.prepare(
+          `INSERT INTO search_cache (query_key, response, expires_at) VALUES (?, ?, ?)
+           ON CONFLICT(query_key) DO UPDATE SET response = excluded.response, expires_at = excluded.expires_at`,
+        )
+          .bind(queryKey, body, Date.now() + SEARCH_CACHE_TTL_SECONDS * 1000)
+          .run(),
+      ]),
+    );
+    return res;
+  } catch (e) {
+    if (!(e instanceof UpstreamSearchError)) throw e;
+    // Never cached: a quota/rate-limit rejection says nothing about the query.
+    console.error(`[title search] upstream failed, status=${e.status}`);
+    const res = c.json({ error: "search_unavailable" }, 503);
+    if (e.retryAfterSeconds) {
+      res.headers.set("Retry-After", String(e.retryAfterSeconds));
+    }
+    return res;
+  }
+}
 
 // ── Public routes (no auth) ───────────────────────────────────────────────────
 
@@ -68,19 +185,7 @@ books.get("/guest-search", async (c) => {
   );
   if (blocked) return blocked;
 
-  const title = c.req.query("title")?.trim();
-  const author = c.req.query("author")?.trim() || undefined;
-  const publisher = c.req.query("publisher")?.trim() || undefined;
-  if (!title) return c.json({ error: "Title required" }, 400);
-  return c.json(
-    await searchBooksByTitle(
-      title,
-      author,
-      c.env.GOOGLE_BOOKS_API_KEY,
-      20,
-      publisher,
-    ),
-  );
+  return handleTitleSearch(c);
 });
 
 // Public sample of hand-picked catalogued books — powers the marketing preview. No auth.
@@ -126,21 +231,7 @@ books.use("*", authMiddleware);
 
 // Title search — returns candidate editions from Google Books. No DB writes; the
 // books row is created only when the user selects an edition and it flows through lookup/scan.
-books.get("/search", async (c) => {
-  const title = c.req.query("title")?.trim();
-  const author = c.req.query("author")?.trim() || undefined;
-  const publisher = c.req.query("publisher")?.trim() || undefined;
-  if (!title) return c.json({ error: "Title required" }, 400);
-  return c.json(
-    await searchBooksByTitle(
-      title,
-      author,
-      c.env.GOOGLE_BOOKS_API_KEY,
-      20,
-      publisher,
-    ),
-  );
-});
+books.get("/search", (c) => handleTitleSearch(c));
 
 // Book metadata lookup — checks DB cache first, then Google Books, then OpenLibrary.
 books.get("/lookup", async (c) => {
@@ -164,8 +255,30 @@ books.get("/lookup", async (c) => {
   return c.json(book);
 });
 
+// The fields /refresh's COALESCE update can fill — same list as the UPDATE's SET clause, minus
+// number_of_pages_median (checked separately below since a 0 there also counts as missing).
+const REFRESHABLE_TEXT_FIELDS = [
+  "title",
+  "author",
+  "cover_url",
+  "language",
+  "publish_date",
+  "description",
+  "publisher",
+  "physical_format",
+  "edition_name",
+  "physical_dimensions",
+  "categories",
+] as const satisfies readonly (keyof BookRow)[];
+
+function hasMissingMetadata(book: BookRow): boolean {
+  if (REFRESHABLE_TEXT_FIELDS.some((field) => book[field] == null)) return true;
+  return !book.number_of_pages_median || book.number_of_pages_median <= 0;
+}
+
 // Refresh book metadata — tries Google Books then OpenLibrary, fills NULL fields only
-// (a 0 page count also counts as missing — Google returns 0 when the count is unknown).
+// (a 0 page count also counts as missing — Google returns 0 when the count is unknown). Skips
+// the external fetch entirely once every refreshable field is already populated.
 books.post("/refresh", async (c) => {
   const rawIsbn = c.req.query("isbn");
   if (!rawIsbn) return c.json({ error: "ISBN required" }, 400);
@@ -182,47 +295,63 @@ books.post("/refresh", async (c) => {
   );
   if (blocked) return blocked;
 
-  const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY);
-  if (!bookData) return c.json({ error: "Book not found in any source" }, 404);
-
-  await c.env.DB.prepare(
-    `
-      UPDATE books SET
-        title = COALESCE(title, ?),
-        author = COALESCE(author, ?),
-        cover_url = COALESCE(cover_url, ?),
-        language = COALESCE(language, ?),
-        publish_date = COALESCE(publish_date, ?),
-        number_of_pages_median = COALESCE(NULLIF(number_of_pages_median, 0), ?),
-        description = COALESCE(description, ?),
-        publisher = COALESCE(publisher, ?),
-        physical_format = COALESCE(physical_format, ?),
-        edition_name = COALESCE(edition_name, ?),
-        physical_dimensions = COALESCE(physical_dimensions, ?),
-        categories = COALESCE(categories, ?)
-      WHERE isbn = ?
-    `,
-  )
-    .bind(
-      bookData.title,
-      bookData.author,
-      bookData.cover_url,
-      bookData.language,
-      bookData.publish_date,
-      bookData.number_of_pages_median,
-      bookData.description,
-      bookData.publisher,
-      bookData.physical_format,
-      bookData.edition_name,
-      bookData.physical_dimensions,
-      bookData.categories,
-      isbn,
-    )
-    .run();
-
-  const book = await c.env.DB.prepare("SELECT * FROM books WHERE isbn = ?")
+  // The UPDATE below only ever fills existing NULL columns, so a refresh on an isbn with no
+  // `books` row yet is a guaranteed no-op — check first and skip the external fetch entirely
+  // rather than spending Google Books/OpenLibrary quota on a request that can't do anything.
+  const existing = await c.env.DB.prepare("SELECT * FROM books WHERE isbn = ?")
     .bind(isbn)
     .first<BookRow>();
+  if (!existing) return c.json({ error: "Book not found" }, 404);
+
+  // Likewise, if every refreshable field is already populated there's nothing for a fetch to
+  // fill — the COALESCE update would be a no-op. Skip straight to the enrichment refresh below.
+  if (hasMissingMetadata(existing)) {
+    const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY);
+    if (!bookData) return c.json({ error: "Book not found in any source" }, 404);
+
+    await c.env.DB.prepare(
+      `
+        UPDATE books SET
+          title = COALESCE(title, ?),
+          author = COALESCE(author, ?),
+          cover_url = COALESCE(cover_url, ?),
+          language = COALESCE(language, ?),
+          publish_date = COALESCE(publish_date, ?),
+          number_of_pages_median = COALESCE(NULLIF(number_of_pages_median, 0), ?),
+          description = COALESCE(description, ?),
+          publisher = COALESCE(publisher, ?),
+          physical_format = COALESCE(physical_format, ?),
+          edition_name = COALESCE(edition_name, ?),
+          physical_dimensions = COALESCE(physical_dimensions, ?),
+          categories = COALESCE(categories, ?)
+        WHERE isbn = ?
+      `,
+    )
+      .bind(
+        bookData.title,
+        bookData.author,
+        bookData.cover_url,
+        bookData.language,
+        bookData.publish_date,
+        bookData.number_of_pages_median,
+        bookData.description,
+        bookData.publisher,
+        bookData.physical_format,
+        bookData.edition_name,
+        bookData.physical_dimensions,
+        bookData.categories,
+        isbn,
+      )
+      .run();
+  }
+
+  // Re-select only when the UPDATE above could have changed something — otherwise `existing`
+  // is already current.
+  const book = hasMissingMetadata(existing)
+    ? await c.env.DB.prepare("SELECT * FROM books WHERE isbn = ?")
+        .bind(isbn)
+        .first<BookRow>()
+    : existing;
 
   if (!book) return c.json({ error: "Book not found" }, 404);
   if (!book.work_id) await linkWork(c.env.DB, book);

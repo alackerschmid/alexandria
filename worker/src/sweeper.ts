@@ -3,8 +3,15 @@ import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
 
 // How many works to enrich per cron tick. Each work costs ~3-6 external calls, so this stays
-// comfortably under the Workers free-plan ceiling of 50 subrequests per invocation.
-const BATCH_SIZE = 5;
+// under the Workers free-plan ceiling of 50 subrequests per invocation (7 x 6 = 42).
+// Throughput matters after a bulk import (a Goodreads library adds hundreds of pending works at
+// once, each showing a "series lookup pending" badge until it drains) — but the per-invocation
+// subrequest ceiling caps how far this can go, so the cron interval is the other half of the
+// lever: see `crons` in wrangler.toml.
+const BATCH_SIZE = 7;
+// Books with no work link get their own budget so a large unlinked backlog can't crowd out
+// enrichment (and vice versa) — linking is cheap, enrichment is not.
+const LINK_BATCH_SIZE = 5;
 // Politeness delay between works so we don't burst Wikidata.
 const DELAY_MS = 500;
 // How long enrichment_runs history is kept before being pruned each tick.
@@ -27,7 +34,7 @@ export async function scheduled(
   const { results: unlinked } = await env.DB.prepare(
     "SELECT * FROM books WHERE work_id IS NULL LIMIT ?",
   )
-    .bind(BATCH_SIZE)
+    .bind(LINK_BATCH_SIZE)
     .all<BookRow>();
 
   if (unlinked.length) {
@@ -39,11 +46,37 @@ export async function scheduled(
   // back to a full table scan). The two predicates are disjoint on enrichment_status
   // ('done' vs. everything else), so the result sets never overlap.
 
-  // Q1 — backlog/retry: never-enriched works ('pending', next_retry_at NULL = due immediately)
-  // plus failed/exhausted ones whose next_retry_at has arrived. When and how far out
+  // Q1a — owned backlog: due works that at least one user actually has a scan for. These are the
+  // only works that can be showing a "series lookup pending" badge to somebody, so they go first.
+  // This matters because the backlog is self-amplifying: enriching one work with a series inserts
+  // its whole roster as placeholder works via populateSeriesMembers (~10 per work, observed), and
+  // those placeholders get interleaved ids. Ordering the combined set by id alone lets thousands of
+  // placeholders nobody is looking at push a user's own freshly-imported books arbitrarily far back.
+  // Written as EXISTS rather than a JOIN deliberately: the JOIN form makes SQLite drive from
+  // scans (SCAN s USING COVERING INDEX), i.e. every scan row in the database on every tick. EXISTS
+  // leads from idx_works_enrichment_due instead, so the outer scan is bounded by the backlog and
+  // each candidate costs two index probes (idx_books_work, idx_scans_book).
+  const OWNED_LIMIT = BATCH_SIZE - 1; // leave >=1 slot so placeholders still make progress
+  const { results: owned } = await env.DB.prepare(
+    `
+    SELECT w.id FROM works w
+    WHERE w.enrichment_status != 'done'
+      AND (w.next_retry_at IS NULL OR w.next_retry_at <= datetime('now'))
+      AND EXISTS (
+        SELECT 1 FROM books b JOIN scans s ON s.book_id = b.id WHERE b.work_id = w.id
+      )
+    ORDER BY w.enrichment_status = 'pending' DESC, w.id
+    LIMIT ?`,
+  )
+    .bind(OWNED_LIMIT)
+    .all<{ id: number }>();
+
+  // Q1b — general backlog/retry: never-enriched works ('pending', next_retry_at NULL = due
+  // immediately) plus failed/exhausted ones whose next_retry_at has arrived. When and how far out
   // next_retry_at is scheduled is decided at failure time by scheduleRetry in enrichment.ts.
-  // Uses idx_works_enrichment_due; pending works are served before retries.
-  const { results: backlog } = await env.DB.prepare(
+  // Uses idx_works_enrichment_due; pending works are served before retries. Overlaps Q1a (it isn't
+  // filtered to unowned works — that predicate isn't indexable), so results are deduped below.
+  const { results: general } = await env.DB.prepare(
     `
     SELECT id FROM works
     WHERE enrichment_status != 'done'
@@ -53,6 +86,12 @@ export async function scheduled(
   )
     .bind(BATCH_SIZE)
     .all<{ id: number }>();
+
+  const seen = new Set(owned.map((w) => w.id));
+  const backlog = [
+    ...owned,
+    ...general.filter((w) => !seen.has(w.id)),
+  ].slice(0, BATCH_SIZE);
 
   // Q2 — schema backfill: already-enriched works missing newer Wikidata columns. A backfill
   // attempt that fails moves the work to 'failed', so it drains through Q1 from then on.
@@ -93,5 +132,11 @@ export async function scheduled(
     "DELETE FROM rate_limits WHERE window_start + window_ms < ?",
   )
     .bind(Date.now() - RATE_LIMIT_PRUNE_GRACE_MS)
+    .run();
+
+  // Keep search_cache from growing unbounded — expired entries are dead weight (a stale row is
+  // never served, `handleTitleSearch` filters on expires_at > now), just wasted storage.
+  await env.DB.prepare("DELETE FROM search_cache WHERE expires_at < ?")
+    .bind(Date.now())
     .run();
 }

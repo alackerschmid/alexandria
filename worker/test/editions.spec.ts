@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { mergeMetadata, splitAuthors, normalizeStr } from "../src/editions";
+import {
+  mergeMetadata,
+  splitAuthors,
+  normalizeStr,
+  normalizeAuthorKey,
+} from "../src/editions";
 import type { BookMetadata } from "../src/types";
 
 const empty: BookMetadata = {
@@ -70,6 +75,75 @@ describe("splitAuthors", () => {
 
   it("returns a single-element array for one author", () => {
     expect(splitAuthors("Frank Herbert")).toEqual(["Frank Herbert"]);
+  });
+
+  it("does not split on commas inside a parenthetical qualifier", () => {
+    // Observed in the wild via OpenLibrary; previously produced a literal "Grossbritannien)"
+    // author row and truncated the real name to "John Ronald Reuel Tolkien (Mythenforscher".
+    expect(
+      splitAuthors("John Ronald Reuel Tolkien (Mythenforscher, Grossbritannien)"),
+    ).toEqual(["John Ronald Reuel Tolkien"]);
+  });
+
+  it("keeps authors credited after a parenthetical", () => {
+    expect(splitAuthors("Jane Doe (editor), John Smith")).toEqual([
+      "Jane Doe",
+      "John Smith",
+    ]);
+  });
+
+  it("handles an unclosed parenthetical", () => {
+    expect(splitAuthors("Jane Doe (editor")).toEqual(["Jane Doe"]);
+  });
+
+  it("does not leave a stray ')' behind for a nested parenthetical", () => {
+    expect(splitAuthors("A (pseudonym of B (1900-1950)) C")).toEqual(["A C"]);
+  });
+
+  it("strips two separate (non-nested) parentheticals on the same name", () => {
+    expect(splitAuthors("Jane Doe (b. 1980) (editor)")).toEqual(["Jane Doe"]);
+  });
+});
+
+describe("normalizeAuthorKey", () => {
+  it("collapses initial spacing and punctuation to one key", () => {
+    const expected = "jrrtolkien";
+    expect(normalizeAuthorKey("J.R.R. Tolkien")).toBe(expected);
+    expect(normalizeAuthorKey("J. R. R. Tolkien")).toBe(expected);
+    expect(normalizeAuthorKey("j.r.r.tolkien")).toBe(expected);
+  });
+
+  it("drops a trailing parenthetical qualifier", () => {
+    expect(normalizeAuthorKey("John Ronald Reuel Tolkien (Mythenforscher")).toBe(
+      normalizeAuthorKey("John Ronald Reuel Tolkien"),
+    );
+  });
+
+  it("still strips diacritics", () => {
+    expect(normalizeAuthorKey("Émile Zola")).toBe("emilezola");
+  });
+
+  it("keeps names that differ in content apart", () => {
+    // These converge via wikidata_qid in mergeWorks, not via the key.
+    expect(normalizeAuthorKey("Mary Shelley")).not.toBe(
+      normalizeAuthorKey("Mary Wollstonecraft Shelley"),
+    );
+  });
+
+  it('returns "" for null/undefined', () => {
+    expect(normalizeAuthorKey(null)).toBe("");
+    expect(normalizeAuthorKey(undefined)).toBe("");
+  });
+
+  it("keeps distinct all-parenthetical garbage fragments apart instead of colliding on \"\"", () => {
+    // A leftover fragment row from the pre-fix splitAuthors bug, e.g. a comma-separated segment
+    // that was nothing but a qualifier ("Tolkien, (translator), Smith"). Truncating at '(' when
+    // it's the very first character would collapse every such fragment onto the empty key.
+    const various = normalizeAuthorKey("(various)");
+    const anonymous = normalizeAuthorKey("(anonymous)");
+    expect(various).not.toBe("");
+    expect(anonymous).not.toBe("");
+    expect(various).not.toBe(anonymous);
   });
 });
 

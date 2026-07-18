@@ -17,6 +17,26 @@ export function getBookByIsbn(db: D1Database, isbn: string) {
     .first<{ id: number }>();
 }
 
+// Shared "does this user already own this book" check, used by both the scan-queue and
+// Goodreads-import insert paths ahead of their respective duplicate-outcome responses.
+export async function findExistingScan(
+  db: D1Database,
+  userId: number,
+  bookId: number,
+): Promise<boolean> {
+  const dup = await db
+    .prepare("SELECT 1 FROM scans WHERE user_id = ? AND book_id = ?")
+    .bind(userId, bookId)
+    .first();
+  return !!dup;
+}
+
+// D1 surfaces a UNIQUE constraint violation as a generic Error with this substring in its
+// message — there's no typed error class to check against.
+export function isUniqueConstraintError(e: unknown): boolean {
+  return e instanceof Error && e.message.includes("UNIQUE constraint failed");
+}
+
 // author is intentionally excluded — authors are managed via the works/authors model, not per-user overrides.
 export const OVERRIDE_FIELDS = [
   "title",
@@ -83,6 +103,13 @@ export function buildScanSelect(locale: string): string {
          ws.ordinal                                          AS series_ordinal,
          (SELECT COUNT(*) FROM work_series x WHERE x.series_id = ws.series_id) AS series_total,
          CASE
+           -- No work link and no title: normally resolveEdition links a book synchronously right
+           -- after inserting it (even a title-less row still gets a work via linkWork's
+           -- isbn:<isbn> fallback key), so this is defensive rather than a steady-state case — it
+           -- only catches a linkWork insert-then-select race, or a legacy row from before that
+           -- guarantee existed, in the brief window before the sweeper's next unlinked-books pass
+           -- reaches it. Reporting 'pending' would look like an active lookup that isn't happening.
+           WHEN b.work_id IS NULL AND b.title IS NULL          THEN 'failed'
            WHEN b.work_id IS NULL                              THEN 'pending'
            WHEN wk.enrichment_status IN ('failed','exhausted') THEN 'failed'
            WHEN wk.enrichment_status = 'done'                  THEN 'done'

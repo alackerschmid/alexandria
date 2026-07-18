@@ -42,3 +42,30 @@ export function isValidIsbn(s: string): boolean {
 export function isIsbnFormat(s: string): boolean {
   return /^(?:\d{9}[\dX]|\d{13})$/.test(s);
 }
+
+// Converts a valid ISBN-10 to its ISBN-13 form (prepend 978, recompute the check digit).
+// Returns null for anything that isn't a valid ISBN-10 — callers should validate first.
+export function isbn10To13(s: string): string | null {
+  if (!isValidIsbn10(s)) return null;
+  const core = "978" + s.slice(0, 9);
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    sum += Number(core[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return core + check;
+}
+
+// Converts a 978-prefixed ISBN-13 back to ISBN-10. Returns null for non-978 ISBN-13s (979 has
+// no 10-digit form) or anything that isn't a valid ISBN-13.
+export function isbn13To10(s: string): string | null {
+  if (!isValidIsbn13(s) || !s.startsWith("978")) return null;
+  const core = s.slice(3, 12);
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    sum += Number(core[i]) * (10 - i);
+  }
+  const remainder = (11 - (sum % 11)) % 11;
+  const check = remainder === 10 ? "X" : String(remainder);
+  return core + check;
+}

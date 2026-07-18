@@ -1,0 +1,179 @@
+import { Hono } from "hono";
+import type { Env, BookRow } from "../types";
+import { authMiddleware } from "../auth";
+import { resolveEdition, linkWork } from "../editions";
+import { rateLimitOrReject } from "../rate-limit";
+import { mapWithConcurrency } from "../concurrency";
+import { validateImportRow, type ImportRowInput } from "../import-validation";
+import { findExistingScan, isUniqueConstraintError } from "../library-query";
+
+const importRoutes = new Hono<Env>();
+
+importRoutes.use("*", authMiddleware);
+
+// Each new ISBN costs 3 external fetches (1 Google Books + 2 OpenLibrary) plus several D1
+// statements via resolveEdition. At the cap that's 30 external subrequests — under the Workers
+// free-plan limit of 50. (D1 calls bill against a separate 1000/invocation internal budget.)
+const MAX_BATCH_SIZE = 10;
+// Rows are resolved concurrently: a cached ISBN is a couple of D1 reads, but an uncached one is a
+// ~1.1s network round-trip, and serializing those made a 10-row batch take ~11s. The cap keeps the
+// burst against OpenLibrary polite — raising it past ~6 buys nothing anyway, since Workers allow
+// only 6 simultaneous connections awaiting response headers.
+const ROW_CONCURRENCY = 4;
+// One increment per request (not per row) — a full library import is a handful of batches,
+// this just guards against a runaway client loop.
+const IMPORT_RATE_LIMIT = 30;
+
+type ImportOutcome = "imported" | "duplicate" | "invalid_isbn" | "failed";
+
+interface ImportedBook {
+  title: string | null;
+  author: string | null;
+  cover_url: string | null;
+  publisher: string | null;
+  language: string | null;
+  work_id: number | null;
+}
+
+interface ImportRowResult {
+  isbn: string;
+  outcome: ImportOutcome;
+  scan_id?: number;
+  // Present only for "imported" rows — the resolved edition's details, so the post-import
+  // summary can render an editable card without a follow-up per-scan fetch.
+  book?: ImportedBook;
+}
+
+async function importRow(
+  db: D1Database,
+  userId: number,
+  apiKey: string,
+  input: ImportRowInput,
+): Promise<ImportRowResult> {
+  const validated = validateImportRow(input);
+  if (!validated.ok) {
+    return { isbn: input.isbn, outcome: "invalid_isbn" };
+  }
+  const { isbn13, isbn10, status, owning_status, rating, created_at } =
+    validated.row;
+
+  // Everything below can throw (D1 hiccups, resolveEdition/linkWork failures) — this function
+  // runs concurrently with sibling rows via mapWithConcurrency, which lets rejections propagate,
+  // so an uncaught throw here would fail the whole batch and misreport already-imported sibling
+  // rows as failed. Every exit is a normal ImportRowResult instead.
+  try {
+    // Dedupe against both ISBN forms — the library may already hold this book under whichever
+    // form it was originally scanned/looked up with. A single edition can legitimately have
+    // *two* `books` rows (one keyed by each ISBN form, e.g. one from an old scan, one from an
+    // earlier import) — check every match for an existing scan, not just whichever row SQLite
+    // happens to return first, or a scan sitting on the other row would be missed and duplicated.
+    const { results: existingRows } = await db
+      .prepare(
+        `SELECT * FROM books WHERE isbn = ? ${isbn10 ? "OR isbn = ?" : ""}`,
+      )
+      .bind(...(isbn10 ? [isbn13, isbn10] : [isbn13]))
+      .all<BookRow>();
+
+    let book: BookRow | null;
+    if (existingRows.length > 0) {
+      for (const row of existingRows) {
+        if (await findExistingScan(db, userId, row.id)) {
+          return { isbn: isbn13, outcome: "duplicate" };
+        }
+      }
+      // Reuse the row already found instead of re-resolving by isbn13 alone: resolveEdition's
+      // exact-match lookup would miss a book stored under its isbn10 form and mint a duplicate
+      // `books` row for the same edition.
+      const existing = existingRows[0];
+      if (!existing.work_id) await linkWork(db, existing);
+      book = existing;
+    } else {
+      book = await resolveEdition(db, isbn13, apiKey, true);
+    }
+
+    if (!book) {
+      console.error("[POST /api/import/goodreads] resolveEdition failed, isbn:", isbn13);
+      return { isbn: isbn13, outcome: "failed" };
+    }
+
+    const columns = ["user_id", "book_id", "status", "owning_status", "rating"];
+    const binds: (string | number | null)[] = [
+      userId,
+      book.id,
+      status,
+      owning_status,
+      rating,
+    ];
+    if (created_at) {
+      columns.push("created_at");
+      binds.push(created_at);
+    }
+
+    const result = await db
+      .prepare(
+        `INSERT INTO scans (${columns.join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`,
+      )
+      .bind(...binds)
+      .run();
+    return {
+      isbn: isbn13,
+      outcome: "imported",
+      scan_id: result.meta.last_row_id,
+      book: {
+        title: book.title,
+        author: book.author,
+        cover_url: book.cover_url,
+        publisher: book.publisher,
+        language: book.language,
+        work_id: book.work_id,
+      },
+    };
+  } catch (e) {
+    if (isUniqueConstraintError(e)) {
+      return { isbn: isbn13, outcome: "duplicate" };
+    }
+    console.error("[POST /api/import/goodreads] importRow failed, isbn:", isbn13, e);
+    return { isbn: isbn13, outcome: "failed" };
+  }
+}
+
+// No enrichWork/waitUntil here, deliberately — resolveEdition→linkWork leaves new works at
+// enrichment_status='pending' and the cron sweeper drains the backlog (5 per 5-min tick). Firing
+// one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
+// at once instead of the sweeper's paced trickle.
+importRoutes.post("/goodreads", async (c) => {
+  const body = await c.req.json<{ rows?: ImportRowInput[] }>();
+  const rows = body.rows;
+  if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_BATCH_SIZE) {
+    return c.json(
+      { error: `rows must contain between 1 and ${MAX_BATCH_SIZE} entries` },
+      400,
+    );
+  }
+  if (rows.some((r) => typeof r?.isbn !== "string" || !r.isbn)) {
+    return c.json({ error: "each row requires an isbn" }, 400);
+  }
+
+  const userId = c.get("userId");
+  const blocked = await rateLimitOrReject(
+    c,
+    `import:${userId}`,
+    IMPORT_RATE_LIMIT,
+    1,
+    "Too many import requests — please slow down",
+  );
+  if (blocked) return blocked;
+
+  const db = c.env.DB;
+  const apiKey = c.env.GOOGLE_BOOKS_API_KEY;
+  // Concurrent, but order-preserving — the client maps results back onto its rows positionally.
+  // Rows sharing a work or author race inside linkWork; every write there is INSERT OR IGNORE and
+  // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are benign.
+  const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
+    importRow(db, userId, apiKey, row),
+  );
+
+  return c.json({ results });
+});
+
+export default importRoutes;
