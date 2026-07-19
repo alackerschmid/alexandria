@@ -69,3 +69,11 @@ export function isbn13To10(s: string): string | null {
   const check = remainder === 10 ? "X" : String(remainder);
   return core + check;
 }
+
+// Returns the other valid form of a valid ISBN (10<->13), or null when `s` isn't a valid ISBN or
+// has no alternate form (a 979-prefixed ISBN-13 has no ISBN-10 equivalent). Lets a caller check
+// whether a `books` row already exists under the other form before minting a duplicate — the same
+// edition can be scanned/looked-up under either form depending on which barcode was read.
+export function alternateIsbnForm(s: string): string | null {
+  return s.length === 13 ? isbn13To10(s) : s.length === 10 ? isbn10To13(s) : null;
+}

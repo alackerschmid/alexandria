@@ -323,6 +323,8 @@
       "current_password": "Current password",
       "new_password": "New password",
       "confirm_password": "Confirm new password",
+      "confirm_password_for_email": "Confirm password to change email",
+      "current_password_required": "Current password is required to change your email or password",
       "password_mismatch": "Passwords don't match",
       "password_saved": "Password updated",
       "hide_password_form": "Cancel"

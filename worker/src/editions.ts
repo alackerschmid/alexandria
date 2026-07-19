@@ -1,4 +1,5 @@
 import type { BookRow, BookMetadata } from "./types";
+import { alternateIsbnForm } from "./isbn";
 
 async function fetchWithTimeout(
   url: string,
@@ -770,9 +771,13 @@ export async function resolveEdition(
   allowEmpty = false,
   skipLinkWork = false,
 ): Promise<BookRow | null> {
+  // Check both ISBN forms — the same edition can already be stored under its ISBN-10 or ISBN-13
+  // form depending on which one was scanned/looked-up first. Without this, a lookup under the
+  // other form would fall through to fetch+insert and mint a second `books` row for one edition.
+  const altIsbn = alternateIsbnForm(isbn);
   let book = await db
-    .prepare("SELECT * FROM books WHERE isbn = ?")
-    .bind(isbn)
+    .prepare(`SELECT * FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
+    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
     .first<BookRow>();
   if (book) {
     if (!book.work_id && !skipLinkWork) await linkWork(db, book);

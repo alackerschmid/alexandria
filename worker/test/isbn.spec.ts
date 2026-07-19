@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { normalizeIsbn, isValidIsbn, isbn10To13, isbn13To10 } from "../src/isbn";
+import {
+  normalizeIsbn,
+  isValidIsbn,
+  isbn10To13,
+  isbn13To10,
+  alternateIsbnForm,
+} from "../src/isbn";
 
 describe("normalizeIsbn", () => {
   it("strips hyphens and spaces", () => {
@@ -83,5 +89,24 @@ describe("isbn13To10", () => {
     const isbn13 = isbn10To13(isbn10);
     expect(isbn13).not.toBeNull();
     expect(isbn13To10(isbn13 as string)).toBe(isbn10);
+  });
+});
+
+describe("alternateIsbnForm", () => {
+  it("converts a valid ISBN-10 to its ISBN-13 form", () => {
+    expect(alternateIsbnForm("0306406152")).toBe("9780306406157");
+  });
+
+  it("converts a 978-prefixed ISBN-13 to its ISBN-10 form", () => {
+    expect(alternateIsbnForm("9780306406157")).toBe("0306406152");
+  });
+
+  it("returns null for a 979-prefixed ISBN-13 (no ISBN-10 form)", () => {
+    expect(alternateIsbnForm("9791234567896")).toBeNull();
+  });
+
+  it("returns null for an invalid ISBN", () => {
+    expect(alternateIsbnForm("0306406153")).toBeNull();
+    expect(alternateIsbnForm("notanisbn")).toBeNull();
   });
 });

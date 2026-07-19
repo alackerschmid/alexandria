@@ -80,6 +80,25 @@
               </SettingsField>
             </div>
 
+            <!-- Changing the email requires re-entering the current password (server-enforced) —
+                 skip this separate prompt when the password-change form is already open, since
+                 that form's own current-password field covers the same verification. -->
+            <div
+              v-if="emailChanged && !showPasswordForm"
+              class="mt-4 max-w-xs"
+            >
+              <SettingsField
+                :label="$t('settings.account.confirm_password_for_email')"
+              >
+                <input
+                  v-model="emailPasswordConfirm"
+                  type="password"
+                  class="settings-input"
+                  autocomplete="current-password"
+                />
+              </SettingsField>
+            </div>
+
             <!-- Password change toggle -->
             <div class="mt-5">
               <button
@@ -669,7 +688,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, nextTick, onMounted, onUnmounted } from "vue";
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore, type ThemeMode } from "@/stores/theme";
@@ -817,6 +836,14 @@ const passwordError = ref("");
 const savingAccount = ref(false);
 const accountError = ref("");
 const accountSaved = ref(false);
+// Confirms identity for an email change when the password-change form isn't already open (that
+// form's own current-password field covers verification instead — see saveAccount).
+const emailPasswordConfirm = ref("");
+
+const emailChanged = computed(() => {
+  const trimmed = accountForm.email.trim().toLowerCase();
+  return !!trimmed && trimmed !== (authStore.email ?? "").toLowerCase();
+});
 
 let savedTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -830,20 +857,31 @@ async function saveAccount() {
   const trimmedName = accountForm.firstname.trim();
   if (trimmedName && trimmedName !== (authStore.firstname ?? ""))
     body.firstname = trimmedName;
-  const trimmedEmail = accountForm.email.trim().toLowerCase();
-  if (trimmedEmail && trimmedEmail !== (authStore.email ?? "").toLowerCase())
-    body.email = trimmedEmail;
+  if (emailChanged.value) body.email = accountForm.email.trim().toLowerCase();
 
+  let changingPassword = false;
   if (showPasswordForm.value) {
     if (passwordForm.next !== passwordForm.confirm) {
       passwordError.value = t("settings.account.password_mismatch");
       savingAccount.value = false;
       return;
     }
-    if (passwordForm.next) {
-      body.currentPassword = passwordForm.current;
-      body.newPassword = passwordForm.next;
+    changingPassword = !!passwordForm.next;
+  }
+
+  // The server requires the current password to change either the email or the password —
+  // reuse the password-change form's field when it's open, otherwise the dedicated inline field.
+  if (emailChanged.value || changingPassword) {
+    const currentPassword = showPasswordForm.value
+      ? passwordForm.current
+      : emailPasswordConfirm.value;
+    if (!currentPassword) {
+      accountError.value = t("settings.account.current_password_required");
+      savingAccount.value = false;
+      return;
     }
+    body.currentPassword = currentPassword;
+    if (changingPassword) body.newPassword = passwordForm.next;
   }
 
   if (Object.keys(body).length === 0) {
@@ -870,7 +908,10 @@ async function saveAccount() {
       accountError.value = data.error ?? t("detail.edit_error");
     } else {
       if (data.firstname) authStore.setFirstname(data.firstname);
-      if (data.email) authStore.setEmail(data.email);
+      if (data.email) {
+        authStore.setEmail(data.email);
+        emailPasswordConfirm.value = "";
+      }
       if (data.passwordChanged) {
         showPasswordForm.value = false;
         Object.assign(passwordForm, { current: "", next: "", confirm: "" });

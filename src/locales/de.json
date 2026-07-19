@@ -323,6 +323,8 @@
       "current_password": "Aktuelles Passwort",
       "new_password": "Neues Passwort",
       "confirm_password": "Neues Passwort bestätigen",
+      "confirm_password_for_email": "Passwort bestätigen, um die E-Mail zu ändern",
+      "current_password_required": "Um deine E-Mail-Adresse oder dein Passwort zu ändern, ist dein aktuelles Passwort erforderlich",
       "password_mismatch": "Passwörter stimmen nicht überein",
       "password_saved": "Passwort aktualisiert",
       "hide_password_form": "Abbrechen"

@@ -15,7 +15,12 @@ export interface QueuedBook {
 const QUEUE_KEY = "bookscan_queue_v3";
 
 export function readQueue(): QueuedBook[] {
-  return JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+  try {
+    const parsed = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Persists the queue, removing the key entirely once it's empty. */

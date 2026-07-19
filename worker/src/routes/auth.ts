@@ -131,10 +131,60 @@ auth.patch("/me", authMiddleware, async (c) => {
     result.firstname = trimmed;
   }
 
-  if (typeof body.email === "string") {
-    const newEmail = body.email.trim().toLowerCase();
+  const changingEmail = typeof body.email === "string";
+  const changingPassword =
+    typeof body.currentPassword === "string" &&
+    typeof body.newPassword === "string";
+
+  let newEmail: string | null = null;
+  if (changingEmail) {
+    newEmail = body.email!.trim().toLowerCase();
     if (!EMAIL_RE.test(newEmail))
       return c.json({ error: "A valid email address is required" }, 400);
+  }
+  if (changingPassword && body.newPassword!.length < 8) {
+    return c.json(
+      { error: "New password must be at least 8 characters" },
+      400,
+    );
+  }
+
+  // Both email and password changes require re-proving the current password — a leaked bearer
+  // token (all authMiddleware checks) must not be enough to rebind the account's identity.
+  // Verification attempts are rate-limited per user, since a token holder would otherwise get
+  // unlimited password guesses against this endpoint.
+  if (changingEmail || changingPassword) {
+    const blocked = await rateLimitOrReject(
+      c,
+      `me-verify:${userId}`,
+      10,
+      1,
+      "Too many attempts — please slow down",
+    );
+    if (blocked) return blocked;
+
+    if (!body.currentPassword) {
+      return c.json(
+        {
+          error:
+            "Current password is required to change your email or password",
+        },
+        400,
+      );
+    }
+    const user = await db
+      .prepare("SELECT password_hash FROM users WHERE id = ?")
+      .bind(userId)
+      .first<{ password_hash: string }>();
+    if (
+      !user ||
+      !(await verifyPassword(body.currentPassword, user.password_hash))
+    ) {
+      return c.json({ error: "Current password is incorrect" }, 401);
+    }
+  }
+
+  if (changingEmail) {
     try {
       await db
         .prepare("UPDATE users SET email = ? WHERE id = ?")
@@ -149,27 +199,8 @@ auth.patch("/me", authMiddleware, async (c) => {
     }
   }
 
-  if (
-    typeof body.currentPassword === "string" &&
-    typeof body.newPassword === "string"
-  ) {
-    if (body.newPassword.length < 8) {
-      return c.json(
-        { error: "New password must be at least 8 characters" },
-        400,
-      );
-    }
-    const user = await db
-      .prepare("SELECT password_hash FROM users WHERE id = ?")
-      .bind(userId)
-      .first<{ password_hash: string }>();
-    if (
-      !user ||
-      !(await verifyPassword(body.currentPassword, user.password_hash))
-    ) {
-      return c.json({ error: "Current password is incorrect" }, 401);
-    }
-    const newHash = await hashPassword(body.newPassword);
+  if (changingPassword) {
+    const newHash = await hashPassword(body.newPassword!);
     await db
       .prepare("UPDATE users SET password_hash = ? WHERE id = ?")
       .bind(newHash, userId)
@@ -193,8 +224,19 @@ auth.delete("/me", authMiddleware, async (c) => {
     );
   }
 
-  const db = c.env.DB;
   const userId = c.get("userId");
+  // Shares the me-verify:<userId> budget with PATCH /me — both endpoints re-verify the current
+  // password against a bearer token alone, so a leaked token shouldn't get unlimited guesses here.
+  const blocked = await rateLimitOrReject(
+    c,
+    `me-verify:${userId}`,
+    10,
+    1,
+    "Too many attempts — please slow down",
+  );
+  if (blocked) return blocked;
+
+  const db = c.env.DB;
   const user = await db
     .prepare("SELECT password_hash FROM users WHERE id = ?")
     .bind(userId)
