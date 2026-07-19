@@ -115,18 +115,14 @@
                   class="relative w-full aspect-[2/3] overflow-hidden"
                   :class="cardBorderClass(ed)"
                 >
-                  <img
-                    v-if="ed.cover_url"
-                    :src="ed.cover_url"
-                    :alt="ed.title || ed.isbn"
-                    class="w-full h-full object-cover"
-                  />
-                  <PlaceholderCover
-                    v-else
+                  <CoverImage
+                    :cover-url="ed.cover_url"
                     :title="ed.title || ed.isbn"
+                    :alt="ed.title || ed.isbn"
                     text-class="text-[28px]"
                     :icon-size="26"
                     show-missing-indicator
+                    class="w-full h-full object-cover"
                   />
                   <div
                     v-if="switchingIsbn === ed.isbn"
@@ -242,7 +238,7 @@ import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
 import type { Book } from "@/types/book";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 
 interface WorkEdition {
   isbn: string;

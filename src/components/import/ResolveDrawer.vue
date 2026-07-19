@@ -42,7 +42,7 @@ const { t } = useI18n();
       </div>
 
       <div class="flex-none px-6 py-5 border-b border-charcoal-border">
-        <p class="font-heading font-black text-[19px] text-text-primary leading-tight">
+        <p class="font-heading font-bold text-[19px] text-text-primary leading-tight">
           {{ item.row.title }}
         </p>
         <p class="text-[12px] text-text-secondary mt-1">

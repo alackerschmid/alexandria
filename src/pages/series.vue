@@ -112,19 +112,16 @@
           >
             {{ entry.ordinal != null ? entry.ordinal : "—" }}
           </div>
-          <img
-            v-if="entry.cover_url"
-            :src="entry.cover_url"
-            :alt="entry.title || $t('series.untitled')"
-            class="w-9 h-13 object-cover shrink-0"
-          />
-          <div v-else class="w-9 h-13 relative overflow-hidden shrink-0">
-            <PlaceholderCover
+          <div class="w-9 h-13 relative overflow-hidden shrink-0">
+            <CoverImage
+              :cover-url="entry.cover_url"
               :title="entry.title"
+              :alt="entry.title || $t('series.untitled')"
               :ghost="!entry.owned"
               :show-missing-indicator="!entry.owned"
               text-class="text-xs"
               :icon-size="14"
+              class="w-full h-full object-cover"
             />
           </div>
           <div class="min-w-0 flex-1">
@@ -205,7 +202,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 
 interface SeriesEntry {
   work_id: number;

@@ -301,7 +301,7 @@
                 </button>
               </div>
               <p
-                class="font-heading font-black text-lg text-[#f0ede8] leading-tight mb-4"
+                class="font-heading font-bold text-lg text-[#f0ede8] leading-tight mb-4"
               >
                 {{ $t("scanner.search_results") }}
               </p>
@@ -659,7 +659,7 @@
                 </p>
                 <p
                   v-else
-                  class="font-heading text-xl font-black text-white leading-tight line-clamp-3 mb-2"
+                  class="font-heading text-xl font-bold text-white leading-tight line-clamp-3 mb-2"
                 >
                   {{ detectedBook.title }}
                 </p>
@@ -877,7 +877,7 @@
                   {{ $t("scanner.this_session") }}
                 </p>
                 <p
-                  class="font-heading font-black text-lg text-[#f0ede8] leading-tight"
+                  class="font-heading font-bold text-lg text-[#f0ede8] leading-tight"
                 >
                   {{
                     $t(
@@ -1034,7 +1034,7 @@
                   {{ $t("scanner.add_label") }}
                 </p>
                 <p
-                  class="font-heading font-black text-lg text-[#f0ede8] leading-tight"
+                  class="font-heading font-bold text-lg text-[#f0ede8] leading-tight"
                 >
                   {{ $t("scanner.search_results") }}
                 </p>

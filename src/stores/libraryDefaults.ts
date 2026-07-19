@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
-import { customRef, type Ref } from "vue";
+import { computed, customRef, type Ref } from "vue";
 import type { ReadStatus } from "@/types/book";
-import type { GroupBy, SortOption } from "@/types/library";
+import type { GroupBy, OwnershipScope, SortOption } from "@/types/library";
 
 // A writable ref that persists to localStorage on every set — so pages can bind the
 // setting directly (v-model / storeToRefs) without a per-setting computed wrapper or
@@ -76,7 +76,28 @@ const VALID_GROUP_BY: GroupBy[] = [
 const isValidGroupBy = (v: string): v is GroupBy =>
   (VALID_GROUP_BY as string[]).includes(v) || /^cf:\d+$/.test(v);
 
+const VALID_OWNERSHIP_SCOPE: OwnershipScope[] = ["owned", "all", "missing"];
+const isValidOwnershipScope = (v: string): v is OwnershipScope =>
+  (VALID_OWNERSHIP_SCOPE as string[]).includes(v);
+
+// One-time migration: `ownershipScope` replaces the three booleans below. If the
+// user never explicitly chose an ownershipScope (i.e. this is their first load
+// post-migration), derive it from whichever of the old flags they'd set, instead
+// of silently discarding a customized "owned only" / "show missing" preference.
+function migrateOwnershipScope() {
+  if (localStorage.getItem("libOwnershipScope") !== null) return;
+  const scope: OwnershipScope =
+    localStorage.getItem("libOnlyOwned") === "true"
+      ? "owned"
+      : localStorage.getItem("libShowUnowned") === "true"
+        ? "missing"
+        : "all";
+  localStorage.setItem("libOwnershipScope", scope);
+}
+
 export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
+  migrateOwnershipScope();
+
   const defaultView = persistedStr<"list" | "tile">("defaultView", "list");
   const defaultScanStatus = persistedStr<ReadStatus>(
     "defaultScanStatus",
@@ -85,16 +106,23 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
   const defaultPageSize = persistedNum("defaultPageSize", 24);
 
   const mainOnly = persistedBool("libMainOnly", true);
-  const highlightComplete = persistedBool("libHighlightComplete", true);
-  const showUnowned = persistedBool("libShowUnowned", false);
   // Independent per-view defaults: the reading-status dot is the primary signal in
   // list view but visual clutter in the denser tile grid, so each view remembers
   // its own preference rather than sharing one flag.
   const showStatusIconsList = persistedBool("libShowStatusIconsList", true);
   const showStatusIconsTile = persistedBool("libShowStatusIconsTile", false);
-  const onlyOwned = persistedBool("libOnlyOwned", false);
-  const highlightOwningBorder = persistedBool("libHighlightOwningBorder", false);
   const groupEditions = persistedBool("libGroupEditions", true);
+
+  // One control over the ownership axis. `onlyOwned`/`showUnowned` are the two
+  // filters the library pipeline actually consumes; deriving them here keeps the
+  // contradictory combination (hide unowned *and* reveal missing) unrepresentable.
+  const ownershipScope = persistedStr<OwnershipScope>(
+    "libOwnershipScope",
+    "all",
+    isValidOwnershipScope,
+  );
+  const onlyOwned = computed(() => ownershipScope.value === "owned");
+  const showUnowned = computed(() => ownershipScope.value === "missing");
 
   const groupBy = persistedStr<GroupBy>("libGroupBy", "none", isValidGroupBy);
   const sortDirection = persistedStr<SortOption>("libSortDirection", "desc");
@@ -116,12 +144,11 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     defaultScanStatus,
     defaultPageSize,
     mainOnly,
-    highlightComplete,
+    ownershipScope,
     showUnowned,
     showStatusIconsList,
     showStatusIconsTile,
     onlyOwned,
-    highlightOwningBorder,
     groupEditions,
     groupBy,
     sortDirection,

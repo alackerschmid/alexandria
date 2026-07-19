@@ -16,21 +16,15 @@
            background shows between the dashed border and the image. -->
       <div class="absolute inset-0" :class="owningInsetClass">
         <!-- Cover image -->
-        <img
-          v-if="coverUrl"
-          :src="coverUrl"
-          :alt="title || $t('series.untitled')"
-          class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
-        />
-
-        <!-- No cover found -->
-        <PlaceholderCover
-          v-else
+        <CoverImage
+          :cover-url="coverUrl"
           :title="title"
+          :alt="title || $t('series.untitled')"
           :ghost="!owned"
           text-class="text-[30px]"
           :icon-size="28"
           :show-missing-indicator="!owned"
+          class="w-full h-full object-cover group-hover:opacity-80 transition-opacity"
         />
       </div>
 
@@ -111,7 +105,7 @@ import { computed } from "vue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
 import { STATUS_META, useBookStatus } from "@/composables/useBookStatus";
 import { OWNING_META, useOwningStatus } from "@/composables/useOwningStatus";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 
 const props = defineProps<{
   title: string | null;

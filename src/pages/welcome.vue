@@ -53,7 +53,7 @@ function start() {
               {{ $t("welcome.eyebrow") }}
             </p>
             <h1
-              class="font-heading font-black text-[33px] md:text-[50px] leading-[0.96] md:leading-[0.98] text-text-primary tracking-[-0.015em] md:tracking-[-0.02em] m-0"
+              class="font-heading font-bold text-[33px] md:text-[50px] leading-[0.96] md:leading-[0.98] text-text-primary tracking-[-0.015em] md:tracking-[-0.02em] m-0"
             >
               {{ $t("welcome.heading") }}
             </h1>
@@ -80,7 +80,7 @@ function start() {
             </div>
             <div class="flex items-end justify-between gap-3 mb-3.5">
               <h2
-                class="font-heading font-black text-2xl text-text-primary leading-tight"
+                class="font-heading font-bold text-2xl text-text-primary leading-tight"
               >
                 {{ $t("welcome.f1_title") }}
               </h2>
@@ -295,7 +295,7 @@ function start() {
               >
             </div>
             <h2
-              class="font-heading font-black text-[34px] text-text-primary leading-[1.0] tracking-[-0.01em] mb-2.5"
+              class="font-heading font-bold text-[34px] text-text-primary leading-[1.0] tracking-[-0.01em] mb-2.5"
             >
               {{ $t("welcome.f1_title") }}
             </h2>
@@ -540,7 +540,7 @@ function start() {
         style="background: rgb(var(--v-theme-primary))"
       >
         <div
-          class="font-heading font-black text-[18px] md:text-[26px] leading-tight tracking-[-0.01em] max-w-[150px] md:max-w-none"
+          class="font-heading font-bold text-[18px] md:text-[26px] leading-tight tracking-[-0.01em] max-w-[150px] md:max-w-none"
           style="color: #111110"
         >
           {{ $t("welcome.cta_headline") }}

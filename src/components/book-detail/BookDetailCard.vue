@@ -4,17 +4,13 @@
     <div class="flex gap-5 p-7">
       <!-- cover -->
       <div class="w-24 h-36 shrink-0 relative overflow-hidden">
-        <img
-          v-if="book.cover_url"
-          :src="book.cover_url"
-          :alt="book.title || book.isbn"
-          class="w-full h-full object-cover"
-        />
-        <PlaceholderCover
-          v-else
+        <CoverImage
+          :cover-url="book.cover_url"
           :title="book.title || book.isbn"
+          :alt="book.title || book.isbn"
           text-class="text-2xl"
           :icon-size="18"
+          class="w-full h-full object-cover"
         />
       </div>
 
@@ -63,7 +59,7 @@
         </span>
 
         <!-- status pill + owning status -->
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
           <button
             v-if="!readonly"
             class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase font-medium transition-colors"
@@ -80,7 +76,9 @@
             v-else
             class="flex items-center gap-1.5 text-[10px] tracking-[0.15em] uppercase text-text-secondary/50"
           >
-            <span class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border" />
+            <span
+              class="w-1.5 h-1.5 rounded-full shrink-0 bg-charcoal-border"
+            />
             {{ STATUS_CONFIG[book.status].label }}
           </span>
 
@@ -225,7 +223,7 @@ import AppButton from "@/components/AppButton.vue";
 import RatingStars from "@/components/RatingStars.vue";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 import OverrideDot from "@/components/OverrideDot.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 

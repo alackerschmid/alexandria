@@ -15,7 +15,6 @@
       }}</span>
       <AppSegmented
         v-model="viewMode"
-        variant="highlight"
         size="sm"
         :options="[
           {
@@ -29,6 +28,26 @@
             icon: 'mdi-view-grid',
           },
         ]"
+      />
+    </div>
+
+    <!-- Ownership axis: one control, stacked (three labelled options don't fit
+         beside a leading label at the panel's width). -->
+    <div class="border-b border-charcoal-border py-3.5">
+      <span class="block text-xs text-text-primary">{{
+        $t("library.books_shown")
+      }}</span>
+      <span class="block text-[10px] text-text-secondary mt-0.5 leading-snug">{{
+        seriesContext
+          ? $t("library.books_shown_sub_series")
+          : $t("library.books_shown_sub")
+      }}</span>
+      <AppSegmented
+        v-model="scope"
+        size="sm"
+        class="mt-2.5"
+        :aria-label="$t('library.books_shown')"
+        :options="scopeOptions"
       />
     </div>
 
@@ -49,88 +68,24 @@
     </button>
 
     <button
-      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
-      @click="onlyOwned = !onlyOwned"
-    >
-      <span class="min-w-0">
-        <span class="block text-xs text-text-primary">{{
-          $t("library.only_owned")
-        }}</span>
-        <span
-          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
-          >{{ $t("library.only_owned_sub") }}</span
-        >
-      </span>
-      <AppToggle :model-value="onlyOwned" />
-    </button>
-
-    <button
       v-if="seriesContext"
       class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
-      @click="mainOnly = !mainOnly"
+      @click="countSideEntries = !countSideEntries"
     >
       <span class="min-w-0">
         <span class="block text-xs text-text-primary">{{
-          $t("library.main_entries_only")
+          $t("library.count_side_entries")
         }}</span>
         <span
           class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
-          >{{ $t("library.main_entries_only_sub") }}</span
+          >{{ $t("library.count_side_entries_sub") }}</span
         >
       </span>
-      <AppToggle :model-value="mainOnly" />
+      <AppToggle :model-value="countSideEntries" />
     </button>
 
-    <button
-      v-if="seriesContext"
-      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
-      @click="highlightComplete = !highlightComplete"
-    >
-      <span class="min-w-0">
-        <span class="block text-xs text-text-primary">{{
-          $t("library.highlight_complete")
-        }}</span>
-        <span
-          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
-          >{{ $t("library.highlight_complete_sub") }}</span
-        >
-      </span>
-      <AppToggle :model-value="highlightComplete" />
-    </button>
-
-    <button
-      v-if="seriesContext"
-      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
-      @click="showUnowned = !showUnowned"
-    >
-      <span class="min-w-0">
-        <span class="block text-xs text-text-primary">{{
-          $t("library.show_unowned")
-        }}</span>
-        <span
-          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
-          >{{ $t("library.show_unowned_sub") }}</span
-        >
-      </span>
-      <AppToggle :model-value="showUnowned" />
-    </button>
-
-    <button
-      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
-      @click="highlightOwningBorder = !highlightOwningBorder"
-    >
-      <span class="min-w-0">
-        <span class="block text-xs text-text-primary">{{
-          $t("library.highlight_owning_border")
-        }}</span>
-        <span
-          class="block text-[10px] text-text-secondary mt-0.5 leading-snug"
-          >{{ $t("library.highlight_owning_border_sub") }}</span
-        >
-      </span>
-      <AppToggle :model-value="highlightOwningBorder" />
-    </button>
-
+    <!-- Last row: no bottom border, so it doesn't double up with the #extra
+         slot's leading divider. Keep any new conditional row above it. -->
     <button
       class="flex items-center justify-between gap-5 w-full text-left py-3.5"
       @click="groupEditions = !groupEditions"
@@ -152,27 +107,58 @@
 </template>
 
 <script lang="ts" setup>
+import { computed } from "vue";
+import { useI18n } from "vue-i18n";
 import AppToggle from "@/components/AppToggle.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
+import type { OwnershipScope } from "@/types/library";
 
-const mainOnly = defineModel<boolean>("mainOnly", { required: true });
-const highlightComplete = defineModel<boolean>("highlightComplete", {
-  required: true,
-});
-const showUnowned = defineModel<boolean>("showUnowned", { required: true });
 const showStatusIcons = defineModel<boolean>("showStatusIcons", {
-  required: true,
-});
-const onlyOwned = defineModel<boolean>("onlyOwned", { required: true });
-const highlightOwningBorder = defineModel<boolean>("highlightOwningBorder", {
   required: true,
 });
 const groupEditions = defineModel<boolean>("groupEditions", {
   required: true,
 });
+const ownershipScope = defineModel<OwnershipScope>("ownershipScope", {
+  required: true,
+});
+const mainOnly = defineModel<boolean>("mainOnly", { required: true });
 const viewMode = defineModel<"list" | "tile">("viewMode", { default: "list" });
 
-withDefaults(defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(), {
-  showViewRow: false,
+const props = withDefaults(
+  defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(),
+  { showViewRow: false },
+);
+
+const { t } = useI18n();
+
+// "Missing" only means anything on series shelves, so outside that context it's
+// hidden and a persisted "missing" reads as plain "all".
+const scopeOptions = computed(() => {
+  const opts: { value: OwnershipScope; label: string }[] = [
+    { value: "owned", label: t("library.scope_owned") },
+    { value: "all", label: t("library.scope_all") },
+  ];
+  if (props.seriesContext)
+    opts.push({ value: "missing", label: t("library.scope_missing") });
+  return opts;
+});
+const scope = computed<OwnershipScope>({
+  get: () =>
+    !props.seriesContext && ownershipScope.value === "missing"
+      ? "all"
+      : ownershipScope.value,
+  set: (v) => {
+    ownershipScope.value = v;
+  },
+});
+
+// The stored flag is "main entries only"; the label reads better inverted —
+// what the user perceives is whether side-stories count toward "3 / 7".
+const countSideEntries = computed({
+  get: () => !mainOnly.value,
+  set: (v) => {
+    mainOnly.value = !v;
+  },
 });
 </script>

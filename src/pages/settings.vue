@@ -8,7 +8,7 @@
         class="hidden md:flex flex-col flex-none w-[280px] border-r border-charcoal-border py-8 sticky top-0 h-[calc(100vh-57px)] overflow-y-auto shrink-0"
       >
         <h1
-          class="font-heading text-[30px] font-black text-text-primary px-7 leading-none mb-1"
+          class="font-heading text-[30px] font-bold text-text-primary px-7 leading-none mb-1"
         >
           {{ $t("settings.heading") }}
         </h1>
@@ -43,7 +43,7 @@
           <!-- Mobile heading -->
           <div class="md:hidden">
             <h1
-              class="font-heading text-[34px] font-black text-text-primary leading-none"
+              class="font-heading text-[34px] font-bold text-text-primary leading-none"
             >
               {{ $t("settings.heading") }}
             </h1>
@@ -166,61 +166,132 @@
             </div>
           </section>
 
-          <!-- ── ACCENT ───────────────────────────────────────────────────── -->
+          <!-- ── APPEARANCE ───────────────────────────────────────────────── -->
           <section id="accent" ref="sectionRefs.accent">
             <SectionHeading
-              :title="$t('settings.accent.heading')"
-              :description="$t('settings.accent.description')"
+              :title="$t('settings.appearance.heading')"
+              :description="$t('settings.appearance.description')"
             />
 
-            <div class="flex items-center gap-3 flex-wrap">
-              <button
-                v-for="preset in ACCENT_PRESETS"
-                :key="preset"
-                class="w-[34px] h-[34px] rounded-full transition-all"
-                :style="{
-                  background: preset,
-                  border:
-                    accentStore.color === preset
-                      ? '2px solid rgb(var(--v-theme-on-background))'
-                      : '2px solid transparent',
-                  boxShadow:
-                    accentStore.color === preset
-                      ? `0 0 0 1px ${preset}`
-                      : 'none',
-                }"
-                :title="preset"
-                @click="accentStore.set(preset)"
-              />
-
-              <span class="w-px h-[34px] bg-charcoal-border mx-1" />
-
-              <!-- Native color picker -->
-              <label
-                class="inline-flex items-center gap-2.5 border border-charcoal-border px-3 py-[7px] cursor-pointer hover:border-orange-neon transition-colors"
+            <div class="flex flex-col">
+              <DefaultRow
+                :label="$t('settings.appearance.accent')"
+                :first="true"
               >
-                <span
-                  class="w-5 h-5 rounded-full border border-white/15 flex-none"
-                  :style="{ background: accentStore.color }"
-                />
-                <span
-                  class="font-mono text-[12px] text-text-primary uppercase tracking-[0.04em]"
-                >
-                  {{
-                    isPreset(accentStore.color)
-                      ? accentStore.color
-                      : $t("settings.accent.custom")
-                  }}
-                </span>
-                <input
-                  type="color"
-                  :value="accentStore.color"
-                  class="w-0 h-0 opacity-0 absolute pointer-events-none"
-                  @input="
-                    accentStore.set(($event.target as HTMLInputElement).value)
-                  "
-                />
-              </label>
+                <div class="flex items-center gap-3 flex-wrap justify-end">
+                  <button
+                    v-for="preset in ACCENT_PRESETS"
+                    :key="preset"
+                    class="w-[34px] h-[34px] rounded-full transition-all"
+                    :style="{
+                      background: preset,
+                      border:
+                        accentStore.color === preset
+                          ? '2px solid rgb(var(--v-theme-on-background))'
+                          : '2px solid transparent',
+                      boxShadow:
+                        accentStore.color === preset
+                          ? `0 0 0 1px ${preset}`
+                          : 'none',
+                    }"
+                    :title="preset"
+                    @click="accentStore.set(preset)"
+                  />
+
+                  <span class="w-px h-[34px] bg-charcoal-border mx-1" />
+
+                  <!-- Native color picker -->
+                  <label
+                    class="inline-flex items-center gap-2.5 border border-charcoal-border px-3 py-[7px] cursor-pointer hover:border-orange-neon transition-colors"
+                  >
+                    <span
+                      class="w-5 h-5 rounded-full border border-white/15 flex-none"
+                      :style="{ background: accentStore.color }"
+                    />
+                    <span
+                      class="font-mono text-[12px] text-text-primary uppercase tracking-[0.04em]"
+                    >
+                      {{
+                        isPreset(accentStore.color)
+                          ? accentStore.color
+                          : $t("settings.accent.custom")
+                      }}
+                    </span>
+                    <input
+                      type="color"
+                      :value="accentStore.color"
+                      class="w-0 h-0 opacity-0 absolute pointer-events-none"
+                      @input="
+                        accentStore.set(
+                          ($event.target as HTMLInputElement).value,
+                        )
+                      "
+                    />
+                  </label>
+                </div>
+              </DefaultRow>
+
+              <DefaultRow :label="$t('settings.appearance.paper')">
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                  <button
+                    v-for="key in PAPER_PRESET_KEYS"
+                    :key="key"
+                    class="inline-flex items-center gap-2 border px-3 py-[7px] transition-colors hover:border-orange-neon"
+                    :style="{
+                      borderColor:
+                        paperStore.preset === key
+                          ? 'rgb(var(--v-theme-on-background))'
+                          : 'var(--color-charcoal-border)',
+                    }"
+                    @click="paperStore.set(key)"
+                  >
+                    <!-- Two-tone swatch: page background | raised surface -->
+                    <span
+                      class="w-5 h-5 rounded-full flex-none overflow-hidden border"
+                      :style="{
+                        background: paperSwatch(key).page,
+                        borderColor: paperSwatch(key).border,
+                      }"
+                    >
+                      <span
+                        class="block w-2.5 h-full"
+                        :style="{ background: paperSwatch(key).surface }"
+                      />
+                    </span>
+                    <span
+                      class="font-mono text-[12px] text-text-primary uppercase tracking-[0.04em]"
+                    >
+                      {{ $t(`settings.appearance.paper_${key}`) }}
+                    </span>
+                  </button>
+                </div>
+              </DefaultRow>
+
+              <DefaultRow :label="$t('settings.appearance.typeface')">
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                  <button
+                    v-for="key in TYPEFACE_PRESET_KEYS"
+                    :key="key"
+                    class="border px-3.5 py-[7px] transition-colors hover:border-orange-neon"
+                    :style="{
+                      borderColor:
+                        typefaceStore.preset === key
+                          ? 'rgb(var(--v-theme-on-background))'
+                          : 'var(--color-charcoal-border)',
+                    }"
+                    @click="typefaceStore.set(key)"
+                  >
+                    <!-- Rendered in the preset's own heading face, so the
+                         control previews what it selects. -->
+                    <span
+                      class="text-[15px] text-text-primary leading-none"
+                      :style="{ fontFamily: TYPEFACE_PRESETS[key].heading }"
+                    >
+                      {{ $t(`settings.appearance.typeface_${key}`) }}
+                    </span>
+                  </button>
+                </div>
+              </DefaultRow>
             </div>
           </section>
 
@@ -501,7 +572,7 @@
           <section id="danger" ref="sectionRefs.danger" class="pb-16">
             <div class="flex items-baseline gap-4 mb-[18px]">
               <span
-                class="font-heading font-black text-[22px] leading-none"
+                class="font-heading font-bold text-[22px] leading-none"
                 style="color: rgb(var(--v-theme-error))"
               >
                 {{ $t("settings.danger.heading") }}
@@ -598,18 +669,21 @@
 </template>
 
 <script lang="ts" setup>
-import {
-  ref,
-  reactive,
-  nextTick,
-  onMounted,
-  onUnmounted,
-} from "vue";
+import { ref, reactive, nextTick, onMounted, onUnmounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
 import { useThemeStore, type ThemeMode } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import { useAccentStore } from "@/stores/accent";
+import { usePaperStore } from "@/stores/paper";
+import { useTypefaceStore } from "@/stores/typeface";
+import {
+  PAPER_PRESETS,
+  PAPER_PRESET_KEYS,
+  TYPEFACE_PRESETS,
+  TYPEFACE_PRESET_KEYS,
+  type PaperPreset,
+} from "@/utils/appearance";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useApi } from "@/composables/useApi";
@@ -630,6 +704,8 @@ const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
 const accentStore = useAccentStore();
+const paperStore = usePaperStore();
+const typefaceStore = useTypefaceStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const fieldDefsStore = useFieldDefsStore();
 const { apiFetch } = useApi();
@@ -716,6 +792,18 @@ const ACCENT_PRESETS: Set<string> = new Set([
   "#9b4dca",
 ]);
 const isPreset = (c: string) => ACCENT_PRESETS.has(c);
+
+// ── Paper swatches ────────────────────────────────────────────────────────────
+
+/** Preview colors for a paper preset, in whichever mode is currently active. */
+function paperSwatch(key: PaperPreset) {
+  const mode = PAPER_PRESETS[key][themeStore.isDark ? "dark" : "light"];
+  return {
+    page: mode.vars.charcoal,
+    surface: mode.vars["charcoal-light"],
+    border: mode.vars["charcoal-border"],
+  };
+}
 
 // ── Account form ──────────────────────────────────────────────────────────────
 
@@ -985,7 +1073,7 @@ onMounted(() => {
   font-size: 9px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgb(var(--v-theme-text-secondary));
+  color: var(--color-text-secondary);
   padding: 11px 0;
 }
 .fade-enter-active,

@@ -6,8 +6,7 @@
   >
     <v-card rounded="0" class="bg-charcoal-light">
       <v-card-title
-        class="font-heading text-xl pt-6 px-6 text-text-primary"
-        :class="danger ? 'font-black' : 'font-bold'"
+        class="font-heading text-xl font-bold pt-6 px-6 text-text-primary"
         :style="danger ? 'color: rgb(var(--v-theme-error))' : undefined"
       >
         {{ title }}

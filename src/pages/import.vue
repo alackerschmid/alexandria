@@ -232,7 +232,7 @@ const tabs = computed(() => [
       >
         <div>
           <h1
-            class="font-heading text-[30px] md:text-[34px] font-black text-text-primary leading-none mb-2"
+            class="font-heading text-[30px] md:text-[34px] font-bold text-text-primary leading-none mb-2"
           >
             {{ t("import.heading") }}
           </h1>
