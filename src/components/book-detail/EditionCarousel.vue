@@ -11,10 +11,12 @@
           <div
             class="w-10 h-14 shrink-0 overflow-hidden bg-charcoal border border-charcoal-border"
           >
-            <img
-              v-if="e.cover_url"
-              :src="e.cover_url"
+            <CoverImage
+              :cover-url="e.cover_url"
+              :title="e.title ?? e.isbn"
               :alt="e.title ?? e.isbn"
+              text-class="text-[10px]"
+              :icon-size="12"
               class="w-full h-full object-cover"
             />
           </div>
@@ -55,6 +57,7 @@ import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import { STATUS_META } from "@/composables/useBookStatus";
 import { languageDisplayFormatter } from "@/utils/language";
+import CoverImage from "@/components/CoverImage.vue";
 import type { ReadStatus } from "@/types/book";
 
 interface EditionRow {

@@ -114,18 +114,13 @@
                 class="hidden md:flex md:w-56 lg:w-64 shrink-0 flex-col items-center pt-2"
               >
                 <div class="w-48 h-72 relative">
-                  <img
-                    v-if="book.cover_url"
-                    :src="book.cover_url"
-                    :alt="book.title || book.isbn"
-                    class="w-full h-full object-cover shadow-2xl"
-                  />
-                  <PlaceholderCover
-                    v-else
+                  <CoverImage
+                    :cover-url="book.cover_url"
                     :title="book.title || book.isbn"
+                    :alt="book.title || book.isbn"
                     text-class="text-5xl"
                     :icon-size="28"
-                    class="shadow-2xl"
+                    class="w-full h-full object-cover shadow-2xl"
                   />
                 </div>
 
@@ -715,7 +710,7 @@ import RatingStars from "@/components/RatingStars.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 import BookEditForm, {
   type EditForm,
 } from "@/components/book-detail/BookEditForm.vue";

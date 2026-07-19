@@ -17,7 +17,7 @@
             {{ $t("home.welcome") }}
           </p>
           <h1
-            class="font-heading font-black text-[2.2rem] md:text-[2.75rem] leading-[1.02] text-text-primary mb-2"
+            class="font-heading font-bold text-[2.2rem] md:text-[2.75rem] leading-[1.02] text-text-primary mb-2"
           >
             {{ greeting }}
           </h1>
@@ -36,7 +36,7 @@
             @click="$router.push('/scanner')"
           >
             <p
-              class="font-heading font-black text-2xl leading-none"
+              class="font-heading font-bold text-2xl leading-none"
               style="color: #111110"
             >
               {{ $t("home.scan_cta") }}
@@ -49,7 +49,7 @@
             @click="$router.push('/library')"
           >
             <p
-              class="font-heading font-black text-2xl leading-none text-text-primary"
+              class="font-heading font-bold text-2xl leading-none text-text-primary"
             >
               {{ $t("home.go_to_library") }}
             </p>
@@ -73,7 +73,7 @@
       v-else-if="statsData && statsData.total === 0"
       class="flex-1 flex flex-col items-center justify-center gap-3 px-6"
     >
-      <p class="font-heading font-black text-3xl text-text-primary text-center">
+      <p class="font-heading font-bold text-3xl text-text-primary text-center">
         {{ $t("home.dashboard_empty_heading") }}
       </p>
       <p class="text-sm text-text-secondary text-center max-w-xs">
@@ -121,7 +121,7 @@
           </div>
           <div class="flex items-baseline gap-2 mb-3">
             <span
-              class="font-heading font-black text-[1.8rem] md:text-[2.4rem] leading-none text-text-primary"
+              class="font-heading font-bold text-[1.8rem] md:text-[2.4rem] leading-none text-text-primary"
               >{{ tile.value }}</span
             >
             <span class="font-mono text-[9px] text-text-secondary">{{
@@ -197,13 +197,13 @@
               </p>
               <p
                 v-if="statsData.medianYear != null"
-                class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
+                class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
               >
                 {{ statsData.medianYear }}
               </p>
               <p
                 v-else
-                class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
+                class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
               >
                 —
               </p>
@@ -218,12 +218,12 @@
               <p class="flex items-baseline gap-2">
                 <span
                   v-if="statsData.avgPages != null"
-                  class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
+                  class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
                   >{{ formatCount(statsData.avgPages) }}</span
                 >
                 <span
                   v-else
-                  class="font-heading font-black text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
+                  class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
                   >—</span
                 >
                 <span
@@ -250,7 +250,7 @@
                 >
                 <span class="flex items-baseline gap-1.5">
                   <span
-                    class="font-heading font-black text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
+                    class="font-heading font-bold text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
                     >{{ item.value ?? "—" }}</span
                   >
                   <span
@@ -316,7 +316,7 @@
               >
               <span class="flex items-baseline gap-1.5">
                 <span
-                  class="font-heading font-black text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
+                  class="font-heading font-bold text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
                   >{{ statsData.translationRatio.pct }}</span
                 >
                 <span
@@ -371,7 +371,7 @@
             {{ $t("home.firstname_dialog_eyebrow") }}
           </p>
           <h2
-            class="font-heading font-black text-3xl text-text-primary leading-tight mb-2"
+            class="font-heading font-bold text-3xl text-text-primary leading-tight mb-2"
           >
             {{ $t("home.firstname_dialog_heading") }}
           </h2>

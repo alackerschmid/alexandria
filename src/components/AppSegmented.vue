@@ -22,8 +22,11 @@
 
 <script setup lang="ts" generic="T extends string">
 // The app's segmented (single-select) control: a connected group of options bound
-// to a v-model. `fill` fills the active option with the user's accent; `highlight`
-// tints the active option's text with the accent over a subtle raised fill. Both
+// to a v-model. `fill` (the default) fills the active option with the user's accent
+// and is what every labelled settings-style row uses — the settings page and the
+// library's display-options panel alike; `highlight` tints the active option's text
+// with the accent over a subtle raised fill, and is reserved for toolbar chrome
+// (the library's inline view toggle), where an accent fill would shout. Both
 // track the accent via theme `primary` (unlike the old inline copies, which pinned
 // the static orange-neon token). NOT for the scanner's per-status colored pickers
 // (dark-locked, per-option colors) or the login auth-mode pills (a bespoke one-off).

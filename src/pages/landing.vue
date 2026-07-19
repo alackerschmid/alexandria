@@ -45,7 +45,7 @@
         class="md:flex-1 px-6 md:px-16 py-8 md:py-0 flex flex-col justify-start md:justify-center gap-5 md:gap-7"
       >
         <h1
-          class="font-heading text-[2.2rem] md:text-6xl font-black text-text-primary leading-[1.02]"
+          class="font-heading text-[2.2rem] md:text-6xl font-bold text-text-primary leading-[1.02]"
         >
           {{ $t("marketing.heading") }}
         </h1>
@@ -92,7 +92,7 @@
           style="background: rgb(var(--v-theme-primary))"
         >
           <h2
-            class="font-heading font-black text-[1.3rem] leading-[1.05]"
+            class="font-heading font-bold text-[1.3rem] leading-[1.05]"
             style="color: #111110"
           >
             {{ $t("marketing.band_heading") }}
@@ -123,7 +123,7 @@
               {{ $t("marketing.preview_section") }}
             </p>
             <h2
-              class="font-heading font-black text-xl md:text-[25px] text-text-primary leading-none"
+              class="font-heading font-bold text-xl md:text-[25px] text-text-primary leading-none"
             >
               {{ $t("marketing.preview_title") }}
             </h2>
@@ -203,7 +203,7 @@
       style="background: rgb(var(--v-theme-primary))"
     >
       <h2
-        class="font-heading font-black text-[1.3rem] md:text-[2.1rem] leading-[1.05] md:max-w-xl"
+        class="font-heading font-bold text-[1.3rem] md:text-[2.1rem] leading-[1.05] md:max-w-xl"
         style="color: #111110"
       >
         {{ $t("marketing.band_heading") }}

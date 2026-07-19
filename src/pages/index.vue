@@ -81,11 +81,8 @@
           >
             <LibraryDisplaySettings
               v-model:main-only="mainOnly"
-              v-model:highlight-complete="highlightComplete"
-              v-model:show-unowned="showUnowned"
+              v-model:ownership-scope="ownershipScope"
               v-model:show-status-icons="showStatusIcons"
-              v-model:only-owned="onlyOwned"
-              v-model:highlight-owning-border="highlightOwningBorder"
               v-model:group-editions="groupEditions"
               :series-context="seriesContext"
             >
@@ -256,11 +253,8 @@
         <div class="w-9 h-1 rounded bg-charcoal-border mx-auto mb-4" />
         <LibraryDisplaySettings
           v-model:main-only="mainOnly"
-          v-model:highlight-complete="highlightComplete"
-          v-model:show-unowned="showUnowned"
+          v-model:ownership-scope="ownershipScope"
           v-model:show-status-icons="showStatusIcons"
-          v-model:only-owned="onlyOwned"
-          v-model:highlight-owning-border="highlightOwningBorder"
           v-model:group-editions="groupEditions"
           v-model:view-mode="viewMode"
           show-view-row
@@ -446,7 +440,6 @@
                   :book="slot.entry.book"
                   :hide-status="!showStatusIcons"
                   :expanded="expandedCards.has(slot.entry.book.id)"
-                  :highlight-owning-border="highlightOwningBorder"
                   @cycle-status="cycleStatus(slot.entry.book)"
                   @select="openDetail(slot.entry.book)"
                   @select-edition="openDetail($event)"
@@ -540,7 +533,6 @@
                 :book="entry.book"
                 :hide-status="!showStatusIcons"
                 :expanded="expandedCards.has(entry.book.id)"
-                :highlight-owning-border="highlightOwningBorder"
                 @cycle-status="cycleStatus(entry.book)"
                 @select="openDetail(entry.book)"
                 @select-edition="openDetail($event)"
@@ -600,7 +592,6 @@
           :book="book"
           :hide-status="!showStatusIcons"
           :expanded="expandedCards.has(book.id)"
-          :highlight-owning-border="highlightOwningBorder"
           @cycle-status="cycleStatus(book)"
           @select="openDetail(book)"
           @select-edition="openDetail($event)"
@@ -757,9 +748,8 @@ const {
   onlyOwned,
   groupEditions,
   mainOnly,
-  highlightComplete,
+  ownershipScope,
   showUnowned,
-  highlightOwningBorder,
 } = storeToRefs(libraryDefaultsStore);
 
 // ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
@@ -973,7 +963,6 @@ const {
   parsedSearch,
   search,
   mainOnly,
-  highlightComplete,
   showUnowned,
   onlyOwned,
   shelfRowSize,

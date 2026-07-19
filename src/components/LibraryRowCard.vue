@@ -1,11 +1,6 @@
 <template>
   <article
-    class="group relative flex flex-col p-4 cursor-pointer transition-colors bg-row-card-surface"
-    :class="
-      highlightOwningBorder && owningBorderClass
-        ? owningBorderClass
-        : 'border border-charcoal-border hover:border-charcoal-border/60'
-    "
+    class="group relative flex flex-col p-4 cursor-pointer transition-colors bg-row-card-surface border border-charcoal-border hover:border-charcoal-border/60"
     role="button"
     tabindex="0"
     @click="$emit('select')"
@@ -37,19 +32,15 @@
         </template>
         <div
           class="absolute top-0 left-0 w-10 h-15 overflow-hidden bg-charcoal-light border border-charcoal-border"
-          :class="highlightOwningBorder ? '' : owningBorderClass"
+          :class="owningBorderClass"
         >
-          <img
-            v-if="book.cover_url"
-            :src="book.cover_url"
-            :alt="displayTitle(book)"
-            class="w-full h-full object-cover"
-          />
-          <PlaceholderCover
-            v-else
+          <CoverImage
+            :cover-url="book.cover_url"
             :title="displayTitle(book)"
+            :alt="displayTitle(book)"
             text-class="text-sm"
             :icon-size="10"
+            class="w-full h-full object-cover"
           />
           <!-- orange left spine accent -->
           <div class="absolute left-0 top-0 bottom-0 w-0.5 bg-orange-neon" />
@@ -128,17 +119,13 @@
         <div
           class="w-5 h-7.5 shrink-0 relative overflow-hidden bg-charcoal-light border border-charcoal-border"
         >
-          <img
-            v-if="ed.cover_url"
-            :src="ed.cover_url"
-            :alt="displayTitle(ed)"
-            class="w-full h-full object-cover"
-          />
-          <PlaceholderCover
-            v-else
+          <CoverImage
+            :cover-url="ed.cover_url"
             :title="displayTitle(ed)"
+            :alt="displayTitle(ed)"
             text-class="text-[9px]"
             :icon-size="8"
+            class="w-full h-full object-cover"
           />
         </div>
         <div class="flex-1 min-w-0 text-[10px] text-text-secondary truncate">
@@ -168,13 +155,12 @@ import { useBookStatus } from "@/composables/useBookStatus";
 import { OWNING_META, useOwningStatus } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
 import { useLocaleStore } from "@/stores/locale";
-import PlaceholderCover from "@/components/PlaceholderCover.vue";
+import CoverImage from "@/components/CoverImage.vue";
 
 const props = defineProps<{
   book: Book;
   hideStatus?: boolean;
   expanded?: boolean;
-  highlightOwningBorder?: boolean;
 }>();
 const emit = defineEmits<{
   "cycle-status": [];
@@ -197,7 +183,6 @@ const owningBorderClass = computed(
   () => OWNING_META[props.book.owning_status ?? "owned"].borderClass,
 );
 const owningTag = computed(() => {
-  if (props.highlightOwningBorder) return null;
   const status = props.book.owning_status ?? "owned";
   if (status === "owned") return null;
   return {

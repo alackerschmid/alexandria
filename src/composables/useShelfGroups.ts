@@ -36,7 +36,6 @@ export function useShelfGroups(options: {
   search: Ref<string>;
   // Writable-computed display settings and plain computeds alike satisfy Ref<T>.
   mainOnly: Ref<boolean>;
-  highlightComplete: Ref<boolean>;
   showUnowned: Ref<boolean>;
   onlyOwned: Ref<boolean>;
   shelfRowSize: Ref<number>;
@@ -51,7 +50,6 @@ export function useShelfGroups(options: {
     parsedSearch,
     search,
     mainOnly,
-    highlightComplete,
     showUnowned,
     onlyOwned,
     shelfRowSize,
@@ -100,7 +98,7 @@ export function useShelfGroups(options: {
         const ownedMain = mainMembers.filter((e) => e.owned).length;
         const denom = mainOnly.value ? mainMembers.length : members.length;
         const numer = mainOnly.value ? ownedMain : ownedTotal;
-        const complete = highlightComplete.value && denom > 0 && numer === denom;
+        const complete = denom > 0 && numer === denom;
         const pool = mainOnly.value ? mainMembers : members;
         const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
         // "Owned books only" and the `owning:` search token both filter by owning_status —
@@ -147,8 +145,7 @@ export function useShelfGroups(options: {
       // Series fallback (membership not loaded yet) — owned-only against series_total.
       if (g.seriesId != null) {
         const total = g.seriesTotal ?? g.books.length;
-        const complete =
-          highlightComplete.value && total > 0 && g.books.length === total;
+        const complete = total > 0 && g.books.length === total;
         return {
           key: g.key,
           label: g.label,

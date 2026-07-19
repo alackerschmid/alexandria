@@ -2,7 +2,7 @@
   <div class="mb-6">
     <div class="flex items-baseline gap-4 mb-1.5">
       <h2
-        class="font-heading font-black text-[22px] text-text-primary leading-none"
+        class="font-heading font-bold text-[22px] text-text-primary leading-none"
       >
         {{ title }}
       </h2>
