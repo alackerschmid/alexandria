@@ -11,13 +11,12 @@ import {
   VALID_STATUSES,
   VALID_OWNING_STATUSES,
   isValidRating,
-  getBookByIsbn,
   findExistingScan,
   isUniqueConstraintError,
   parseIntOr,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
-import { normalizeIsbn, isValidIsbn, isIsbnFormat } from "../isbn";
+import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
 
 const scans = new Hono<Env>();
 
@@ -92,10 +91,17 @@ scans.post("/", async (c) => {
 
   // Check for an existing scan of this ISBN before consuming rate-limit quota or touching
   // external metadata APIs — a duplicate scan is a cheap, common case (e.g. rescanning a shelf)
-  // and shouldn't cost the user part of their scan-rate budget.
-  const existingBook = await getBookByIsbn(db, isbn);
-  if (existingBook && (await findExistingScan(db, userId, existingBook.id))) {
-    return c.json({ error: "Already in your list" }, 409);
+  // and shouldn't cost the user part of their scan-rate budget. Checked under both ISBN forms:
+  // the same edition may already be stored under its ISBN-10 or ISBN-13 form.
+  const altIsbn = alternateIsbnForm(isbn);
+  const { results: existingBooks } = await db
+    .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
+    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
+    .all<{ id: number }>();
+  for (const existingBook of existingBooks) {
+    if (await findExistingScan(db, userId, existingBook.id)) {
+      return c.json({ error: "Already in your list" }, 409);
+    }
   }
 
   const blocked = await rateLimitOrReject(

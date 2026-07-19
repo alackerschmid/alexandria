@@ -75,4 +75,14 @@ describe("offline-queue", () => {
     writeQueue([]);
     expect(localStorage.getItem("bookscan_queue_v3")).toBeNull();
   });
+
+  it("treats corrupted storage as an empty queue instead of throwing", () => {
+    localStorage.setItem("bookscan_queue_v3", "{not valid json");
+    expect(readQueue()).toEqual([]);
+  });
+
+  it("treats a non-array stored value as an empty queue", () => {
+    localStorage.setItem("bookscan_queue_v3", JSON.stringify({ oops: true }));
+    expect(readQueue()).toEqual([]);
+  });
 });

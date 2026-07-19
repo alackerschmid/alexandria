@@ -501,7 +501,7 @@ async function mergeWorks(
       .bind(into, from),
     db
       .prepare(
-        "INSERT OR IGNORE INTO work_authors (work_id, author_id) SELECT ?, author_id FROM work_authors WHERE work_id = ?",
+        "INSERT OR IGNORE INTO work_authors (work_id, author_id, ordinal) SELECT ?, author_id, ordinal FROM work_authors WHERE work_id = ?",
       )
       .bind(into, from),
     db.prepare("DELETE FROM work_authors WHERE work_id = ?").bind(from),
