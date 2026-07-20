@@ -9,6 +9,8 @@ export interface FieldDef {
   name: string;
   type: string;
   required?: boolean;
+  /** Only meaningful for `type === 'select'` — the fixed value set the book-level field picks from. */
+  options?: string[];
 }
 
 export const useFieldDefsStore = defineStore("fieldDefs", () => {
@@ -94,7 +96,12 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
 
   async function update(
     id: number,
-    changes: { name?: string; type?: string; required?: boolean },
+    changes: {
+      name?: string;
+      type?: string;
+      required?: boolean;
+      options?: string[];
+    },
   ) {
     const authStore = useAuthStore();
     try {

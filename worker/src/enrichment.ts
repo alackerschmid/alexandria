@@ -597,7 +597,7 @@ async function populateSeriesMembers(
 // A stale claim (a run that crashed without clearing it) expires after this long. Must
 // comfortably exceed a worst-case enrichWork run — several SPARQL calls at 25s timeout each,
 // plus 429 retry sleeps and Google Books/OpenLibrary calls — or a live run's claim can be
-// stolen mid-flight. 5 minutes = one cron interval.
+// stolen mid-flight. 5 minutes spans several sweeper ticks (cron runs every 2 minutes).
 const CLAIM_TTL_MINUTES = 5;
 
 // Atomically claims a work for enrichment so a concurrent invocation (cron sweeper vs. a manual

@@ -1,5 +1,6 @@
 import type { BookRow, BookMetadata } from "./types";
 import { alternateIsbnForm } from "./isbn";
+import { dedupeTrimmed } from "./library-query";
 
 async function fetchWithTimeout(
   url: string,
@@ -117,15 +118,8 @@ async function fetchFromGoogleBooks(
   // Google's categories are often BISAC-style ("Fiction / Fantasy / General") — split on the
   // separator and dedupe so they're usable as flat genre tags when Wikidata has no P136 genres.
   const rawCategories: string[] = info.categories ?? [];
-  const cleanedCategories = Array.from(
-    new Set(
-      rawCategories.flatMap((c) =>
-        c
-          .split(" / ")
-          .map((s) => s.trim())
-          .filter(Boolean),
-      ),
-    ),
+  const cleanedCategories = dedupeTrimmed(
+    rawCategories.flatMap((c) => c.split(" / ")),
   );
   return {
     title: info.title ?? null,
