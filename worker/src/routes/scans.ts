@@ -348,7 +348,7 @@ scans.patch("/:id/edition", async (c) => {
   }
 
   // Validate the target ISBN actually belongs to this work (either already materialized,
-  // or a candidate discovered via LibraryThing) — prevents repointing to an arbitrary book.
+  // or a candidate discovered via OpenLibrary) — prevents repointing to an arbitrary book.
   const isKnownEdition = await db
     .prepare(
       `

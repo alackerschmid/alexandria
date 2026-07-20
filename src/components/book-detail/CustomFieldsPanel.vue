@@ -66,7 +66,23 @@
             @keyup.enter="($event.target as HTMLInputElement).blur()"
           />
 
-          <!-- text / select -->
+          <!-- select -->
+          <select
+            v-else-if="def.type === 'select'"
+            :aria-labelledby="`custom-field-label-${def.id}`"
+            :value="(customFieldValues[def.id] as string) ?? ''"
+            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+            @change="
+              onValueChange(def.id, ($event.target as HTMLSelectElement).value)
+            "
+          >
+            <option value="">{{ $t("detail.custom_field_unset") }}</option>
+            <option v-for="opt in def.options ?? []" :key="opt" :value="opt">
+              {{ opt }}
+            </option>
+          </select>
+
+          <!-- text -->
           <input
             v-else
             type="text"

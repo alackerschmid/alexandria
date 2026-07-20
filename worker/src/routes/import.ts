@@ -138,7 +138,7 @@ async function importRow(
 }
 
 // No enrichWork/waitUntil here, deliberately — resolveEdition→linkWork leaves new works at
-// enrichment_status='pending' and the cron sweeper drains the backlog (5 per 5-min tick). Firing
+// enrichment_status='pending' and the cron sweeper drains the backlog (7 per 2-min tick). Firing
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {

@@ -15,7 +15,7 @@ export function useApi() {
       ...rest,
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${authStore.token}`,
+        ...(authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {}),
         ...(headers as Record<string, string>),
       },
     });

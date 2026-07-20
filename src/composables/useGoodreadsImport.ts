@@ -290,7 +290,7 @@ export function useGoodreadsImport() {
   }
 
   // 429s wait for Retry-After and retry the same batch (bounded — a 30/min budget against
-  // 5-row batches should never realistically exhaust this). A network error gets exactly one
+  // 10-row batches should never realistically exhaust this). A network error gets exactly one
   // retry before the whole batch is marked failed, per plan.
   async function postBatchWithRetry(
     payloads: ReturnType<typeof buildImportPayload>[],

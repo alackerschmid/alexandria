@@ -16,6 +16,7 @@ import {
   getBookByIsbn,
   OVERRIDE_FIELDS,
   parseIntOr,
+  parseTagArray,
   type OverrideField,
 } from "../library-query";
 import { normalizeIsbn, isValidIsbn } from "../isbn";
@@ -419,16 +420,29 @@ books.patch("/custom-fields", async (c) => {
 
   const [book, { results: ownedDefs }] = await Promise.all([
     getBookByIsbn(c.env.DB, isbn),
-    c.env.DB.prepare("SELECT id FROM user_field_definitions WHERE user_id = ?")
+    c.env.DB.prepare(
+      "SELECT id, field_type, field_options FROM user_field_definitions WHERE user_id = ?",
+    )
       .bind(userId)
-      .all<{ id: number }>(),
+      .all<{ id: number; field_type: string; field_options: string | null }>(),
   ]);
   if (!book) return c.json({ error: "Book not found" }, 404);
 
-  const validIds = new Set(ownedDefs.map((d) => d.id));
-  const values = (body.values ?? []).filter((v) =>
-    validIds.has(v.field_def_id),
-  );
+  const defsById = new Map(ownedDefs.map((d) => [d.id, d]));
+  // A select field's value must be one of its own options — a stale client (an option was
+  // renamed/removed since the form loaded) silently clears rather than storing an orphaned value.
+  const values = (body.values ?? []).flatMap((v) => {
+    const def = defsById.get(v.field_def_id);
+    if (!def) return [];
+    const trimmed = (v.value ?? "").trim();
+    const isValidSelectValue =
+      def.field_type !== "select" ||
+      !trimmed ||
+      parseTagArray(def.field_options).includes(trimmed);
+    return [
+      { field_def_id: v.field_def_id, value: isValidSelectValue ? trimmed || null : null },
+    ];
+  });
 
   await c.env.DB.batch([
     c.env.DB.prepare(
@@ -437,7 +451,7 @@ books.patch("/custom-fields", async (c) => {
     ...values.map((v) =>
       c.env.DB.prepare(
         "INSERT INTO book_custom_fields (user_id, book_id, field_def_id, field_value) VALUES (?, ?, ?, ?)",
-      ).bind(userId, book.id, v.field_def_id, (v.value ?? "").trim() || null),
+      ).bind(userId, book.id, v.field_def_id, v.value),
     ),
   ]);
 

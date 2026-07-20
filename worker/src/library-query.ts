@@ -200,6 +200,13 @@ export async function fetchCustomFields(
 export const titleCase = (s: string) =>
   s.replace(/(^|[\s-])\p{L}/gu, (c) => c.toUpperCase());
 
+// Trims, drops empties, and dedupes a list of strings. Shared by any code cleaning a user- or
+// upstream-supplied string array before storing it (custom field options, Google Books BISAC
+// categories, etc.) — factor callers' own splitting/pre-processing out before calling this.
+export function dedupeTrimmed(items: string[]): string[] {
+  return Array.from(new Set(items.map((s) => s.trim()).filter(Boolean)));
+}
+
 export function parseTagArray(raw: string | null): string[] {
   if (!raw) return [];
   try {

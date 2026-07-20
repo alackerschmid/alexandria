@@ -174,7 +174,7 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts
 
 **Protected routes** (require `Authorization: Bearer <jwt>`):
 
-- `PATCH /api/auth/me` — update authenticated user's `firstname`
+- `PATCH /api/auth/me` — update authenticated user's `firstname`, `email`, and/or password; changing `email` or password requires the current `password` in the body (re-verified server-side) and is rate-limited per user (`me-verify:<userId>`, shared with `DELETE /me`)
 - `DELETE /api/auth/me` — **delete the account** and all its data; requires the current `password` in the body (re-verified server-side), returns `204`
 - `GET /api/books/lookup?isbn=` — DB cache → Google Books → OpenLibrary fallback; caches result in `books` table
 - `GET /api/books/search?title=&author=&publisher=` — candidate editions from Google Books; no DB writes (a `books` row is only created when the user picks an edition and it flows through lookup/scan)
@@ -219,8 +219,8 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Lo
 - `GET /api/scans/:id` — single scan row; used to poll `enrichment_status` after a scan
 - `PATCH /api/books/custom-fields` — save custom field values; body `{ isbn, values: [{ field_def_id, value }] }` (replaces all values for that book in one batch)
 - `GET /api/field-definitions` — list the user's custom field schema
-- `POST /api/field-definitions` — create a field; body `{ name, type? }` (`type`: `text` | `integer` | `select`, defaults to `text`)
-- `PATCH /api/field-definitions/:id` — update a field; body `{ name?, type?, required? }`
+- `POST /api/field-definitions` — create a field; body `{ name, type?, options? }` (`type`: `text` | `integer` | `select` | `tag` | `date`, defaults to `text`; `options` is a `select` field's fixed value set — a string array, sanitized/deduped server-side and ignored by every other type)
+- `PATCH /api/field-definitions/:id` — update a field; body `{ name?, type?, required?, options? }`. A `select` field's stored value is validated against its current `options` on every `PATCH /api/books/custom-fields` save — a value that no longer matches (e.g. the option was renamed/removed) is silently cleared rather than stored as an orphan
 - `DELETE /api/field-definitions/:id` — remove a field and all its stored values
 - `GET /api/field-definitions/:id/values` — distinct tag values used across the user's books for that field (powers tag autocomplete)
 - `DELETE /api/field-definitions/:id/values?value=` — remove one tag value from every book the user owns (global tag delete)
@@ -271,7 +271,7 @@ Author identity keys come from `normalizeAuthorKey` (`editions.ts`), which is de
 
 **Custom fields** (migration 0008):
 
-**`user_field_definitions`** — per-user schema: `user_id`, `field_name`, `field_type` (`text`/`integer`/`select`), `field_options`, `sort_order`, `required` (INTEGER 0/1, migration 0013). Unique on `(user_id, field_name)`.
+**`user_field_definitions`** — per-user schema: `user_id`, `field_name`, `field_type` (`text`/`integer`/`select`/`tag`/`date`), `field_options`, `sort_order`, `required` (INTEGER 0/1, migration 0013). Unique on `(user_id, field_name)`.
 
 **`book_custom_fields`** — per-user, per-book values: `user_id`, `book_id`, `field_def_id` → `user_field_definitions`, `field_value`. Unique on `(user_id, book_id, field_def_id)`.
 
@@ -325,7 +325,7 @@ Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an
 
 Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
 
-Tailwind for layout/spacing, Vuetify components for interactive elements. Do not mix — use Tailwind classes on plain HTML, Vuetify props on `<v-*>` components.
+Tailwind for layout/spacing, Vuetify components for interactive elements. Do not mix — use Tailwind classes on plain HTML, Vuetify props on `<v-*>` components. Deliberate exception: `CustomFieldsPanel`'s per-type value inputs (text/integer/date/select) are all plain Tailwind-styled HTML, not Vuetify — a book can have several custom fields of different types shown as one visually uniform stack of rows, and mixing in a `<v-*>` control for just one type would stand out rather than blend in.
 
 **Tailwind tokens** (defined in `src/styles/tailwind.css`, theme-aware via CSS variables):
 

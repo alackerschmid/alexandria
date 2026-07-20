@@ -340,66 +340,78 @@
               </div>
 
               <!-- Existing fields -->
-              <div
-                v-for="(def, i) in fieldDefsStore.defs"
-                :key="def.id"
-                class="grid items-center gap-0 px-4 transition-colors hover:bg-white/[0.02]"
-                :class="i > 0 ? 'border-t border-charcoal-border/60' : ''"
-                style="grid-template-columns: 1fr 120px 96px 40px"
-              >
-                <input
-                  :value="def.name"
-                  type="text"
-                  class="bg-transparent border-0 border-b border-transparent text-[14px] text-text-primary pt-3 pb-2 mb-2 w-[calc(100%-1rem)] focus-ring-none transition-colors focus-visible:border-orange-neon"
-                  @blur="onFieldNameBlur(def, $event)"
-                  @keydown.enter="($event.target as HTMLInputElement).blur()"
-                />
-                <div>
-                  <button
-                    class="border border-charcoal-border/60 text-text-secondary font-mono text-[10px] tracking-[0.08em] uppercase px-2.5 py-1.5 hover:border-charcoal-border transition-colors"
-                    @click="cycleFieldType(def)"
-                  >
-                    {{ typeLabel(def.type) }} ⇅
-                  </button>
+              <template v-for="(def, i) in fieldDefsStore.defs" :key="def.id">
+                <div
+                  class="grid items-center gap-0 px-4 transition-colors hover:bg-white/[0.02]"
+                  :class="i > 0 ? 'border-t border-charcoal-border/60' : ''"
+                  style="grid-template-columns: 1fr 120px 96px 40px"
+                >
+                  <input
+                    :id="`field-name-${def.id}`"
+                    :value="def.name"
+                    type="text"
+                    class="bg-transparent border-0 border-b border-transparent text-[14px] text-text-primary pt-3 pb-2 mb-2 w-[calc(100%-1rem)] focus-ring-none transition-colors focus-visible:border-orange-neon"
+                    @blur="onFieldNameBlur(def, $event)"
+                    @keydown.enter="($event.target as HTMLInputElement).blur()"
+                  />
+                  <div>
+                    <button
+                      class="border border-charcoal-border/60 text-text-secondary font-mono text-[10px] tracking-[0.08em] uppercase px-2.5 py-1.5 hover:border-charcoal-border transition-colors"
+                      @click="cycleFieldType(def)"
+                    >
+                      {{ typeLabel(def.type) }} ⇅
+                    </button>
+                  </div>
+                  <div>
+                    <button
+                      role="switch"
+                      :aria-checked="def.required"
+                      :aria-label="$t('settings.fields.col_required')"
+                      class="flex-none"
+                      @click="
+                        fieldDefsStore.update(def.id, { required: !def.required })
+                      "
+                    >
+                      <AppToggle
+                        :model-value="!!def.required"
+                        :on-color="accentStore.color"
+                      />
+                    </button>
+                  </div>
+                  <div class="flex justify-end">
+                    <button
+                      class="text-base leading-none p-1 transition-colors"
+                      :class="
+                        confirmingDeleteFieldId === def.id
+                          ? 'text-error'
+                          : 'text-text-secondary/50 hover:text-text-primary'
+                      "
+                      :aria-label="
+                        confirmingDeleteFieldId === def.id
+                          ? $t('settings.fields.confirm_delete', {
+                              name: def.name,
+                            })
+                          : $t('settings.fields.delete', { name: def.name })
+                      "
+                      @click="deleteField(def.id)"
+                      @blur="confirmingDeleteFieldId = null"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <button
-                    role="switch"
-                    :aria-checked="def.required"
-                    :aria-label="$t('settings.fields.col_required')"
-                    class="flex-none"
-                    @click="
-                      fieldDefsStore.update(def.id, { required: !def.required })
-                    "
-                  >
-                    <AppToggle
-                      :model-value="!!def.required"
-                      :on-color="accentStore.color"
-                    />
-                  </button>
+
+                <!-- select: the fixed value set books pick from -->
+                <div v-if="def.type === 'select'" class="px-4 pb-3 -mt-1">
+                  <TagInput
+                    :model-value="draftOptionsFor(def)"
+                    :suggestions="[]"
+                    :placeholder="$t('settings.fields.options_placeholder')"
+                    :aria-labelledby="`field-name-${def.id}`"
+                    @update:model-value="updateFieldOptions(def, $event)"
+                  />
                 </div>
-                <div class="flex justify-end">
-                  <button
-                    class="text-base leading-none p-1 transition-colors"
-                    :class="
-                      confirmingDeleteFieldId === def.id
-                        ? 'text-error'
-                        : 'text-text-secondary/50 hover:text-text-primary'
-                    "
-                    :aria-label="
-                      confirmingDeleteFieldId === def.id
-                        ? $t('settings.fields.confirm_delete', {
-                            name: def.name,
-                          })
-                        : $t('settings.fields.delete', { name: def.name })
-                    "
-                    @click="deleteField(def.id)"
-                    @blur="confirmingDeleteFieldId = null"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
+              </template>
 
               <!-- New field input row -->
               <div
@@ -712,6 +724,7 @@ import AppHeader from "@/components/AppHeader.vue";
 import AppButton from "@/components/AppButton.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppToggle from "@/components/AppToggle.vue";
+import TagInput from "@/components/book-detail/TagInput.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
@@ -932,9 +945,7 @@ async function saveAccount() {
 
 // ── Custom fields ─────────────────────────────────────────────────────────────
 
-// "select" is intentionally excluded — existing select fields still render (as text) via
-// TYPE_LABELS/worker VALID_TYPES, but the type isn't offered until proper option editing exists.
-const FIELD_TYPES = ["text", "integer", "tag", "date"];
+const FIELD_TYPES = ["text", "integer", "select", "tag", "date"];
 const TYPE_LABELS: Record<string, string> = {
   text: t("settings.fields.type_text"),
   integer: t("settings.fields.type_number"),
@@ -966,6 +977,32 @@ async function onFieldNameBlur(
   } else {
     (e.target as HTMLInputElement).value = def.name;
   }
+}
+
+// Local optimistic overrides for a select field's option list, keyed by field id — the store's
+// def.options only reflects the *last completed* save, so an edit made while a previous save is
+// still in flight must read/build on this instead, or it would compute its new array from a
+// stale base and silently drop the in-flight edit once both requests land.
+const optionsDrafts = ref<Record<number, string[]>>({});
+// Per-field promise chain: each field's saves are queued sequentially so an edit's PATCH always
+// carries the full up-to-date array and requests can't complete out of order (which — since the
+// endpoint replaces the whole option list — would let an earlier request's smaller array clobber
+// a later, more complete one if it happened to finish last).
+const optionsSaveQueues: Record<number, Promise<void>> = {};
+
+function draftOptionsFor(def: { id: number; options?: string[] }): string[] {
+  return optionsDrafts.value[def.id] ?? def.options ?? [];
+}
+
+function updateFieldOptions(def: { id: number }, options: string[]) {
+  optionsDrafts.value = { ...optionsDrafts.value, [def.id]: options };
+  const previous = optionsSaveQueues[def.id] ?? Promise.resolve();
+  optionsSaveQueues[def.id] = previous.then(async () => {
+    const result = await fieldDefsStore.update(def.id, { options });
+    if (result && !result.ok) {
+      showToast(result.error ?? t("detail.edit_error"), "error");
+    }
+  });
 }
 
 const confirmingDeleteFieldId = ref<number | null>(null);
