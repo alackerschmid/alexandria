@@ -19,7 +19,7 @@ import type { ReadStatus, OwningStatus } from "@/types/book";
 // Reused across imports (by exact name+type match) rather than minting a new field each time.
 const SHELVES_FIELD_NAME = "Shelves";
 
-export type ImportStep = "upload" | "mapping" | "importing" | "review";
+export type ImportStep = "upload" | "confirm" | "importing" | "review";
 
 interface ImportedBook {
   isbn: string;
@@ -368,7 +368,7 @@ export function useGoodreadsImport() {
       };
     }
 
-    step.value = "mapping";
+    step.value = "confirm";
   }
 
   function setMapping(shelf: string, next: ShelfMapping) {

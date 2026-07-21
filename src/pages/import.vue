@@ -1,14 +1,16 @@
 <script lang="ts" setup>
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { useRouter, onBeforeRouteLeave } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "@/components/AppHeader.vue";
 import AppButton from "@/components/AppButton.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
+import AppToggle from "@/components/AppToggle.vue";
 import ImportHeaderBar from "@/components/import/ImportHeaderBar.vue";
 import MatchedRow from "@/components/import/MatchedRow.vue";
 import AttentionRow from "@/components/import/AttentionRow.vue";
 import ResolveDrawer from "@/components/import/ResolveDrawer.vue";
+import ShelfMappingPanel from "@/components/import/ShelfMappingPanel.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import {
   MATCHED_GRID,
@@ -22,7 +24,7 @@ import type {
   ImportedItem,
   ReviewItem,
 } from "@/composables/useGoodreadsImport";
-import type { ShelfMapping } from "@/utils/goodreads";
+import { DEFAULT_SHELF_MAPPING } from "@/utils/goodreads";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const { t } = useI18n();
@@ -32,8 +34,11 @@ const {
   step,
   error,
   fileName,
+  rows,
   shelfCounts,
   mapping,
+  updateExisting,
+  importShelvesAsTags,
   counts,
   reviewQueue,
   notImported,
@@ -59,6 +64,7 @@ const {
   removeImportedItem,
   undoImportedUpdate,
   cancelImport,
+  reset,
 } = useGoodreadsImport();
 
 // Set when the user leaves deliberately (finalize / cancel) so the in-progress guard below
@@ -86,20 +92,27 @@ async function onFileChange(e: Event) {
   }
 }
 
-// ── Mapping ────────────────────────────────────────────────────────────────────
+// ── Confirm ────────────────────────────────────────────────────────────────────
 
-const statusOptions = computed(() =>
-  STATUS_ORDER.map((s) => ({ value: s, label: t(`book.${s}`) })),
-);
-const owningOptions = computed(() =>
-  OWNING_ORDER.map((o) => ({ value: o, label: t(`owning.${o}`) })),
-);
+const statusLabelFor = (s: string) =>
+  (STATUS_ORDER as readonly string[]).includes(s) ? t(`book.${s}`) : s;
+const owningLabelFor = (o: string) =>
+  (OWNING_ORDER as readonly string[]).includes(o) ? t(`owning.${o}`) : o;
 
-function updateStatus(shelf: string, current: ShelfMapping, status: string) {
-  setMapping(shelf, { ...current, status: status as ReadStatus });
-}
-function updateOwning(shelf: string, current: ShelfMapping, owning_status: string) {
-  setMapping(shelf, { ...current, owning_status: owning_status as OwningStatus });
+// Auto-expanded only when the export has a shelf the default mapping doesn't know (where
+// "unread/owned" is a guess the user should see), so a standard three-shelf export stays a
+// one-click path. Re-evaluated each time a file is (re)loaded, not just once on mount.
+const mappingExpanded = ref(false);
+watch(step, (s) => {
+  if (s === "confirm") {
+    mappingExpanded.value = [...shelfCounts.value.keys()].some(
+      (shelf) => !(shelf in DEFAULT_SHELF_MAPPING),
+    );
+  }
+});
+
+function chooseAnotherFile() {
+  reset();
 }
 
 // ── Importing progress ────────────────────────────────────────────────────────
@@ -279,64 +292,105 @@ const tabs = computed(() => [
           </p>
         </section>
 
-        <!-- ── Shelf mapping ──────────────────────────────────────────────── -->
-        <section v-else-if="step === 'mapping'" class="flex flex-col gap-5">
-          <p class="text-[13px] text-text-secondary">
-            {{ t("import.mapping.instructions") }}
-          </p>
+        <!-- ── Confirm ────────────────────────────────────────────────────── -->
+        <section v-else-if="step === 'confirm'" class="flex flex-col gap-5">
+          <div class="flex items-center justify-between gap-4">
+            <p class="text-[13px] text-text-secondary">
+              {{
+                t("import.confirm.summary", {
+                  books: rows.length,
+                  shelves: shelfCounts.size,
+                })
+              }}
+            </p>
+            <button
+              type="button"
+              class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+              @click="chooseAnotherFile"
+            >
+              {{ t("import.confirm.choose_another_file") }}
+            </button>
+          </div>
+
           <div class="border border-charcoal-border divide-y divide-charcoal-border">
-            <div
+            <p
               v-for="[shelf, count] in shelfCounts"
               :key="shelf"
-              class="flex flex-col gap-3 p-4"
+              class="text-[13px] text-text-primary px-4 py-3"
             >
-              <div>
-                <p class="text-[14px] text-text-primary truncate">{{ shelf }}</p>
-                <p class="text-[11px] text-text-secondary">
-                  {{ t("import.mapping.count", { n: count }) }}
-                </p>
-              </div>
-              <div class="flex flex-col sm:flex-row gap-4">
-                <div>
-                  <p
-                    class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                  >
-                    {{ t("library.filter_status") }}
-                  </p>
-                  <AppSegmented
-                    :options="statusOptions"
-                    :model-value="mapping[shelf]?.status"
-                    size="sm"
-                    @update:model-value="
-                      (v) => updateStatus(shelf, mapping[shelf], v)
-                    "
-                  />
-                </div>
-                <div>
-                  <p
-                    class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                  >
-                    {{ t("owning.label") }}
-                  </p>
-                  <AppSegmented
-                    :options="owningOptions"
-                    :model-value="mapping[shelf]?.owning_status"
-                    size="sm"
-                    @update:model-value="
-                      (v) => updateOwning(shelf, mapping[shelf], v)
-                    "
-                  />
-                </div>
-              </div>
+              {{
+                t("import.confirm.shelf_line", {
+                  shelf,
+                  count,
+                  status: statusLabelFor(mapping[shelf]?.status),
+                  owning: owningLabelFor(mapping[shelf]?.owning_status),
+                })
+              }}
+            </p>
+          </div>
+
+          <button
+            role="switch"
+            :aria-checked="updateExisting"
+            class="flex items-center justify-between gap-5 w-full text-left border border-charcoal-border px-4 py-3.5"
+            @click="updateExisting = !updateExisting"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs text-text-primary">{{
+                t("import.confirm.update_existing")
+              }}</span>
+              <span class="block text-[10px] text-text-secondary mt-0.5 leading-snug">{{
+                t("import.confirm.update_existing_sub")
+              }}</span>
+            </span>
+            <AppToggle :model-value="updateExisting" />
+          </button>
+
+          <button
+            role="switch"
+            :aria-checked="importShelvesAsTags"
+            class="flex items-center justify-between gap-5 w-full text-left border border-charcoal-border px-4 py-3.5"
+            @click="importShelvesAsTags = !importShelvesAsTags"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs text-text-primary">{{
+                t("import.confirm.shelves_as_tags")
+              }}</span>
+              <span class="block text-[10px] text-text-secondary mt-0.5 leading-snug">{{
+                t("import.confirm.shelves_as_tags_sub")
+              }}</span>
+            </span>
+            <AppToggle :model-value="importShelvesAsTags" />
+          </button>
+
+          <div>
+            <button
+              type="button"
+              class="font-mono text-[10px] tracking-[0.1em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+              @click="mappingExpanded = !mappingExpanded"
+            >
+              {{
+                mappingExpanded
+                  ? t("import.confirm.hide_mapping")
+                  : t("import.confirm.adjust_mapping")
+              }}
+            </button>
+            <div v-if="mappingExpanded" class="mt-3">
+              <ShelfMappingPanel
+                :shelf-counts="shelfCounts"
+                :mapping="mapping"
+                @update-mapping="setMapping"
+              />
             </div>
           </div>
+
           <AppButton
             variant="primary"
             size="sm"
             class="self-start"
             @click="startImport"
           >
-            {{ t("import.mapping.start") }}
+            {{ t("import.confirm.start") }}
           </AppButton>
         </section>
 

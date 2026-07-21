@@ -413,8 +413,18 @@
       "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file."
     },
     "mapping": {
-      "instructions": "Review how each Goodreads shelf maps to a status and owning status before importing.",
-      "count": "{n} books",
+      "count": "{n} books"
+    },
+    "confirm": {
+      "summary": "{books} books from {shelves} shelves",
+      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "choose_another_file": "Choose a different file",
+      "update_existing": "Update books already in my library",
+      "update_existing_sub": "Apply status and rating to books you've already scanned, instead of skipping them as duplicates.",
+      "shelves_as_tags": "Import Goodreads shelves as tags",
+      "shelves_as_tags_sub": "Save your Goodreads bookshelves into a \"Shelves\" custom field on each newly added book.",
+      "adjust_mapping": "Adjust shelf mapping",
+      "hide_mapping": "Hide shelf mapping",
       "start": "Start import"
     },
     "importing": {

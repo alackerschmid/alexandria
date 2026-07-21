@@ -413,8 +413,18 @@
       "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast."
     },
     "mapping": {
-      "instructions": "Prüfe vor dem Import, wie jedes Goodreads-Regal auf Status und Besitzstatus abgebildet wird.",
-      "count": "{n} Bücher",
+      "count": "{n} Bücher"
+    },
+    "confirm": {
+      "summary": "{books} Bücher aus {shelves} Regalen",
+      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "choose_another_file": "Andere Datei wählen",
+      "update_existing": "Bereits vorhandene Bücher aktualisieren",
+      "update_existing_sub": "Status und Bewertung auf bereits gescannte Bücher anwenden, statt sie als Duplikate zu überspringen.",
+      "shelves_as_tags": "Goodreads-Regale als Tags importieren",
+      "shelves_as_tags_sub": "Deine Goodreads-Bücherregale in ein benutzerdefiniertes Feld \"Regale\" bei jedem neu hinzugefügten Buch speichern.",
+      "adjust_mapping": "Regal-Zuordnung anpassen",
+      "hide_mapping": "Regal-Zuordnung ausblenden",
       "start": "Import starten"
     },
     "importing": {
