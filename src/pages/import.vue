@@ -41,6 +41,7 @@ const {
   importShelvesAsTags,
   counts,
   reviewQueue,
+  log,
   notImported,
   importedItems,
   reviewRemaining,
@@ -121,12 +122,19 @@ function chooseAnotherFile() {
 
 // ── Importing progress ────────────────────────────────────────────────────────
 
+// Only counts outcomes the send loop itself produced this run — NOT the in-file duplicates or
+// unreadable rows loadFile already logged before startImport began (those would otherwise start
+// the bar above 0%, since counts.duplicate/failed also include them for the "Not imported" tab's
+// filters). A row that lands in the review queue counts too: startImport is done deciding its
+// fate for this run even though a human still has to resolve it, so leaving it uncounted would
+// keep the bar short of 100% whenever any row needs review.
 const processed = computed(
   () =>
     counts.value.imported +
     counts.value.updated +
-    counts.value.duplicate +
-    counts.value.failed,
+    log.value.filter((e) => e.reason === "in_library").length +
+    log.value.filter((e) => e.reason === "request_failed").length +
+    reviewQueue.value.length,
 );
 const progressPct = computed(() =>
   counts.value.total > 0
@@ -409,11 +417,12 @@ const tabs = computed(() => [
           <p class="text-[12px] text-text-secondary">
             {{ t("import.importing.progress", { done: processed, total: counts.total }) }}
           </p>
-          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-[11px] text-text-secondary">
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono text-[11px] text-text-secondary">
             <span>{{ t("import.importing.imported", { n: counts.imported }) }}</span>
             <span>{{ t("import.importing.updated", { n: counts.updated }) }}</span>
             <span>{{ t("import.importing.duplicate", { n: counts.duplicate }) }}</span>
             <span>{{ t("import.importing.failed", { n: counts.failed }) }}</span>
+            <span>{{ t("import.importing.needs_review", { n: reviewQueue.length }) }}</span>
           </div>
         </section>
 

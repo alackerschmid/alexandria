@@ -434,7 +434,8 @@
       "imported": "Imported: {n}",
       "updated": "Updated: {n}",
       "duplicate": "Duplicate: {n}",
-      "failed": "Failed: {n}"
+      "failed": "Failed: {n}",
+      "needs_review": "Needs review: {n}"
     },
     "header": {
       "eyebrow": "Import from Goodreads",
