@@ -130,6 +130,27 @@ describe("packRows", () => {
     assertRowsFit(rows, 4);
   });
 
+  it("repeats a group's header when its continuation lands in a different column", () => {
+    // Rincewind (2) shares row 1 with Dark Tower (2 of 4) at cols 2-3; Dark Tower's
+    // remaining 2 entries continue on row 2 at cols 0-1 — a different column than
+    // where its header was, so the header must repeat instead of leaving a gap.
+    const rows = packRows(
+      4,
+      [makeGroup("Rincewind", 2), makeGroup("DarkTower", 4)],
+      allEntries,
+      () => false,
+      noneExpanded,
+    );
+    expect(rows).toHaveLength(2);
+    const row1DarkTower = rows[0].segments.find((s) => s.groupLabel?.text === "DarkTower");
+    expect(row1DarkTower?.groupLabel).not.toBeNull();
+    const row2DarkTower = rows[1].segments.find((s) =>
+      s.slots.some((sl) => sl.key.startsWith("DarkTower")),
+    );
+    expect(row2DarkTower?.groupLabel?.text).toBe("DarkTower");
+    assertRowsFit(rows, 4);
+  });
+
   it("returns no rows for an empty group list", () => {
     expect(packRows(4, [], allEntries, () => false, noneExpanded)).toEqual([]);
   });

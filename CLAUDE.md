@@ -220,7 +220,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Lo
 - `PATCH /api/books/custom-fields` — save custom field values; body `{ isbn, values: [{ field_def_id, value }] }` (replaces all values for that book in one batch)
 - `GET /api/field-definitions` — list the user's custom field schema
 - `POST /api/field-definitions` — create a field; body `{ name, type?, options? }` (`type`: `text` | `integer` | `select` | `tag` | `date`, defaults to `text`; `options` is a `select` field's fixed value set — a string array, sanitized/deduped server-side and ignored by every other type)
-- `PATCH /api/field-definitions/:id` — update a field; body `{ name?, type?, required?, options? }`. A `select` field's stored value is validated against its current `options` on every `PATCH /api/books/custom-fields` save — a value that no longer matches (e.g. the option was renamed/removed) is silently cleared rather than stored as an orphan
+- `PATCH /api/field-definitions/:id` — update a field; body `{ name?, type?, required?, options? }`. Every `PATCH /api/books/custom-fields` save re-validates each value against its field's current `field_type`: a `select` value must be one of its current `options` (e.g. catches a value orphaned by a since-renamed/removed option) and an `integer` value must match `^-?\d+$`; either way an invalid value is silently cleared rather than stored
 - `DELETE /api/field-definitions/:id` — remove a field and all its stored values
 - `GET /api/field-definitions/:id/values` — distinct tag values used across the user's books for that field (powers tag autocomplete)
 - `DELETE /api/field-definitions/:id/values?value=` — remove one tag value from every book the user owns (global tag delete)

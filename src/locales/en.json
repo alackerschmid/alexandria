@@ -238,8 +238,6 @@
     "custom_field_name": "Field name",
     "custom_field_value": "Value",
     "custom_field_unset": "Not set",
-    "custom_field_delete": "Delete field from all books",
-    "custom_field_confirm_delete": "Click again to confirm — removes field from all books",
     "add_custom_field": "Add field",
     "tag_add": "Add tag…",
     "tag_remove": "Remove tag {tag}",
