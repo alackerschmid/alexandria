@@ -4,13 +4,19 @@ import { authMiddleware } from "../auth";
 import { resolveEdition, linkWork, type FallbackMetadata } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
-import { validateImportRow, type ImportRowInput } from "../import-validation";
+import {
+  validateImportRow,
+  validateMatchRow,
+  type ImportRowInput,
+  type MatchRowInput,
+} from "../import-validation";
 import {
   getExistingScan,
   isUniqueConstraintError,
   resolveRatingForUpdate,
   type ExistingScan,
 } from "../library-query";
+import { pickBestMatch, type TitleMatchCandidate } from "../title-match";
 
 const importRoutes = new Hono<Env>();
 
@@ -32,6 +38,7 @@ const IMPORT_RATE_LIMIT = 30;
 type ImportOutcome = "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
 
 interface ImportedBook {
+  isbn: string;
   title: string | null;
   author: string | null;
   cover_url: string | null;
@@ -55,6 +62,7 @@ interface ImportRowResult {
 
 function bookSummary(book: BookRow): ImportedBook {
   return {
+    isbn: book.isbn,
     title: book.title,
     author: book.author,
     cover_url: book.cover_url,
@@ -249,6 +257,184 @@ importRoutes.post("/goodreads", async (c) => {
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
     importRow(db, userId, apiKey, row, update),
   );
+
+  return c.json({ results });
+});
+
+// ── Title/author matching for rows with no usable ISBN ──────────────────────────────────────
+//
+// Separate from /goodreads on purpose: these rows cost zero external fetches (no Google
+// Books/OpenLibrary call — matching is pure in-memory scoring against the user's own library),
+// so they take a larger batch and share nothing else with importRow's per-ISBN resolution flow.
+
+// No external fetches per row, so the batch cap here isn't about subrequest/connection budget —
+// just keeping one request's in-memory work (and its D1 round trip for the library index)
+// reasonably bounded.
+const MAX_MATCH_BATCH_SIZE = 50;
+// Above this, loading the full per-user scan index for in-memory scoring stops being cheap
+// enough to justify — realistically unreachable for a personal library, but the bound should be
+// explicit rather than let an outlier account degrade a request.
+const MAX_LIBRARY_INDEX_SIZE = 20_000;
+
+type MatchOutcome = "duplicate" | "updated" | "no_match";
+
+interface MatchRowResult {
+  outcome: MatchOutcome;
+  scan_id?: number;
+  // Present only for "updated" rows.
+  book?: ImportedBook;
+  previous?: { status: string; rating: number | null; owning_status: string };
+  confidence?: number;
+}
+
+interface LibraryIndexRow {
+  scan_id: number;
+  status: string;
+  rating: number | null;
+  owning_status: string;
+  book_id: number;
+  work_id: number | null;
+  isbn: string;
+  title: string | null;
+  author: string | null;
+  canonical_title: string | null;
+  cover_url: string | null;
+  publisher: string | null;
+  language: string | null;
+}
+
+importRoutes.post("/match", async (c) => {
+  const body = await c.req.json<{ rows?: MatchRowInput[]; update?: boolean }>();
+  const rows = body.rows;
+  const update = body.update === true;
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0 ||
+    rows.length > MAX_MATCH_BATCH_SIZE
+  ) {
+    return c.json(
+      { error: `rows must contain between 1 and ${MAX_MATCH_BATCH_SIZE} entries` },
+      400,
+    );
+  }
+  if (rows.some((r) => typeof r?.title !== "string" || !r.title)) {
+    return c.json({ error: "each row requires a title" }, 400);
+  }
+
+  const userId = c.get("userId");
+  // Shares the import route's bucket — the two passes of one import session must jointly stay
+  // under the same per-minute budget, not each get their own.
+  const blocked = await rateLimitOrReject(
+    c,
+    `import:${userId}`,
+    IMPORT_RATE_LIMIT,
+    1,
+    "Too many import requests — please slow down",
+  );
+  if (blocked) return blocked;
+
+  const db = c.env.DB;
+
+  const countRow = await db
+    .prepare("SELECT COUNT(*) AS count FROM scans WHERE user_id = ?")
+    .bind(userId)
+    .first<{ count: number }>();
+  if ((countRow?.count ?? 0) > MAX_LIBRARY_INDEX_SIZE) {
+    return c.json({
+      results: rows.map((): MatchRowResult => ({ outcome: "no_match" })),
+    });
+  }
+
+  const { results: library } = await db
+    .prepare(
+      `SELECT s.id AS scan_id, s.status, s.rating, s.owning_status,
+              b.id AS book_id, b.work_id, b.isbn,
+              COALESCE(o.title, b.title) AS title, b.author,
+              wk.canonical_title AS canonical_title,
+              b.cover_url, b.publisher, b.language
+       FROM scans s
+       JOIN books b ON b.id = s.book_id
+       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
+       LEFT JOIN works wk ON wk.id = b.work_id
+       WHERE s.user_id = ?`,
+    )
+    .bind(userId)
+    .all<LibraryIndexRow>();
+
+  const byScanId = new Map(library.map((row) => [row.scan_id, row]));
+  const candidates: TitleMatchCandidate[] = library.map((row) => ({
+    scanId: row.scan_id,
+    bookId: row.book_id,
+    title: row.title,
+    canonicalTitle: row.canonical_title,
+    author: row.author,
+  }));
+
+  const results: MatchRowResult[] = [];
+  for (const row of rows) {
+    const validated = validateMatchRow(row);
+    if (!validated) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    const match = pickBestMatch(
+      { title: validated.title, author: validated.author },
+      candidates,
+    );
+    if (!match) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    const matched = byScanId.get(match.scanId);
+    if (!matched) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    if (!update) {
+      results.push({ outcome: "duplicate" });
+      continue;
+    }
+
+    const resolvedRating = resolveRatingForUpdate({
+      hasStatus: true,
+      effectiveStatus: validated.status,
+      hasRating: validated.rawRating != null,
+      rating: validated.rawRating,
+    });
+    const sets = ["status = ?"];
+    const binds: (string | number | null)[] = [validated.status];
+    if (resolvedRating !== undefined) {
+      sets.push("rating = ?");
+      binds.push(resolvedRating);
+    }
+    await db
+      .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+      .bind(...binds, matched.scan_id)
+      .run();
+
+    results.push({
+      outcome: "updated",
+      scan_id: matched.scan_id,
+      book: {
+        isbn: matched.isbn,
+        title: matched.title,
+        author: matched.author,
+        cover_url: matched.cover_url,
+        publisher: matched.publisher,
+        language: matched.language,
+        work_id: matched.work_id,
+      },
+      previous: {
+        status: matched.status,
+        rating: matched.rating,
+        owning_status: matched.owning_status,
+      },
+      confidence: match.score,
+    });
+  }
 
   return c.json({ results });
 });

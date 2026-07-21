@@ -133,3 +133,42 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
     },
   };
 }
+
+export interface MatchRowInput {
+  title: string;
+  author?: string;
+  status?: string;
+  rating?: number | null;
+}
+
+export interface ValidatedMatchRow {
+  title: string;
+  author: string;
+  status: string;
+  // Ungated by status — see rawRating above. The /match route never creates a scan (only
+  // updates or reports no_match), so there's no status-gated `rating` counterpart to compute.
+  rawRating: number | null;
+}
+
+// Unlike validateImportRow, there's no ISBN and thus no hard failure mode beyond a blank title —
+// a title-less row has nothing to search against, so the caller treats null as "no_match".
+export function validateMatchRow(input: MatchRowInput): ValidatedMatchRow | null {
+  const title = normalizeText(input.title);
+  if (!title) return null;
+
+  const status = (VALID_STATUSES as readonly string[]).includes(
+    input.status ?? "",
+  )
+    ? (input.status as string)
+    : "unread";
+  const rawRating = isValidRating(input.rating ?? null)
+    ? (input.rating as number)
+    : null;
+
+  return {
+    title,
+    author: normalizeText(input.author) ?? "",
+    status,
+    rawRating,
+  };
+}

@@ -17,6 +17,7 @@ import type { ReadStatus, OwningStatus } from "@/types/book";
 export type ImportStep = "upload" | "mapping" | "importing" | "review";
 
 interface ImportedBook {
+  isbn: string;
   title: string | null;
   author: string | null;
   cover_url: string | null;
@@ -32,6 +33,18 @@ interface ImportRowResult {
   book?: ImportedBook;
   // Present only for "updated" rows — the scan's status/rating/owning_status before this update.
   previous?: { status: ReadStatus; rating: number | null; owning_status: OwningStatus };
+}
+
+// Response shape of POST /api/import/match — the title/author matching pass for rows with no
+// usable ISBN. No "failed"/"invalid_isbn" outcome: a row either matches (confidently, against
+// the user's own library) or it doesn't, and a request-level failure degrades to "no_match"
+// (see postMatchBatchWithRetry) so it falls to manual review rather than guessing.
+interface MatchRowResult {
+  outcome: "duplicate" | "updated" | "no_match";
+  scan_id?: number;
+  book?: ImportedBook;
+  previous?: { status: ReadStatus; rating: number | null; owning_status: OwningStatus };
+  confidence?: number;
 }
 
 export interface EditionCandidate {
@@ -69,6 +82,12 @@ export interface ImportedItem {
    *  Lets "remove" become "undo" (PATCH status/rating back) instead of deleting a scan that
    *  predates the import. */
   previous: { status: ReadStatus; rating: number | null; owning_status: OwningStatus } | null;
+  /** True when this row had no usable ISBN and was matched to its (preexisting) library entry
+   *  by title/author instead — shown as "matched by title" rather than "already in your
+   *  library" so the user knows this one was a fuzzy match, not an ISBN-confirmed duplicate. */
+  matchedByTitle: boolean;
+  /** The title-match confidence (0-1) — only set when matchedByTitle. */
+  matchConfidence: number | null;
   editingEdition: boolean;
   candidates: EditionCandidate[];
   candidatesLoaded: boolean;
@@ -139,6 +158,10 @@ function sleep(ms: number): Promise<void> {
 // mostly amortizes per-request overhead: 10 halves the request count of a large import, keeping it
 // clear of the 30/min import rate limit. The worker resolves the rows within a batch concurrently.
 const BATCH_SIZE = 10;
+// Matches MAX_MATCH_BATCH_SIZE in worker/src/routes/import.ts. Larger than BATCH_SIZE because
+// title matching costs no external fetches — it's pure in-memory scoring against the user's own
+// library, so a batch is cheap regardless of size.
+const MATCH_BATCH_SIZE = 50;
 
 export function useGoodreadsImport() {
   const { apiFetch } = useApi();
@@ -164,6 +187,7 @@ export function useGoodreadsImport() {
   function buildImportedItem(
     row: ParsedGoodreadsRow,
     result: ImportRowResult,
+    matchConfidence: number | null = null,
   ): ImportedItem {
     const { status, owning_status } = shelfMappingFor(row.shelf, mapping);
     const book = result.book;
@@ -198,6 +222,8 @@ export function useGoodreadsImport() {
       workId: book?.work_id ?? null,
       preexisting,
       previous,
+      matchedByTitle: matchConfidence != null,
+      matchConfidence,
       editingEdition: false,
       candidates: [],
       candidatesLoaded: false,
@@ -356,6 +382,72 @@ export function useGoodreadsImport() {
     return asFailed();
   }
 
+  interface MatchPayloadRow {
+    title: string;
+    author: string;
+    status: ReadStatus;
+    rating: number | null;
+  }
+
+  function buildMatchPayload(row: ParsedGoodreadsRow): MatchPayloadRow {
+    const { status } = shelfMappingFor(row.shelf, mapping);
+    return {
+      title: stripTitleAnnotations(row.title).trim(),
+      author: row.author.trim(),
+      status,
+      rating: row.rating,
+    };
+  }
+
+  // Same retry policy as postBatchWithRetry, against /api/import/match. A request-level failure
+  // degrades every row in the batch to "no_match" (not a "failed" outcome — see MatchRowResult)
+  // so it falls to manual review rather than silently guessing.
+  async function postMatchBatchWithRetry(
+    payloads: MatchPayloadRow[],
+    update: boolean,
+  ): Promise<MatchRowResult[]> {
+    const asNoMatch = (): MatchRowResult[] =>
+      payloads.map(() => ({ outcome: "no_match" as const }));
+
+    let networkRetried = false;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const res = await apiFetch("/api/import/match", {
+          method: "POST",
+          body: JSON.stringify({ rows: payloads, update }),
+        });
+        if (res.status === 429) {
+          const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
+          await sleep(retryAfter * 1000);
+          continue;
+        }
+        if (!res.ok) return asNoMatch();
+        const data = (await res.json()) as { results: MatchRowResult[] };
+        return data.results;
+      } catch {
+        if (!networkRetried) {
+          networkRetried = true;
+          continue;
+        }
+        return asNoMatch();
+      }
+    }
+    return asNoMatch();
+  }
+
+  // Adapts a "updated" MatchRowResult into the shape buildImportedItem expects, so both the
+  // ISBN-driven and title-matched paths build their cards through the same function. isbn comes
+  // from the matched book's own record — the row itself never had one.
+  function matchResultToImportRowResult(result: MatchRowResult): ImportRowResult {
+    return {
+      isbn: result.book?.isbn ?? "",
+      outcome: "updated",
+      scan_id: result.scan_id,
+      book: result.book,
+      previous: result.previous,
+    };
+  }
+
   function queueForReview(
     row: ParsedGoodreadsRow,
     reason: ReviewItem["reason"],
@@ -379,14 +471,12 @@ export function useGoodreadsImport() {
 
     const sendable = rows.value.filter((r) => r.isbn && isIsbnShaped(r.isbn));
     // Distinguish "nothing in the export" from "something was there but doesn't look like an
-    // ISBN" — they get different review reasons/messages (reason_no_isbn vs reason_invalid_isbn).
+    // ISBN" — used as the review reason (reason_no_isbn vs reason_invalid_isbn) if title/author
+    // matching below also comes up empty.
     const noIsbnRows = rows.value.filter((r) => !r.isbn);
     const malformedIsbnRows = rows.value.filter(
       (r) => r.isbn && !isIsbnShaped(r.isbn),
     );
-
-    for (const row of noIsbnRows) queueForReview(row, "no_isbn");
-    for (const row of malformedIsbnRows) queueForReview(row, "invalid_isbn");
 
     for (const batch of chunk(sendable, BATCH_SIZE)) {
       const payloads = batch.map((row) =>
@@ -408,6 +498,34 @@ export function useGoodreadsImport() {
               result.outcome === "duplicate" ? "in_library" : "request_failed",
             );
           }
+        }
+      });
+    }
+
+    // Rows with no usable ISBN aren't given up on outright — try matching them against the
+    // existing library by title/author first (see worker/src/title-match.ts). A Goodreads
+    // export commonly has these for books added by hand, and many turn out to already be here.
+    const unmatched = [...noIsbnRows, ...malformedIsbnRows];
+    for (const batch of chunk(unmatched, MATCH_BATCH_SIZE)) {
+      const payloads = batch.map((row) => buildMatchPayload(row));
+      const results = await postMatchBatchWithRetry(payloads, updateExisting.value);
+      results.forEach((result, i) => {
+        const row = batch[i];
+        if (result.outcome === "updated") {
+          importedItems.value.push(
+            buildImportedItem(
+              row,
+              matchResultToImportRowResult(result),
+              result.confidence ?? null,
+            ),
+          );
+        } else if (result.outcome === "duplicate") {
+          // A confident match was found but updateExisting is off — nothing was written, and
+          // unlike "no_match" there's nothing for the user to resolve, so this isn't a review
+          // row: it's resolved, just declined.
+          pushLog(row, row.isbn, "duplicate", "in_library");
+        } else {
+          queueForReview(row, row.isbn ? "invalid_isbn" : "no_isbn");
         }
       });
     }

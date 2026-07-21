@@ -114,7 +114,17 @@ const editionLabel = computed(() => {
           {{ item.author || t("book.unknown_author") }}
         </p>
         <p
-          v-if="item.preexisting"
+          v-if="item.matchedByTitle"
+          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
+        >
+          {{
+            t("import.summary.card.matched_by_title", {
+              pct: Math.round((item.matchConfidence ?? 0) * 100),
+            })
+          }}
+        </p>
+        <p
+          v-else-if="item.preexisting"
           class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
         >
           {{ t("import.summary.card.already_in_library") }}

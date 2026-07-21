@@ -477,6 +477,7 @@
         "remove": "Entfernen",
         "undo": "Rückgängig",
         "already_in_library": "Bereits in deiner Bibliothek — aktualisiert",
+        "matched_by_title": "Nach Titel zugeordnet — {pct}% Konfidenz",
         "unknown_publisher": "Verlag unbekannt",
         "error_duplicate": "Diese Ausgabe ist bereits in deiner Bibliothek.",
         "error_failed": "Ausgabe konnte nicht gewechselt werden — bitte erneut versuchen.",

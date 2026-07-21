@@ -477,6 +477,7 @@
         "remove": "Remove",
         "undo": "Undo",
         "already_in_library": "Already in your library — updated",
+        "matched_by_title": "Matched by title — {pct}% confidence",
         "unknown_publisher": "Unknown publisher",
         "error_duplicate": "That edition is already in your library.",
         "error_failed": "Couldn't switch edition — please try again.",

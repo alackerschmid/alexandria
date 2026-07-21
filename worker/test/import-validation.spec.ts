@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateImportRow,
+  validateMatchRow,
   normalizeCreatedAt,
 } from "../src/import-validation";
 
@@ -189,5 +190,42 @@ describe("normalizeCreatedAt", () => {
     const result = normalizeCreatedAt(farFuture);
     const todayIso = new Date().toISOString().slice(0, 10);
     expect(result).toBe(`${todayIso} 00:00:00`);
+  });
+});
+
+describe("validateMatchRow", () => {
+  it("returns null for a blank or missing title", () => {
+    expect(validateMatchRow({ title: "" })).toBeNull();
+    expect(validateMatchRow({ title: ' '.repeat(3) })).toBeNull();
+  });
+
+  it("trims the title and defaults a missing author to an empty string", () => {
+    const result = validateMatchRow({ title: "  Dune  " });
+    expect(result).toEqual({
+      title: "Dune",
+      author: "",
+      status: "unread",
+      rawRating: null,
+    });
+  });
+
+  it("falls back to unread for a missing or unknown status", () => {
+    const result = validateMatchRow({ title: "Dune", status: "some-custom-shelf" });
+    expect(result?.status).toBe("unread");
+  });
+
+  it("keeps rawRating regardless of status (ungated, unlike ValidatedImportRow.rating)", () => {
+    const result = validateMatchRow({
+      title: "Dune",
+      status: "to-read" as any,
+      rating: 8,
+    });
+    expect(result?.status).toBe("unread");
+    expect(result?.rawRating).toBe(8);
+  });
+
+  it("drops an out-of-range rating", () => {
+    const result = validateMatchRow({ title: "Dune", rating: 11 });
+    expect(result?.rawRating).toBeNull();
   });
 });
