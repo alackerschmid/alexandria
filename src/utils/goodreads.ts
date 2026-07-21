@@ -32,12 +32,35 @@ export interface ParsedGoodreadsRow {
   publisher: string | null;
   publishDate: string | null;
   numberOfPages: number | null;
+  /** Goodreads' own copy count — a stronger ownership signal than the shelf mapping when > 0. */
+  ownedCopies: number;
+  /** The non-exclusive "Bookshelves" column, trimmed and deduped (includes the exclusive shelf
+   *  too, since Goodreads lists it there as well). Only used when importing shelves as tags. */
+  shelves: string[];
 }
 
 // Goodreads leaves the cell blank rather than "0" for an unset page count.
 function parsePageCount(raw: string | undefined): number | null {
   const n = Number((raw ?? "").trim());
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function parseOwnedCopies(raw: string | undefined): number {
+  const n = Number((raw ?? "").trim());
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
+}
+
+function parseShelves(raw: string | undefined): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of (raw ?? "").split(",")) {
+    const trimmed = part.trim();
+    if (trimmed && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+  }
+  return out;
 }
 
 export function parseGoodreadsRow(
@@ -64,6 +87,8 @@ export function parseGoodreadsRow(
     publisher: publisher || null,
     publishDate: yearPublished || null,
     numberOfPages: parsePageCount(raw["Number of Pages"]),
+    ownedCopies: parseOwnedCopies(raw["Owned Copies"]),
+    shelves: parseShelves(raw["Bookshelves"]),
   };
 }
 
@@ -116,6 +141,8 @@ export interface ImportPayloadRow {
   publisher: string | null;
   publish_date: string | null;
   number_of_pages: number | null;
+  owned_copies: number;
+  shelves: string[];
 }
 
 // row.isbn must be non-null — callers route no-ISBN rows to the review queue instead.
@@ -136,5 +163,7 @@ export function buildImportPayload(
     publisher: row.publisher,
     publish_date: row.publishDate,
     number_of_pages: row.numberOfPages,
+    owned_copies: row.ownedCopies,
+    shelves: row.shelves,
   };
 }

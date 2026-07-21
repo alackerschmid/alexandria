@@ -78,6 +78,10 @@ async function importRow(
   apiKey: string,
   input: ImportRowInput,
   update: boolean,
+  // Only applied to newly created scans (see below) — an "updated" row's book may already carry
+  // tags the user chose deliberately, and the update path otherwise never writes fields the
+  // Goodreads row didn't explicitly ask to change.
+  shelvesFieldDefId: number | null,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
@@ -96,6 +100,7 @@ async function importRow(
     publisher,
     publish_date,
     number_of_pages,
+    shelves,
   } = validated.row;
 
   // Everything below can throw (D1 hiccups, resolveEdition/linkWork failures) — this function
@@ -206,6 +211,18 @@ async function importRow(
       )
       .bind(...binds)
       .run();
+
+    if (shelvesFieldDefId != null && shelves.length > 0) {
+      await db
+        .prepare(
+          `INSERT INTO book_custom_fields (user_id, book_id, field_def_id, field_value)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, book_id, field_def_id) DO UPDATE SET field_value = excluded.field_value`,
+        )
+        .bind(userId, book.id, shelvesFieldDefId, JSON.stringify(shelves))
+        .run();
+    }
+
     return {
       isbn: isbn13,
       outcome: "imported",
@@ -226,7 +243,13 @@ async function importRow(
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {
-  const body = await c.req.json<{ rows?: ImportRowInput[]; update?: boolean }>();
+  const body = await c.req.json<{
+    rows?: ImportRowInput[];
+    update?: boolean;
+    // Request-level, not per-row — the client creates/reuses a single "Shelves" tag field once
+    // per import session (see stores/import.ts) rather than per row.
+    shelves_field_def_id?: number;
+  }>();
   const rows = body.rows;
   const update = body.update === true;
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_BATCH_SIZE) {
@@ -251,11 +274,25 @@ importRoutes.post("/goodreads", async (c) => {
 
   const db = c.env.DB;
   const apiKey = c.env.GOOGLE_BOOKS_API_KEY;
+
+  // Verify the field belongs to this user and is actually a tag field before trusting it for
+  // every row — a client-supplied id is otherwise an IDOR into another user's field definitions.
+  let shelvesFieldDefId: number | null = null;
+  if (typeof body.shelves_field_def_id === "number") {
+    const owned = await db
+      .prepare(
+        "SELECT 1 FROM user_field_definitions WHERE id = ? AND user_id = ? AND field_type = 'tag'",
+      )
+      .bind(body.shelves_field_def_id, userId)
+      .first();
+    if (owned) shelvesFieldDefId = body.shelves_field_def_id;
+  }
+
   // Concurrent, but order-preserving — the client maps results back onto its rows positionally.
   // Rows sharing a work or author race inside linkWork; every write there is INSERT OR IGNORE and
   // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are benign.
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
-    importRow(db, userId, apiKey, row, update),
+    importRow(db, userId, apiKey, row, update, shelvesFieldDefId),
   );
 
   return c.json({ results });

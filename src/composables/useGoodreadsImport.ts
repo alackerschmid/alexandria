@@ -1,6 +1,7 @@
 import { ref, reactive, computed } from "vue";
 import Papa from "papaparse";
 import { useApi } from "@/composables/useApi";
+import { useFieldDefsStore } from "@/stores/fieldDefs";
 import {
   isGoodreadsExport,
   parseGoodreadsRow,
@@ -13,6 +14,10 @@ import {
   type ImportPayloadRow,
 } from "@/utils/goodreads";
 import type { ReadStatus, OwningStatus } from "@/types/book";
+
+// The custom tag field Goodreads' "Bookshelves" column imports into, when the user opts in.
+// Reused across imports (by exact name+type match) rather than minting a new field each time.
+const SHELVES_FIELD_NAME = "Shelves";
 
 export type ImportStep = "upload" | "mapping" | "importing" | "review";
 
@@ -165,6 +170,7 @@ const MATCH_BATCH_SIZE = 50;
 
 export function useGoodreadsImport() {
   const { apiFetch } = useApi();
+  const fieldDefsStore = useFieldDefsStore();
 
   const step = ref<ImportStep>("upload");
   const error = ref("");
@@ -183,6 +189,29 @@ export function useGoodreadsImport() {
   // Whether a row matching a book already in the library applies its status/rating to the
   // existing scan, rather than being logged as a no-op duplicate. Defaults on.
   const updateExisting = ref(true);
+  // Whether to write Goodreads' "Bookshelves" column into a "Shelves" tag field on each newly
+  // imported book. Off by default — creating schema on the user's behalf shouldn't be silent.
+  const importShelvesAsTags = ref(false);
+
+  // Finds (or creates) the "Shelves" tag field, called once per import session rather than per
+  // row. Returns null on failure — callers treat that as "don't write shelf tags this session"
+  // rather than failing the whole import over it.
+  async function ensureShelvesFieldDef(): Promise<number | null> {
+    await fieldDefsStore.load();
+    const existing = fieldDefsStore.defs.find(
+      (d) => d.name === SHELVES_FIELD_NAME && d.type === "tag",
+    );
+    if (existing) return existing.id;
+
+    const res = await apiFetch("/api/field-definitions", {
+      method: "POST",
+      body: JSON.stringify({ name: SHELVES_FIELD_NAME, type: "tag" }),
+    });
+    if (!res.ok) return null;
+    const created = (await res.json()) as { id: number; name: string; type: string };
+    fieldDefsStore.add(created);
+    return created.id;
+  }
 
   function buildImportedItem(
     row: ParsedGoodreadsRow,
@@ -352,6 +381,7 @@ export function useGoodreadsImport() {
   async function postBatchWithRetry(
     payloads: ReturnType<typeof buildImportPayload>[],
     update: boolean,
+    shelvesFieldDefId: number | null = null,
   ): Promise<ImportRowResult[]> {
     const asFailed = () =>
       payloads.map((p) => ({ isbn: p.isbn, outcome: "failed" as const }));
@@ -361,7 +391,13 @@ export function useGoodreadsImport() {
       try {
         const res = await apiFetch("/api/import/goodreads", {
           method: "POST",
-          body: JSON.stringify({ rows: payloads, update }),
+          body: JSON.stringify({
+            rows: payloads,
+            update,
+            ...(shelvesFieldDefId != null
+              ? { shelves_field_def_id: shelvesFieldDefId }
+              : {}),
+          }),
         });
         if (res.status === 429) {
           const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
@@ -469,6 +505,11 @@ export function useGoodreadsImport() {
   async function startImport(): Promise<void> {
     step.value = "importing";
 
+    // Resolved once per session, not per row/batch — see ensureShelvesFieldDef.
+    const shelvesFieldDefId = importShelvesAsTags.value
+      ? await ensureShelvesFieldDef()
+      : null;
+
     const sendable = rows.value.filter((r) => r.isbn && isIsbnShaped(r.isbn));
     // Distinguish "nothing in the export" from "something was there but doesn't look like an
     // ISBN" — used as the review reason (reason_no_isbn vs reason_invalid_isbn) if title/author
@@ -482,7 +523,11 @@ export function useGoodreadsImport() {
       const payloads = batch.map((row) =>
         buildImportPayload(row as ParsedGoodreadsRow & { isbn: string }, mapping),
       );
-      const results = await postBatchWithRetry(payloads, updateExisting.value);
+      const results = await postBatchWithRetry(
+        payloads,
+        updateExisting.value,
+        shelvesFieldDefId,
+      );
       results.forEach((result, i) => {
         const row = batch[i];
         if (result.outcome === "invalid_isbn") {
@@ -671,7 +716,14 @@ export function useGoodreadsImport() {
   // dead end and drops into the not-imported log.
   async function confirmReviewItem(item: ReviewItem, isbn: string): Promise<void> {
     const payload = buildImportPayload({ ...item.row, isbn }, mapping);
-    const [result] = await postBatchWithRetry([payload], updateExisting.value);
+    const shelvesFieldDefId = importShelvesAsTags.value
+      ? await ensureShelvesFieldDef()
+      : null;
+    const [result] = await postBatchWithRetry(
+      [payload],
+      updateExisting.value,
+      shelvesFieldDefId,
+    );
     const outcome = result.outcome === "invalid_isbn" ? "failed" : result.outcome;
     if (outcome === "imported" || outcome === "updated") {
       importedItems.value.push(buildImportedItem(item.row, result));
@@ -797,6 +849,8 @@ export function useGoodreadsImport() {
         publisher: null,
         publish_date: null,
         number_of_pages: null,
+        owned_copies: 0,
+        shelves: [],
       };
       // update: false — this is an edition swap on the item's own scan, not an import row; the
       // candidate ISBN could coincidentally match a *different* scan already in the library, and
@@ -947,6 +1001,7 @@ export function useGoodreadsImport() {
     log.value = [];
     importedItems.value = [];
     updateExisting.value = true;
+    importShelvesAsTags.value = false;
   }
 
   return {
@@ -955,6 +1010,7 @@ export function useGoodreadsImport() {
     fileName,
     rows,
     shelfCounts,
+    importShelvesAsTags,
     mapping,
     updateExisting,
     counts,

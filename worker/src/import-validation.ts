@@ -1,7 +1,12 @@
 // Pure validation/normalization for Goodreads CSV import rows — kept separate from the route
 // so it's unit-testable without spinning up a D1/Hono context.
 import { normalizeIsbn, isValidIsbn, isbn10To13, isbn13To10 } from "./isbn";
-import { VALID_STATUSES, VALID_OWNING_STATUSES, isValidRating } from "./library-query";
+import {
+  VALID_STATUSES,
+  VALID_OWNING_STATUSES,
+  isValidRating,
+  dedupeTrimmed,
+} from "./library-query";
 
 export interface ImportRowInput {
   isbn: string;
@@ -16,6 +21,12 @@ export interface ImportRowInput {
   publisher?: string | null;
   publish_date?: string | null;
   number_of_pages?: number | null;
+  // Goodreads' own copy count — when > 0 it overrides the shelf-mapped owning_status (a stronger
+  // ownership signal than which shelf a book happens to sit on).
+  owned_copies?: number;
+  // The Goodreads "Bookshelves" column — only ever written to book_custom_fields when the caller
+  // opts in and supplies a target field id (see routes/import.ts).
+  shelves?: string[];
 }
 
 export interface ValidatedImportRow {
@@ -37,6 +48,7 @@ export interface ValidatedImportRow {
   publisher: string | null;
   publish_date: string | null;
   number_of_pages: number | null;
+  shelves: string[];
 }
 
 const MAX_TEXT_FIELD_LENGTH = 500;
@@ -55,6 +67,20 @@ function normalizePageCount(raw: number | null | undefined): number | null {
   return typeof raw === "number" && Number.isFinite(raw) && raw > 0
     ? Math.trunc(raw)
     : null;
+}
+
+const MAX_SHELVES = 50;
+const MAX_SHELF_LENGTH = 100;
+
+// Defense in depth — the client already trims/dedupes (src/utils/goodreads.ts's parseShelves),
+// but this is a stored custom-field value, so it gets the same treatment as any other
+// user-controllable text reaching the DB.
+function normalizeShelves(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const cleaned = raw
+    .filter((v): v is string => typeof v === "string")
+    .map((v) => v.trim().slice(0, MAX_SHELF_LENGTH));
+  return dedupeTrimmed(cleaned).slice(0, MAX_SHELVES);
 }
 
 export type ValidationResult =
@@ -103,11 +129,18 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
   )
     ? (input.status as string)
     : "unread";
-  const owning_status = (VALID_OWNING_STATUSES as readonly string[]).includes(
-    input.owning_status ?? "",
-  )
+  const mappedOwningStatus = (
+    VALID_OWNING_STATUSES as readonly string[]
+  ).includes(input.owning_status ?? "")
     ? (input.owning_status as string)
     : "owned";
+  // A positive copy count is a stronger, more direct ownership signal than the shelf a book
+  // happens to sit on (e.g. a book on "to-read" that Goodreads says you own 1 copy of) — only
+  // ever pushes toward "owned", never away from an explicit shelf-mapped status.
+  const owning_status =
+    typeof input.owned_copies === "number" && input.owned_copies > 0
+      ? "owned"
+      : mappedOwningStatus;
   const rawRating = isValidRating(input.rating ?? null)
     ? (input.rating as number)
     : null;
@@ -130,6 +163,7 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
       publisher: normalizeText(input.publisher),
       publish_date: normalizeText(input.publish_date),
       number_of_pages: normalizePageCount(input.number_of_pages),
+      shelves: normalizeShelves(input.shelves),
     },
   };
 }

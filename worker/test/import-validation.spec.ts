@@ -54,6 +54,48 @@ describe("validateImportRow", () => {
     expect(result.row.owning_status).toBe("owned");
   });
 
+  it("overrides a shelf-mapped owning_status with 'owned' when owned_copies is positive", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      owning_status: "want",
+      owned_copies: 1,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.owning_status).toBe("owned");
+  });
+
+  it("leaves the shelf-mapped owning_status alone when owned_copies is 0 or absent", () => {
+    const zero = validateImportRow({
+      isbn: "9780306406157",
+      owning_status: "want",
+      owned_copies: 0,
+    });
+    const absent = validateImportRow({ isbn: "9780306406157", owning_status: "want" });
+    expect(zero.ok && zero.row.owning_status).toBe("want");
+    expect(absent.ok && absent.row.owning_status).toBe("want");
+  });
+
+  it("trims, dedupes and caps the shelves list", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      shelves: [" to-read ", "favorites", "to-read", "", "  "],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.shelves).toEqual(["to-read", "favorites"]);
+  });
+
+  it("returns an empty shelves array when the field is missing or not an array", () => {
+    const missing = validateImportRow({ isbn: "9780306406157" });
+    const wrongType = validateImportRow({
+      isbn: "9780306406157",
+      shelves: "to-read" as any,
+    });
+    expect(missing.ok && missing.row.shelves).toEqual([]);
+    expect(wrongType.ok && wrongType.row.shelves).toEqual([]);
+  });
+
   it("drops the rating when status is not read", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
