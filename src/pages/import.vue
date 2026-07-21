@@ -82,13 +82,17 @@ const fileInputEl = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 
 async function onFileChange(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0];
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
   if (!file) return;
   uploading.value = true;
   try {
     await loadFile(file);
   } finally {
     uploading.value = false;
+    // Clears the picked file so re-selecting the *same* file after an error fires `change`
+    // again — the browser otherwise treats an unchanged selection as a no-op event.
+    input.value = "";
   }
 }
 
@@ -284,11 +288,11 @@ const tabs = computed(() => [
             />
           </div>
           <p
-            v-if="error === 'not_goodreads_export'"
+            v-if="error"
             class="text-[12px]"
             style="color: rgb(var(--v-theme-error))"
           >
-            {{ t("import.upload.not_goodreads_export") }}
+            {{ t(`import.upload.${error}`) }}
           </p>
         </section>
 

@@ -410,7 +410,9 @@
     "upload": {
       "instructions": "Export your library from Goodreads (My Books → Import/Export) and upload the CSV file here.",
       "choose_file": "Choose file",
-      "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file."
+      "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file.",
+      "parse_failed": "This file couldn't be read — check it's a valid CSV export and try again.",
+      "empty_file": "This file has no books in it."
     },
     "mapping": {
       "count": "{n} books"
@@ -508,7 +510,8 @@
           "in_library": "Already in your library",
           "request_failed": "Import request failed",
           "invalid_isbn": "Invalid ISBN — skipped",
-          "no_isbn": "No ISBN — skipped"
+          "no_isbn": "No ISBN — skipped",
+          "unreadable_row": "Couldn't read this row from the file — skipped"
         }
       }
     }

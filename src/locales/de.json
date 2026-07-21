@@ -410,7 +410,9 @@
     "upload": {
       "instructions": "Exportiere deine Bibliothek bei Goodreads (Meine Bücher → Import/Export) und lade die CSV-Datei hier hoch.",
       "choose_file": "Datei auswählen",
-      "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast."
+      "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast.",
+      "parse_failed": "Diese Datei konnte nicht gelesen werden — prüfe, ob es sich um einen gültigen CSV-Export handelt, und versuche es erneut.",
+      "empty_file": "Diese Datei enthält keine Bücher."
     },
     "mapping": {
       "count": "{n} Bücher"
@@ -508,7 +510,8 @@
           "in_library": "Bereits in deiner Bibliothek",
           "request_failed": "Import fehlgeschlagen",
           "invalid_isbn": "Ungültige ISBN — übersprungen",
-          "no_isbn": "Keine ISBN — übersprungen"
+          "no_isbn": "Keine ISBN — übersprungen",
+          "unreadable_row": "Diese Zeile der Datei konnte nicht gelesen werden — übersprungen"
         }
       }
     }

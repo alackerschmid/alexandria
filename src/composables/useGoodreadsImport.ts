@@ -132,7 +132,8 @@ export type ImportLogReason =
   | "in_library"
   | "request_failed"
   | "invalid_isbn"
-  | "no_isbn";
+  | "no_isbn"
+  | "unreadable_row";
 
 export interface ImportLogEntry {
   title: string;
@@ -317,24 +318,53 @@ export function useGoodreadsImport() {
     error.value = "";
     log.value = [];
     fileName.value = file.name;
-    const parsed = await new Promise<Papa.ParseResult<Record<string, string>>>(
-      (resolve, reject) => {
-        Papa.parse<Record<string, string>>(file, {
-          header: true,
-          skipEmptyLines: true,
-          complete: resolve,
-          error: reject,
-        });
-      },
-    );
+
+    let parsed: Papa.ParseResult<Record<string, string>>;
+    try {
+      parsed = await new Promise<Papa.ParseResult<Record<string, string>>>(
+        (resolve, reject) => {
+          Papa.parse<Record<string, string>>(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: resolve,
+            error: reject,
+          });
+        },
+      );
+    } catch {
+      // A fatal read/parse failure (Papa's error callback) — e.g. an unreadable file. Previously
+      // this rejected into an uncaught promise: the spinner just stopped with nothing shown.
+      error.value = "parse_failed";
+      fileName.value = "";
+      return;
+    }
 
     const headers = parsed.meta.fields ?? [];
     if (!isGoodreadsExport(headers)) {
       error.value = "not_goodreads_export";
       return;
     }
+    if (parsed.data.length === 0) {
+      error.value = "empty_file";
+      return;
+    }
 
-    const parsedRows = parsed.data.map((raw) => parseGoodreadsRow(raw));
+    // Row-level parse errors (mismatched quotes, wrong field count, etc.) — Papa still returns a
+    // best-effort `data` entry for these, but its shape is unreliable, so the row is logged and
+    // excluded rather than silently imported with possibly-shifted fields.
+    const badRowIndices = new Set(
+      parsed.errors.map((e) => e.row).filter((r): r is number => r != null),
+    );
+
+    const parsedRows: ParsedGoodreadsRow[] = [];
+    parsed.data.forEach((raw, i) => {
+      const row = parseGoodreadsRow(raw);
+      if (badRowIndices.has(i)) {
+        pushLog(row, row.isbn, "failed", "unreadable_row");
+      } else {
+        parsedRows.push(row);
+      }
+    });
 
     // Client pre-dedupe: same ISBN appearing twice in the file counts as a duplicate with no
     // request sent — the server only ever sees one row per distinct ISBN in this file.
