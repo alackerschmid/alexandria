@@ -633,12 +633,20 @@ export function useGoodreadsImport() {
     item.busy = true;
     item.error = "";
     try {
+      // No title/author/publisher fallback here — the candidate ISBN comes from a resolved
+      // search/library result, not a bare CSV row, so a metadata-lookup miss is unexpected and
+      // there's nothing better than null to fall back to.
       const payload: ImportPayloadRow = {
         isbn,
         status: item.status,
         owning_status: item.owningStatus,
         rating: item.rating,
         created_at: item.createdAt,
+        title: null,
+        author: null,
+        publisher: null,
+        publish_date: null,
+        number_of_pages: null,
       };
       const [result] = await postBatchWithRetry([payload]);
       if (result.outcome === "imported" && result.scan_id != null) {

@@ -9,6 +9,13 @@ export interface ImportRowInput {
   owning_status?: string;
   rating?: number | null;
   created_at?: string | null;
+  // Present when the CSV already carries this data — used to seed a placeholder `books` row if
+  // Google Books/OpenLibrary both miss on the ISBN (see resolveEdition's fallbackMeta).
+  title?: string | null;
+  author?: string | null;
+  publisher?: string | null;
+  publish_date?: string | null;
+  number_of_pages?: number | null;
 }
 
 export interface ValidatedImportRow {
@@ -18,6 +25,29 @@ export interface ValidatedImportRow {
   owning_status: string;
   rating: number | null;
   created_at: string | null;
+  title: string | null;
+  author: string | null;
+  publisher: string | null;
+  publish_date: string | null;
+  number_of_pages: number | null;
+}
+
+const MAX_TEXT_FIELD_LENGTH = 500;
+
+// Trims and caps length; empty/whitespace-only collapses to null. Used for the free-text CSV
+// fields that seed a fallback `books` row — never trust their length or contents otherwise.
+function normalizeText(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim().slice(0, MAX_TEXT_FIELD_LENGTH);
+  return trimmed || null;
+}
+
+// Mirrors editions.ts's own page-count handling (`> 0 ? n : null` for both Google Books and
+// OpenLibrary responses) so a Goodreads-supplied count is treated identically to a fetched one.
+function normalizePageCount(raw: number | null | undefined): number | null {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0
+    ? Math.trunc(raw)
+    : null;
 }
 
 export type ValidationResult =
@@ -87,6 +117,11 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
       owning_status,
       rating,
       created_at: normalizeCreatedAt(input.created_at),
+      title: normalizeText(input.title),
+      author: normalizeText(input.author),
+      publisher: normalizeText(input.publisher),
+      publish_date: normalizeText(input.publish_date),
+      number_of_pages: normalizePageCount(input.number_of_pages),
     },
   };
 }

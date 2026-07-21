@@ -29,6 +29,15 @@ export interface ParsedGoodreadsRow {
   rating: number | null;
   createdAt: string | null;
   shelf: string;
+  publisher: string | null;
+  publishDate: string | null;
+  numberOfPages: number | null;
+}
+
+// Goodreads leaves the cell blank rather than "0" for an unset page count.
+function parsePageCount(raw: string | undefined): number | null {
+  const n = Number((raw ?? "").trim());
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 export function parseGoodreadsRow(
@@ -42,6 +51,8 @@ export function parseGoodreadsRow(
   const rating = goodreadsRating > 0 ? goodreadsRating * 2 : null;
 
   const dateAdded = (raw["Date Added"] ?? "").trim();
+  const publisher = (raw["Publisher"] ?? "").trim();
+  const yearPublished = (raw["Year Published"] ?? "").trim();
 
   return {
     title: raw["Title"] ?? "",
@@ -50,6 +61,9 @@ export function parseGoodreadsRow(
     rating,
     createdAt: dateAdded ? dateAdded.replace(/\//g, "-") : null,
     shelf: (raw["Exclusive Shelf"] ?? "").trim(),
+    publisher: publisher || null,
+    publishDate: yearPublished || null,
+    numberOfPages: parsePageCount(raw["Number of Pages"]),
   };
 }
 
@@ -97,6 +111,11 @@ export interface ImportPayloadRow {
   owning_status: OwningStatus;
   rating: number | null;
   created_at: string | null;
+  title: string | null;
+  author: string | null;
+  publisher: string | null;
+  publish_date: string | null;
+  number_of_pages: number | null;
 }
 
 // row.isbn must be non-null — callers route no-ISBN rows to the review queue instead.
@@ -105,11 +124,17 @@ export function buildImportPayload(
   mapping: Record<string, ShelfMapping>,
 ): ImportPayloadRow {
   const { status, owning_status } = shelfMappingFor(row.shelf, mapping);
+  const title = stripTitleAnnotations(row.title).trim();
   return {
     isbn: row.isbn,
     status,
     owning_status,
     rating: row.rating,
     created_at: row.createdAt,
+    title: title || null,
+    author: row.author.trim() || null,
+    publisher: row.publisher,
+    publish_date: row.publishDate,
+    number_of_pages: row.numberOfPages,
   };
 }

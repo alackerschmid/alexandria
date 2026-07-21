@@ -754,6 +754,17 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
   book.work_id = work.id;
 }
 
+// Caller-supplied metadata to seed a placeholder `books` row when Google Books/OpenLibrary both
+// miss — e.g. the title/author/publisher a Goodreads CSV row already carries. Only ever used to
+// fill an otherwise-entirely-NULL row (see resolveEdition below); never overrides a real fetch.
+export type FallbackMetadata = {
+  title: string | null;
+  author: string | null;
+  publisher: string | null;
+  publish_date: string | null;
+  number_of_pages_median: number | null;
+};
+
 // Returns the books row, creating it (and its work/author links) if missing.
 // Centralizes the fetch-metadata → INSERT → re-SELECT flow shared by lookup/guest-lookup/scans.
 // When metadata isn't found: returns null unless allowEmpty (POST /api/scans needs a row to
@@ -764,6 +775,7 @@ export async function resolveEdition(
   apiKey?: string,
   allowEmpty = false,
   skipLinkWork = false,
+  fallbackMeta?: FallbackMetadata | null,
 ): Promise<BookRow | null> {
   // Check both ISBN forms — the same edition can already be stored under its ISBN-10 or ISBN-13
   // form depending on which one was scanned/looked-up first. Without this, a lookup under the
@@ -780,15 +792,17 @@ export async function resolveEdition(
 
   const fetched = await fetchBookMetadata(isbn, apiKey);
   if (!fetched && !allowEmpty) return null;
+  // Neither source had this ISBN — fall back to whatever the caller already knows (e.g. a
+  // Goodreads CSV row's title/author) rather than inserting an all-NULL placeholder.
   const meta = fetched ?? {
-    title: null,
-    author: null,
+    title: fallbackMeta?.title ?? null,
+    author: fallbackMeta?.author ?? null,
     cover_url: null,
     language: null,
-    publish_date: null,
-    number_of_pages_median: null,
+    publish_date: fallbackMeta?.publish_date ?? null,
+    number_of_pages_median: fallbackMeta?.number_of_pages_median ?? null,
     description: null,
-    publisher: null,
+    publisher: fallbackMeta?.publisher ?? null,
     physical_format: null,
     edition_name: null,
     physical_dimensions: null,

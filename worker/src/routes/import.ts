@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
-import { resolveEdition, linkWork } from "../editions";
+import { resolveEdition, linkWork, type FallbackMetadata } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
 import { validateImportRow, type ImportRowInput } from "../import-validation";
@@ -54,8 +54,19 @@ async function importRow(
   if (!validated.ok) {
     return { isbn: input.isbn, outcome: "invalid_isbn" };
   }
-  const { isbn13, isbn10, status, owning_status, rating, created_at } =
-    validated.row;
+  const {
+    isbn13,
+    isbn10,
+    status,
+    owning_status,
+    rating,
+    created_at,
+    title,
+    author,
+    publisher,
+    publish_date,
+    number_of_pages,
+  } = validated.row;
 
   // Everything below can throw (D1 hiccups, resolveEdition/linkWork failures) — this function
   // runs concurrently with sibling rows via mapWithConcurrency, which lets rejections propagate,
@@ -88,7 +99,16 @@ async function importRow(
       if (!existing.work_id) await linkWork(db, existing);
       book = existing;
     } else {
-      book = await resolveEdition(db, isbn13, apiKey, true);
+      // Seeds a placeholder row with the CSV's own title/author/publisher/etc. if neither
+      // Google Books nor OpenLibrary has this ISBN, instead of inserting an all-NULL book.
+      const fallbackMeta: FallbackMetadata = {
+        title,
+        author,
+        publisher,
+        publish_date,
+        number_of_pages_median: number_of_pages,
+      };
+      book = await resolveEdition(db, isbn13, apiKey, true, false, fallbackMeta);
     }
 
     if (!book) {
