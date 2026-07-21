@@ -13,6 +13,7 @@ import AttentionRow from "@/components/import/AttentionRow.vue";
 import ResolveDrawer from "@/components/import/ResolveDrawer.vue";
 import ShelfMappingPanel from "@/components/import/ShelfMappingPanel.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import {
   MATCHED_GRID,
   MATCHED_ROW_PADDING,
@@ -170,17 +171,24 @@ function onDiscardSession() {
   if (window.confirm(t("import.paused.discard_confirm"))) discardSession();
 }
 
-async function onCancelImport() {
-  if (
-    !window.confirm(
-      t("import.summary.cancel_confirm", { n: importedItems.value.length }),
-    )
-  )
-    return;
-  // cancelImport() already resets the session (nothing left to review once every row is
-  // reverted or removed) — no separate finalize call needed.
-  await cancelImport();
-  router.push({ name: "library" });
+const cancelDialogOpen = ref(false);
+const cancelling = ref(false);
+
+function onCancelImport() {
+  cancelDialogOpen.value = true;
+}
+
+async function confirmCancelImport() {
+  cancelling.value = true;
+  try {
+    // cancelImport() already resets the session (nothing left to review once every row is
+    // reverted or removed) — no separate finalize call needed.
+    await cancelImport();
+    cancelDialogOpen.value = false;
+    router.push({ name: "library" });
+  } finally {
+    cancelling.value = false;
+  }
 }
 
 // ── Review screen: rating ──────────────────────────────────────────────────────
@@ -561,8 +569,8 @@ const tabs = computed(() => [
                 @close-edition="closeImportedEdition(item)"
                 @retry-candidates="retryImportedCandidates(item)"
                 @change-edition="(isbn) => changeImportedEdition(item, isbn)"
-                @set-status="(s: ReadStatus) => setImportedStatus(item, s)"
-                @set-owning="(o: OwningStatus) => setImportedOwning(item, o)"
+                @set-status="async (s: ReadStatus) => await setImportedStatus(item, s)"
+                @set-owning="async (o: OwningStatus) => await setImportedOwning(item, o)"
                 @open-rating="openRating(item)"
                 @remove="removeImportedItem(item)"
                 @undo="undoImportedUpdate(item)"
@@ -645,15 +653,26 @@ const tabs = computed(() => [
       @set-rating="onSetRating"
     />
 
+    <ConfirmDialog
+      v-model="cancelDialogOpen"
+      danger
+      :title="t('import.summary.cancel_dialog_title')"
+      :confirm-label="t('import.summary.cancel_dialog_confirm')"
+      :cancel-label="t('import.summary.cancel_dialog_dismiss')"
+      :loading="cancelling"
+      @confirm="confirmCancelImport"
+    >
+      {{ t("import.summary.cancel_confirm", { n: importedItems.length }) }}
+    </ConfirmDialog>
+
     <ResolveDrawer
-      v-if="resolveItem"
       :item="resolveItem"
       @close="closeResolve"
       @update:query="(q) => (resolveItem!.searchQuery = q)"
-      @search="searchReviewCandidates(resolveItem)"
-      @retry="retryCandidates(resolveItem)"
+      @search="searchReviewCandidates(resolveItem!)"
+      @retry="retryCandidates(resolveItem!)"
       @pick="(isbn) => onPickCandidate(resolveItem!, isbn)"
-      @skip="onSkip(resolveItem)"
+      @skip="onSkip(resolveItem!)"
     />
   </div>
 </template>

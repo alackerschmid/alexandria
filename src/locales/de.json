@@ -502,6 +502,9 @@
       "enrichment_note_large": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden nach und nach ergänzt — bei einem Import dieser Größe kann das mehrere Tage dauern, da die Anreicherung über eine gemeinsame Warteschlange läuft. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
       "imported_empty": "Es wurden keine Bücher importiert.",
       "cancel_confirm": "Diesen Import abbrechen? {n} Bücher werden entfernt oder auf ihren vorherigen Stand zurückgesetzt. Das kann nicht rückgängig gemacht werden.",
+      "cancel_dialog_title": "Import abbrechen?",
+      "cancel_dialog_confirm": "Import abbrechen",
+      "cancel_dialog_dismiss": "Weiter prüfen",
       "card": {
         "remove": "Entfernen",
         "undo": "Rückgängig",
@@ -521,8 +524,6 @@
         "filter_skipped": "Übersprungen",
         "empty": "Keine Bücher in dieser Kategorie.",
         "reason": {
-          "direct": "Importiert",
-          "review_match": "Importiert (bei der Überprüfung zugeordnet)",
           "in_file": "Duplikat — kommt zweimal im Export vor",
           "in_library": "Bereits in deiner Bibliothek",
           "request_failed": "Import fehlgeschlagen",

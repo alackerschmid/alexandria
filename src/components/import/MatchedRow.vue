@@ -3,6 +3,7 @@ import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import CyclePill from "@/components/CyclePill.vue";
 import RatingStars from "@/components/RatingStars.vue";
+import CoverImage from "@/components/CoverImage.vue";
 import { STATUS_ORDER, STATUS_META } from "@/composables/useBookStatus";
 import { OWNING_ORDER, OWNING_META } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
@@ -95,13 +96,15 @@ const editionLabel = computed(() => {
   <div class="py-3" :class="MATCHED_ROW_PADDING">
     <div class="grid" :class="MATCHED_GRID">
       <!-- cover -->
-      <img
-        v-if="item.coverUrl"
-        :src="item.coverUrl"
-        alt=""
-        class="w-10 h-[60px] object-cover flex-none"
-      />
-      <div v-else class="w-10 h-[60px] bg-charcoal-light flex-none" />
+      <div class="w-10 h-[60px] flex-none relative overflow-hidden bg-charcoal-light">
+        <CoverImage
+          :cover-url="item.coverUrl"
+          :title="item.title"
+          text-class="text-sm"
+          :icon-size="14"
+          class="w-full h-full object-cover"
+        />
+      </div>
 
       <!-- title / author -->
       <div class="min-w-0">
@@ -183,13 +186,15 @@ const editionLabel = computed(() => {
               "
               @click="emit('change-edition', candidate.isbn)"
             >
-              <img
-                v-if="candidate.cover_url"
-                :src="candidate.cover_url"
-                alt=""
-                class="w-5 h-7 object-cover flex-none"
-              />
-              <div v-else class="w-5 h-7 bg-charcoal flex-none" />
+              <div class="w-5 h-7 flex-none relative overflow-hidden bg-charcoal">
+                <CoverImage
+                  :cover-url="candidate.cover_url"
+                  :title="candidate.title"
+                  text-class="text-[9px]"
+                  :icon-size="8"
+                  class="w-full h-full object-cover"
+                />
+              </div>
               <div class="min-w-0">
                 <p class="text-[11px] text-text-primary truncate">
                   {{ candidate.title }}
@@ -264,6 +269,7 @@ const editionLabel = computed(() => {
           :options="statusOptions"
           :model-value="item.status"
           :title="t('library.filter_status')"
+          :disabled="item.busy"
           @update:model-value="(v) => emit('set-status', v as ReadStatus)"
         />
       </div>
@@ -277,6 +283,7 @@ const editionLabel = computed(() => {
           :options="owningOptions"
           :model-value="item.owningStatus"
           :title="t('owning.label')"
+          :disabled="item.busy"
           @update:model-value="(v) => emit('set-owning', v as OwningStatus)"
         />
       </div>

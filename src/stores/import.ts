@@ -135,8 +135,6 @@ export interface ReviewItem {
 }
 
 export type ImportLogReason =
-  | "direct"
-  | "review_match"
   | "in_file"
   | "in_library"
   | "request_failed"
@@ -1192,6 +1190,11 @@ export const useImportStore = defineStore("import", () => {
         item.language = result.book?.language ?? null;
         item.workId = result.book?.work_id ?? item.workId;
         item.editingEdition = false;
+        // The candidate list just shown belonged to the *previous* work — reopening the picker
+        // must re-fetch for the new one, not silently show stale editions of the old book.
+        item.candidates = [];
+        item.candidatesLoaded = false;
+        item.candidatesFromStorage = false;
         const deleteRes = await apiFetch(`/api/scans/${oldScanId}`, {
           method: "DELETE",
         });
@@ -1202,8 +1205,10 @@ export const useImportStore = defineStore("import", () => {
           item.error = "orphaned_duplicate";
         }
       } else if (result.outcome === "duplicate") {
+        item.editingEdition = false;
         item.error = "duplicate";
       } else {
+        item.editingEdition = false;
         item.error = "failed";
       }
     } finally {
@@ -1223,15 +1228,23 @@ export const useImportStore = defineStore("import", () => {
     return res.ok;
   }
 
+  // busy gates the row's CyclePills (see MatchedRow) so a rapid double-click can't fire a second
+  // PATCH before the first one's response lands and land out of order.
   async function setImportedStatus(
     item: ImportedItem,
     status: ReadStatus,
   ): Promise<void> {
-    if (await patchImported(item, { status })) {
-      item.status = status;
-      // Mirror the server: moving off "read" clears any rating.
-      if (status !== "read") item.rating = null;
-      persistSession();
+    if (item.busy) return;
+    item.busy = true;
+    try {
+      if (await patchImported(item, { status })) {
+        item.status = status;
+        // Mirror the server: moving off "read" clears any rating.
+        if (status !== "read") item.rating = null;
+        persistSession();
+      }
+    } finally {
+      item.busy = false;
     }
   }
 
@@ -1239,9 +1252,15 @@ export const useImportStore = defineStore("import", () => {
     item: ImportedItem,
     owning: OwningStatus,
   ): Promise<void> {
-    if (await patchImported(item, { owning_status: owning })) {
-      item.owningStatus = owning;
-      persistSession();
+    if (item.busy) return;
+    item.busy = true;
+    try {
+      if (await patchImported(item, { owning_status: owning })) {
+        item.owningStatus = owning;
+        persistSession();
+      }
+    } finally {
+      item.busy = false;
     }
   }
 
@@ -1249,9 +1268,15 @@ export const useImportStore = defineStore("import", () => {
     item: ImportedItem,
     rating: number | null,
   ): Promise<void> {
-    if (await patchImported(item, { rating })) {
-      item.rating = rating;
-      persistSession();
+    if (item.busy) return;
+    item.busy = true;
+    try {
+      if (await patchImported(item, { rating })) {
+        item.rating = rating;
+        persistSession();
+      }
+    } finally {
+      item.busy = false;
     }
   }
 
