@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from "vue-i18n";
-import type { ReviewItem } from "@/composables/useGoodreadsImport";
+import type { ReviewItem } from "@/stores/import";
 
 defineProps<{ item: ReviewItem }>();
 const emit = defineEmits<{

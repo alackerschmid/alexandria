@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import { ref, computed, watch } from "vue";
-import { useRouter, onBeforeRouteLeave } from "vue-router";
+import { storeToRefs } from "pinia";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "@/components/AppHeader.vue";
 import AppButton from "@/components/AppButton.vue";
@@ -18,17 +19,14 @@ import {
 } from "@/components/import/matched-grid";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
-import { useGoodreadsImport } from "@/composables/useGoodreadsImport";
-import type {
-  ImportLogEntry,
-  ImportedItem,
-  ReviewItem,
-} from "@/composables/useGoodreadsImport";
+import { useImportStore } from "@/stores/import";
+import type { ImportLogEntry, ImportedItem, ReviewItem } from "@/stores/import";
 import { DEFAULT_SHELF_MAPPING } from "@/utils/goodreads";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const { t } = useI18n();
 const router = useRouter();
+const importStore = useImportStore();
 
 const {
   step,
@@ -45,12 +43,15 @@ const {
   notImported,
   importedItems,
   reviewRemaining,
-  isInProgress,
+  sessionPaused,
+  cancelRequested,
+} = storeToRefs(importStore);
+const {
   loadFile,
   setMapping,
   startImport,
-  cancelRequested,
   cancelImporting,
+  discardSession,
   ensureCandidatesLoaded,
   retryCandidates,
   searchReviewCandidates,
@@ -67,17 +68,13 @@ const {
   removeImportedItem,
   undoImportedUpdate,
   cancelImport,
-  reset,
-} = useGoodreadsImport();
+  finalizeImport,
+} = importStore;
 
-// Set when the user leaves deliberately (finalize / cancel) so the in-progress guard below
-// doesn't prompt on the very navigation it just asked for.
-const leavingIntentionally = ref(false);
-
-onBeforeRouteLeave(() => {
-  if (leavingIntentionally.value || !isInProgress.value) return true;
-  return window.confirm(t("import.leave_confirm"));
-});
+// The import now runs in the background (see stores/import.ts) and survives leaving this page —
+// there is deliberately no leave guard here anymore. A resumable session is offered via
+// sessionPaused below, and the global ImportProgressChip (App.vue) tracks an active run from
+// anywhere else in the app.
 
 // ── Upload ─────────────────────────────────────────────────────────────────────
 
@@ -119,7 +116,7 @@ watch(step, (s) => {
 });
 
 function chooseAnotherFile() {
-  reset();
+  importStore.reset();
 }
 
 // ── Importing progress ────────────────────────────────────────────────────────
@@ -165,8 +162,12 @@ type ReviewTab = "matched" | "attention" | "not_imported";
 const activeTab = ref<ReviewTab>("matched");
 
 function goToLibrary() {
-  leavingIntentionally.value = true;
+  finalizeImport();
   router.push({ name: "library" });
+}
+
+function onDiscardSession() {
+  if (window.confirm(t("import.paused.discard_confirm"))) discardSession();
 }
 
 async function onCancelImport() {
@@ -176,8 +177,10 @@ async function onCancelImport() {
     )
   )
     return;
+  // cancelImport() already resets the session (nothing left to review once every row is
+  // reverted or removed) — no separate finalize call needed.
   await cancelImport();
-  goToLibrary();
+  router.push({ name: "library" });
 }
 
 // ── Review screen: rating ──────────────────────────────────────────────────────
@@ -272,8 +275,39 @@ const tabs = computed(() => [
     <AppHeader />
 
     <main class="flex-1 px-6 md:px-12 pt-8 md:pt-10 pb-28 md:pb-10">
+      <!-- ── Paused: rehydrated after a reload mid-run ─────────────────────── -->
       <div
-        v-if="step !== 'review'"
+        v-if="sessionPaused"
+        class="max-w-[640px] mx-auto flex flex-col gap-6"
+      >
+        <div>
+          <h1
+            class="font-heading text-[30px] md:text-[34px] font-bold text-text-primary leading-none mb-2"
+          >
+            {{ t("import.paused.heading") }}
+          </h1>
+          <p class="text-[13px] text-text-secondary">
+            {{
+              t("import.paused.description", {
+                fileName,
+                imported: counts.imported + counts.updated,
+                total: counts.total,
+              })
+            }}
+          </p>
+        </div>
+        <div class="flex gap-3">
+          <AppButton variant="primary" size="sm" @click="startImport">
+            {{ t("import.paused.resume") }}
+          </AppButton>
+          <AppButton variant="secondary" size="sm" @click="onDiscardSession">
+            {{ t("import.paused.discard") }}
+          </AppButton>
+        </div>
+      </div>
+
+      <div
+        v-else-if="step !== 'review'"
         class="max-w-[640px] mx-auto flex flex-col gap-8"
       >
         <div>

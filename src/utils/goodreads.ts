@@ -23,6 +23,11 @@ function stripExcelWrapper(raw: string): string {
 }
 
 export interface ParsedGoodreadsRow {
+  /** Stable identity within this parse — the row's index in the source file. Lets the import
+   *  session track exactly which rows are already resolved (imported/logged/queued) so a
+   *  resumed run doesn't re-send or double-count them. Not Goodreads' own "Book Id" column,
+   *  which callers shouldn't need to think about. */
+  id: number;
   title: string;
   author: string;
   isbn: string | null;
@@ -65,6 +70,7 @@ function parseShelves(raw: string | undefined): string[] {
 
 export function parseGoodreadsRow(
   raw: Record<string, string>,
+  id: number,
 ): ParsedGoodreadsRow {
   const isbn13 = stripExcelWrapper(raw["ISBN13"] ?? "");
   const isbn10 = stripExcelWrapper(raw["ISBN"] ?? "");
@@ -78,6 +84,7 @@ export function parseGoodreadsRow(
   const yearPublished = (raw["Year Published"] ?? "").trim();
 
   return {
+    id,
     title: raw["Title"] ?? "",
     author: raw["Author"] ?? "",
     isbn: isbn13 || isbn10 || null,

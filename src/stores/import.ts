@@ -1,4 +1,5 @@
 import { ref, reactive, computed } from "vue";
+import { defineStore } from "pinia";
 import Papa from "papaparse";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
@@ -18,6 +19,10 @@ import type { ReadStatus, OwningStatus } from "@/types/book";
 // The custom tag field Goodreads' "Bookshelves" column imports into, when the user opts in.
 // Reused across imports (by exact name+type match) rather than minting a new field each time.
 const SHELVES_FIELD_NAME = "Shelves";
+
+// A single resumable session at a time — the import runs for the lifetime of the tab, so there's
+// never a second one competing for this key.
+const STORAGE_KEY = "bookscan_import_session";
 
 export type ImportStep = "upload" | "confirm" | "importing" | "review";
 
@@ -64,6 +69,10 @@ export interface EditionCandidate {
 // owning_status/rating live server-side (the scan is already saved); the card mirrors them
 // locally and PATCHes on change. `searchTitle`/`searchAuthor` seed the "change edition" search.
 export interface ImportedItem {
+  /** The ParsedGoodreadsRow this came from — lets a resumed run recognize this row as already
+   *  resolved (see resolvedRowIds) without re-deriving it from isbn, which a title-matched item
+   *  doesn't share with its source row at all. */
+  rowId: number;
   scanId: number;
   isbn: string;
   title: string;
@@ -137,6 +146,9 @@ export type ImportLogReason =
   | "cancelled";
 
 export interface ImportLogEntry {
+  /** The source row's id, when this entry came from one (absent for nothing today, but keeps
+   *  the field non-optional simple — see resolvedRowIds). */
+  rowId: number;
   title: string;
   author: string;
   isbn: string | null;
@@ -170,20 +182,81 @@ const BATCH_SIZE = 10;
 // library, so a batch is cheap regardless of size.
 const MATCH_BATCH_SIZE = 50;
 
-export function useGoodreadsImport() {
+// The ephemeral, re-fetchable-on-demand fields stripped before persisting an ImportedItem/
+// ReviewItem to localStorage — candidate lists are the bulk of the payload and cost nothing to
+// rebuild the next time their dropdown opens.
+type PersistedImportedItem = Omit<
+  ImportedItem,
+  | "candidates"
+  | "candidatesLoaded"
+  | "loadingCandidates"
+  | "searchUnavailable"
+  | "candidatesFromStorage"
+  | "busy"
+  | "error"
+  | "editingEdition"
+>;
+type PersistedReviewItem = Omit<
+  ReviewItem,
+  "candidates" | "candidatesLoaded" | "loadingCandidates" | "searchUnavailable" | "searching"
+>;
+
+interface PersistedSession {
+  sessionKey: string;
+  step: ImportStep;
+  fileName: string;
+  fileSize: number;
+  rows: ParsedGoodreadsRow[];
+  shelfCounts: [string, number][];
+  mapping: Record<string, ShelfMapping>;
+  updateExisting: boolean;
+  importShelvesAsTags: boolean;
+  nextReviewId: number;
+  reviewQueue: PersistedReviewItem[];
+  log: ImportLogEntry[];
+  importedItems: PersistedImportedItem[];
+}
+
+function reviveImportedItem(p: PersistedImportedItem): ImportedItem {
+  return {
+    ...p,
+    candidates: [],
+    candidatesLoaded: false,
+    loadingCandidates: false,
+    searchUnavailable: false,
+    candidatesFromStorage: false,
+    busy: false,
+    error: "",
+    editingEdition: false,
+  };
+}
+
+function reviveReviewItem(p: PersistedReviewItem): ReviewItem {
+  return {
+    ...p,
+    candidates: [],
+    candidatesLoaded: false,
+    loadingCandidates: false,
+    searchUnavailable: false,
+    searching: false,
+  };
+}
+
+export const useImportStore = defineStore("import", () => {
   const { apiFetch } = useApi();
   const fieldDefsStore = useFieldDefsStore();
 
   const step = ref<ImportStep>("upload");
   const error = ref("");
   const fileName = ref("");
+  const fileSize = ref(0);
 
   const rows = ref<ParsedGoodreadsRow[]>([]);
   const shelfCounts = ref<Map<string, number>>(new Map());
   const mapping = reactive<Record<string, ShelfMapping>>({});
 
   const reviewQueue = ref<ReviewItem[]>([]);
-  let nextReviewId = 0;
+  const nextReviewId = ref(0);
   const log = ref<ImportLogEntry[]>([]);
   // Imported rows get editable summary cards (see ImportedItem); the compact `log` holds only the
   // non-imported outcomes (in-file/library duplicates, failures, skips).
@@ -198,8 +271,148 @@ export function useGoodreadsImport() {
   // without losing what already completed.
   const cancelRequested = ref(false);
 
+  // True only while startImport's send loop is actually executing (guards against a duplicate
+  // invocation, e.g. a stray double-click, and drives the beforeunload guard together with
+  // batchInFlight below). False again as soon as it returns, whether by finishing, cancelling,
+  // or hitting an unhandled error.
+  const isRunning = ref(false);
+  // Narrower than isRunning: true only while a batch request is actually awaiting a response —
+  // the moment an interrupted page load could lose real work in flight. isRunning also covers the
+  // synchronous gaps between batches, which reloading doesn't put at risk.
+  const batchInFlight = ref(false);
+  // Set when a persisted session from a previous tab/reload is rehydrated mid-run. Surfaced by
+  // the confirm-adjacent "paused" panel and the global chip; never auto-cleared by resuming
+  // silently — the user has to explicitly resume or discard.
+  const sessionPaused = ref(false);
+  // The completion chip stays visible until dismissed or the user visits /import — set back to
+  // false whenever a new session starts.
+  const chipDismissed = ref(false);
+
   function cancelImporting(): void {
     cancelRequested.value = true;
+  }
+
+  // ── Persistence ─────────────────────────────────────────────────────────────
+
+  function stripImportedItem(item: ImportedItem): PersistedImportedItem {
+    const {
+      candidates: _candidates,
+      candidatesLoaded: _candidatesLoaded,
+      loadingCandidates: _loadingCandidates,
+      searchUnavailable: _searchUnavailable,
+      candidatesFromStorage: _candidatesFromStorage,
+      busy: _busy,
+      error: _error,
+      editingEdition: _editingEdition,
+      ...rest
+    } = item;
+    return rest;
+  }
+
+  function stripReviewItem(item: ReviewItem): PersistedReviewItem {
+    const {
+      candidates: _candidates,
+      candidatesLoaded: _candidatesLoaded,
+      loadingCandidates: _loadingCandidates,
+      searchUnavailable: _searchUnavailable,
+      searching: _searching,
+      ...rest
+    } = item;
+    return rest;
+  }
+
+  function clearPersistedSession(): void {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+    } catch {
+      // Storage unavailable (private browsing, quota) — nothing to clean up either way.
+    }
+  }
+
+  // Called after every batch and after any post-import edit that mutates reviewQueue/
+  // importedItems/log, so a reload mid-run (or mid-review) resumes from a state that matches
+  // what the server actually has, not a stale snapshot from the last batch boundary.
+  function persistSession(): void {
+    if (step.value === "upload") {
+      clearPersistedSession();
+      return;
+    }
+    const payload: PersistedSession = {
+      sessionKey: `${fileName.value}:${fileSize.value}:${rows.value.length}`,
+      step: step.value,
+      fileName: fileName.value,
+      fileSize: fileSize.value,
+      rows: rows.value,
+      shelfCounts: [...shelfCounts.value.entries()],
+      mapping: { ...mapping },
+      updateExisting: updateExisting.value,
+      importShelvesAsTags: importShelvesAsTags.value,
+      nextReviewId: nextReviewId.value,
+      reviewQueue: reviewQueue.value.map((item) => stripReviewItem(item)),
+      log: log.value,
+      importedItems: importedItems.value.map((item) => stripImportedItem(item)),
+    };
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // Storage full or unavailable — resume just won't be offered next time; not worth failing
+      // the import over.
+    }
+  }
+
+  function loadPersistedSession(): PersistedSession | null {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? (JSON.parse(raw) as PersistedSession) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function hydrate(persisted: PersistedSession): void {
+    step.value = persisted.step;
+    fileName.value = persisted.fileName;
+    fileSize.value = persisted.fileSize;
+    rows.value = persisted.rows;
+    shelfCounts.value = new Map(persisted.shelfCounts);
+    for (const key of Object.keys(mapping)) delete mapping[key];
+    Object.assign(mapping, persisted.mapping);
+    updateExisting.value = persisted.updateExisting;
+    importShelvesAsTags.value = persisted.importShelvesAsTags;
+    nextReviewId.value = persisted.nextReviewId;
+    reviewQueue.value = persisted.reviewQueue.map((item) => reviveReviewItem(item));
+    log.value = persisted.log;
+    importedItems.value = persisted.importedItems.map((item) => reviveImportedItem(item));
+  }
+
+  // Runs once, when the store is first used (Pinia setup stores execute their body once, on
+  // creation — this isn't re-run on navigation, only on a fresh tab/reload). Never auto-resumes
+  // network writes: a run interrupted mid-batch surfaces as "paused" for the user to confirm.
+  const persistedOnBoot = loadPersistedSession();
+  if (persistedOnBoot) {
+    hydrate(persistedOnBoot);
+    if (persistedOnBoot.step === "importing") sessionPaused.value = true;
+  }
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("beforeunload", (e) => {
+      if (batchInFlight.value) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    });
+  }
+
+  // Every row an import run has already made a decision about, keyed by ParsedGoodreadsRow.id —
+  // startImport filters these out so resuming (or a stray re-invocation) never re-sends or
+  // double-counts a row. Rows loadFile excluded outright (in-file duplicates, unreadable rows)
+  // never appear in `rows` in the first place, so they don't need to be considered here.
+  function resolvedRowIds(): Set<number> {
+    const ids = new Set<number>();
+    for (const item of importedItems.value) ids.add(item.rowId);
+    for (const entry of log.value) ids.add(entry.rowId);
+    for (const item of reviewQueue.value) ids.add(item.row.id);
+    return ids;
   }
 
   // Finds (or creates) the "Shelves" tag field, called once per import session rather than per
@@ -243,6 +456,7 @@ export function useGoodreadsImport() {
           ? row.rating
           : null;
     return {
+      rowId: row.id,
       scanId: result.scan_id!,
       isbn: result.isbn,
       title: book?.title ?? row.title,
@@ -276,12 +490,19 @@ export function useGoodreadsImport() {
   }
 
   function pushLog(
-    row: Pick<ParsedGoodreadsRow, "title" | "author">,
+    row: Pick<ParsedGoodreadsRow, "id" | "title" | "author">,
     isbn: string | null,
     outcome: ImportLogEntry["outcome"],
     reason: ImportLogReason,
   ) {
-    log.value.push({ title: row.title, author: row.author, isbn, outcome, reason });
+    log.value.push({
+      rowId: row.id,
+      title: row.title,
+      author: row.author,
+      isbn,
+      outcome,
+      reason,
+    });
   }
 
   // Derived from the arrays that already carry this information, rather than tracked by hand —
@@ -314,6 +535,7 @@ export function useGoodreadsImport() {
     ...reviewQueue.value
       .filter((item) => item.status === "skipped")
       .map((item) => ({
+        rowId: item.row.id,
         title: item.row.title,
         author: item.row.author,
         isbn: item.row.isbn,
@@ -326,6 +548,8 @@ export function useGoodreadsImport() {
     error.value = "";
     log.value = [];
     fileName.value = file.name;
+    fileSize.value = file.size;
+    chipDismissed.value = false;
 
     let parsed: Papa.ParseResult<Record<string, string>>;
     try {
@@ -366,7 +590,7 @@ export function useGoodreadsImport() {
 
     const parsedRows: ParsedGoodreadsRow[] = [];
     parsed.data.forEach((raw, i) => {
-      const row = parseGoodreadsRow(raw);
+      const row = parseGoodreadsRow(raw, i);
       if (badRowIndices.has(i)) {
         pushLog(row, row.isbn, "failed", "unreadable_row");
       } else {
@@ -407,6 +631,7 @@ export function useGoodreadsImport() {
     }
 
     step.value = "confirm";
+    persistSession();
   }
 
   function setMapping(shelf: string, next: ShelfMapping) {
@@ -425,35 +650,40 @@ export function useGoodreadsImport() {
       payloads.map((p) => ({ isbn: p.isbn, outcome: "failed" as const }));
 
     let networkRetried = false;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        const res = await apiFetch("/api/import/goodreads", {
-          method: "POST",
-          body: JSON.stringify({
-            rows: payloads,
-            update,
-            ...(shelvesFieldDefId != null
-              ? { shelves_field_def_id: shelvesFieldDefId }
-              : {}),
-          }),
-        });
-        if (res.status === 429) {
-          const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
-          await sleep(retryAfter * 1000);
-          continue;
+    batchInFlight.value = true;
+    try {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          const res = await apiFetch("/api/import/goodreads", {
+            method: "POST",
+            body: JSON.stringify({
+              rows: payloads,
+              update,
+              ...(shelvesFieldDefId != null
+                ? { shelves_field_def_id: shelvesFieldDefId }
+                : {}),
+            }),
+          });
+          if (res.status === 429) {
+            const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
+            await sleep(retryAfter * 1000);
+            continue;
+          }
+          if (!res.ok) return asFailed();
+          const data = (await res.json()) as { results: ImportRowResult[] };
+          return data.results;
+        } catch {
+          if (!networkRetried) {
+            networkRetried = true;
+            continue;
+          }
+          return asFailed();
         }
-        if (!res.ok) return asFailed();
-        const data = (await res.json()) as { results: ImportRowResult[] };
-        return data.results;
-      } catch {
-        if (!networkRetried) {
-          networkRetried = true;
-          continue;
-        }
-        return asFailed();
       }
+      return asFailed();
+    } finally {
+      batchInFlight.value = false;
     }
-    return asFailed();
   }
 
   interface MatchPayloadRow {
@@ -484,29 +714,34 @@ export function useGoodreadsImport() {
       payloads.map(() => ({ outcome: "no_match" as const }));
 
     let networkRetried = false;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        const res = await apiFetch("/api/import/match", {
-          method: "POST",
-          body: JSON.stringify({ rows: payloads, update }),
-        });
-        if (res.status === 429) {
-          const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
-          await sleep(retryAfter * 1000);
-          continue;
+    batchInFlight.value = true;
+    try {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        try {
+          const res = await apiFetch("/api/import/match", {
+            method: "POST",
+            body: JSON.stringify({ rows: payloads, update }),
+          });
+          if (res.status === 429) {
+            const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
+            await sleep(retryAfter * 1000);
+            continue;
+          }
+          if (!res.ok) return asNoMatch();
+          const data = (await res.json()) as { results: MatchRowResult[] };
+          return data.results;
+        } catch {
+          if (!networkRetried) {
+            networkRetried = true;
+            continue;
+          }
+          return asNoMatch();
         }
-        if (!res.ok) return asNoMatch();
-        const data = (await res.json()) as { results: MatchRowResult[] };
-        return data.results;
-      } catch {
-        if (!networkRetried) {
-          networkRetried = true;
-          continue;
-        }
-        return asNoMatch();
       }
+      return asNoMatch();
+    } finally {
+      batchInFlight.value = false;
     }
-    return asNoMatch();
   }
 
   // Adapts a "updated" MatchRowResult into the shape buildImportedItem expects, so both the
@@ -527,7 +762,7 @@ export function useGoodreadsImport() {
     reason: ReviewItem["reason"],
   ): void {
     reviewQueue.value.push({
-      id: nextReviewId++,
+      id: nextReviewId.value++,
       row,
       reason,
       status: "pending",
@@ -548,96 +783,121 @@ export function useGoodreadsImport() {
     for (const row of remaining) queueForReview(row, "cancelled");
   }
 
+  // Also serves as the resume entry point: rows already accounted for (imported, logged, or
+  // queued for review — see resolvedRowIds) are filtered out before building the send batches, so
+  // calling this again after a rehydrated "paused" session picks up exactly where it left off
+  // instead of re-sending or double-counting anything.
   async function startImport(): Promise<void> {
+    if (isRunning.value) return;
+    isRunning.value = true;
+    sessionPaused.value = false;
     step.value = "importing";
     cancelRequested.value = false;
 
-    // Resolved once per session, not per row/batch — see ensureShelvesFieldDef.
-    const shelvesFieldDefId = importShelvesAsTags.value
-      ? await ensureShelvesFieldDef()
-      : null;
+    try {
+      const resolved = resolvedRowIds();
+      const unresolvedRows = rows.value.filter((r) => !resolved.has(r.id));
 
-    const sendable = rows.value.filter((r) => r.isbn && isIsbnShaped(r.isbn));
-    // Distinguish "nothing in the export" from "something was there but doesn't look like an
-    // ISBN" — used as the review reason (reason_no_isbn vs reason_invalid_isbn) if title/author
-    // matching below also comes up empty.
-    const noIsbnRows = rows.value.filter((r) => !r.isbn);
-    const malformedIsbnRows = rows.value.filter(
-      (r) => r.isbn && !isIsbnShaped(r.isbn),
-    );
-    const unmatched = [...noIsbnRows, ...malformedIsbnRows];
+      // Resolved once per session, not per row/batch — see ensureShelvesFieldDef.
+      const shelvesFieldDefId = importShelvesAsTags.value
+        ? await ensureShelvesFieldDef()
+        : null;
 
-    const sendableBatches = chunk(sendable, BATCH_SIZE);
-    for (let b = 0; b < sendableBatches.length; b++) {
-      if (cancelRequested.value) {
-        for (const rest of sendableBatches.slice(b)) queueRemainderAsCancelled(rest);
-        queueRemainderAsCancelled(unmatched);
-        step.value = "review";
-        return;
-      }
-      const batch = sendableBatches[b];
-      const payloads = batch.map((row) =>
-        buildImportPayload(row as ParsedGoodreadsRow & { isbn: string }, mapping),
+      const sendable = unresolvedRows.filter((r) => r.isbn && isIsbnShaped(r.isbn));
+      // Distinguish "nothing in the export" from "something was there but doesn't look like an
+      // ISBN" — used as the review reason (reason_no_isbn vs reason_invalid_isbn) if title/author
+      // matching below also comes up empty.
+      const noIsbnRows = unresolvedRows.filter((r) => !r.isbn);
+      const malformedIsbnRows = unresolvedRows.filter(
+        (r) => r.isbn && !isIsbnShaped(r.isbn),
       );
-      const results = await postBatchWithRetry(
-        payloads,
-        updateExisting.value,
-        shelvesFieldDefId,
-      );
-      results.forEach((result, i) => {
-        const row = batch[i];
-        if (result.outcome === "invalid_isbn") {
-          queueForReview(row, "invalid_isbn");
-        } else {
-          if (result.outcome === "imported" || result.outcome === "updated") {
-            importedItems.value.push(buildImportedItem(row, result));
+      const unmatched = [...noIsbnRows, ...malformedIsbnRows];
+
+      const sendableBatches = chunk(sendable, BATCH_SIZE);
+      for (let b = 0; b < sendableBatches.length; b++) {
+        if (cancelRequested.value) {
+          for (const rest of sendableBatches.slice(b)) queueRemainderAsCancelled(rest);
+          queueRemainderAsCancelled(unmatched);
+          step.value = "review";
+          persistSession();
+          return;
+        }
+        const batch = sendableBatches[b];
+        const payloads = batch.map((row) =>
+          buildImportPayload(row as ParsedGoodreadsRow & { isbn: string }, mapping),
+        );
+        const results = await postBatchWithRetry(
+          payloads,
+          updateExisting.value,
+          shelvesFieldDefId,
+        );
+        results.forEach((result, i) => {
+          const row = batch[i];
+          if (result.outcome === "invalid_isbn") {
+            queueForReview(row, "invalid_isbn");
           } else {
-            pushLog(
-              row,
-              row.isbn,
-              result.outcome,
-              result.outcome === "duplicate" ? "in_library" : "request_failed",
-            );
+            if (result.outcome === "imported" || result.outcome === "updated") {
+              importedItems.value.push(buildImportedItem(row, result));
+            } else {
+              pushLog(
+                row,
+                row.isbn,
+                result.outcome,
+                result.outcome === "duplicate" ? "in_library" : "request_failed",
+              );
+            }
           }
-        }
-      });
-    }
-
-    // Rows with no usable ISBN aren't given up on outright — try matching them against the
-    // existing library by title/author first (see worker/src/title-match.ts). A Goodreads
-    // export commonly has these for books added by hand, and many turn out to already be here.
-    const unmatchedBatches = chunk(unmatched, MATCH_BATCH_SIZE);
-    for (let b = 0; b < unmatchedBatches.length; b++) {
-      if (cancelRequested.value) {
-        for (const rest of unmatchedBatches.slice(b)) queueRemainderAsCancelled(rest);
-        step.value = "review";
-        return;
+        });
+        persistSession();
       }
-      const batch = unmatchedBatches[b];
-      const payloads = batch.map((row) => buildMatchPayload(row));
-      const results = await postMatchBatchWithRetry(payloads, updateExisting.value);
-      results.forEach((result, i) => {
-        const row = batch[i];
-        if (result.outcome === "updated") {
-          importedItems.value.push(
-            buildImportedItem(
-              row,
-              matchResultToImportRowResult(result),
-              result.confidence ?? null,
-            ),
-          );
-        } else if (result.outcome === "duplicate") {
-          // A confident match was found but updateExisting is off — nothing was written, and
-          // unlike "no_match" there's nothing for the user to resolve, so this isn't a review
-          // row: it's resolved, just declined.
-          pushLog(row, row.isbn, "duplicate", "in_library");
-        } else {
-          queueForReview(row, row.isbn ? "invalid_isbn" : "no_isbn");
-        }
-      });
-    }
 
-    step.value = "review";
+      // Rows with no usable ISBN aren't given up on outright — try matching them against the
+      // existing library by title/author first (see worker/src/title-match.ts). A Goodreads
+      // export commonly has these for books added by hand, and many turn out to already be here.
+      const unmatchedBatches = chunk(unmatched, MATCH_BATCH_SIZE);
+      for (let b = 0; b < unmatchedBatches.length; b++) {
+        if (cancelRequested.value) {
+          for (const rest of unmatchedBatches.slice(b)) queueRemainderAsCancelled(rest);
+          step.value = "review";
+          persistSession();
+          return;
+        }
+        const batch = unmatchedBatches[b];
+        const payloads = batch.map((row) => buildMatchPayload(row));
+        const results = await postMatchBatchWithRetry(payloads, updateExisting.value);
+        results.forEach((result, i) => {
+          const row = batch[i];
+          if (result.outcome === "updated") {
+            importedItems.value.push(
+              buildImportedItem(
+                row,
+                matchResultToImportRowResult(result),
+                result.confidence ?? null,
+              ),
+            );
+          } else if (result.outcome === "duplicate") {
+            // A confident match was found but updateExisting is off — nothing was written, and
+            // unlike "no_match" there's nothing for the user to resolve, so this isn't a review
+            // row: it's resolved, just declined.
+            pushLog(row, row.isbn, "duplicate", "in_library");
+          } else {
+            queueForReview(row, row.isbn ? "invalid_isbn" : "no_isbn");
+          }
+        });
+        persistSession();
+      }
+
+      step.value = "review";
+      persistSession();
+    } finally {
+      isRunning.value = false;
+    }
+  }
+
+  // Discards a rehydrated "paused" session without resuming it — the parsed rows/mapping/results
+  // so far are all dropped, same as a full reset.
+  function discardSession(): void {
+    reset();
   }
 
   // A whole import re-searches the same title/author repeatedly (open the edition dropdown,
@@ -798,6 +1058,7 @@ export function useGoodreadsImport() {
       );
     }
     dropFromQueue(item);
+    persistSession();
   }
 
   // Skips stay in the queue so they can be undone until the import is finalized — `notImported`
@@ -805,11 +1066,13 @@ export function useGoodreadsImport() {
   function skipReviewItem(item: ReviewItem): void {
     if (item.status === "skipped") return;
     item.status = "skipped";
+    persistSession();
   }
 
   function undoSkipReviewItem(item: ReviewItem): void {
     if (item.status !== "skipped") return;
     item.status = "pending";
+    persistSession();
   }
 
   // ── Post-import editing (summary step) ────────────────────────────────────────
@@ -945,6 +1208,7 @@ export function useGoodreadsImport() {
       }
     } finally {
       item.busy = false;
+      persistSession();
     }
   }
 
@@ -967,6 +1231,7 @@ export function useGoodreadsImport() {
       item.status = status;
       // Mirror the server: moving off "read" clears any rating.
       if (status !== "read") item.rating = null;
+      persistSession();
     }
   }
 
@@ -976,6 +1241,7 @@ export function useGoodreadsImport() {
   ): Promise<void> {
     if (await patchImported(item, { owning_status: owning })) {
       item.owningStatus = owning;
+      persistSession();
     }
   }
 
@@ -983,7 +1249,10 @@ export function useGoodreadsImport() {
     item: ImportedItem,
     rating: number | null,
   ): Promise<void> {
-    if (await patchImported(item, { rating })) item.rating = rating;
+    if (await patchImported(item, { rating })) {
+      item.rating = rating;
+      persistSession();
+    }
   }
 
   // Removes a single imported book (deletes its scan). A 404 is treated as success — the row is
@@ -1000,6 +1269,7 @@ export function useGoodreadsImport() {
       if (res.ok || res.status === 404) {
         const idx = importedItems.value.indexOf(item);
         if (idx !== -1) importedItems.value.splice(idx, 1);
+        persistSession();
       } else {
         item.error = "remove_failed";
       }
@@ -1022,6 +1292,7 @@ export function useGoodreadsImport() {
       if (ok) {
         const idx = importedItems.value.indexOf(item);
         if (idx !== -1) importedItems.value.splice(idx, 1);
+        persistSession();
       } else {
         item.error = "remove_failed";
       }
@@ -1033,7 +1304,8 @@ export function useGoodreadsImport() {
   // Cancels the whole import: deletes every scan this session created, and reverts every scan
   // it updated back to its pre-import status/rating instead (those scans predate the import and
   // must survive a cancel). Best-effort — a failed request still drops the item from the local
-  // list so the user isn't stuck.
+  // list so the user isn't stuck. Resets to a fresh session afterward — there's nothing left to
+  // review once every row has been undone or removed.
   async function cancelImport(): Promise<void> {
     await Promise.allSettled(
       importedItems.value.map((item) =>
@@ -1048,23 +1320,38 @@ export function useGoodreadsImport() {
           : apiFetch(`/api/scans/${item.scanId}`, { method: "DELETE" }),
       ),
     );
-    importedItems.value = [];
+    reset();
+  }
+
+  // The normal end of a session: nothing left to revert, just clear the slate so the next visit
+  // to /import starts fresh instead of resuming a finished run.
+  function finalizeImport(): void {
+    reset();
+  }
+
+  function dismissChip(): void {
+    chipDismissed.value = true;
   }
 
   function reset(): void {
     step.value = "upload";
     error.value = "";
     fileName.value = "";
+    fileSize.value = 0;
     rows.value = [];
     shelfCounts.value = new Map();
     for (const key of Object.keys(mapping)) delete mapping[key];
     reviewQueue.value = [];
+    nextReviewId.value = 0;
     candidateCache.clear();
     log.value = [];
     importedItems.value = [];
     updateExisting.value = true;
     importShelvesAsTags.value = false;
     cancelRequested.value = false;
+    sessionPaused.value = false;
+    chipDismissed.value = false;
+    clearPersistedSession();
   }
 
   return {
@@ -1083,11 +1370,16 @@ export function useGoodreadsImport() {
     importedItems,
     reviewRemaining,
     isInProgress,
+    isRunning,
+    sessionPaused,
+    chipDismissed,
     loadFile,
     setMapping,
     startImport,
     cancelRequested,
     cancelImporting,
+    discardSession,
+    dismissChip,
     ensureCandidatesLoaded,
     retryCandidates,
     searchReviewCandidates,
@@ -1104,6 +1396,7 @@ export function useGoodreadsImport() {
     removeImportedItem,
     undoImportedUpdate,
     cancelImport,
+    finalizeImport,
     reset,
   };
-}
+});

@@ -7,7 +7,7 @@ import { STATUS_ORDER, STATUS_META } from "@/composables/useBookStatus";
 import { OWNING_ORDER, OWNING_META } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
 import { MATCHED_GRID, MATCHED_ROW_PADDING } from "./matched-grid";
-import type { ImportedItem } from "@/composables/useGoodreadsImport";
+import type { ImportedItem } from "@/stores/import";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const props = defineProps<{ item: ImportedItem }>();

@@ -406,7 +406,18 @@
   "import": {
     "heading": "Aus Goodreads importieren.",
     "subheading": "Lade deinen Goodreads-Bibliotheksexport hoch, um deine Bücher in Alexandria zu übernehmen.",
-    "leave_confirm": "Ein Import läuft noch. Diese Seite trotzdem verlassen?",
+    "paused": {
+      "heading": "Import pausiert",
+      "description": "„{fileName}“ wurde noch importiert, als dieser Tab zuletzt geschlossen oder neu geladen wurde — {imported} von {total} Büchern wurden bis dahin bearbeitet.",
+      "resume": "Import fortsetzen",
+      "discard": "Verwerfen",
+      "discard_confirm": "Diese Import-Sitzung verwerfen? Bereits hinzugefügte oder aktualisierte Bücher bleiben in deiner Bibliothek — du verfolgst nur den Fortschritt dieses Imports nicht mehr weiter."
+    },
+    "chip": {
+      "running": "Import läuft: {done} / {total}",
+      "paused": "Import pausiert — zum Fortsetzen tippen",
+      "complete": "Import abgeschlossen — {n} Bücher hinzugefügt"
+    },
     "upload": {
       "instructions": "Exportiere deine Bibliothek bei Goodreads (Meine Bücher → Import/Export) und lade die CSV-Datei hier hoch.",
       "choose_file": "Datei auswählen",
