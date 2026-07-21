@@ -420,6 +420,7 @@
     "importing": {
       "progress": "{done} von {total} verarbeitet",
       "imported": "Importiert: {n}",
+      "updated": "Aktualisiert: {n}",
       "duplicate": "Duplikat: {n}",
       "failed": "Fehlgeschlagen: {n}"
     },
@@ -471,9 +472,11 @@
     "summary": {
       "enrichment_note": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
       "imported_empty": "Es wurden keine Bücher importiert.",
-      "cancel_confirm": "Alle {n} importierten Bücher entfernen? Das kann nicht rückgängig gemacht werden.",
+      "cancel_confirm": "Diesen Import abbrechen? {n} Bücher werden entfernt oder auf ihren vorherigen Stand zurückgesetzt. Das kann nicht rückgängig gemacht werden.",
       "card": {
         "remove": "Entfernen",
+        "undo": "Rückgängig",
+        "already_in_library": "Bereits in deiner Bibliothek — aktualisiert",
         "unknown_publisher": "Verlag unbekannt",
         "error_duplicate": "Diese Ausgabe ist bereits in deiner Bibliothek.",
         "error_failed": "Ausgabe konnte nicht gewechselt werden — bitte erneut versuchen.",

@@ -27,9 +27,11 @@ interface ImportedBook {
 
 interface ImportRowResult {
   isbn: string;
-  outcome: "imported" | "duplicate" | "invalid_isbn" | "failed";
+  outcome: "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
   scan_id?: number;
   book?: ImportedBook;
+  // Present only for "updated" rows — the scan's status/rating/owning_status before this update.
+  previous?: { status: ReadStatus; rating: number | null; owning_status: OwningStatus };
 }
 
 export interface EditionCandidate {
@@ -59,6 +61,14 @@ export interface ImportedItem {
   /** The linked work, if resolved server-side — lets "change edition" fall back to already
    *  known editions of this work when the live title search is unavailable. */
   workId: number | null;
+  /** True when this row matched a book already in the library and was updated in place, rather
+   *  than creating a new scan. Changes what "remove" means (see previous) and how the row is
+   *  labeled. */
+  preexisting: boolean;
+  /** The scan's status/rating/owning_status before this update — only set when preexisting.
+   *  Lets "remove" become "undo" (PATCH status/rating back) instead of deleting a scan that
+   *  predates the import. */
+  previous: { status: ReadStatus; rating: number | null; owning_status: OwningStatus } | null;
   editingEdition: boolean;
   candidates: EditionCandidate[];
   candidatesLoaded: boolean;
@@ -147,6 +157,9 @@ export function useGoodreadsImport() {
   // Imported rows get editable summary cards (see ImportedItem); the compact `log` holds only the
   // non-imported outcomes (in-file/library duplicates, failures, skips).
   const importedItems = ref<ImportedItem[]>([]);
+  // Whether a row matching a book already in the library applies its status/rating to the
+  // existing scan, rather than being logged as a no-op duplicate. Defaults on.
+  const updateExisting = ref(true);
 
   function buildImportedItem(
     row: ParsedGoodreadsRow,
@@ -154,6 +167,19 @@ export function useGoodreadsImport() {
   ): ImportedItem {
     const { status, owning_status } = shelfMappingFor(row.shelf, mapping);
     const book = result.book;
+    const preexisting = result.outcome === "updated";
+    const previous = preexisting ? (result.previous ?? null) : null;
+    // An update only overwrites rating when Goodreads actually has one (row.rating is already
+    // null when the CSV had none) — otherwise the scan's existing rating carries over, unless
+    // status is moving off "read", which clears it. Mirrors resolveRatingForUpdate server-side.
+    const rating =
+      preexisting && row.rating == null
+        ? status === "read"
+          ? (previous?.rating ?? null)
+          : null
+        : status === "read"
+          ? row.rating
+          : null;
     return {
       scanId: result.scan_id!,
       isbn: result.isbn,
@@ -163,11 +189,15 @@ export function useGoodreadsImport() {
       publisher: book?.publisher ?? null,
       language: book?.language ?? null,
       status,
-      owningStatus: owning_status,
-      // Rating only persists on a "read" scan (server drops it otherwise) — mirror that here.
-      rating: status === "read" ? row.rating : null,
+      // An update never touches owning_status server-side — show the scan's real (untouched)
+      // value rather than the shelf-mapping guess, which would otherwise misrepresent state the
+      // import didn't actually change.
+      owningStatus: previous?.owning_status ?? owning_status,
+      rating,
       createdAt: row.createdAt,
       workId: book?.work_id ?? null,
+      preexisting,
+      previous,
       editingEdition: false,
       candidates: [],
       candidatesLoaded: false,
@@ -194,7 +224,8 @@ export function useGoodreadsImport() {
   // every outcome that would justify a manual increment already lands in one of these arrays
   // (importedItems, log, reviewQueue), so a computed can't drift from the data it summarizes.
   const counts = computed(() => ({
-    imported: importedItems.value.length,
+    imported: importedItems.value.filter((i) => !i.preexisting).length,
+    updated: importedItems.value.filter((i) => i.preexisting).length,
     duplicate: log.value.filter((e) => e.outcome === "duplicate").length,
     failed: log.value.filter((e) => e.outcome === "failed").length,
     skipped: reviewQueue.value.filter((item) => item.status === "skipped")
@@ -294,6 +325,7 @@ export function useGoodreadsImport() {
   // retry before the whole batch is marked failed, per plan.
   async function postBatchWithRetry(
     payloads: ReturnType<typeof buildImportPayload>[],
+    update: boolean,
   ): Promise<ImportRowResult[]> {
     const asFailed = () =>
       payloads.map((p) => ({ isbn: p.isbn, outcome: "failed" as const }));
@@ -303,7 +335,7 @@ export function useGoodreadsImport() {
       try {
         const res = await apiFetch("/api/import/goodreads", {
           method: "POST",
-          body: JSON.stringify({ rows: payloads }),
+          body: JSON.stringify({ rows: payloads, update }),
         });
         if (res.status === 429) {
           const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
@@ -360,13 +392,13 @@ export function useGoodreadsImport() {
       const payloads = batch.map((row) =>
         buildImportPayload(row as ParsedGoodreadsRow & { isbn: string }, mapping),
       );
-      const results = await postBatchWithRetry(payloads);
+      const results = await postBatchWithRetry(payloads, updateExisting.value);
       results.forEach((result, i) => {
         const row = batch[i];
         if (result.outcome === "invalid_isbn") {
           queueForReview(row, "invalid_isbn");
         } else {
-          if (result.outcome === "imported") {
+          if (result.outcome === "imported" || result.outcome === "updated") {
             importedItems.value.push(buildImportedItem(row, result));
           } else {
             pushLog(
@@ -521,9 +553,9 @@ export function useGoodreadsImport() {
   // dead end and drops into the not-imported log.
   async function confirmReviewItem(item: ReviewItem, isbn: string): Promise<void> {
     const payload = buildImportPayload({ ...item.row, isbn }, mapping);
-    const [result] = await postBatchWithRetry([payload]);
+    const [result] = await postBatchWithRetry([payload], updateExisting.value);
     const outcome = result.outcome === "invalid_isbn" ? "failed" : result.outcome;
-    if (outcome === "imported") {
+    if (outcome === "imported" || outcome === "updated") {
       importedItems.value.push(buildImportedItem(item.row, result));
     } else {
       pushLog(
@@ -648,7 +680,10 @@ export function useGoodreadsImport() {
         publish_date: null,
         number_of_pages: null,
       };
-      const [result] = await postBatchWithRetry([payload]);
+      // update: false — this is an edition swap on the item's own scan, not an import row; the
+      // candidate ISBN could coincidentally match a *different* scan already in the library, and
+      // that scan must not be silently overwritten as a side effect of this swap.
+      const [result] = await postBatchWithRetry([payload], false);
       if (result.outcome === "imported" && result.scan_id != null) {
         const oldScanId = item.scanId;
         item.scanId = result.scan_id;
@@ -718,9 +753,10 @@ export function useGoodreadsImport() {
   }
 
   // Removes a single imported book (deletes its scan). A 404 is treated as success — the row is
-  // already gone server-side, so drop the card either way.
+  // already gone server-side, so drop the card either way. Only for rows this import created —
+  // preexisting rows go through undoImportedUpdate instead, which never deletes.
   async function removeImportedItem(item: ImportedItem): Promise<void> {
-    if (item.busy) return;
+    if (item.busy || item.preexisting) return;
     item.busy = true;
     item.error = "";
     try {
@@ -738,12 +774,44 @@ export function useGoodreadsImport() {
     }
   }
 
-  // Cancels the whole import: deletes every scan created in this session. Best-effort — a failed
-  // delete still drops from the local list so the user isn't stuck.
+  // The "remove" action for a preexisting (updated-in-place) row: restores its pre-import
+  // status/rating via PATCH rather than deleting a scan the import didn't create.
+  async function undoImportedUpdate(item: ImportedItem): Promise<void> {
+    if (item.busy || !item.preexisting || !item.previous) return;
+    item.busy = true;
+    item.error = "";
+    try {
+      const ok = await patchImported(item, {
+        status: item.previous.status,
+        rating: item.previous.rating,
+      });
+      if (ok) {
+        const idx = importedItems.value.indexOf(item);
+        if (idx !== -1) importedItems.value.splice(idx, 1);
+      } else {
+        item.error = "remove_failed";
+      }
+    } finally {
+      item.busy = false;
+    }
+  }
+
+  // Cancels the whole import: deletes every scan this session created, and reverts every scan
+  // it updated back to its pre-import status/rating instead (those scans predate the import and
+  // must survive a cancel). Best-effort — a failed request still drops the item from the local
+  // list so the user isn't stuck.
   async function cancelImport(): Promise<void> {
     await Promise.allSettled(
       importedItems.value.map((item) =>
-        apiFetch(`/api/scans/${item.scanId}`, { method: "DELETE" }),
+        item.preexisting && item.previous
+          ? apiFetch(`/api/scans/${item.scanId}`, {
+              method: "PATCH",
+              body: JSON.stringify({
+                status: item.previous.status,
+                rating: item.previous.rating,
+              }),
+            })
+          : apiFetch(`/api/scans/${item.scanId}`, { method: "DELETE" }),
       ),
     );
     importedItems.value = [];
@@ -760,6 +828,7 @@ export function useGoodreadsImport() {
     candidateCache.clear();
     log.value = [];
     importedItems.value = [];
+    updateExisting.value = true;
   }
 
   return {
@@ -769,6 +838,7 @@ export function useGoodreadsImport() {
     rows,
     shelfCounts,
     mapping,
+    updateExisting,
     counts,
     reviewQueue,
     log,
@@ -793,6 +863,7 @@ export function useGoodreadsImport() {
     setImportedOwning,
     setImportedRating,
     removeImportedItem,
+    undoImportedUpdate,
     cancelImport,
     reset,
   };

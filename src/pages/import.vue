@@ -57,6 +57,7 @@ const {
   setImportedOwning,
   setImportedRating,
   removeImportedItem,
+  undoImportedUpdate,
   cancelImport,
 } = useGoodreadsImport();
 
@@ -104,7 +105,11 @@ function updateOwning(shelf: string, current: ShelfMapping, owning_status: strin
 // ── Importing progress ────────────────────────────────────────────────────────
 
 const processed = computed(
-  () => counts.value.imported + counts.value.duplicate + counts.value.failed,
+  () =>
+    counts.value.imported +
+    counts.value.updated +
+    counts.value.duplicate +
+    counts.value.failed,
 );
 const progressPct = computed(() =>
   counts.value.total > 0
@@ -346,8 +351,9 @@ const tabs = computed(() => [
           <p class="text-[12px] text-text-secondary">
             {{ t("import.importing.progress", { done: processed, total: counts.total }) }}
           </p>
-          <div class="grid grid-cols-3 gap-3 font-mono text-[11px] text-text-secondary">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-[11px] text-text-secondary">
             <span>{{ t("import.importing.imported", { n: counts.imported }) }}</span>
+            <span>{{ t("import.importing.updated", { n: counts.updated }) }}</span>
             <span>{{ t("import.importing.duplicate", { n: counts.duplicate }) }}</span>
             <span>{{ t("import.importing.failed", { n: counts.failed }) }}</span>
           </div>
@@ -429,6 +435,7 @@ const tabs = computed(() => [
                 @set-owning="(o: OwningStatus) => setImportedOwning(item, o)"
                 @open-rating="openRating(item)"
                 @remove="removeImportedItem(item)"
+                @undo="undoImportedUpdate(item)"
               />
             </div>
           </template>

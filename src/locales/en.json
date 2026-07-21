@@ -420,6 +420,7 @@
     "importing": {
       "progress": "{done} of {total} processed",
       "imported": "Imported: {n}",
+      "updated": "Updated: {n}",
       "duplicate": "Duplicate: {n}",
       "failed": "Failed: {n}"
     },
@@ -471,9 +472,11 @@
     "summary": {
       "enrichment_note": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
       "imported_empty": "No books were imported.",
-      "cancel_confirm": "Remove all {n} imported books? This can't be undone.",
+      "cancel_confirm": "Cancel this import? {n} books will be removed or reverted to their previous state. This can't be undone.",
       "card": {
         "remove": "Remove",
+        "undo": "Undo",
+        "already_in_library": "Already in your library — updated",
         "unknown_publisher": "Unknown publisher",
         "error_duplicate": "That edition is already in your library.",
         "error_failed": "Couldn't switch edition — please try again.",

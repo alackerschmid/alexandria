@@ -20,6 +20,7 @@ const emit = defineEmits<{
   "retry-candidates": [];
   "change-edition": [isbn: string];
   remove: [];
+  undo: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -74,6 +75,13 @@ watch(
 
 onBeforeUnmount(unbind);
 
+// Separate handler (rather than a ternary inline in the template) because TS can't unify the
+// distinct per-event tuple overloads of `emit` across a conditional event name.
+function onRemoveOrUndo() {
+  if (props.item.preexisting) emit("undo");
+  else emit("remove");
+}
+
 const editionLabel = computed(() => {
   const publisher =
     props.item.publisher || t("import.summary.card.unknown_publisher");
@@ -104,6 +112,12 @@ const editionLabel = computed(() => {
         </p>
         <p class="text-[10.5px] text-text-secondary truncate mt-0.5">
           {{ item.author || t("book.unknown_author") }}
+        </p>
+        <p
+          v-if="item.preexisting"
+          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
+        >
+          {{ t("import.summary.card.already_in_library") }}
         </p>
       </div>
 
@@ -257,21 +271,24 @@ const editionLabel = computed(() => {
         />
       </div>
 
-      <!-- remove -->
+      <!-- remove / undo: a preexisting row predates the import, so its destructive action
+           restores the scan's prior status/rating instead of deleting it -->
       <button
         type="button"
         :disabled="item.busy"
-        :title="t('import.summary.card.remove')"
-        :aria-label="t('import.summary.card.remove')"
+        :title="t(item.preexisting ? 'import.summary.card.undo' : 'import.summary.card.remove')"
+        :aria-label="t(item.preexisting ? 'import.summary.card.undo' : 'import.summary.card.remove')"
         class="col-span-2 lg:col-span-1 justify-self-start lg:justify-self-center text-text-secondary/60 hover:text-error transition-colors disabled:opacity-40"
-        @click="emit('remove')"
+        @click="onRemoveOrUndo"
       >
         <span
           class="lg:hidden font-mono text-[10px] tracking-[0.16em] uppercase"
         >
-          {{ t("import.summary.card.remove") }}
+          {{ t(item.preexisting ? "import.summary.card.undo" : "import.summary.card.remove") }}
         </span>
-        <span class="hidden lg:inline text-[16px] leading-none">×</span>
+        <span class="hidden lg:inline text-[16px] leading-none">{{
+          item.preexisting ? "↺" : "×"
+        }}</span>
       </button>
     </div>
 

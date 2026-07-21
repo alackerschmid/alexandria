@@ -9,6 +9,7 @@ import {
   getExistingScan,
   isUniqueConstraintError,
   resolveRatingForUpdate,
+  type ExistingScan,
 } from "../library-query";
 
 const importRoutes = new Hono<Env>();
@@ -46,9 +47,10 @@ interface ImportRowResult {
   // Present only for "imported"/"updated" rows — the resolved edition's details, so the
   // post-import summary can render an editable card without a follow-up per-scan fetch.
   book?: ImportedBook;
-  // Present only for "updated" rows — the scan's status/rating before this update, so the
-  // client can offer an Undo that restores exactly this.
-  previous?: { status: string; rating: number | null };
+  // Present only for "updated" rows — the scan's status/rating/owning_status before this
+  // update, so the client can show the real (untouched) owning_status and offer an Undo that
+  // restores exactly this.
+  previous?: { status: string; rating: number | null; owning_status: string };
 }
 
 function bookSummary(book: BookRow): ImportedBook {
@@ -110,7 +112,7 @@ async function importRow(
       // Only one of the candidate book rows (isbn13 form, isbn10 form) can actually carry a
       // scan — the unique constraint is per (user, book), and a user only ever has one of the
       // two rows scanned. Check each until found.
-      let matchedScan: { id: number; status: string; rating: number | null } | null = null;
+      let matchedScan: ExistingScan | null = null;
       let matchedBook: BookRow | null = null;
       for (const row of existingRows) {
         const scan = await getExistingScan(db, userId, row.id);
@@ -146,7 +148,11 @@ async function importRow(
           outcome: "updated",
           scan_id: matchedScan.id,
           book: bookSummary(matchedBook),
-          previous: { status: matchedScan.status, rating: matchedScan.rating },
+          previous: {
+            status: matchedScan.status,
+            rating: matchedScan.rating,
+            owning_status: matchedScan.owning_status,
+          },
         };
       }
       // Neither candidate row has a scan yet — reuse the row already found instead of

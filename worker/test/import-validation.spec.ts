@@ -140,7 +140,7 @@ describe("validateImportRow", () => {
   it("collapses blank/whitespace-only metadata fields to null", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
-      title: "   ",
+      title: ' '.repeat(3),
       author: undefined,
       publisher: "",
     });
