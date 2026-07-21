@@ -1,5 +1,9 @@
 {
   "app_name": "Die Bibliothek von Alexandria",
+  "toggle": {
+    "on": "AN",
+    "off": "AUS"
+  },
   "header": {
     "account_menu": "Kontomenü"
   },

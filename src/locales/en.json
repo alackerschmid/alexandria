@@ -1,5 +1,9 @@
 {
   "app_name": "The Library of Alexandria",
+  "toggle": {
+    "on": "ON",
+    "off": "OFF"
+  },
   "header": {
     "account_menu": "Account menu"
   },

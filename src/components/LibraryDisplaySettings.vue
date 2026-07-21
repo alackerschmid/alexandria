@@ -67,9 +67,11 @@
       <AppToggle :model-value="showStatusIcons" />
     </button>
 
+    <!-- Series-only, and the last row in that context (groupEditions is hidden
+         then) — so no bottom border, matching the groupEditions row below. -->
     <button
       v-if="seriesContext"
-      class="flex items-center justify-between gap-5 w-full text-left border-b border-charcoal-border py-3.5"
+      class="flex items-center justify-between gap-5 w-full text-left py-3.5"
       @click="countSideEntries = !countSideEntries"
     >
       <span class="min-w-0">
@@ -84,9 +86,13 @@
       <AppToggle :model-value="countSideEntries" />
     </button>
 
-    <!-- Last row: no bottom border, so it doesn't double up with the #extra
-         slot's leading divider. Keep any new conditional row above it. -->
+    <!-- Hidden when grouped by series: series shelves always collapse editions
+         into one card per work (see index.vue's groupedAllBooks), so the toggle
+         would be inert there. Mutually exclusive with the countSideEntries row
+         above — exactly one is the last row, hence both carry no bottom border,
+         so neither doubles up with the #extra slot's leading divider. -->
     <button
+      v-if="!seriesContext"
       class="flex items-center justify-between gap-5 w-full text-left py-3.5"
       @click="groupEditions = !groupEditions"
     >
