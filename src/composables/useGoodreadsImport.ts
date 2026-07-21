@@ -114,7 +114,7 @@ export interface ImportedItem {
 export interface ReviewItem {
   id: number;
   row: ParsedGoodreadsRow;
-  reason: "no_isbn" | "invalid_isbn";
+  reason: "no_isbn" | "invalid_isbn" | "cancelled";
   status: "pending" | "skipped";
   candidates: EditionCandidate[];
   candidatesLoaded: boolean;
@@ -133,7 +133,8 @@ export type ImportLogReason =
   | "request_failed"
   | "invalid_isbn"
   | "no_isbn"
-  | "unreadable_row";
+  | "unreadable_row"
+  | "cancelled";
 
 export interface ImportLogEntry {
   title: string;
@@ -193,6 +194,13 @@ export function useGoodreadsImport() {
   // Whether to write Goodreads' "Bookshelves" column into a "Shelves" tag field on each newly
   // imported book. Off by default — creating schema on the user's behalf shouldn't be silent.
   const importShelvesAsTags = ref(false);
+  // Checked between batches in startImport — lets the user back out of a long-running import
+  // without losing what already completed.
+  const cancelRequested = ref(false);
+
+  function cancelImporting(): void {
+    cancelRequested.value = true;
+  }
 
   // Finds (or creates) the "Shelves" tag field, called once per import session rather than per
   // row. Returns null on failure — callers treat that as "don't write shelf tags this session"
@@ -532,8 +540,17 @@ export function useGoodreadsImport() {
     });
   }
 
+  // Rows left in a stage that's been abandoned (cancel, or everything after it) go to the
+  // review queue rather than vanishing — startImport is done deciding their fate for this run
+  // just like a genuine no-match, and the progress accounting (Phase 7) depends on every row
+  // ending up either resolved or queued.
+  function queueRemainderAsCancelled(remaining: ParsedGoodreadsRow[]): void {
+    for (const row of remaining) queueForReview(row, "cancelled");
+  }
+
   async function startImport(): Promise<void> {
     step.value = "importing";
+    cancelRequested.value = false;
 
     // Resolved once per session, not per row/batch — see ensureShelvesFieldDef.
     const shelvesFieldDefId = importShelvesAsTags.value
@@ -548,8 +565,17 @@ export function useGoodreadsImport() {
     const malformedIsbnRows = rows.value.filter(
       (r) => r.isbn && !isIsbnShaped(r.isbn),
     );
+    const unmatched = [...noIsbnRows, ...malformedIsbnRows];
 
-    for (const batch of chunk(sendable, BATCH_SIZE)) {
+    const sendableBatches = chunk(sendable, BATCH_SIZE);
+    for (let b = 0; b < sendableBatches.length; b++) {
+      if (cancelRequested.value) {
+        for (const rest of sendableBatches.slice(b)) queueRemainderAsCancelled(rest);
+        queueRemainderAsCancelled(unmatched);
+        step.value = "review";
+        return;
+      }
+      const batch = sendableBatches[b];
       const payloads = batch.map((row) =>
         buildImportPayload(row as ParsedGoodreadsRow & { isbn: string }, mapping),
       );
@@ -580,8 +606,14 @@ export function useGoodreadsImport() {
     // Rows with no usable ISBN aren't given up on outright — try matching them against the
     // existing library by title/author first (see worker/src/title-match.ts). A Goodreads
     // export commonly has these for books added by hand, and many turn out to already be here.
-    const unmatched = [...noIsbnRows, ...malformedIsbnRows];
-    for (const batch of chunk(unmatched, MATCH_BATCH_SIZE)) {
+    const unmatchedBatches = chunk(unmatched, MATCH_BATCH_SIZE);
+    for (let b = 0; b < unmatchedBatches.length; b++) {
+      if (cancelRequested.value) {
+        for (const rest of unmatchedBatches.slice(b)) queueRemainderAsCancelled(rest);
+        step.value = "review";
+        return;
+      }
+      const batch = unmatchedBatches[b];
       const payloads = batch.map((row) => buildMatchPayload(row));
       const results = await postMatchBatchWithRetry(payloads, updateExisting.value);
       results.forEach((result, i) => {
@@ -1032,6 +1064,7 @@ export function useGoodreadsImport() {
     importedItems.value = [];
     updateExisting.value = true;
     importShelvesAsTags.value = false;
+    cancelRequested.value = false;
   }
 
   return {
@@ -1053,6 +1086,8 @@ export function useGoodreadsImport() {
     loadFile,
     setMapping,
     startImport,
+    cancelRequested,
+    cancelImporting,
     ensureCandidatesLoaded,
     retryCandidates,
     searchReviewCandidates,

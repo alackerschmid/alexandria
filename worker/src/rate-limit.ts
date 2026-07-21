@@ -7,11 +7,17 @@ export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
 // table can back multiple rate-limited routes without a schema change. Not exact under bursts at
 // a window boundary (a caller could in principle get up to ~2x the limit split across one) —
 // fine for guarding against a runaway client bug/loop, not a precision-billing rate limiter.
+//
+// `cost` lets one call account for more than one unit of work — e.g. a Goodreads import batch
+// charges its row count in one shot, rather than the request count (which would let a 1-row
+// request and a 10-row request cost the same, and made resolving one review-queue row at a time
+// burn a full request's worth of budget).
 export async function checkRateLimit(
   db: D1Database,
   key: string,
   limit: number,
   windowMinutes = 1,
+  cost = 1,
 ): Promise<RateLimitResult> {
   const windowMs = windowMinutes * 60_000;
   const now = Date.now();
@@ -20,14 +26,14 @@ export async function checkRateLimit(
   const row = await db
     .prepare(
       `INSERT INTO rate_limits (key, window_start, window_ms, count)
-       VALUES (?, ?, ?, 1)
-       ON CONFLICT(key, window_start) DO UPDATE SET count = count + 1
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(key, window_start) DO UPDATE SET count = count + excluded.count
        RETURNING count`,
     )
-    .bind(key, windowStart, windowMs)
+    .bind(key, windowStart, windowMs, cost)
     .first<{ count: number }>();
 
-  const count = row?.count ?? 1;
+  const count = row?.count ?? cost;
   const retryAfterSeconds = Math.max(
     0,
     Math.ceil((windowStart + windowMs - now) / 1000),
@@ -45,8 +51,9 @@ export async function rateLimitOrReject(
   limit: number,
   windowMinutes: number,
   message: string,
+  cost = 1,
 ): Promise<Response | null> {
-  const rateLimit = await checkRateLimit(c.env.DB, key, limit, windowMinutes);
+  const rateLimit = await checkRateLimit(c.env.DB, key, limit, windowMinutes, cost);
   if (rateLimit.allowed) return null;
   c.header("Retry-After", String(rateLimit.retryAfterSeconds));
   return c.json({ error: message }, 429);

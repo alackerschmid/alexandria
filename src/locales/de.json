@@ -435,7 +435,9 @@
       "updated": "Aktualisiert: {n}",
       "duplicate": "Duplikat: {n}",
       "failed": "Fehlgeschlagen: {n}",
-      "needs_review": "Zu prüfen: {n}"
+      "needs_review": "Zu prüfen: {n}",
+      "cancel": "Abbrechen",
+      "cancelling": "Wird abgebrochen…"
     },
     "header": {
       "eyebrow": "Import aus Goodreads",
@@ -470,6 +472,7 @@
       "skipped_note": "Übersprungen — wird nicht importiert",
       "reason_no_isbn": "Keine ISBN im Export — wähle eine Ausgabe",
       "reason_invalid_isbn": "ISBN nicht validierbar — wähle eine Ausgabe",
+      "reason_cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — wähle eine Ausgabe",
       "as_imported": "ISBN: {isbn} · wie aus Goodreads importiert",
       "search_placeholder": "Nach Titel, Autor oder ISBN suchen",
       "use_this": "Auswählen",
@@ -483,7 +486,9 @@
       "skip": "Dieses Buch überspringen"
     },
     "summary": {
-      "enrichment_note": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_small": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_medium": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden im Laufe des nächsten Tages automatisch ergänzt — dieser Import ist groß genug, um eine Weile zu dauern. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_large": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden nach und nach ergänzt — bei einem Import dieser Größe kann das mehrere Tage dauern, da die Anreicherung über eine gemeinsame Warteschlange läuft. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
       "imported_empty": "Es wurden keine Bücher importiert.",
       "cancel_confirm": "Diesen Import abbrechen? {n} Bücher werden entfernt oder auf ihren vorherigen Stand zurückgesetzt. Das kann nicht rückgängig gemacht werden.",
       "card": {
@@ -512,7 +517,8 @@
           "request_failed": "Import fehlgeschlagen",
           "invalid_isbn": "Ungültige ISBN — übersprungen",
           "no_isbn": "Keine ISBN — übersprungen",
-          "unreadable_row": "Diese Zeile der Datei konnte nicht gelesen werden — übersprungen"
+          "unreadable_row": "Diese Zeile der Datei konnte nicht gelesen werden — übersprungen",
+          "cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — übersprungen"
         }
       }
     }

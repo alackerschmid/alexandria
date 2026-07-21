@@ -49,6 +49,8 @@ const {
   loadFile,
   setMapping,
   startImport,
+  cancelRequested,
+  cancelImporting,
   ensureCandidatesLoaded,
   retryCandidates,
   searchReviewCandidates,
@@ -141,6 +143,20 @@ const progressPct = computed(() =>
     ? Math.round((processed.value / counts.value.total) * 100)
     : 0,
 );
+
+// ── Review screen: enrichment estimate ─────────────────────────────────────────
+
+// Only newly created scans mint new `works` rows for the sweeper to enrich (an updated scan's
+// book/work already existed) — the estimate scales off that, not the total imported+updated
+// count. Thresholds are rough (the sweeper's real throughput also depends on series-membership
+// amplification and how busy the shared queue already is), but a scaling estimate beats a fixed
+// "next few hours" that's wrong by orders of magnitude for a large import.
+const enrichmentNoteKey = computed(() => {
+  const n = counts.value.imported;
+  if (n <= 50) return "import.summary.enrichment_note_small";
+  if (n <= 300) return "import.summary.enrichment_note_medium";
+  return "import.summary.enrichment_note_large";
+});
 
 // ── Review screen: tabs ────────────────────────────────────────────────────────
 
@@ -424,6 +440,19 @@ const tabs = computed(() => [
             <span>{{ t("import.importing.failed", { n: counts.failed }) }}</span>
             <span>{{ t("import.importing.needs_review", { n: reviewQueue.length }) }}</span>
           </div>
+          <AppButton
+            variant="secondary"
+            size="sm"
+            class="self-start"
+            :disabled="cancelRequested"
+            @click="cancelImporting"
+          >
+            {{
+              cancelRequested
+                ? t("import.importing.cancelling")
+                : t("import.importing.cancel")
+            }}
+          </AppButton>
         </section>
 
       </div>
@@ -445,7 +474,7 @@ const tabs = computed(() => [
         <p
           class="px-6 md:px-8 py-3 text-[11px] text-text-secondary leading-relaxed border-b border-charcoal-border"
         >
-          {{ t("import.summary.enrichment_note") }}
+          {{ t(enrichmentNoteKey) }}
         </p>
 
         <div

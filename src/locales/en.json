@@ -435,7 +435,9 @@
       "updated": "Updated: {n}",
       "duplicate": "Duplicate: {n}",
       "failed": "Failed: {n}",
-      "needs_review": "Needs review: {n}"
+      "needs_review": "Needs review: {n}",
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…"
     },
     "header": {
       "eyebrow": "Import from Goodreads",
@@ -470,6 +472,7 @@
       "skipped_note": "Skipped — won't be imported",
       "reason_no_isbn": "No ISBN in the export — pick an edition",
       "reason_invalid_isbn": "ISBN couldn't be validated — pick an edition",
+      "reason_cancelled": "Import cancelled before this book was reached — pick an edition",
       "as_imported": "ISBN: {isbn} · as imported from Goodreads",
       "search_placeholder": "Search by title, author or ISBN",
       "use_this": "Use this",
@@ -483,7 +486,9 @@
       "skip": "Skip this book"
     },
     "summary": {
-      "enrichment_note": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_small": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_medium": "Extra details (genres, series, awards) fill in automatically over the next day or so — this batch is large enough to take a while. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_large": "Extra details (genres, series, awards) fill in gradually, over several days for an import this size, since enrichment works through a shared background queue. Books from the same series or work may merge into a single card as that happens.",
       "imported_empty": "No books were imported.",
       "cancel_confirm": "Cancel this import? {n} books will be removed or reverted to their previous state. This can't be undone.",
       "card": {
@@ -512,7 +517,8 @@
           "request_failed": "Import request failed",
           "invalid_isbn": "Invalid ISBN — skipped",
           "no_isbn": "No ISBN — skipped",
-          "unreadable_row": "Couldn't read this row from the file — skipped"
+          "unreadable_row": "Couldn't read this row from the file — skipped",
+          "cancelled": "Import cancelled before this book was reached — skipped"
         }
       }
     }

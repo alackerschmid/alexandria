@@ -31,9 +31,12 @@ const MAX_BATCH_SIZE = 10;
 // burst against OpenLibrary polite — raising it past ~6 buys nothing anyway, since Workers allow
 // only 6 simultaneous connections awaiting response headers.
 const ROW_CONCURRENCY = 4;
-// One increment per request (not per row) — a full library import is a handful of batches,
-// this just guards against a runaway client loop.
-const IMPORT_RATE_LIMIT = 30;
+// Denominated in rows/minute, not requests/minute — charged rows.length per call (see the
+// rateLimitOrReject calls below), so a 10-row /goodreads batch and a single review-queue
+// resolution both cost what they actually are instead of the same one request. ~600/min covers
+// a real Goodreads export (500-3000 books) without a multi-minute stall, while still bounding a
+// runaway client loop.
+const IMPORT_RATE_LIMIT = 600;
 
 type ImportOutcome = "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
 
@@ -269,6 +272,7 @@ importRoutes.post("/goodreads", async (c) => {
     IMPORT_RATE_LIMIT,
     1,
     "Too many import requests — please slow down",
+    rows.length,
   );
   if (blocked) return blocked;
 
@@ -367,6 +371,7 @@ importRoutes.post("/match", async (c) => {
     IMPORT_RATE_LIMIT,
     1,
     "Too many import requests — please slow down",
+    rows.length,
   );
   if (blocked) return blocked;
 
