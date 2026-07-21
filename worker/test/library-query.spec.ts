@@ -4,6 +4,7 @@ import {
   titleCase,
   parseIntOr,
   parseAuthorsJson,
+  resolveRatingForUpdate,
 } from "../src/library-query";
 
 describe("parseTagArray", () => {
@@ -84,6 +85,70 @@ describe("titleCase", () => {
 
   it("capitalizes after a hyphen", () => {
     expect(titleCase("science-fiction")).toBe("Science-Fiction");
+  });
+});
+
+describe("resolveRatingForUpdate", () => {
+  it("writes an explicit rating when the effective status is read", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: false,
+        effectiveStatus: "read",
+        hasRating: true,
+        rating: 8,
+      }),
+    ).toBe(8);
+  });
+
+  it("drops an explicit rating when the effective status is not read", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: true,
+        effectiveStatus: "unread",
+        hasRating: true,
+        rating: 8,
+      }),
+    ).toBeNull();
+  });
+
+  it("treats an explicit null rating as a clear regardless of status", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: false,
+        effectiveStatus: "read",
+        hasRating: true,
+        rating: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("clears an existing rating when status moves away from read with no explicit rating", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: true,
+        effectiveStatus: "unread",
+        hasRating: false,
+      }),
+    ).toBeNull();
+  });
+
+  it("leaves rating untouched when status changes but stays read", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: true,
+        effectiveStatus: "read",
+        hasRating: false,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("leaves rating untouched when neither status nor rating is part of the update", () => {
+    expect(
+      resolveRatingForUpdate({
+        hasStatus: false,
+        hasRating: false,
+      }),
+    ).toBeUndefined();
   });
 });
 

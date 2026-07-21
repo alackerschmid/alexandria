@@ -5,7 +5,11 @@ import { resolveEdition, linkWork, type FallbackMetadata } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
 import { validateImportRow, type ImportRowInput } from "../import-validation";
-import { findExistingScan, isUniqueConstraintError } from "../library-query";
+import {
+  getExistingScan,
+  isUniqueConstraintError,
+  resolveRatingForUpdate,
+} from "../library-query";
 
 const importRoutes = new Hono<Env>();
 
@@ -24,7 +28,7 @@ const ROW_CONCURRENCY = 4;
 // this just guards against a runaway client loop.
 const IMPORT_RATE_LIMIT = 30;
 
-type ImportOutcome = "imported" | "duplicate" | "invalid_isbn" | "failed";
+type ImportOutcome = "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
 
 interface ImportedBook {
   title: string | null;
@@ -39,9 +43,23 @@ interface ImportRowResult {
   isbn: string;
   outcome: ImportOutcome;
   scan_id?: number;
-  // Present only for "imported" rows — the resolved edition's details, so the post-import
-  // summary can render an editable card without a follow-up per-scan fetch.
+  // Present only for "imported"/"updated" rows — the resolved edition's details, so the
+  // post-import summary can render an editable card without a follow-up per-scan fetch.
   book?: ImportedBook;
+  // Present only for "updated" rows — the scan's status/rating before this update, so the
+  // client can offer an Undo that restores exactly this.
+  previous?: { status: string; rating: number | null };
+}
+
+function bookSummary(book: BookRow): ImportedBook {
+  return {
+    title: book.title,
+    author: book.author,
+    cover_url: book.cover_url,
+    publisher: book.publisher,
+    language: book.language,
+    work_id: book.work_id,
+  };
 }
 
 async function importRow(
@@ -49,6 +67,7 @@ async function importRow(
   userId: number,
   apiKey: string,
   input: ImportRowInput,
+  update: boolean,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
@@ -60,6 +79,7 @@ async function importRow(
     status,
     owning_status,
     rating,
+    rawRating,
     created_at,
     title,
     author,
@@ -87,14 +107,51 @@ async function importRow(
 
     let book: BookRow | null;
     if (existingRows.length > 0) {
+      // Only one of the candidate book rows (isbn13 form, isbn10 form) can actually carry a
+      // scan — the unique constraint is per (user, book), and a user only ever has one of the
+      // two rows scanned. Check each until found.
+      let matchedScan: { id: number; status: string; rating: number | null } | null = null;
+      let matchedBook: BookRow | null = null;
       for (const row of existingRows) {
-        if (await findExistingScan(db, userId, row.id)) {
-          return { isbn: isbn13, outcome: "duplicate" };
+        const scan = await getExistingScan(db, userId, row.id);
+        if (scan) {
+          matchedScan = scan;
+          matchedBook = row;
+          break;
         }
       }
-      // Reuse the row already found instead of re-resolving by isbn13 alone: resolveEdition's
-      // exact-match lookup would miss a book stored under its isbn10 form and mint a duplicate
-      // `books` row for the same edition.
+      if (matchedScan && matchedBook) {
+        if (!update) return { isbn: isbn13, outcome: "duplicate" };
+
+        if (!matchedBook.work_id) await linkWork(db, matchedBook);
+        const resolvedRating = resolveRatingForUpdate({
+          hasStatus: true,
+          effectiveStatus: status,
+          hasRating: rawRating != null,
+          rating: rawRating,
+        });
+        const sets = ["status = ?"];
+        const binds: (string | number | null)[] = [status];
+        if (resolvedRating !== undefined) {
+          sets.push("rating = ?");
+          binds.push(resolvedRating);
+        }
+        await db
+          .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+          .bind(...binds, matchedScan.id)
+          .run();
+
+        return {
+          isbn: isbn13,
+          outcome: "updated",
+          scan_id: matchedScan.id,
+          book: bookSummary(matchedBook),
+          previous: { status: matchedScan.status, rating: matchedScan.rating },
+        };
+      }
+      // Neither candidate row has a scan yet — reuse the row already found instead of
+      // re-resolving by isbn13 alone: resolveEdition's exact-match lookup would miss a book
+      // stored under its isbn10 form and mint a duplicate `books` row for the same edition.
       const existing = existingRows[0];
       if (!existing.work_id) await linkWork(db, existing);
       book = existing;
@@ -139,14 +196,7 @@ async function importRow(
       isbn: isbn13,
       outcome: "imported",
       scan_id: result.meta.last_row_id,
-      book: {
-        title: book.title,
-        author: book.author,
-        cover_url: book.cover_url,
-        publisher: book.publisher,
-        language: book.language,
-        work_id: book.work_id,
-      },
+      book: bookSummary(book),
     };
   } catch (e) {
     if (isUniqueConstraintError(e)) {
@@ -162,8 +212,9 @@ async function importRow(
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {
-  const body = await c.req.json<{ rows?: ImportRowInput[] }>();
+  const body = await c.req.json<{ rows?: ImportRowInput[]; update?: boolean }>();
   const rows = body.rows;
+  const update = body.update === true;
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_BATCH_SIZE) {
     return c.json(
       { error: `rows must contain between 1 and ${MAX_BATCH_SIZE} entries` },
@@ -190,7 +241,7 @@ importRoutes.post("/goodreads", async (c) => {
   // Rows sharing a work or author race inside linkWork; every write there is INSERT OR IGNORE and
   // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are benign.
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
-    importRow(db, userId, apiKey, row),
+    importRow(db, userId, apiKey, row, update),
   );
 
   return c.json({ results });

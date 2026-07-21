@@ -95,6 +95,73 @@ describe("validateImportRow", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.row.rating).toBeNull();
   });
+
+  it("keeps rawRating populated even when status isn't read (unlike the status-gated rating)", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      status: "to-read" as any,
+      rating: 8,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.rating).toBeNull();
+    expect(result.row.rawRating).toBe(8);
+  });
+
+  it("drops an out-of-range rawRating regardless of status", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      status: "read",
+      rating: 11,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.rawRating).toBeNull();
+  });
+
+  it("normalizes title/author/publisher/publish_date/number_of_pages, trimming and capping length", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      title: "  Dune  ",
+      author: "  Frank Herbert ",
+      publisher: "  Ace Books ",
+      publish_date: " 1965 ",
+      number_of_pages: 412,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.title).toBe("Dune");
+    expect(result.row.author).toBe("Frank Herbert");
+    expect(result.row.publisher).toBe("Ace Books");
+    expect(result.row.publish_date).toBe("1965");
+    expect(result.row.number_of_pages).toBe(412);
+  });
+
+  it("collapses blank/whitespace-only metadata fields to null", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      title: "   ",
+      author: undefined,
+      publisher: "",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.title).toBeNull();
+    expect(result.row.author).toBeNull();
+    expect(result.row.publisher).toBeNull();
+  });
+
+  it("treats a non-positive or non-finite page count as null", () => {
+    for (const bad of [0, -5, NaN, Infinity]) {
+      const result = validateImportRow({
+        isbn: "9780306406157",
+        number_of_pages: bad,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      expect(result.row.number_of_pages).toBeNull();
+    }
+  });
 });
 
 describe("normalizeCreatedAt", () => {

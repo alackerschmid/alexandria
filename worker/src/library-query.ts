@@ -31,6 +31,22 @@ export async function findExistingScan(
   return !!dup;
 }
 
+// Like findExistingScan, but returns the scan's id and current status/rating rather than a
+// boolean — used by the Goodreads-import update-on-duplicate path, which needs to both capture
+// the pre-update state (for its Undo) and know which scan row to write to.
+export async function getExistingScan(
+  db: D1Database,
+  userId: number,
+  bookId: number,
+): Promise<{ id: number; status: string; rating: number | null } | null> {
+  return db
+    .prepare(
+      "SELECT id, status, rating FROM scans WHERE user_id = ? AND book_id = ?",
+    )
+    .bind(userId, bookId)
+    .first<{ id: number; status: string; rating: number | null }>();
+}
+
 // D1 surfaces a UNIQUE constraint violation as a generic Error with this substring in its
 // message — there's no typed error class to check against.
 export function isUniqueConstraintError(e: unknown): boolean {
@@ -274,4 +290,32 @@ export const VALID_OWNING_STATUSES = [
 
 export function isValidRating(v: unknown): v is number {
   return Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10;
+}
+
+export interface ScanRatingUpdateInput {
+  /** True if this update includes a new status value (vs. leaving status untouched). */
+  hasStatus: boolean;
+  /** The status this update would result in — the incoming value if hasStatus, else the scan's
+   *  current stored status. Unused when neither hasStatus nor hasRating is set. */
+  effectiveStatus?: string;
+  /** True if this update includes an explicit rating value (a number, or null to clear it). */
+  hasRating: boolean;
+  rating?: number | null;
+}
+
+// Centralizes the status/rating invariant shared by PATCH /api/scans/:id and the Goodreads-
+// import update-on-duplicate path: a rating can only be non-null while the *effective* status is
+// "read", and changing status away from "read" without an explicit new rating silently clears
+// any existing rating (so a book no longer marked read can't still surface under "group by
+// rating"). Returns the rating value to write, or `undefined` if the rating column shouldn't be
+// touched by this update at all.
+export function resolveRatingForUpdate(
+  input: ScanRatingUpdateInput,
+): number | null | undefined {
+  const { hasStatus, effectiveStatus, hasRating, rating } = input;
+  if (hasRating) {
+    return effectiveStatus === "read" ? (rating ?? null) : null;
+  }
+  if (hasStatus && effectiveStatus !== "read") return null;
+  return undefined;
 }

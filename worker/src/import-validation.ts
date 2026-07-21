@@ -23,7 +23,14 @@ export interface ValidatedImportRow {
   isbn10: string | null;
   status: string;
   owning_status: string;
+  // Gated on status === "read", for the create-new-scan path (mirrors the PATCH /api/scans/:id
+  // invariant: a rating only persists on a "read" scan).
   rating: number | null;
+  // The same rating, ungated by status — Goodreads either has a rating for this book or it
+  // doesn't, independent of which shelf the row is on. Used by the update-on-duplicate path
+  // (routes/import.ts) via resolveRatingForUpdate, which applies the status gate itself against
+  // the *existing* scan's status rather than this row's.
+  rawRating: number | null;
   created_at: string | null;
   title: string | null;
   author: string | null;
@@ -101,12 +108,12 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
   )
     ? (input.owning_status as string)
     : "owned";
+  const rawRating = isValidRating(input.rating ?? null)
+    ? (input.rating as number)
+    : null;
   // Rating only persists on a "read" scan, mirroring the invariant enforced in routes/scans.ts —
   // a rated to-read/currently-reading row imports fine but silently drops the rating.
-  const rating =
-    status === "read" && isValidRating(input.rating ?? null)
-      ? (input.rating as number)
-      : null;
+  const rating = status === "read" ? rawRating : null;
 
   return {
     ok: true,
@@ -116,6 +123,7 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
       status,
       owning_status,
       rating,
+      rawRating,
       created_at: normalizeCreatedAt(input.created_at),
       title: normalizeText(input.title),
       author: normalizeText(input.author),
