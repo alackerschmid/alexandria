@@ -33,7 +33,7 @@
       "
       :aria-labelledby="ariaLabelledby"
       :placeholder="modelValue.length ? '' : placeholder"
-      class="flex-1 min-w-[80px] bg-transparent text-xs text-text-primary py-0.5"
+      class="flex-1 min-w-[80px] bg-transparent text-xs text-text-primary py-0.5 focus-ring-none"
       @focus="openMenu"
       @keydown.enter.prevent="onEnter"
       @keydown.backspace="onBackspace"

@@ -238,8 +238,6 @@
     "custom_field_name": "Feldname",
     "custom_field_value": "Wert",
     "custom_field_unset": "Nicht festgelegt",
-    "custom_field_delete": "Feld aus allen Büchern löschen",
-    "custom_field_confirm_delete": "Nochmal klicken zum Bestätigen – entfernt das Feld aus allen Büchern",
     "add_custom_field": "Feld hinzufügen",
     "tag_add": "Tag hinzufügen…",
     "tag_remove": "Tag {tag} entfernen",

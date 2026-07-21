@@ -91,7 +91,7 @@
             v-bind="tooltipProps"
             class="font-mono text-xs text-text-primary/70 cursor-help"
           >
-            ≈{{ book.reference_page_count }}
+            {{ book.reference_page_count }}
           </span>
         </template>
       </v-tooltip>

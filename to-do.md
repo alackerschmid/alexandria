@@ -4,30 +4,16 @@
 
 https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_two_questions/
 
-- implement select field options properly
 - add support for 2nd accent color, set central color scheme for stuff like read / dnf / unowned / lent etc. (also want color is hardcoded to orange)
-- ~~add star review field~~
 - add text review field (optional?)
-- ~~implement proper CI deploy workflow~~
 - add confirmation for switch
-- add description from reference book
-- change the base page's random books to a curated batch (boolean flag in database column)
 - add focus styling from settings to all other relevant fields (isbn title search)
-- add proper backfill from other editions for stuff like description
 - add support for numeric filters / groupby (page count, rating)
-- on going to a detail page, changing the status, and going back to the library, the status does not update
-- the click cycle in the library still works, just doesnt update the visuals
-- improve grouping visuals (fill rows)
 
 ## bugfixes
 
-- ~~check automatic worker deployment~~
-- ~~unscrew tolocalestring stats display on homepage~~
-- ~~dnf doesnt show up in autocomplete status options~~
 - add "quote" from wikidata
 - veirfy switch edition logic
-- add proper error handling in the frontend for worker offline (Failed to execute 'json' on 'Response': Unexpected end of JSON input), database incompatible
-- only display "series lookup pending" if it is actually pending
 - fix autocomplete (ie typing author:jim does not suggest author: jim butcher)
 - add display names and titles to the DB that the user can edit
 
@@ -36,7 +22,6 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 - ~~incorporate librarything search for related ISBNs (<https://www.librarything.com/developer/documentation/thingapis>) (You can make only one request per second on an API.)~~
 - look at <https://isbndb.com>
 - properly handle multilingual editions:
-  - intended behaviour: different editions of one book are all grouped by one identifier (different print, format, language etc.)
   - series names are always displayed the user language if possible
 
 ## batch 3: detail page

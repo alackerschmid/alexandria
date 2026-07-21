@@ -4,7 +4,7 @@
     <input
       v-model="form.title"
       :aria-label="$t('scanner.title_label')"
-      class="w-full bg-transparent font-heading text-xl font-bold text-text-primary leading-snug mb-2 border-b border-charcoal-border pb-1 outline-none focus:border-orange-neon"
+      class="w-full bg-transparent font-heading text-xl font-bold text-text-primary leading-snug mb-2 border-b border-charcoal-border pb-1 focus-ring-none focus:border-orange-neon"
       :placeholder="book.isbn"
     />
     <div class="text-sm text-text-secondary/60 mb-6">
@@ -23,7 +23,7 @@
           id="edit-description"
           v-model="form.description"
           rows="4"
-          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 resize-none outline-none focus:border-orange-neon"
+          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 resize-none focus-ring-none focus:border-orange-neon"
         />
       </div>
       <div class="grid grid-cols-2 gap-4">
@@ -37,7 +37,7 @@
           <input
             id="edit-publisher"
             v-model="form.publisher"
-            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
           />
         </div>
         <div>
@@ -50,7 +50,7 @@
           <input
             id="edit-language"
             v-model="form.language"
-            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
           />
         </div>
         <div>
@@ -63,7 +63,7 @@
           <input
             id="edit-publish-date"
             v-model="form.publish_date"
-            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
           />
         </div>
         <div>
@@ -78,7 +78,7 @@
             v-model.number="form.number_of_pages_median"
             type="number"
             min="1"
-            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+            class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
           />
         </div>
       </div>
@@ -92,7 +92,7 @@
         <input
           id="edit-cover-url"
           v-model="form.cover_url"
-          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 outline-none focus:border-orange-neon"
+          class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
         />
       </div>
 

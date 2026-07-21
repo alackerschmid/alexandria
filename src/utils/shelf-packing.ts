@@ -112,18 +112,22 @@ export function packRows(
       if (curCol > 0) flushRow();
     }
 
-    let isFirstChunk = true;
+    let prevStartCol: number | null = null;
     let i = 0;
     while (i < slots.length) {
       const take = Math.min(cols - curCol, slots.length - i);
       const chunk = slots.slice(i, i + take);
+      // Header shown on the group's first row, and repeated whenever a continuation
+      // lands in a different starting column than its previous chunk — i.e. it no
+      // longer sits directly beneath the header (or the last repeat), which would
+      // otherwise read as an unlabeled gap. A chunk that continues at the same
+      // column as the previous one (the common case: the group fills whole rows by
+      // itself) stays a bare continuation — repeating there would just be clutter.
+      const showHeader = curCol !== prevStartCol;
       curRow.push({
         key: `${g.key}-${i}`,
         span: take,
-        // Header shown once, on the group's first row only. A bare continuation
-        // row (no header) reads more cleanly than a repeated one in the rarer
-        // multi-row cases (fully expanded, exact-width wrap, edition overflow).
-        groupLabel: isFirstChunk
+        groupLabel: showHeader
           ? {
               text: g.label,
               seriesId: g.seriesId ?? null,
@@ -133,7 +137,7 @@ export function packRows(
           : null,
         slots: chunk,
       });
-      isFirstChunk = false;
+      prevStartCol = curCol;
       curCol += take;
       i += take;
       if (curCol >= cols) flushRow();

@@ -429,19 +429,22 @@ books.patch("/custom-fields", async (c) => {
   if (!book) return c.json({ error: "Book not found" }, 404);
 
   const defsById = new Map(ownedDefs.map((d) => [d.id, d]));
-  // A select field's value must be one of its own options — a stale client (an option was
-  // renamed/removed since the form loaded) silently clears rather than storing an orphaned value.
+  // A select field's value must be one of its own options (a stale client whose option was
+  // renamed/removed since the form loaded), and an integer field's must actually be an
+  // integer (the UI sanitizes keystrokes, but a direct API call bypasses that) — either way
+  // an invalid value is silently cleared rather than stored, same as an orphaned select value.
   const values = (body.values ?? []).flatMap((v) => {
     const def = defsById.get(v.field_def_id);
     if (!def) return [];
     const trimmed = (v.value ?? "").trim();
-    const isValidSelectValue =
-      def.field_type !== "select" ||
+    const isValid =
       !trimmed ||
-      parseTagArray(def.field_options).includes(trimmed);
-    return [
-      { field_def_id: v.field_def_id, value: isValidSelectValue ? trimmed || null : null },
-    ];
+      (def.field_type === "select"
+        ? parseTagArray(def.field_options).includes(trimmed)
+        : def.field_type === "integer"
+          ? /^-?\d+$/.test(trimmed)
+          : true);
+    return [{ field_def_id: v.field_def_id, value: isValid ? trimmed || null : null }];
   });
 
   await c.env.DB.batch([
