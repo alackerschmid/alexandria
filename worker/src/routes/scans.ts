@@ -14,7 +14,7 @@ import {
   findExistingScan,
   isUniqueConstraintError,
   parseIntOr,
-  resolveRatingForUpdate,
+  buildScanUpdate,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
 import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
@@ -271,26 +271,11 @@ scans.patch("/:id", async (c) => {
     );
   }
 
-  const sets: string[] = [];
-  const binds: (string | number | null)[] = [];
-  if (hasStatus) {
-    sets.push("status = ?");
-    binds.push(body.status!);
-  }
-  if (hasOwningStatus) {
-    sets.push("owning_status = ?");
-    binds.push(body.owning_status!);
-  }
-  const resolvedRating = resolveRatingForUpdate({
-    hasStatus,
-    effectiveStatus,
-    hasRating,
-    rating: body.rating,
+  const { sets, binds, resolvedRating } = buildScanUpdate({
+    status: hasStatus ? body.status! : undefined,
+    owningStatus: hasOwningStatus ? body.owning_status! : undefined,
+    ratingInput: { hasStatus, effectiveStatus, hasRating, rating: body.rating },
   });
-  if (resolvedRating !== undefined) {
-    sets.push("rating = ?");
-    binds.push(resolvedRating);
-  }
 
   const result = await c.env.DB.prepare(
     `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,

@@ -6,6 +6,7 @@ import {
   VALID_OWNING_STATUSES,
   isValidRating,
   dedupeTrimmed,
+  resolveRatingForUpdate,
 } from "./library-query";
 
 export interface ImportRowInput {
@@ -144,9 +145,16 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
   const rawRating = isValidRating(input.rating ?? null)
     ? (input.rating as number)
     : null;
-  // Rating only persists on a "read" scan, mirroring the invariant enforced in routes/scans.ts —
-  // a rated to-read/currently-reading row imports fine but silently drops the rating.
-  const rating = status === "read" ? rawRating : null;
+  // Rating only persists on a "read" scan — delegate to the shared invariant rather than
+  // re-deriving it, so this create path and the update paths stay in lock-step. `?? null` fills
+  // the "no rating to write" case (undefined) since a create always inserts a concrete value.
+  const rating =
+    resolveRatingForUpdate({
+      hasStatus: true,
+      effectiveStatus: status,
+      hasRating: rawRating != null,
+      rating: rawRating,
+    }) ?? null;
 
   return {
     ok: true,

@@ -327,3 +327,35 @@ export function resolveRatingForUpdate(
   if (hasStatus && effectiveStatus !== "read") return null;
   return undefined;
 }
+
+// Builds the SET clause + bind values for a scan status/owning/rating UPDATE, applying the shared
+// rating invariant (resolveRatingForUpdate) in one place so every write path — PATCH /api/scans/:id
+// and both Goodreads-import update paths — emits the same SQL. A column is included only when its
+// value is provided; `rating` is included whenever resolveRatingForUpdate yields a concrete value
+// (a new rating, or an explicit clear). Callers append their own WHERE binds after `binds`.
+export function buildScanUpdate(args: {
+  status?: string;
+  owningStatus?: string;
+  ratingInput: ScanRatingUpdateInput;
+}): {
+  sets: string[];
+  binds: (string | number | null)[];
+  resolvedRating: number | null | undefined;
+} {
+  const sets: string[] = [];
+  const binds: (string | number | null)[] = [];
+  if (args.status !== undefined) {
+    sets.push("status = ?");
+    binds.push(args.status);
+  }
+  if (args.owningStatus !== undefined) {
+    sets.push("owning_status = ?");
+    binds.push(args.owningStatus);
+  }
+  const resolvedRating = resolveRatingForUpdate(args.ratingInput);
+  if (resolvedRating !== undefined) {
+    sets.push("rating = ?");
+    binds.push(resolvedRating);
+  }
+  return { sets, binds, resolvedRating };
+}

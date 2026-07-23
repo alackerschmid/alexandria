@@ -12,6 +12,24 @@ function bigrams(s: string): string[] {
   return out;
 }
 
+// A title normalized once and reused across every comparison it takes part in — the `normalizeStr`
+// call (NFKD + diacritic-strip) and bigram build are the expensive part, so a candidate's titles
+// are prepared once (prepareCandidates) rather than re-derived for each of up to 50 query rows.
+interface NormalizedTitle {
+  norm: string;
+  bigrams: string[];
+  counts: Map<string, number>;
+}
+
+function normalizeTitle(raw: string | null): NormalizedTitle | null {
+  const norm = normalizeStr(raw);
+  if (!norm) return null;
+  const bg = bigrams(norm);
+  const counts = new Map<string, number>();
+  for (const g of bg) counts.set(g, (counts.get(g) ?? 0) + 1);
+  return { norm, bigrams: bg, counts };
+}
+
 // One normalized title is a prefix of the other, ending at a word boundary — "dune" vs
 // "dune: book one", "the hobbit" vs "the hobbit, or there and back again". Deliberately a
 // prefix check (not substring anywhere) so e.g. "dune" doesn't match "the dune chronicles".
@@ -22,31 +40,29 @@ function isPrefixContainment(a: string, b: string): boolean {
   return nextChar === undefined || /[^\p{L}\p{N}]/u.test(nextChar);
 }
 
-// Sørensen–Dice coefficient over character bigrams of the normalized titles:
+// Sørensen–Dice coefficient over character bigrams of the two prepared titles:
 // 2 * |bigrams(a) ∩ bigrams(b)| / (|bigrams(a)| + |bigrams(b)|). Robust to word reordering and
 // punctuation differences that plain equality or a Levenshtein distance would penalize more
-// harshly, while staying cheap enough to run against an entire library's worth of candidates.
-export function titleSimilarity(a: string, b: string): number {
-  const na = normalizeStr(a);
-  const nb = normalizeStr(b);
-  if (!na || !nb) return 0;
-  if (na === nb || isPrefixContainment(na, nb)) return 1;
+// harshly. `a.counts` is copied (not mutated) so a prepared title can be scored against many.
+function diceScore(a: NormalizedTitle | null, b: NormalizedTitle | null): number {
+  if (!a || !b) return 0;
+  if (a.norm === b.norm || isPrefixContainment(a.norm, b.norm)) return 1;
+  if (a.bigrams.length === 0 || b.bigrams.length === 0) return 0;
 
-  const ba = bigrams(na);
-  const bb = bigrams(nb);
-  if (ba.length === 0 || bb.length === 0) return 0;
-
-  const counts = new Map<string, number>();
-  for (const g of ba) counts.set(g, (counts.get(g) ?? 0) + 1);
+  const counts = new Map(a.counts);
   let overlap = 0;
-  for (const g of bb) {
+  for (const g of b.bigrams) {
     const remaining = counts.get(g) ?? 0;
     if (remaining > 0) {
       overlap++;
       counts.set(g, remaining - 1);
     }
   }
-  return (2 * overlap) / (ba.length + bb.length);
+  return (2 * overlap) / (a.bigrams.length + b.bigrams.length);
+}
+
+export function titleSimilarity(a: string, b: string): number {
+  return diceScore(normalizeTitle(a), normalizeTitle(b));
 }
 
 export interface TitleMatchCandidate {
@@ -55,6 +71,28 @@ export interface TitleMatchCandidate {
   title: string | null;
   canonicalTitle: string | null;
   author: string | null;
+}
+
+// A candidate with its titles/author-key normalized once, so a whole batch of query rows can be
+// scored against it without re-normalizing. Build once per request via prepareCandidates.
+export interface PreparedCandidate {
+  scanId: number;
+  bookId: number;
+  authorKey: string;
+  title: NormalizedTitle | null;
+  canonicalTitle: NormalizedTitle | null;
+}
+
+export function prepareCandidates(
+  candidates: TitleMatchCandidate[],
+): PreparedCandidate[] {
+  return candidates.map((c) => ({
+    scanId: c.scanId,
+    bookId: c.bookId,
+    authorKey: normalizeAuthorKey(c.author),
+    title: normalizeTitle(c.title),
+    canonicalTitle: normalizeTitle(c.canonicalTitle),
+  }));
 }
 
 export interface TitleMatchResult {
@@ -76,19 +114,20 @@ const AMBIGUITY_MARGIN = 0.08;
 // title, taking the better of the two — covers a scan stored under a translated title) and
 // returns the best match, or null if nothing clears its threshold or the top two are too close
 // to call.
-export function pickBestMatch(
+export function pickBestMatchPrepared(
   query: { title: string; author: string },
-  candidates: TitleMatchCandidate[],
+  candidates: PreparedCandidate[],
 ): TitleMatchResult | null {
   const queryAuthorKey = normalizeAuthorKey(query.author);
+  const queryTitle = normalizeTitle(query.title);
 
   const qualifying: TitleMatchResult[] = [];
   for (const c of candidates) {
     const authorMatched =
-      queryAuthorKey !== "" && normalizeAuthorKey(c.author) === queryAuthorKey;
+      queryAuthorKey !== "" && c.authorKey === queryAuthorKey;
     const score = Math.max(
-      titleSimilarity(query.title, c.title ?? ""),
-      titleSimilarity(query.title, c.canonicalTitle ?? ""),
+      diceScore(queryTitle, c.title),
+      diceScore(queryTitle, c.canonicalTitle),
     );
     const threshold = authorMatched
       ? AUTHOR_MATCH_TITLE_THRESHOLD
@@ -103,4 +142,14 @@ export function pickBestMatch(
   const [best, runnerUp] = qualifying;
   if (runnerUp && best.score - runnerUp.score < AMBIGUITY_MARGIN) return null;
   return best;
+}
+
+// Convenience wrapper for one-shot matching (and the tests). A batch caller matching many query
+// rows against the same library should call prepareCandidates() once and pickBestMatchPrepared()
+// per row instead, so candidate normalization isn't repeated for every row.
+export function pickBestMatch(
+  query: { title: string; author: string },
+  candidates: TitleMatchCandidate[],
+): TitleMatchResult | null {
+  return pickBestMatchPrepared(query, prepareCandidates(candidates));
 }

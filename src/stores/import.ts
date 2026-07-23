@@ -36,13 +36,23 @@ interface ImportedBook {
   work_id: number | null;
 }
 
+interface ScanStateSummary {
+  status: ReadStatus;
+  rating: number | null;
+  owning_status: OwningStatus;
+}
+
 interface ImportRowResult {
   isbn: string;
   outcome: "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
   scan_id?: number;
   book?: ImportedBook;
-  // Present only for "updated" rows — the scan's status/rating/owning_status before this update.
-  previous?: { status: ReadStatus; rating: number | null; owning_status: OwningStatus };
+  // Present only for "imported"/"updated" rows — the scan's status/rating/owning_status as
+  // actually written server-side (owning_status untouched on updates, forced to "owned" for a
+  // positive owned_copies on creates). The summary card shows these verbatim.
+  resolved?: ScanStateSummary;
+  // Present only for "updated" rows — the scan's state before this update (drives Undo).
+  previous?: ScanStateSummary;
 }
 
 // Response shape of POST /api/import/match — the title/author matching pass for rows with no
@@ -53,7 +63,8 @@ interface MatchRowResult {
   outcome: "duplicate" | "updated" | "no_match";
   scan_id?: number;
   book?: ImportedBook;
-  previous?: { status: ReadStatus; rating: number | null; owning_status: OwningStatus };
+  resolved?: ScanStateSummary;
+  previous?: ScanStateSummary;
   confidence?: number;
 }
 
@@ -95,7 +106,7 @@ export interface ImportedItem {
   /** The scan's status/rating/owning_status before this update — only set when preexisting.
    *  Lets "remove" become "undo" (PATCH status/rating back) instead of deleting a scan that
    *  predates the import. */
-  previous: { status: ReadStatus; rating: number | null; owning_status: OwningStatus } | null;
+  previous: ScanStateSummary | null;
   /** True when this row had no usable ISBN and was matched to its (preexisting) library entry
    *  by title/author instead — shown as "matched by title" rather than "already in your
    *  library" so the user knows this one was a fuzzy match, not an ISBN-confirmed duplicate. */
@@ -154,11 +165,18 @@ export interface ImportLogEntry {
   reason: ImportLogReason;
 }
 
+// Strips hyphens/spaces and upper-cases, so `978-0-14…` and its bare form share one dedupe key
+// (and one shape check). Mirrors the worker's normalizeIsbn (worker/src/isbn.ts), which can't be
+// imported across the package boundary.
+function normalizeIsbnKey(raw: string): string {
+  return raw.replace(/[-\s]/g, "").toUpperCase();
+}
+
 // Client-side ISBN shape check only (no checksum) — just enough to decide whether a row is
 // worth sending to the server at all. The server does the authoritative checksum validation
 // (worker/src/import-validation.ts) and routes checksum failures back as invalid_isbn.
 function isIsbnShaped(raw: string): boolean {
-  return /^(?:\d{9}[\dX]|\d{13})$/.test(raw.replace(/[-\s]/g, "").toUpperCase());
+  return /^(?:\d{9}[\dX]|\d{13})$/.test(normalizeIsbnKey(raw));
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -423,14 +441,21 @@ export const useImportStore = defineStore("import", () => {
     );
     if (existing) return existing.id;
 
-    const res = await apiFetch("/api/field-definitions", {
-      method: "POST",
-      body: JSON.stringify({ name: SHELVES_FIELD_NAME, type: "tag" }),
-    });
-    if (!res.ok) return null;
-    const created = (await res.json()) as { id: number; name: string; type: string };
-    fieldDefsStore.add(created);
-    return created.id;
+    // A thrown network failure here must degrade to "no shelves field" like a non-ok response
+    // does, not propagate — this runs inline in startImport/confirmReviewItem, which have no
+    // catch of their own, so an uncaught throw would abort the whole import.
+    try {
+      const res = await apiFetch("/api/field-definitions", {
+        method: "POST",
+        body: JSON.stringify({ name: SHELVES_FIELD_NAME, type: "tag" }),
+      });
+      if (!res.ok) return null;
+      const created = (await res.json()) as { id: number; name: string; type: string };
+      fieldDefsStore.add(created);
+      return created.id;
+    } catch {
+      return null;
+    }
   }
 
   function buildImportedItem(
@@ -438,21 +463,12 @@ export const useImportStore = defineStore("import", () => {
     result: ImportRowResult,
     matchConfidence: number | null = null,
   ): ImportedItem {
-    const { status, owning_status } = shelfMappingFor(row.shelf, mapping);
     const book = result.book;
     const preexisting = result.outcome === "updated";
-    const previous = preexisting ? (result.previous ?? null) : null;
-    // An update only overwrites rating when Goodreads actually has one (row.rating is already
-    // null when the CSV had none) — otherwise the scan's existing rating carries over, unless
-    // status is moving off "read", which clears it. Mirrors resolveRatingForUpdate server-side.
-    const rating =
-      preexisting && row.rating == null
-        ? status === "read"
-          ? (previous?.rating ?? null)
-          : null
-        : status === "read"
-          ? row.rating
-          : null;
+    // The server reports the scan state it actually wrote (status/rating/owning_status), so the
+    // card shows real state rather than re-deriving the shelf-mapping / rating / owned_copies
+    // rules client-side — always present for the "imported"/"updated" outcomes reaching here.
+    const resolved = result.resolved!;
     return {
       rowId: row.id,
       scanId: result.scan_id!,
@@ -462,16 +478,13 @@ export const useImportStore = defineStore("import", () => {
       coverUrl: book?.cover_url ?? null,
       publisher: book?.publisher ?? null,
       language: book?.language ?? null,
-      status,
-      // An update never touches owning_status server-side — show the scan's real (untouched)
-      // value rather than the shelf-mapping guess, which would otherwise misrepresent state the
-      // import didn't actually change.
-      owningStatus: previous?.owning_status ?? owning_status,
-      rating,
+      status: resolved.status,
+      owningStatus: resolved.owning_status,
+      rating: resolved.rating,
       createdAt: row.createdAt,
       workId: book?.work_id ?? null,
       preexisting,
-      previous,
+      previous: preexisting ? (result.previous ?? null) : null,
       matchedByTitle: matchConfidence != null,
       matchConfidence,
       editingEdition: false,
@@ -601,7 +614,7 @@ export const useImportStore = defineStore("import", () => {
     const seen = new Set<string>();
     const deduped: ParsedGoodreadsRow[] = [];
     for (const row of parsedRows) {
-      const key = row.isbn?.replace(/[-\s]/g, "").toUpperCase();
+      const key = row.isbn ? normalizeIsbnKey(row.isbn) : undefined;
       if (key) {
         if (seen.has(key)) {
           pushLog(row, row.isbn, "duplicate", "in_file");
@@ -638,50 +651,60 @@ export const useImportStore = defineStore("import", () => {
 
   // 429s wait for Retry-After and retry the same batch (bounded — a 30/min budget against
   // 10-row batches should never realistically exhaust this). A network error gets exactly one
-  // retry before the whole batch is marked failed, per plan.
-  async function postBatchWithRetry(
-    payloads: ReturnType<typeof buildImportPayload>[],
-    update: boolean,
-    shelvesFieldDefId: number | null = null,
-  ): Promise<ImportRowResult[]> {
-    const asFailed = () =>
-      payloads.map((p) => ({ isbn: p.isbn, outcome: "failed" as const }));
-
+  // retry before the batch is given up on, degrading every row to whatever onFail() returns.
+  async function postWithRetry<T>(
+    url: string,
+    body: unknown,
+    onFail: () => T[],
+  ): Promise<T[]> {
     let networkRetried = false;
     batchInFlight.value = true;
     try {
       for (let attempt = 0; attempt < 10; attempt++) {
         try {
-          const res = await apiFetch("/api/import/goodreads", {
+          const res = await apiFetch(url, {
             method: "POST",
-            body: JSON.stringify({
-              rows: payloads,
-              update,
-              ...(shelvesFieldDefId != null
-                ? { shelves_field_def_id: shelvesFieldDefId }
-                : {}),
-            }),
+            body: JSON.stringify(body),
           });
           if (res.status === 429) {
             const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
             await sleep(retryAfter * 1000);
             continue;
           }
-          if (!res.ok) return asFailed();
-          const data = (await res.json()) as { results: ImportRowResult[] };
+          if (!res.ok) return onFail();
+          const data = (await res.json()) as { results: T[] };
           return data.results;
         } catch {
           if (!networkRetried) {
             networkRetried = true;
             continue;
           }
-          return asFailed();
+          return onFail();
         }
       }
-      return asFailed();
+      return onFail();
     } finally {
       batchInFlight.value = false;
     }
+  }
+
+  // A failed /goodreads batch degrades every row to "failed".
+  function postBatchWithRetry(
+    payloads: ReturnType<typeof buildImportPayload>[],
+    update: boolean,
+    shelvesFieldDefId: number | null = null,
+  ): Promise<ImportRowResult[]> {
+    return postWithRetry<ImportRowResult>(
+      "/api/import/goodreads",
+      {
+        rows: payloads,
+        update,
+        ...(shelvesFieldDefId != null
+          ? { shelves_field_def_id: shelvesFieldDefId }
+          : {}),
+      },
+      () => payloads.map((p) => ({ isbn: p.isbn, outcome: "failed" as const })),
+    );
   }
 
   interface MatchPayloadRow {
@@ -701,45 +724,18 @@ export const useImportStore = defineStore("import", () => {
     };
   }
 
-  // Same retry policy as postBatchWithRetry, against /api/import/match. A request-level failure
-  // degrades every row in the batch to "no_match" (not a "failed" outcome — see MatchRowResult)
-  // so it falls to manual review rather than silently guessing.
-  async function postMatchBatchWithRetry(
+  // Same retry policy, against /api/import/match. A request-level failure degrades every row in
+  // the batch to "no_match" (not a "failed" outcome — see MatchRowResult) so it falls to manual
+  // review rather than silently guessing.
+  function postMatchBatchWithRetry(
     payloads: MatchPayloadRow[],
     update: boolean,
   ): Promise<MatchRowResult[]> {
-    const asNoMatch = (): MatchRowResult[] =>
-      payloads.map(() => ({ outcome: "no_match" as const }));
-
-    let networkRetried = false;
-    batchInFlight.value = true;
-    try {
-      for (let attempt = 0; attempt < 10; attempt++) {
-        try {
-          const res = await apiFetch("/api/import/match", {
-            method: "POST",
-            body: JSON.stringify({ rows: payloads, update }),
-          });
-          if (res.status === 429) {
-            const retryAfter = Number(res.headers.get("Retry-After") ?? "5");
-            await sleep(retryAfter * 1000);
-            continue;
-          }
-          if (!res.ok) return asNoMatch();
-          const data = (await res.json()) as { results: MatchRowResult[] };
-          return data.results;
-        } catch {
-          if (!networkRetried) {
-            networkRetried = true;
-            continue;
-          }
-          return asNoMatch();
-        }
-      }
-      return asNoMatch();
-    } finally {
-      batchInFlight.value = false;
-    }
+    return postWithRetry<MatchRowResult>(
+      "/api/import/match",
+      { rows: payloads, update },
+      () => payloads.map(() => ({ outcome: "no_match" as const })),
+    );
   }
 
   // Adapts a "updated" MatchRowResult into the shape buildImportedItem expects, so both the
@@ -751,6 +747,7 @@ export const useImportStore = defineStore("import", () => {
       outcome: "updated",
       scan_id: result.scan_id,
       book: result.book,
+      resolved: result.resolved,
       previous: result.previous,
     };
   }
@@ -1195,13 +1192,18 @@ export const useImportStore = defineStore("import", () => {
         item.candidates = [];
         item.candidatesLoaded = false;
         item.candidatesFromStorage = false;
-        const deleteRes = await apiFetch(`/api/scans/${oldScanId}`, {
-          method: "DELETE",
-        });
         // The new scan is already saved and reflected above regardless — but if the old one
         // couldn't be removed, it's now an orphaned duplicate the user can't see from this card.
-        // Surface that rather than silently leaving it behind.
-        if (!deleteRes.ok && deleteRes.status !== 404) {
+        // Surface that rather than silently leaving it behind — including on a thrown network
+        // error, not just a non-ok response.
+        try {
+          const deleteRes = await apiFetch(`/api/scans/${oldScanId}`, {
+            method: "DELETE",
+          });
+          if (!deleteRes.ok && deleteRes.status !== 404) {
+            item.error = "orphaned_duplicate";
+          }
+        } catch {
           item.error = "orphaned_duplicate";
         }
       } else if (result.outcome === "duplicate") {
@@ -1229,55 +1231,46 @@ export const useImportStore = defineStore("import", () => {
   }
 
   // busy gates the row's CyclePills (see MatchedRow) so a rapid double-click can't fire a second
-  // PATCH before the first one's response lands and land out of order.
-  async function setImportedStatus(
+  // PATCH before the first one's response lands and land out of order. applyLocal runs only on a
+  // successful PATCH, mutating the item to match what the server now has.
+  async function patchImportedField(
     item: ImportedItem,
-    status: ReadStatus,
+    body: Record<string, unknown>,
+    applyLocal: () => void,
   ): Promise<void> {
     if (item.busy) return;
     item.busy = true;
     try {
-      if (await patchImported(item, { status })) {
-        item.status = status;
-        // Mirror the server: moving off "read" clears any rating.
-        if (status !== "read") item.rating = null;
+      if (await patchImported(item, body)) {
+        applyLocal();
         persistSession();
       }
+    } catch {
+      // Same no-op as a non-ok response above — these are quick, retryable toggles with no
+      // dedicated error UI, so a thrown network failure shouldn't escape uncaught either.
     } finally {
       item.busy = false;
     }
   }
 
-  async function setImportedOwning(
-    item: ImportedItem,
-    owning: OwningStatus,
-  ): Promise<void> {
-    if (item.busy) return;
-    item.busy = true;
-    try {
-      if (await patchImported(item, { owning_status: owning })) {
-        item.owningStatus = owning;
-        persistSession();
-      }
-    } finally {
-      item.busy = false;
-    }
+  function setImportedStatus(item: ImportedItem, status: ReadStatus): Promise<void> {
+    return patchImportedField(item, { status }, () => {
+      item.status = status;
+      // Mirror the server: moving off "read" clears any rating.
+      if (status !== "read") item.rating = null;
+    });
   }
 
-  async function setImportedRating(
-    item: ImportedItem,
-    rating: number | null,
-  ): Promise<void> {
-    if (item.busy) return;
-    item.busy = true;
-    try {
-      if (await patchImported(item, { rating })) {
-        item.rating = rating;
-        persistSession();
-      }
-    } finally {
-      item.busy = false;
-    }
+  function setImportedOwning(item: ImportedItem, owning: OwningStatus): Promise<void> {
+    return patchImportedField(item, { owning_status: owning }, () => {
+      item.owningStatus = owning;
+    });
+  }
+
+  function setImportedRating(item: ImportedItem, rating: number | null): Promise<void> {
+    return patchImportedField(item, { rating }, () => {
+      item.rating = rating;
+    });
   }
 
   // Removes a single imported book (deletes its scan). A 404 is treated as success — the row is
@@ -1298,6 +1291,8 @@ export const useImportStore = defineStore("import", () => {
       } else {
         item.error = "remove_failed";
       }
+    } catch {
+      item.error = "remove_failed";
     } finally {
       item.busy = false;
     }
@@ -1321,6 +1316,8 @@ export const useImportStore = defineStore("import", () => {
       } else {
         item.error = "remove_failed";
       }
+    } catch {
+      item.error = "remove_failed";
     } finally {
       item.busy = false;
     }

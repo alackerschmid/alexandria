@@ -13,10 +13,10 @@ import {
 import {
   getExistingScan,
   isUniqueConstraintError,
-  resolveRatingForUpdate,
+  buildScanUpdate,
   type ExistingScan,
 } from "../library-query";
-import { pickBestMatch, type TitleMatchCandidate } from "../title-match";
+import { pickBestMatchPrepared, prepareCandidates } from "../title-match";
 
 const importRoutes = new Hono<Env>();
 
@@ -50,6 +50,12 @@ interface ImportedBook {
   work_id: number | null;
 }
 
+interface ScanStateSummary {
+  status: string;
+  rating: number | null;
+  owning_status: string;
+}
+
 interface ImportRowResult {
   isbn: string;
   outcome: ImportOutcome;
@@ -57,10 +63,14 @@ interface ImportRowResult {
   // Present only for "imported"/"updated" rows — the resolved edition's details, so the
   // post-import summary can render an editable card without a follow-up per-scan fetch.
   book?: ImportedBook;
-  // Present only for "updated" rows — the scan's status/rating/owning_status before this
-  // update, so the client can show the real (untouched) owning_status and offer an Undo that
-  // restores exactly this.
-  previous?: { status: string; rating: number | null; owning_status: string };
+  // Present only for "imported"/"updated" rows — the scan's status/rating/owning_status as
+  // actually written server-side (an update never touches owning_status; a create forces it to
+  // "owned" when owned_copies > 0). The client renders the summary card straight from this
+  // instead of re-deriving the status/rating/owned-copies rules, which drifted from the server.
+  resolved?: ScanStateSummary;
+  // Present only for "updated" rows — the scan's state before this update, so the client can
+  // offer an Undo that restores exactly this.
+  previous?: ScanStateSummary;
 }
 
 function bookSummary(book: BookRow): ImportedBook {
@@ -85,6 +95,13 @@ async function importRow(
   // tags the user chose deliberately, and the update path otherwise never writes fields the
   // Goodreads row didn't explicitly ask to change.
   shelvesFieldDefId: number | null,
+  // Shared across every row in the batch (mapWithConcurrency runs rows concurrently). Two rows
+  // can resolve to the same existing scan — a duplicate CSV entry, or the same book under its
+  // isbn10/isbn13 forms — and without this, both would race an independent UPDATE against it and
+  // both report "updated" with a `previous` read before either write landed, corrupting Undo.
+  // Claiming the scan id here (synchronously, before any await) makes the second row a plain
+  // "duplicate" instead, matching how an in-DB duplicate is already handled.
+  claimedScanIds: Set<number>,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
@@ -140,20 +157,21 @@ async function importRow(
       }
       if (matchedScan && matchedBook) {
         if (!update) return { isbn: isbn13, outcome: "duplicate" };
+        if (claimedScanIds.has(matchedScan.id)) {
+          return { isbn: isbn13, outcome: "duplicate" };
+        }
+        claimedScanIds.add(matchedScan.id);
 
         if (!matchedBook.work_id) await linkWork(db, matchedBook);
-        const resolvedRating = resolveRatingForUpdate({
-          hasStatus: true,
-          effectiveStatus: status,
-          hasRating: rawRating != null,
-          rating: rawRating,
+        const { sets, binds, resolvedRating } = buildScanUpdate({
+          status,
+          ratingInput: {
+            hasStatus: true,
+            effectiveStatus: status,
+            hasRating: rawRating != null,
+            rating: rawRating,
+          },
         });
-        const sets = ["status = ?"];
-        const binds: (string | number | null)[] = [status];
-        if (resolvedRating !== undefined) {
-          sets.push("rating = ?");
-          binds.push(resolvedRating);
-        }
         await db
           .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
           .bind(...binds, matchedScan.id)
@@ -164,6 +182,14 @@ async function importRow(
           outcome: "updated",
           scan_id: matchedScan.id,
           book: bookSummary(matchedBook),
+          resolved: {
+            // status is always written; owning_status is never touched on an update; rating is
+            // whatever buildScanUpdate resolved, or the untouched prior value if it left the
+            // column alone (resolvedRating === undefined).
+            status,
+            rating: resolvedRating !== undefined ? resolvedRating : matchedScan.rating,
+            owning_status: matchedScan.owning_status,
+          },
           previous: {
             status: matchedScan.status,
             rating: matchedScan.rating,
@@ -231,6 +257,9 @@ async function importRow(
       outcome: "imported",
       scan_id: result.meta.last_row_id,
       book: bookSummary(book),
+      // The exact values just inserted — validateImportRow already gated rating on status and
+      // forced owning_status to "owned" when owned_copies > 0.
+      resolved: { status, rating, owning_status },
     };
   } catch (e) {
     if (isUniqueConstraintError(e)) {
@@ -294,9 +323,12 @@ importRoutes.post("/goodreads", async (c) => {
 
   // Concurrent, but order-preserving — the client maps results back onto its rows positionally.
   // Rows sharing a work or author race inside linkWork; every write there is INSERT OR IGNORE and
-  // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are benign.
+  // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are
+  // benign. An update-on-duplicate write has no such guard, so importRow claims the target scan
+  // id itself (see claimedScanIds) instead of racing another row's UPDATE against it.
+  const claimedScanIds = new Set<number>();
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
-    importRow(db, userId, apiKey, row, update, shelvesFieldDefId),
+    importRow(db, userId, apiKey, row, update, shelvesFieldDefId, claimedScanIds),
   );
 
   return c.json({ results });
@@ -322,9 +354,10 @@ type MatchOutcome = "duplicate" | "updated" | "no_match";
 interface MatchRowResult {
   outcome: MatchOutcome;
   scan_id?: number;
-  // Present only for "updated" rows.
+  // All present only for "updated" rows (see ImportRowResult for the resolved/previous split).
   book?: ImportedBook;
-  previous?: { status: string; rating: number | null; owning_status: string };
+  resolved?: ScanStateSummary;
+  previous?: ScanStateSummary;
   confidence?: number;
 }
 
@@ -404,13 +437,17 @@ importRoutes.post("/match", async (c) => {
     .all<LibraryIndexRow>();
 
   const byScanId = new Map(library.map((row) => [row.scan_id, row]));
-  const candidates: TitleMatchCandidate[] = library.map((row) => ({
-    scanId: row.scan_id,
-    bookId: row.book_id,
-    title: row.title,
-    canonicalTitle: row.canonical_title,
-    author: row.author,
-  }));
+  // Normalize every candidate's titles/author-key once, up front — the whole row batch is then
+  // scored against the same prepared list instead of re-normalizing the library per row.
+  const candidates = prepareCandidates(
+    library.map((row) => ({
+      scanId: row.scan_id,
+      bookId: row.book_id,
+      title: row.title,
+      canonicalTitle: row.canonical_title,
+      author: row.author,
+    })),
+  );
 
   const results: MatchRowResult[] = [];
   for (const row of rows) {
@@ -420,7 +457,7 @@ importRoutes.post("/match", async (c) => {
       continue;
     }
 
-    const match = pickBestMatch(
+    const match = pickBestMatchPrepared(
       { title: validated.title, author: validated.author },
       candidates,
     );
@@ -440,18 +477,15 @@ importRoutes.post("/match", async (c) => {
       continue;
     }
 
-    const resolvedRating = resolveRatingForUpdate({
-      hasStatus: true,
-      effectiveStatus: validated.status,
-      hasRating: validated.rawRating != null,
-      rating: validated.rawRating,
+    const { sets, binds, resolvedRating } = buildScanUpdate({
+      status: validated.status,
+      ratingInput: {
+        hasStatus: true,
+        effectiveStatus: validated.status,
+        hasRating: validated.rawRating != null,
+        rating: validated.rawRating,
+      },
     });
-    const sets = ["status = ?"];
-    const binds: (string | number | null)[] = [validated.status];
-    if (resolvedRating !== undefined) {
-      sets.push("rating = ?");
-      binds.push(resolvedRating);
-    }
     await db
       .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
       .bind(...binds, matched.scan_id)
@@ -469,6 +503,11 @@ importRoutes.post("/match", async (c) => {
         language: matched.language,
         work_id: matched.work_id,
       },
+      resolved: {
+        status: validated.status,
+        rating: resolvedRating !== undefined ? resolvedRating : matched.rating,
+        owning_status: matched.owning_status,
+      },
       previous: {
         status: matched.status,
         rating: matched.rating,
@@ -476,6 +515,12 @@ importRoutes.post("/match", async (c) => {
       },
       confidence: match.score,
     });
+
+    // Keep the in-memory row current: if a later row in this same batch (e.g. a duplicate CSV
+    // entry) matches the same scan, its `previous` must reflect this write, not the pre-batch
+    // snapshot — otherwise undoing the later row would also revert this one.
+    matched.status = validated.status;
+    if (resolvedRating !== undefined) matched.rating = resolvedRating;
   }
 
   return c.json({ results });

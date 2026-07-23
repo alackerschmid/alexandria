@@ -18,8 +18,8 @@ import {
   MATCHED_GRID,
   MATCHED_ROW_PADDING,
 } from "@/components/import/matched-grid";
-import { STATUS_ORDER } from "@/composables/useBookStatus";
-import { OWNING_ORDER } from "@/composables/useOwningStatus";
+import { useBookStatus } from "@/composables/useBookStatus";
+import { useOwningStatus } from "@/composables/useOwningStatus";
 import { useImportStore } from "@/stores/import";
 import type { ImportLogEntry, ImportedItem, ReviewItem } from "@/stores/import";
 import { DEFAULT_SHELF_MAPPING } from "@/utils/goodreads";
@@ -99,10 +99,8 @@ async function onFileChange(e: Event) {
 
 // ── Confirm ────────────────────────────────────────────────────────────────────
 
-const statusLabelFor = (s: string) =>
-  (STATUS_ORDER as readonly string[]).includes(s) ? t(`book.${s}`) : s;
-const owningLabelFor = (o: string) =>
-  (OWNING_ORDER as readonly string[]).includes(o) ? t(`owning.${o}`) : o;
+const { statusLabels } = useBookStatus();
+const { owningLabels } = useOwningStatus();
 
 // Auto-expanded only when the export has a shelf the default mapping doesn't know (where
 // "unread/owned" is a guess the user should see), so a standard three-shelf export stays a
@@ -392,8 +390,8 @@ const tabs = computed(() => [
                 t("import.confirm.shelf_line", {
                   shelf,
                   count,
-                  status: statusLabelFor(mapping[shelf]?.status),
-                  owning: owningLabelFor(mapping[shelf]?.owning_status),
+                  status: statusLabels[mapping[shelf]?.status],
+                  owning: owningLabels[mapping[shelf]?.owning_status],
                 })
               }}
             </p>
