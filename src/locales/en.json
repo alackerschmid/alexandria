@@ -431,6 +431,7 @@
     "confirm": {
       "summary": "{books} books from {shelves} shelves",
       "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "mapping_heading": "Shelf mapping",
       "choose_another_file": "Choose a different file",
       "update_existing": "Update books already in my library",
       "update_existing_sub": "Apply status and rating to books you've already scanned, instead of skipping them as duplicates.",

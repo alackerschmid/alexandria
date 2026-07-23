@@ -380,21 +380,53 @@ const tabs = computed(() => [
             </button>
           </div>
 
-          <div class="border border-charcoal-border divide-y divide-charcoal-border">
-            <p
-              v-for="[shelf, count] in shelfCounts"
-              :key="shelf"
-              class="text-[13px] text-text-primary px-4 py-3"
+          <!-- Shelf mapping: collapsed summary, replaced in place by the editable panel -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-4">
+              <p
+                class="font-mono text-[10px] tracking-[0.14em] uppercase text-text-secondary/70"
+              >
+                {{ t("import.confirm.mapping_heading") }}
+              </p>
+              <button
+                type="button"
+                :aria-expanded="mappingExpanded"
+                class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-text-primary border border-control-border px-3 py-1.5 hover:border-primary hover:text-primary transition-colors"
+                @click="mappingExpanded = !mappingExpanded"
+              >
+                {{
+                  mappingExpanded
+                    ? t("import.confirm.hide_mapping")
+                    : t("import.confirm.adjust_mapping")
+                }}
+              </button>
+            </div>
+
+            <div
+              v-if="!mappingExpanded"
+              class="border border-charcoal-border divide-y divide-charcoal-border"
             >
-              {{
-                t("import.confirm.shelf_line", {
-                  shelf,
-                  count,
-                  status: statusLabels[mapping[shelf]?.status],
-                  owning: owningLabels[mapping[shelf]?.owning_status],
-                })
-              }}
-            </p>
+              <p
+                v-for="[shelf, count] in shelfCounts"
+                :key="shelf"
+                class="text-[13px] text-text-primary px-4 py-3"
+              >
+                {{
+                  t("import.confirm.shelf_line", {
+                    shelf,
+                    count,
+                    status: statusLabels[mapping[shelf]?.status],
+                    owning: owningLabels[mapping[shelf]?.owning_status],
+                  })
+                }}
+              </p>
+            </div>
+            <ShelfMappingPanel
+              v-else
+              :shelf-counts="shelfCounts"
+              :mapping="mapping"
+              @update-mapping="setMapping"
+            />
           </div>
 
           <button
@@ -430,27 +462,6 @@ const tabs = computed(() => [
             </span>
             <AppToggle :model-value="importShelvesAsTags" />
           </button>
-
-          <div>
-            <button
-              type="button"
-              class="font-mono text-[10px] tracking-[0.1em] uppercase text-text-secondary hover:text-text-primary transition-colors"
-              @click="mappingExpanded = !mappingExpanded"
-            >
-              {{
-                mappingExpanded
-                  ? t("import.confirm.hide_mapping")
-                  : t("import.confirm.adjust_mapping")
-              }}
-            </button>
-            <div v-if="mappingExpanded" class="mt-3">
-              <ShelfMappingPanel
-                :shelf-counts="shelfCounts"
-                :mapping="mapping"
-                @update-mapping="setMapping"
-              />
-            </div>
-          </div>
 
           <AppButton
             variant="primary"

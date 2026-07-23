@@ -431,6 +431,7 @@
     "confirm": {
       "summary": "{books} Bücher aus {shelves} Regalen",
       "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "mapping_heading": "Regal-Zuordnung",
       "choose_another_file": "Andere Datei wählen",
       "update_existing": "Bereits vorhandene Bücher aktualisieren",
       "update_existing_sub": "Status und Bewertung auf bereits gescannte Bücher anwenden, statt sie als Duplikate zu überspringen.",
