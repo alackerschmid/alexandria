@@ -5,15 +5,7 @@ dist
 .dev.vars
 worker/.dev.vars
 .wrangler
-look-at-the-current-soft-crescent.md
-wikidata-series-lookup.md
-Library - Search variants.dc.html
-Settings.dc.html
 worker/*.sql
-performance-gains.md
-library-rework.md
-worker/schema.sql
-Library.dc (1).html
-create-a-plan-for-transient-naur.md
 *.csv
+*.dc.html
 .playwright-mcp
