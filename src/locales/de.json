@@ -1,5 +1,9 @@
 {
   "app_name": "Die Bibliothek von Alexandria",
+  "toggle": {
+    "on": "AN",
+    "off": "AUS"
+  },
   "header": {
     "account_menu": "Kontomenü"
   },
@@ -402,22 +406,50 @@
   "import": {
     "heading": "Aus Goodreads importieren.",
     "subheading": "Lade deinen Goodreads-Bibliotheksexport hoch, um deine Bücher in Alexandria zu übernehmen.",
-    "leave_confirm": "Ein Import läuft noch. Diese Seite trotzdem verlassen?",
+    "paused": {
+      "heading": "Import pausiert",
+      "description": "„{fileName}“ wurde noch importiert, als dieser Tab zuletzt geschlossen oder neu geladen wurde — {imported} von {total} Büchern wurden bis dahin bearbeitet.",
+      "resume": "Import fortsetzen",
+      "discard": "Verwerfen",
+      "discard_confirm": "Diese Import-Sitzung verwerfen? Bereits hinzugefügte oder aktualisierte Bücher bleiben in deiner Bibliothek — du verfolgst nur den Fortschritt dieses Imports nicht mehr weiter."
+    },
+    "chip": {
+      "running": "Import läuft: {done} / {total}",
+      "paused": "Import pausiert — zum Fortsetzen tippen",
+      "complete": "Import abgeschlossen — {n} Bücher hinzugefügt"
+    },
     "upload": {
       "instructions": "Exportiere deine Bibliothek bei Goodreads (Meine Bücher → Import/Export) und lade die CSV-Datei hier hoch.",
       "choose_file": "Datei auswählen",
-      "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast."
+      "not_goodreads_export": "Das sieht nicht nach einem Goodreads-Export aus — prüfe, ob du die richtige Datei hochgeladen hast.",
+      "parse_failed": "Diese Datei konnte nicht gelesen werden — prüfe, ob es sich um einen gültigen CSV-Export handelt, und versuche es erneut.",
+      "empty_file": "Diese Datei enthält keine Bücher."
     },
     "mapping": {
-      "instructions": "Prüfe vor dem Import, wie jedes Goodreads-Regal auf Status und Besitzstatus abgebildet wird.",
-      "count": "{n} Bücher",
+      "count": "{n} Bücher"
+    },
+    "confirm": {
+      "summary": "{books} Bücher aus {shelves} Regalen",
+      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "mapping_heading": "Regal-Zuordnung",
+      "choose_another_file": "Andere Datei wählen",
+      "update_existing": "Bereits vorhandene Bücher aktualisieren",
+      "update_existing_sub": "Status und Bewertung auf bereits gescannte Bücher anwenden, statt sie als Duplikate zu überspringen.",
+      "shelves_as_tags": "Goodreads-Regale als Tags importieren",
+      "shelves_as_tags_sub": "Deine Goodreads-Bücherregale in ein benutzerdefiniertes Feld \"Regale\" bei jedem neu hinzugefügten Buch speichern.",
+      "adjust_mapping": "Regal-Zuordnung anpassen",
+      "hide_mapping": "Regal-Zuordnung ausblenden",
       "start": "Import starten"
     },
     "importing": {
       "progress": "{done} von {total} verarbeitet",
       "imported": "Importiert: {n}",
+      "updated": "Aktualisiert: {n}",
       "duplicate": "Duplikat: {n}",
-      "failed": "Fehlgeschlagen: {n}"
+      "failed": "Fehlgeschlagen: {n}",
+      "needs_review": "Zu prüfen: {n}",
+      "cancel": "Abbrechen",
+      "cancelling": "Wird abgebrochen…"
     },
     "header": {
       "eyebrow": "Import aus Goodreads",
@@ -452,6 +484,7 @@
       "skipped_note": "Übersprungen — wird nicht importiert",
       "reason_no_isbn": "Keine ISBN im Export — wähle eine Ausgabe",
       "reason_invalid_isbn": "ISBN nicht validierbar — wähle eine Ausgabe",
+      "reason_cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — wähle eine Ausgabe",
       "as_imported": "ISBN: {isbn} · wie aus Goodreads importiert",
       "search_placeholder": "Nach Titel, Autor oder ISBN suchen",
       "use_this": "Auswählen",
@@ -465,11 +498,19 @@
       "skip": "Dieses Buch überspringen"
     },
     "summary": {
-      "enrichment_note": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_small": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden in den nächsten Stunden automatisch ergänzt. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_medium": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden im Laufe des nächsten Tages automatisch ergänzt — dieser Import ist groß genug, um eine Weile zu dauern. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
+      "enrichment_note_large": "Zusätzliche Details (Genres, Reihen, Auszeichnungen) werden nach und nach ergänzt — bei einem Import dieser Größe kann das mehrere Tage dauern, da die Anreicherung über eine gemeinsame Warteschlange läuft. Bücher aus derselben Reihe oder demselben Werk können dabei zu einer Karte zusammengeführt werden.",
       "imported_empty": "Es wurden keine Bücher importiert.",
-      "cancel_confirm": "Alle {n} importierten Bücher entfernen? Das kann nicht rückgängig gemacht werden.",
+      "cancel_confirm": "Diesen Import abbrechen? {n} Bücher werden entfernt oder auf ihren vorherigen Stand zurückgesetzt. Das kann nicht rückgängig gemacht werden.",
+      "cancel_dialog_title": "Import abbrechen?",
+      "cancel_dialog_confirm": "Import abbrechen",
+      "cancel_dialog_dismiss": "Weiter prüfen",
       "card": {
         "remove": "Entfernen",
+        "undo": "Rückgängig",
+        "already_in_library": "Bereits in deiner Bibliothek — aktualisiert",
+        "matched_by_title": "Nach Titel zugeordnet — {pct}% Konfidenz",
         "unknown_publisher": "Verlag unbekannt",
         "error_duplicate": "Diese Ausgabe ist bereits in deiner Bibliothek.",
         "error_failed": "Ausgabe konnte nicht gewechselt werden — bitte erneut versuchen.",
@@ -484,13 +525,13 @@
         "filter_skipped": "Übersprungen",
         "empty": "Keine Bücher in dieser Kategorie.",
         "reason": {
-          "direct": "Importiert",
-          "review_match": "Importiert (bei der Überprüfung zugeordnet)",
           "in_file": "Duplikat — kommt zweimal im Export vor",
           "in_library": "Bereits in deiner Bibliothek",
           "request_failed": "Import fehlgeschlagen",
           "invalid_isbn": "Ungültige ISBN — übersprungen",
-          "no_isbn": "Keine ISBN — übersprungen"
+          "no_isbn": "Keine ISBN — übersprungen",
+          "unreadable_row": "Diese Zeile der Datei konnte nicht gelesen werden — übersprungen",
+          "cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — übersprungen"
         }
       }
     }

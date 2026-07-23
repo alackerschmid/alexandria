@@ -31,6 +31,30 @@ export async function findExistingScan(
   return !!dup;
 }
 
+export interface ExistingScan {
+  id: number;
+  status: string;
+  rating: number | null;
+  owning_status: string;
+}
+
+// Like findExistingScan, but returns the scan's id and current status/rating/owning_status
+// rather than a boolean — used by the Goodreads-import update-on-duplicate path, which needs to
+// both capture the pre-update state (for its Undo, and to show the client the scan's real
+// owning_status even though the update never touches it) and know which scan row to write to.
+export async function getExistingScan(
+  db: D1Database,
+  userId: number,
+  bookId: number,
+): Promise<ExistingScan | null> {
+  return db
+    .prepare(
+      "SELECT id, status, rating, owning_status FROM scans WHERE user_id = ? AND book_id = ?",
+    )
+    .bind(userId, bookId)
+    .first<ExistingScan>();
+}
+
 // D1 surfaces a UNIQUE constraint violation as a generic Error with this substring in its
 // message — there's no typed error class to check against.
 export function isUniqueConstraintError(e: unknown): boolean {
@@ -274,4 +298,64 @@ export const VALID_OWNING_STATUSES = [
 
 export function isValidRating(v: unknown): v is number {
   return Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10;
+}
+
+export interface ScanRatingUpdateInput {
+  /** True if this update includes a new status value (vs. leaving status untouched). */
+  hasStatus: boolean;
+  /** The status this update would result in — the incoming value if hasStatus, else the scan's
+   *  current stored status. Unused when neither hasStatus nor hasRating is set. */
+  effectiveStatus?: string;
+  /** True if this update includes an explicit rating value (a number, or null to clear it). */
+  hasRating: boolean;
+  rating?: number | null;
+}
+
+// Centralizes the status/rating invariant shared by PATCH /api/scans/:id and the Goodreads-
+// import update-on-duplicate path: a rating can only be non-null while the *effective* status is
+// "read", and changing status away from "read" without an explicit new rating silently clears
+// any existing rating (so a book no longer marked read can't still surface under "group by
+// rating"). Returns the rating value to write, or `undefined` if the rating column shouldn't be
+// touched by this update at all.
+export function resolveRatingForUpdate(
+  input: ScanRatingUpdateInput,
+): number | null | undefined {
+  const { hasStatus, effectiveStatus, hasRating, rating } = input;
+  if (hasRating) {
+    return effectiveStatus === "read" ? (rating ?? null) : null;
+  }
+  if (hasStatus && effectiveStatus !== "read") return null;
+  return undefined;
+}
+
+// Builds the SET clause + bind values for a scan status/owning/rating UPDATE, applying the shared
+// rating invariant (resolveRatingForUpdate) in one place so every write path — PATCH /api/scans/:id
+// and both Goodreads-import update paths — emits the same SQL. A column is included only when its
+// value is provided; `rating` is included whenever resolveRatingForUpdate yields a concrete value
+// (a new rating, or an explicit clear). Callers append their own WHERE binds after `binds`.
+export function buildScanUpdate(args: {
+  status?: string;
+  owningStatus?: string;
+  ratingInput: ScanRatingUpdateInput;
+}): {
+  sets: string[];
+  binds: (string | number | null)[];
+  resolvedRating: number | null | undefined;
+} {
+  const sets: string[] = [];
+  const binds: (string | number | null)[] = [];
+  if (args.status !== undefined) {
+    sets.push("status = ?");
+    binds.push(args.status);
+  }
+  if (args.owningStatus !== undefined) {
+    sets.push("owning_status = ?");
+    binds.push(args.owningStatus);
+  }
+  const resolvedRating = resolveRatingForUpdate(args.ratingInput);
+  if (resolvedRating !== undefined) {
+    sets.push("rating = ?");
+    binds.push(resolvedRating);
+  }
+  return { sets, binds, resolvedRating };
 }

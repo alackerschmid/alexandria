@@ -1,48 +1,58 @@
 <script lang="ts" setup>
-import { ref, computed } from "vue";
-import { useRouter, onBeforeRouteLeave } from "vue-router";
+import { ref, computed, watch } from "vue";
+import { storeToRefs } from "pinia";
+import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "@/components/AppHeader.vue";
 import AppButton from "@/components/AppButton.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
+import AppToggle from "@/components/AppToggle.vue";
 import ImportHeaderBar from "@/components/import/ImportHeaderBar.vue";
 import MatchedRow from "@/components/import/MatchedRow.vue";
 import AttentionRow from "@/components/import/AttentionRow.vue";
 import ResolveDrawer from "@/components/import/ResolveDrawer.vue";
+import ShelfMappingPanel from "@/components/import/ShelfMappingPanel.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import {
   MATCHED_GRID,
   MATCHED_ROW_PADDING,
 } from "@/components/import/matched-grid";
-import { STATUS_ORDER } from "@/composables/useBookStatus";
-import { OWNING_ORDER } from "@/composables/useOwningStatus";
-import { useGoodreadsImport } from "@/composables/useGoodreadsImport";
-import type {
-  ImportLogEntry,
-  ImportedItem,
-  ReviewItem,
-} from "@/composables/useGoodreadsImport";
-import type { ShelfMapping } from "@/utils/goodreads";
+import { useBookStatus } from "@/composables/useBookStatus";
+import { useOwningStatus } from "@/composables/useOwningStatus";
+import { useImportStore } from "@/stores/import";
+import type { ImportLogEntry, ImportedItem, ReviewItem } from "@/stores/import";
+import { DEFAULT_SHELF_MAPPING } from "@/utils/goodreads";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const { t } = useI18n();
 const router = useRouter();
+const importStore = useImportStore();
 
 const {
   step,
   error,
   fileName,
+  rows,
   shelfCounts,
   mapping,
+  updateExisting,
+  importShelvesAsTags,
   counts,
   reviewQueue,
+  log,
   notImported,
   importedItems,
   reviewRemaining,
-  isInProgress,
+  sessionPaused,
+  cancelRequested,
+} = storeToRefs(importStore);
+const {
   loadFile,
   setMapping,
   startImport,
+  cancelImporting,
+  discardSession,
   ensureCandidatesLoaded,
   retryCandidates,
   searchReviewCandidates,
@@ -57,17 +67,15 @@ const {
   setImportedOwning,
   setImportedRating,
   removeImportedItem,
+  undoImportedUpdate,
   cancelImport,
-} = useGoodreadsImport();
+  finalizeImport,
+} = importStore;
 
-// Set when the user leaves deliberately (finalize / cancel) so the in-progress guard below
-// doesn't prompt on the very navigation it just asked for.
-const leavingIntentionally = ref(false);
-
-onBeforeRouteLeave(() => {
-  if (leavingIntentionally.value || !isInProgress.value) return true;
-  return window.confirm(t("import.leave_confirm"));
-});
+// The import now runs in the background (see stores/import.ts) and survives leaving this page —
+// there is deliberately no leave guard here anymore. A resumable session is offered via
+// sessionPaused below, and the global ImportProgressChip (App.vue) tracks an active run from
+// anywhere else in the app.
 
 // ── Upload ─────────────────────────────────────────────────────────────────────
 
@@ -75,42 +83,76 @@ const fileInputEl = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 
 async function onFileChange(e: Event) {
-  const file = (e.target as HTMLInputElement).files?.[0];
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
   if (!file) return;
   uploading.value = true;
   try {
     await loadFile(file);
   } finally {
     uploading.value = false;
+    // Clears the picked file so re-selecting the *same* file after an error fires `change`
+    // again — the browser otherwise treats an unchanged selection as a no-op event.
+    input.value = "";
   }
 }
 
-// ── Mapping ────────────────────────────────────────────────────────────────────
+// ── Confirm ────────────────────────────────────────────────────────────────────
 
-const statusOptions = computed(() =>
-  STATUS_ORDER.map((s) => ({ value: s, label: t(`book.${s}`) })),
-);
-const owningOptions = computed(() =>
-  OWNING_ORDER.map((o) => ({ value: o, label: t(`owning.${o}`) })),
-);
+const { statusLabels } = useBookStatus();
+const { owningLabels } = useOwningStatus();
 
-function updateStatus(shelf: string, current: ShelfMapping, status: string) {
-  setMapping(shelf, { ...current, status: status as ReadStatus });
-}
-function updateOwning(shelf: string, current: ShelfMapping, owning_status: string) {
-  setMapping(shelf, { ...current, owning_status: owning_status as OwningStatus });
+// Auto-expanded only when the export has a shelf the default mapping doesn't know (where
+// "unread/owned" is a guess the user should see), so a standard three-shelf export stays a
+// one-click path. Re-evaluated each time a file is (re)loaded, not just once on mount.
+const mappingExpanded = ref(false);
+watch(step, (s) => {
+  if (s === "confirm") {
+    mappingExpanded.value = [...shelfCounts.value.keys()].some(
+      (shelf) => !(shelf in DEFAULT_SHELF_MAPPING),
+    );
+  }
+});
+
+function chooseAnotherFile() {
+  importStore.reset();
 }
 
 // ── Importing progress ────────────────────────────────────────────────────────
 
+// Only counts outcomes the send loop itself produced this run — NOT the in-file duplicates or
+// unreadable rows loadFile already logged before startImport began (those would otherwise start
+// the bar above 0%, since counts.duplicate/failed also include them for the "Not imported" tab's
+// filters). A row that lands in the review queue counts too: startImport is done deciding its
+// fate for this run even though a human still has to resolve it, so leaving it uncounted would
+// keep the bar short of 100% whenever any row needs review.
 const processed = computed(
-  () => counts.value.imported + counts.value.duplicate + counts.value.failed,
+  () =>
+    counts.value.imported +
+    counts.value.updated +
+    log.value.filter((e) => e.reason === "in_library").length +
+    log.value.filter((e) => e.reason === "request_failed").length +
+    reviewQueue.value.length,
 );
 const progressPct = computed(() =>
   counts.value.total > 0
     ? Math.round((processed.value / counts.value.total) * 100)
     : 0,
 );
+
+// ── Review screen: enrichment estimate ─────────────────────────────────────────
+
+// Only newly created scans mint new `works` rows for the sweeper to enrich (an updated scan's
+// book/work already existed) — the estimate scales off that, not the total imported+updated
+// count. Thresholds are rough (the sweeper's real throughput also depends on series-membership
+// amplification and how busy the shared queue already is), but a scaling estimate beats a fixed
+// "next few hours" that's wrong by orders of magnitude for a large import.
+const enrichmentNoteKey = computed(() => {
+  const n = counts.value.imported;
+  if (n <= 50) return "import.summary.enrichment_note_small";
+  if (n <= 300) return "import.summary.enrichment_note_medium";
+  return "import.summary.enrichment_note_large";
+});
 
 // ── Review screen: tabs ────────────────────────────────────────────────────────
 
@@ -119,19 +161,32 @@ type ReviewTab = "matched" | "attention" | "not_imported";
 const activeTab = ref<ReviewTab>("matched");
 
 function goToLibrary() {
-  leavingIntentionally.value = true;
+  finalizeImport();
   router.push({ name: "library" });
 }
 
-async function onCancelImport() {
-  if (
-    !window.confirm(
-      t("import.summary.cancel_confirm", { n: importedItems.value.length }),
-    )
-  )
-    return;
-  await cancelImport();
-  goToLibrary();
+function onDiscardSession() {
+  if (window.confirm(t("import.paused.discard_confirm"))) discardSession();
+}
+
+const cancelDialogOpen = ref(false);
+const cancelling = ref(false);
+
+function onCancelImport() {
+  cancelDialogOpen.value = true;
+}
+
+async function confirmCancelImport() {
+  cancelling.value = true;
+  try {
+    // cancelImport() already resets the session (nothing left to review once every row is
+    // reverted or removed) — no separate finalize call needed.
+    await cancelImport();
+    cancelDialogOpen.value = false;
+    router.push({ name: "library" });
+  } finally {
+    cancelling.value = false;
+  }
 }
 
 // ── Review screen: rating ──────────────────────────────────────────────────────
@@ -226,8 +281,39 @@ const tabs = computed(() => [
     <AppHeader />
 
     <main class="flex-1 px-6 md:px-12 pt-8 md:pt-10 pb-28 md:pb-10">
+      <!-- ── Paused: rehydrated after a reload mid-run ─────────────────────── -->
       <div
-        v-if="step !== 'review'"
+        v-if="sessionPaused"
+        class="max-w-[640px] mx-auto flex flex-col gap-6"
+      >
+        <div>
+          <h1
+            class="font-heading text-[30px] md:text-[34px] font-bold text-text-primary leading-none mb-2"
+          >
+            {{ t("import.paused.heading") }}
+          </h1>
+          <p class="text-[13px] text-text-secondary">
+            {{
+              t("import.paused.description", {
+                fileName,
+                imported: counts.imported + counts.updated,
+                total: counts.total,
+              })
+            }}
+          </p>
+        </div>
+        <div class="flex gap-3">
+          <AppButton variant="primary" size="sm" @click="startImport">
+            {{ t("import.paused.resume") }}
+          </AppButton>
+          <AppButton variant="secondary" size="sm" @click="onDiscardSession">
+            {{ t("import.paused.discard") }}
+          </AppButton>
+        </div>
+      </div>
+
+      <div
+        v-else-if="step !== 'review'"
         class="max-w-[640px] mx-auto flex flex-col gap-8"
       >
         <div>
@@ -266,72 +352,124 @@ const tabs = computed(() => [
             />
           </div>
           <p
-            v-if="error === 'not_goodreads_export'"
+            v-if="error"
             class="text-[12px]"
             style="color: rgb(var(--v-theme-error))"
           >
-            {{ t("import.upload.not_goodreads_export") }}
+            {{ t(`import.upload.${error}`) }}
           </p>
         </section>
 
-        <!-- ── Shelf mapping ──────────────────────────────────────────────── -->
-        <section v-else-if="step === 'mapping'" class="flex flex-col gap-5">
-          <p class="text-[13px] text-text-secondary">
-            {{ t("import.mapping.instructions") }}
-          </p>
-          <div class="border border-charcoal-border divide-y divide-charcoal-border">
-            <div
-              v-for="[shelf, count] in shelfCounts"
-              :key="shelf"
-              class="flex flex-col gap-3 p-4"
+        <!-- ── Confirm ────────────────────────────────────────────────────── -->
+        <section v-else-if="step === 'confirm'" class="flex flex-col gap-5">
+          <div class="flex items-center justify-between gap-4">
+            <p class="text-[13px] text-text-secondary">
+              {{
+                t("import.confirm.summary", {
+                  books: rows.length,
+                  shelves: shelfCounts.size,
+                })
+              }}
+            </p>
+            <button
+              type="button"
+              class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-text-secondary hover:text-text-primary transition-colors"
+              @click="chooseAnotherFile"
             >
-              <div>
-                <p class="text-[14px] text-text-primary truncate">{{ shelf }}</p>
-                <p class="text-[11px] text-text-secondary">
-                  {{ t("import.mapping.count", { n: count }) }}
-                </p>
-              </div>
-              <div class="flex flex-col sm:flex-row gap-4">
-                <div>
-                  <p
-                    class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                  >
-                    {{ t("library.filter_status") }}
-                  </p>
-                  <AppSegmented
-                    :options="statusOptions"
-                    :model-value="mapping[shelf]?.status"
-                    size="sm"
-                    @update:model-value="
-                      (v) => updateStatus(shelf, mapping[shelf], v)
-                    "
-                  />
-                </div>
-                <div>
-                  <p
-                    class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                  >
-                    {{ t("owning.label") }}
-                  </p>
-                  <AppSegmented
-                    :options="owningOptions"
-                    :model-value="mapping[shelf]?.owning_status"
-                    size="sm"
-                    @update:model-value="
-                      (v) => updateOwning(shelf, mapping[shelf], v)
-                    "
-                  />
-                </div>
-              </div>
-            </div>
+              {{ t("import.confirm.choose_another_file") }}
+            </button>
           </div>
+
+          <!-- Shelf mapping: collapsed summary, replaced in place by the editable panel -->
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center justify-between gap-4">
+              <p
+                class="font-mono text-[10px] tracking-[0.14em] uppercase text-text-secondary/70"
+              >
+                {{ t("import.confirm.mapping_heading") }}
+              </p>
+              <button
+                type="button"
+                :aria-expanded="mappingExpanded"
+                class="flex-none font-mono text-[10px] tracking-[0.1em] uppercase text-text-primary border border-control-border px-3 py-1.5 hover:border-primary hover:text-primary transition-colors"
+                @click="mappingExpanded = !mappingExpanded"
+              >
+                {{
+                  mappingExpanded
+                    ? t("import.confirm.hide_mapping")
+                    : t("import.confirm.adjust_mapping")
+                }}
+              </button>
+            </div>
+
+            <div
+              v-if="!mappingExpanded"
+              class="border border-charcoal-border divide-y divide-charcoal-border"
+            >
+              <p
+                v-for="[shelf, count] in shelfCounts"
+                :key="shelf"
+                class="text-[13px] text-text-primary px-4 py-3"
+              >
+                {{
+                  t("import.confirm.shelf_line", {
+                    shelf,
+                    count,
+                    status: statusLabels[mapping[shelf]?.status],
+                    owning: owningLabels[mapping[shelf]?.owning_status],
+                  })
+                }}
+              </p>
+            </div>
+            <ShelfMappingPanel
+              v-else
+              :shelf-counts="shelfCounts"
+              :mapping="mapping"
+              @update-mapping="setMapping"
+            />
+          </div>
+
+          <button
+            role="switch"
+            :aria-checked="updateExisting"
+            class="flex items-center justify-between gap-5 w-full text-left border border-charcoal-border px-4 py-3.5"
+            @click="updateExisting = !updateExisting"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs text-text-primary">{{
+                t("import.confirm.update_existing")
+              }}</span>
+              <span class="block text-[10px] text-text-secondary mt-0.5 leading-snug">{{
+                t("import.confirm.update_existing_sub")
+              }}</span>
+            </span>
+            <AppToggle :model-value="updateExisting" />
+          </button>
+
+          <button
+            role="switch"
+            :aria-checked="importShelvesAsTags"
+            class="flex items-center justify-between gap-5 w-full text-left border border-charcoal-border px-4 py-3.5"
+            @click="importShelvesAsTags = !importShelvesAsTags"
+          >
+            <span class="min-w-0">
+              <span class="block text-xs text-text-primary">{{
+                t("import.confirm.shelves_as_tags")
+              }}</span>
+              <span class="block text-[10px] text-text-secondary mt-0.5 leading-snug">{{
+                t("import.confirm.shelves_as_tags_sub")
+              }}</span>
+            </span>
+            <AppToggle :model-value="importShelvesAsTags" />
+          </button>
+
           <AppButton
             variant="primary"
             size="sm"
             class="self-start"
             @click="startImport"
           >
-            {{ t("import.mapping.start") }}
+            {{ t("import.confirm.start") }}
           </AppButton>
         </section>
 
@@ -346,11 +484,26 @@ const tabs = computed(() => [
           <p class="text-[12px] text-text-secondary">
             {{ t("import.importing.progress", { done: processed, total: counts.total }) }}
           </p>
-          <div class="grid grid-cols-3 gap-3 font-mono text-[11px] text-text-secondary">
+          <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono text-[11px] text-text-secondary">
             <span>{{ t("import.importing.imported", { n: counts.imported }) }}</span>
+            <span>{{ t("import.importing.updated", { n: counts.updated }) }}</span>
             <span>{{ t("import.importing.duplicate", { n: counts.duplicate }) }}</span>
             <span>{{ t("import.importing.failed", { n: counts.failed }) }}</span>
+            <span>{{ t("import.importing.needs_review", { n: reviewQueue.length }) }}</span>
           </div>
+          <AppButton
+            variant="secondary"
+            size="sm"
+            class="self-start"
+            :disabled="cancelRequested"
+            @click="cancelImporting"
+          >
+            {{
+              cancelRequested
+                ? t("import.importing.cancelling")
+                : t("import.importing.cancel")
+            }}
+          </AppButton>
         </section>
 
       </div>
@@ -372,7 +525,7 @@ const tabs = computed(() => [
         <p
           class="px-6 md:px-8 py-3 text-[11px] text-text-secondary leading-relaxed border-b border-charcoal-border"
         >
-          {{ t("import.summary.enrichment_note") }}
+          {{ t(enrichmentNoteKey) }}
         </p>
 
         <div
@@ -425,10 +578,11 @@ const tabs = computed(() => [
                 @close-edition="closeImportedEdition(item)"
                 @retry-candidates="retryImportedCandidates(item)"
                 @change-edition="(isbn) => changeImportedEdition(item, isbn)"
-                @set-status="(s: ReadStatus) => setImportedStatus(item, s)"
-                @set-owning="(o: OwningStatus) => setImportedOwning(item, o)"
+                @set-status="async (s: ReadStatus) => await setImportedStatus(item, s)"
+                @set-owning="async (o: OwningStatus) => await setImportedOwning(item, o)"
                 @open-rating="openRating(item)"
                 @remove="removeImportedItem(item)"
+                @undo="undoImportedUpdate(item)"
               />
             </div>
           </template>
@@ -508,15 +662,26 @@ const tabs = computed(() => [
       @set-rating="onSetRating"
     />
 
+    <ConfirmDialog
+      v-model="cancelDialogOpen"
+      danger
+      :title="t('import.summary.cancel_dialog_title')"
+      :confirm-label="t('import.summary.cancel_dialog_confirm')"
+      :cancel-label="t('import.summary.cancel_dialog_dismiss')"
+      :loading="cancelling"
+      @confirm="confirmCancelImport"
+    >
+      {{ t("import.summary.cancel_confirm", { n: importedItems.length }) }}
+    </ConfirmDialog>
+
     <ResolveDrawer
-      v-if="resolveItem"
       :item="resolveItem"
       @close="closeResolve"
       @update:query="(q) => (resolveItem!.searchQuery = q)"
-      @search="searchReviewCandidates(resolveItem)"
-      @retry="retryCandidates(resolveItem)"
+      @search="searchReviewCandidates(resolveItem!)"
+      @retry="retryCandidates(resolveItem!)"
       @pick="(isbn) => onPickCandidate(resolveItem!, isbn)"
-      @skip="onSkip(resolveItem)"
+      @skip="onSkip(resolveItem!)"
     />
   </div>
 </template>

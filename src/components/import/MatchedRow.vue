@@ -3,11 +3,12 @@ import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { useI18n } from "vue-i18n";
 import CyclePill from "@/components/CyclePill.vue";
 import RatingStars from "@/components/RatingStars.vue";
+import CoverImage from "@/components/CoverImage.vue";
 import { STATUS_ORDER, STATUS_META } from "@/composables/useBookStatus";
 import { OWNING_ORDER, OWNING_META } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
 import { MATCHED_GRID, MATCHED_ROW_PADDING } from "./matched-grid";
-import type { ImportedItem } from "@/composables/useGoodreadsImport";
+import type { ImportedItem } from "@/stores/import";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 const props = defineProps<{ item: ImportedItem }>();
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   "retry-candidates": [];
   "change-edition": [isbn: string];
   remove: [];
+  undo: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -74,6 +76,13 @@ watch(
 
 onBeforeUnmount(unbind);
 
+// Separate handler (rather than a ternary inline in the template) because TS can't unify the
+// distinct per-event tuple overloads of `emit` across a conditional event name.
+function onRemoveOrUndo() {
+  if (props.item.preexisting) emit("undo");
+  else emit("remove");
+}
+
 const editionLabel = computed(() => {
   const publisher =
     props.item.publisher || t("import.summary.card.unknown_publisher");
@@ -87,13 +96,15 @@ const editionLabel = computed(() => {
   <div class="py-3" :class="MATCHED_ROW_PADDING">
     <div class="grid" :class="MATCHED_GRID">
       <!-- cover -->
-      <img
-        v-if="item.coverUrl"
-        :src="item.coverUrl"
-        alt=""
-        class="w-10 h-[60px] object-cover flex-none"
-      />
-      <div v-else class="w-10 h-[60px] bg-charcoal-light flex-none" />
+      <div class="w-10 h-[60px] flex-none relative overflow-hidden bg-charcoal-light">
+        <CoverImage
+          :cover-url="item.coverUrl"
+          :title="item.title"
+          text-class="text-sm"
+          :icon-size="14"
+          class="w-full h-full object-cover"
+        />
+      </div>
 
       <!-- title / author -->
       <div class="min-w-0">
@@ -104,6 +115,22 @@ const editionLabel = computed(() => {
         </p>
         <p class="text-[10.5px] text-text-secondary truncate mt-0.5">
           {{ item.author || t("book.unknown_author") }}
+        </p>
+        <p
+          v-if="item.matchedByTitle"
+          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
+        >
+          {{
+            t("import.summary.card.matched_by_title", {
+              pct: Math.round((item.matchConfidence ?? 0) * 100),
+            })
+          }}
+        </p>
+        <p
+          v-else-if="item.preexisting"
+          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
+        >
+          {{ t("import.summary.card.already_in_library") }}
         </p>
       </div>
 
@@ -159,13 +186,15 @@ const editionLabel = computed(() => {
               "
               @click="emit('change-edition', candidate.isbn)"
             >
-              <img
-                v-if="candidate.cover_url"
-                :src="candidate.cover_url"
-                alt=""
-                class="w-5 h-7 object-cover flex-none"
-              />
-              <div v-else class="w-5 h-7 bg-charcoal flex-none" />
+              <div class="w-5 h-7 flex-none relative overflow-hidden bg-charcoal">
+                <CoverImage
+                  :cover-url="candidate.cover_url"
+                  :title="candidate.title"
+                  text-class="text-[9px]"
+                  :icon-size="8"
+                  class="w-full h-full object-cover"
+                />
+              </div>
               <div class="min-w-0">
                 <p class="text-[11px] text-text-primary truncate">
                   {{ candidate.title }}
@@ -240,6 +269,7 @@ const editionLabel = computed(() => {
           :options="statusOptions"
           :model-value="item.status"
           :title="t('library.filter_status')"
+          :disabled="item.busy"
           @update:model-value="(v) => emit('set-status', v as ReadStatus)"
         />
       </div>
@@ -253,25 +283,29 @@ const editionLabel = computed(() => {
           :options="owningOptions"
           :model-value="item.owningStatus"
           :title="t('owning.label')"
+          :disabled="item.busy"
           @update:model-value="(v) => emit('set-owning', v as OwningStatus)"
         />
       </div>
 
-      <!-- remove -->
+      <!-- remove / undo: a preexisting row predates the import, so its destructive action
+           restores the scan's prior status/rating instead of deleting it -->
       <button
         type="button"
         :disabled="item.busy"
-        :title="t('import.summary.card.remove')"
-        :aria-label="t('import.summary.card.remove')"
+        :title="t(item.preexisting ? 'import.summary.card.undo' : 'import.summary.card.remove')"
+        :aria-label="t(item.preexisting ? 'import.summary.card.undo' : 'import.summary.card.remove')"
         class="col-span-2 lg:col-span-1 justify-self-start lg:justify-self-center text-text-secondary/60 hover:text-error transition-colors disabled:opacity-40"
-        @click="emit('remove')"
+        @click="onRemoveOrUndo"
       >
         <span
           class="lg:hidden font-mono text-[10px] tracking-[0.16em] uppercase"
         >
-          {{ t("import.summary.card.remove") }}
+          {{ t(item.preexisting ? "import.summary.card.undo" : "import.summary.card.remove") }}
         </span>
-        <span class="hidden lg:inline text-[16px] leading-none">×</span>
+        <span class="hidden lg:inline text-[16px] leading-none">{{
+          item.preexisting ? "↺" : "×"
+        }}</span>
       </button>
     </div>
 

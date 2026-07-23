@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import AppButton from "@/components/AppButton.vue";
 import { STATUS_META } from "@/composables/useBookStatus";
-import type { ReviewItem } from "@/composables/useGoodreadsImport";
+import type { ReviewItem } from "@/stores/import";
 
 const props = defineProps<{ item: ReviewItem }>();
 defineEmits<{ resolve: []; undo: [] }>();

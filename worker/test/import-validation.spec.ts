@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateImportRow,
+  validateMatchRow,
   normalizeCreatedAt,
 } from "../src/import-validation";
 
@@ -53,6 +54,48 @@ describe("validateImportRow", () => {
     expect(result.row.owning_status).toBe("owned");
   });
 
+  it("overrides a shelf-mapped owning_status with 'owned' when owned_copies is positive", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      owning_status: "want",
+      owned_copies: 1,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.owning_status).toBe("owned");
+  });
+
+  it("leaves the shelf-mapped owning_status alone when owned_copies is 0 or absent", () => {
+    const zero = validateImportRow({
+      isbn: "9780306406157",
+      owning_status: "want",
+      owned_copies: 0,
+    });
+    const absent = validateImportRow({ isbn: "9780306406157", owning_status: "want" });
+    expect(zero.ok && zero.row.owning_status).toBe("want");
+    expect(absent.ok && absent.row.owning_status).toBe("want");
+  });
+
+  it("trims, dedupes and caps the shelves list", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      shelves: [" to-read ", "favorites", "to-read", "", "  "],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.shelves).toEqual(["to-read", "favorites"]);
+  });
+
+  it("returns an empty shelves array when the field is missing or not an array", () => {
+    const missing = validateImportRow({ isbn: "9780306406157" });
+    const wrongType = validateImportRow({
+      isbn: "9780306406157",
+      shelves: "to-read" as any,
+    });
+    expect(missing.ok && missing.row.shelves).toEqual([]);
+    expect(wrongType.ok && wrongType.row.shelves).toEqual([]);
+  });
+
   it("drops the rating when status is not read", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
@@ -95,6 +138,73 @@ describe("validateImportRow", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.row.rating).toBeNull();
   });
+
+  it("keeps rawRating populated even when status isn't read (unlike the status-gated rating)", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      status: "to-read" as any,
+      rating: 8,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.rating).toBeNull();
+    expect(result.row.rawRating).toBe(8);
+  });
+
+  it("drops an out-of-range rawRating regardless of status", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      status: "read",
+      rating: 11,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.rawRating).toBeNull();
+  });
+
+  it("normalizes title/author/publisher/publish_date/number_of_pages, trimming and capping length", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      title: "  Dune  ",
+      author: "  Frank Herbert ",
+      publisher: "  Ace Books ",
+      publish_date: " 1965 ",
+      number_of_pages: 412,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.title).toBe("Dune");
+    expect(result.row.author).toBe("Frank Herbert");
+    expect(result.row.publisher).toBe("Ace Books");
+    expect(result.row.publish_date).toBe("1965");
+    expect(result.row.number_of_pages).toBe(412);
+  });
+
+  it("collapses blank/whitespace-only metadata fields to null", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      title: ' '.repeat(3),
+      author: undefined,
+      publisher: "",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.title).toBeNull();
+    expect(result.row.author).toBeNull();
+    expect(result.row.publisher).toBeNull();
+  });
+
+  it("treats a non-positive or non-finite page count as null", () => {
+    for (const bad of [0, -5, NaN, Infinity]) {
+      const result = validateImportRow({
+        isbn: "9780306406157",
+        number_of_pages: bad,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("expected ok");
+      expect(result.row.number_of_pages).toBeNull();
+    }
+  });
 });
 
 describe("normalizeCreatedAt", () => {
@@ -122,5 +232,42 @@ describe("normalizeCreatedAt", () => {
     const result = normalizeCreatedAt(farFuture);
     const todayIso = new Date().toISOString().slice(0, 10);
     expect(result).toBe(`${todayIso} 00:00:00`);
+  });
+});
+
+describe("validateMatchRow", () => {
+  it("returns null for a blank or missing title", () => {
+    expect(validateMatchRow({ title: "" })).toBeNull();
+    expect(validateMatchRow({ title: ' '.repeat(3) })).toBeNull();
+  });
+
+  it("trims the title and defaults a missing author to an empty string", () => {
+    const result = validateMatchRow({ title: "  Dune  " });
+    expect(result).toEqual({
+      title: "Dune",
+      author: "",
+      status: "unread",
+      rawRating: null,
+    });
+  });
+
+  it("falls back to unread for a missing or unknown status", () => {
+    const result = validateMatchRow({ title: "Dune", status: "some-custom-shelf" });
+    expect(result?.status).toBe("unread");
+  });
+
+  it("keeps rawRating regardless of status (ungated, unlike ValidatedImportRow.rating)", () => {
+    const result = validateMatchRow({
+      title: "Dune",
+      status: "to-read" as any,
+      rating: 8,
+    });
+    expect(result?.status).toBe("unread");
+    expect(result?.rawRating).toBe(8);
+  });
+
+  it("drops an out-of-range rating", () => {
+    const result = validateMatchRow({ title: "Dune", rating: 11 });
+    expect(result?.rawRating).toBeNull();
   });
 });

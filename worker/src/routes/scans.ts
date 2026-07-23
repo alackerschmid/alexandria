@@ -14,6 +14,7 @@ import {
   findExistingScan,
   isUniqueConstraintError,
   parseIntOr,
+  buildScanUpdate,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
 import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
@@ -247,45 +248,34 @@ scans.patch("/:id", async (c) => {
   const userId = c.get("userId");
   const scanId = c.req.param("id");
 
-  // Rating only makes sense for a book marked "read" — enforce that invariant here so it
-  // holds regardless of caller (frontend gates the rating UI on status==='read', but a
-  // direct API call must not be able to leave a rating on a non-read scan).
-  if (hasRating && body.rating != null) {
-    const effectiveStatus = await resolveEffectiveStatus(
+  // Only resolved when this update could touch rating: hasStatus resolves for free (no DB
+  // read — see resolveEffectiveStatus), hasRating without hasStatus needs the current status.
+  let effectiveStatus: string | undefined;
+  if (hasStatus || hasRating) {
+    effectiveStatus = await resolveEffectiveStatus(
       c.env.DB,
       scanId,
       userId,
       hasStatus,
       body.status,
     );
-    if (effectiveStatus !== "read") {
-      return c.json(
-        { error: "rating can only be set on a book marked as read" },
-        400,
-      );
-    }
   }
 
-  const sets: string[] = [];
-  const binds: (string | number | null)[] = [];
-  if (hasStatus) {
-    sets.push("status = ?");
-    binds.push(body.status!);
+  // Rating only makes sense for a book marked "read" — enforce that invariant here so it
+  // holds regardless of caller (frontend gates the rating UI on status==='read', but a
+  // direct API call must not be able to leave a rating on a non-read scan).
+  if (hasRating && body.rating != null && effectiveStatus !== "read") {
+    return c.json(
+      { error: "rating can only be set on a book marked as read" },
+      400,
+    );
   }
-  if (hasOwningStatus) {
-    sets.push("owning_status = ?");
-    binds.push(body.owning_status!);
-  }
-  const clearsRatingOnStatusChange = !hasRating && hasStatus && body.status !== "read";
-  if (hasRating) {
-    sets.push("rating = ?");
-    binds.push(body.rating ?? null);
-  } else if (clearsRatingOnStatusChange) {
-    // Moving off "read" without an explicit rating change clears any existing rating —
-    // otherwise a book no longer marked read could still surface under "group by rating".
-    sets.push("rating = ?");
-    binds.push(null);
-  }
+
+  const { sets, binds, resolvedRating } = buildScanUpdate({
+    status: hasStatus ? body.status! : undefined,
+    owningStatus: hasOwningStatus ? body.owning_status! : undefined,
+    ratingInput: { hasStatus, effectiveStatus, hasRating, rating: body.rating },
+  });
 
   const result = await c.env.DB.prepare(
     `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
@@ -301,7 +291,7 @@ scans.patch("/:id", async (c) => {
     id: Number(scanId),
     ...(hasStatus ? { status: body.status } : {}),
     ...(hasOwningStatus ? { owning_status: body.owning_status } : {}),
-    ...(hasRating || clearsRatingOnStatusChange ? { rating: body.rating ?? null } : {}),
+    ...(resolvedRating !== undefined ? { rating: resolvedRating } : {}),
   });
 });
 

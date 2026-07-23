@@ -1,11 +1,22 @@
 import { Hono } from "hono";
 import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
-import { resolveEdition, linkWork } from "../editions";
+import { resolveEdition, linkWork, type FallbackMetadata } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
-import { validateImportRow, type ImportRowInput } from "../import-validation";
-import { findExistingScan, isUniqueConstraintError } from "../library-query";
+import {
+  validateImportRow,
+  validateMatchRow,
+  type ImportRowInput,
+  type MatchRowInput,
+} from "../import-validation";
+import {
+  getExistingScan,
+  isUniqueConstraintError,
+  buildScanUpdate,
+  type ExistingScan,
+} from "../library-query";
+import { pickBestMatchPrepared, prepareCandidates } from "../title-match";
 
 const importRoutes = new Hono<Env>();
 
@@ -20,13 +31,17 @@ const MAX_BATCH_SIZE = 10;
 // burst against OpenLibrary polite — raising it past ~6 buys nothing anyway, since Workers allow
 // only 6 simultaneous connections awaiting response headers.
 const ROW_CONCURRENCY = 4;
-// One increment per request (not per row) — a full library import is a handful of batches,
-// this just guards against a runaway client loop.
-const IMPORT_RATE_LIMIT = 30;
+// Denominated in rows/minute, not requests/minute — charged rows.length per call (see the
+// rateLimitOrReject calls below), so a 10-row /goodreads batch and a single review-queue
+// resolution both cost what they actually are instead of the same one request. ~600/min covers
+// a real Goodreads export (500-3000 books) without a multi-minute stall, while still bounding a
+// runaway client loop.
+const IMPORT_RATE_LIMIT = 600;
 
-type ImportOutcome = "imported" | "duplicate" | "invalid_isbn" | "failed";
+type ImportOutcome = "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
 
 interface ImportedBook {
+  isbn: string;
   title: string | null;
   author: string | null;
   cover_url: string | null;
@@ -35,13 +50,39 @@ interface ImportedBook {
   work_id: number | null;
 }
 
+interface ScanStateSummary {
+  status: string;
+  rating: number | null;
+  owning_status: string;
+}
+
 interface ImportRowResult {
   isbn: string;
   outcome: ImportOutcome;
   scan_id?: number;
-  // Present only for "imported" rows — the resolved edition's details, so the post-import
-  // summary can render an editable card without a follow-up per-scan fetch.
+  // Present only for "imported"/"updated" rows — the resolved edition's details, so the
+  // post-import summary can render an editable card without a follow-up per-scan fetch.
   book?: ImportedBook;
+  // Present only for "imported"/"updated" rows — the scan's status/rating/owning_status as
+  // actually written server-side (an update never touches owning_status; a create forces it to
+  // "owned" when owned_copies > 0). The client renders the summary card straight from this
+  // instead of re-deriving the status/rating/owned-copies rules, which drifted from the server.
+  resolved?: ScanStateSummary;
+  // Present only for "updated" rows — the scan's state before this update, so the client can
+  // offer an Undo that restores exactly this.
+  previous?: ScanStateSummary;
+}
+
+function bookSummary(book: BookRow): ImportedBook {
+  return {
+    isbn: book.isbn,
+    title: book.title,
+    author: book.author,
+    cover_url: book.cover_url,
+    publisher: book.publisher,
+    language: book.language,
+    work_id: book.work_id,
+  };
 }
 
 async function importRow(
@@ -49,13 +90,38 @@ async function importRow(
   userId: number,
   apiKey: string,
   input: ImportRowInput,
+  update: boolean,
+  // Only applied to newly created scans (see below) — an "updated" row's book may already carry
+  // tags the user chose deliberately, and the update path otherwise never writes fields the
+  // Goodreads row didn't explicitly ask to change.
+  shelvesFieldDefId: number | null,
+  // Shared across every row in the batch (mapWithConcurrency runs rows concurrently). Two rows
+  // can resolve to the same existing scan — a duplicate CSV entry, or the same book under its
+  // isbn10/isbn13 forms — and without this, both would race an independent UPDATE against it and
+  // both report "updated" with a `previous` read before either write landed, corrupting Undo.
+  // Claiming the scan id here (synchronously, before any await) makes the second row a plain
+  // "duplicate" instead, matching how an in-DB duplicate is already handled.
+  claimedScanIds: Set<number>,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
     return { isbn: input.isbn, outcome: "invalid_isbn" };
   }
-  const { isbn13, isbn10, status, owning_status, rating, created_at } =
-    validated.row;
+  const {
+    isbn13,
+    isbn10,
+    status,
+    owning_status,
+    rating,
+    rawRating,
+    created_at,
+    title,
+    author,
+    publisher,
+    publish_date,
+    number_of_pages,
+    shelves,
+  } = validated.row;
 
   // Everything below can throw (D1 hiccups, resolveEdition/linkWork failures) — this function
   // runs concurrently with sibling rows via mapWithConcurrency, which lets rejections propagate,
@@ -76,19 +142,78 @@ async function importRow(
 
     let book: BookRow | null;
     if (existingRows.length > 0) {
+      // Only one of the candidate book rows (isbn13 form, isbn10 form) can actually carry a
+      // scan — the unique constraint is per (user, book), and a user only ever has one of the
+      // two rows scanned. Check each until found.
+      let matchedScan: ExistingScan | null = null;
+      let matchedBook: BookRow | null = null;
       for (const row of existingRows) {
-        if (await findExistingScan(db, userId, row.id)) {
-          return { isbn: isbn13, outcome: "duplicate" };
+        const scan = await getExistingScan(db, userId, row.id);
+        if (scan) {
+          matchedScan = scan;
+          matchedBook = row;
+          break;
         }
       }
-      // Reuse the row already found instead of re-resolving by isbn13 alone: resolveEdition's
-      // exact-match lookup would miss a book stored under its isbn10 form and mint a duplicate
-      // `books` row for the same edition.
+      if (matchedScan && matchedBook) {
+        if (!update) return { isbn: isbn13, outcome: "duplicate" };
+        if (claimedScanIds.has(matchedScan.id)) {
+          return { isbn: isbn13, outcome: "duplicate" };
+        }
+        claimedScanIds.add(matchedScan.id);
+
+        if (!matchedBook.work_id) await linkWork(db, matchedBook);
+        const { sets, binds, resolvedRating } = buildScanUpdate({
+          status,
+          ratingInput: {
+            hasStatus: true,
+            effectiveStatus: status,
+            hasRating: rawRating != null,
+            rating: rawRating,
+          },
+        });
+        await db
+          .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+          .bind(...binds, matchedScan.id)
+          .run();
+
+        return {
+          isbn: isbn13,
+          outcome: "updated",
+          scan_id: matchedScan.id,
+          book: bookSummary(matchedBook),
+          resolved: {
+            // status is always written; owning_status is never touched on an update; rating is
+            // whatever buildScanUpdate resolved, or the untouched prior value if it left the
+            // column alone (resolvedRating === undefined).
+            status,
+            rating: resolvedRating !== undefined ? resolvedRating : matchedScan.rating,
+            owning_status: matchedScan.owning_status,
+          },
+          previous: {
+            status: matchedScan.status,
+            rating: matchedScan.rating,
+            owning_status: matchedScan.owning_status,
+          },
+        };
+      }
+      // Neither candidate row has a scan yet — reuse the row already found instead of
+      // re-resolving by isbn13 alone: resolveEdition's exact-match lookup would miss a book
+      // stored under its isbn10 form and mint a duplicate `books` row for the same edition.
       const existing = existingRows[0];
       if (!existing.work_id) await linkWork(db, existing);
       book = existing;
     } else {
-      book = await resolveEdition(db, isbn13, apiKey, true);
+      // Seeds a placeholder row with the CSV's own title/author/publisher/etc. if neither
+      // Google Books nor OpenLibrary has this ISBN, instead of inserting an all-NULL book.
+      const fallbackMeta: FallbackMetadata = {
+        title,
+        author,
+        publisher,
+        publish_date,
+        number_of_pages_median: number_of_pages,
+      };
+      book = await resolveEdition(db, isbn13, apiKey, true, false, fallbackMeta);
     }
 
     if (!book) {
@@ -115,18 +240,26 @@ async function importRow(
       )
       .bind(...binds)
       .run();
+
+    if (shelvesFieldDefId != null && shelves.length > 0) {
+      await db
+        .prepare(
+          `INSERT INTO book_custom_fields (user_id, book_id, field_def_id, field_value)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id, book_id, field_def_id) DO UPDATE SET field_value = excluded.field_value`,
+        )
+        .bind(userId, book.id, shelvesFieldDefId, JSON.stringify(shelves))
+        .run();
+    }
+
     return {
       isbn: isbn13,
       outcome: "imported",
       scan_id: result.meta.last_row_id,
-      book: {
-        title: book.title,
-        author: book.author,
-        cover_url: book.cover_url,
-        publisher: book.publisher,
-        language: book.language,
-        work_id: book.work_id,
-      },
+      book: bookSummary(book),
+      // The exact values just inserted — validateImportRow already gated rating on status and
+      // forced owning_status to "owned" when owned_copies > 0.
+      resolved: { status, rating, owning_status },
     };
   } catch (e) {
     if (isUniqueConstraintError(e)) {
@@ -142,8 +275,15 @@ async function importRow(
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {
-  const body = await c.req.json<{ rows?: ImportRowInput[] }>();
+  const body = await c.req.json<{
+    rows?: ImportRowInput[];
+    update?: boolean;
+    // Request-level, not per-row — the client creates/reuses a single "Shelves" tag field once
+    // per import session (see stores/import.ts) rather than per row.
+    shelves_field_def_id?: number;
+  }>();
   const rows = body.rows;
+  const update = body.update === true;
   if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_BATCH_SIZE) {
     return c.json(
       { error: `rows must contain between 1 and ${MAX_BATCH_SIZE} entries` },
@@ -161,17 +301,227 @@ importRoutes.post("/goodreads", async (c) => {
     IMPORT_RATE_LIMIT,
     1,
     "Too many import requests — please slow down",
+    rows.length,
   );
   if (blocked) return blocked;
 
   const db = c.env.DB;
   const apiKey = c.env.GOOGLE_BOOKS_API_KEY;
+
+  // Verify the field belongs to this user and is actually a tag field before trusting it for
+  // every row — a client-supplied id is otherwise an IDOR into another user's field definitions.
+  let shelvesFieldDefId: number | null = null;
+  if (typeof body.shelves_field_def_id === "number") {
+    const owned = await db
+      .prepare(
+        "SELECT 1 FROM user_field_definitions WHERE id = ? AND user_id = ? AND field_type = 'tag'",
+      )
+      .bind(body.shelves_field_def_id, userId)
+      .first();
+    if (owned) shelvesFieldDefId = body.shelves_field_def_id;
+  }
+
   // Concurrent, but order-preserving — the client maps results back onto its rows positionally.
   // Rows sharing a work or author race inside linkWork; every write there is INSERT OR IGNORE and
-  // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are benign.
+  // the scan insert is guarded by a UNIQUE constraint (caught as "duplicate"), so the races are
+  // benign. An update-on-duplicate write has no such guard, so importRow claims the target scan
+  // id itself (see claimedScanIds) instead of racing another row's UPDATE against it.
+  const claimedScanIds = new Set<number>();
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
-    importRow(db, userId, apiKey, row),
+    importRow(db, userId, apiKey, row, update, shelvesFieldDefId, claimedScanIds),
   );
+
+  return c.json({ results });
+});
+
+// ── Title/author matching for rows with no usable ISBN ──────────────────────────────────────
+//
+// Separate from /goodreads on purpose: these rows cost zero external fetches (no Google
+// Books/OpenLibrary call — matching is pure in-memory scoring against the user's own library),
+// so they take a larger batch and share nothing else with importRow's per-ISBN resolution flow.
+
+// No external fetches per row, so the batch cap here isn't about subrequest/connection budget —
+// just keeping one request's in-memory work (and its D1 round trip for the library index)
+// reasonably bounded.
+const MAX_MATCH_BATCH_SIZE = 50;
+// Above this, loading the full per-user scan index for in-memory scoring stops being cheap
+// enough to justify — realistically unreachable for a personal library, but the bound should be
+// explicit rather than let an outlier account degrade a request.
+const MAX_LIBRARY_INDEX_SIZE = 20_000;
+
+type MatchOutcome = "duplicate" | "updated" | "no_match";
+
+interface MatchRowResult {
+  outcome: MatchOutcome;
+  scan_id?: number;
+  // All present only for "updated" rows (see ImportRowResult for the resolved/previous split).
+  book?: ImportedBook;
+  resolved?: ScanStateSummary;
+  previous?: ScanStateSummary;
+  confidence?: number;
+}
+
+interface LibraryIndexRow {
+  scan_id: number;
+  status: string;
+  rating: number | null;
+  owning_status: string;
+  book_id: number;
+  work_id: number | null;
+  isbn: string;
+  title: string | null;
+  author: string | null;
+  canonical_title: string | null;
+  cover_url: string | null;
+  publisher: string | null;
+  language: string | null;
+}
+
+importRoutes.post("/match", async (c) => {
+  const body = await c.req.json<{ rows?: MatchRowInput[]; update?: boolean }>();
+  const rows = body.rows;
+  const update = body.update === true;
+  if (
+    !Array.isArray(rows) ||
+    rows.length === 0 ||
+    rows.length > MAX_MATCH_BATCH_SIZE
+  ) {
+    return c.json(
+      { error: `rows must contain between 1 and ${MAX_MATCH_BATCH_SIZE} entries` },
+      400,
+    );
+  }
+  if (rows.some((r) => typeof r?.title !== "string" || !r.title)) {
+    return c.json({ error: "each row requires a title" }, 400);
+  }
+
+  const userId = c.get("userId");
+  // Shares the import route's bucket — the two passes of one import session must jointly stay
+  // under the same per-minute budget, not each get their own.
+  const blocked = await rateLimitOrReject(
+    c,
+    `import:${userId}`,
+    IMPORT_RATE_LIMIT,
+    1,
+    "Too many import requests — please slow down",
+    rows.length,
+  );
+  if (blocked) return blocked;
+
+  const db = c.env.DB;
+
+  const countRow = await db
+    .prepare("SELECT COUNT(*) AS count FROM scans WHERE user_id = ?")
+    .bind(userId)
+    .first<{ count: number }>();
+  if ((countRow?.count ?? 0) > MAX_LIBRARY_INDEX_SIZE) {
+    return c.json({
+      results: rows.map((): MatchRowResult => ({ outcome: "no_match" })),
+    });
+  }
+
+  const { results: library } = await db
+    .prepare(
+      `SELECT s.id AS scan_id, s.status, s.rating, s.owning_status,
+              b.id AS book_id, b.work_id, b.isbn,
+              COALESCE(o.title, b.title) AS title, b.author,
+              wk.canonical_title AS canonical_title,
+              b.cover_url, b.publisher, b.language
+       FROM scans s
+       JOIN books b ON b.id = s.book_id
+       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
+       LEFT JOIN works wk ON wk.id = b.work_id
+       WHERE s.user_id = ?`,
+    )
+    .bind(userId)
+    .all<LibraryIndexRow>();
+
+  const byScanId = new Map(library.map((row) => [row.scan_id, row]));
+  // Normalize every candidate's titles/author-key once, up front — the whole row batch is then
+  // scored against the same prepared list instead of re-normalizing the library per row.
+  const candidates = prepareCandidates(
+    library.map((row) => ({
+      scanId: row.scan_id,
+      bookId: row.book_id,
+      title: row.title,
+      canonicalTitle: row.canonical_title,
+      author: row.author,
+    })),
+  );
+
+  const results: MatchRowResult[] = [];
+  for (const row of rows) {
+    const validated = validateMatchRow(row);
+    if (!validated) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    const match = pickBestMatchPrepared(
+      { title: validated.title, author: validated.author },
+      candidates,
+    );
+    if (!match) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    const matched = byScanId.get(match.scanId);
+    if (!matched) {
+      results.push({ outcome: "no_match" });
+      continue;
+    }
+
+    if (!update) {
+      results.push({ outcome: "duplicate" });
+      continue;
+    }
+
+    const { sets, binds, resolvedRating } = buildScanUpdate({
+      status: validated.status,
+      ratingInput: {
+        hasStatus: true,
+        effectiveStatus: validated.status,
+        hasRating: validated.rawRating != null,
+        rating: validated.rawRating,
+      },
+    });
+    await db
+      .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+      .bind(...binds, matched.scan_id)
+      .run();
+
+    results.push({
+      outcome: "updated",
+      scan_id: matched.scan_id,
+      book: {
+        isbn: matched.isbn,
+        title: matched.title,
+        author: matched.author,
+        cover_url: matched.cover_url,
+        publisher: matched.publisher,
+        language: matched.language,
+        work_id: matched.work_id,
+      },
+      resolved: {
+        status: validated.status,
+        rating: resolvedRating !== undefined ? resolvedRating : matched.rating,
+        owning_status: matched.owning_status,
+      },
+      previous: {
+        status: matched.status,
+        rating: matched.rating,
+        owning_status: matched.owning_status,
+      },
+      confidence: match.score,
+    });
+
+    // Keep the in-memory row current: if a later row in this same batch (e.g. a duplicate CSV
+    // entry) matches the same scan, its `previous` must reflect this write, not the pre-batch
+    // snapshot — otherwise undoing the later row would also revert this one.
+    matched.status = validated.status;
+    if (resolvedRating !== undefined) matched.rating = resolvedRating;
+  }
 
   return c.json({ results });
 });

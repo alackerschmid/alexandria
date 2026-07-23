@@ -1,8 +1,14 @@
 <script setup lang="ts">
+import { ref, computed } from "vue";
 import { useI18n } from "vue-i18n";
-import type { ReviewItem } from "@/composables/useGoodreadsImport";
+import { useFocusTrap } from "@/composables/useFocusTrap";
+import CoverImage from "@/components/CoverImage.vue";
+import type { ReviewItem } from "@/stores/import";
 
-defineProps<{ item: ReviewItem }>();
+// Nullable and always-mounted (the parent no longer v-if's this component) so useFocusTrap's
+// isOpen transitions are real open/close events within one instance's lifetime, not a fresh
+// instance every time — otherwise its document keydown listener would never get cleaned up.
+const props = defineProps<{ item: ReviewItem | null }>();
 const emit = defineEmits<{
   close: [];
   "update:query": [query: string];
@@ -13,14 +19,23 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+
+const panelEl = ref<HTMLElement>();
+const isOpen = computed(() => !!props.item);
+useFocusTrap(panelEl, isOpen, () => emit("close"));
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[60] flex justify-end">
+  <div v-if="item" class="fixed inset-0 z-[60] flex justify-end">
     <div class="absolute inset-0 bg-black/60" @click="emit('close')" />
 
     <!-- full-screen sheet below md, side panel above -->
     <div
+      ref="panelEl"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('import.review.resolve_heading')"
+      tabindex="-1"
       class="relative w-full md:w-[440px] h-full bg-charcoal-light border-l border-charcoal-border flex flex-col"
     >
       <div
@@ -106,13 +121,16 @@ const { t } = useI18n();
           :key="candidate.isbn"
           class="flex items-center gap-3 py-3 border-b border-charcoal-border"
         >
-          <img
-            v-if="candidate.cover_url"
-            :src="candidate.cover_url"
-            alt=""
-            class="w-[34px] h-[50px] object-cover flex-none"
-          />
-          <div v-else class="w-[34px] h-[50px] bg-charcoal flex-none" />
+          <div class="w-[34px] h-[50px] flex-none relative overflow-hidden bg-charcoal">
+            <CoverImage
+              :cover-url="candidate.cover_url"
+              :title="candidate.title"
+              :alt="candidate.title"
+              text-class="text-xs"
+              :icon-size="12"
+              class="w-full h-full object-cover"
+            />
+          </div>
           <div class="min-w-0 flex-1">
             <p class="text-[12.5px] text-text-primary truncate">
               {{ candidate.title }}

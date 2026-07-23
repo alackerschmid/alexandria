@@ -6,6 +6,7 @@
       </div>
     </v-main>
     <MobileTabBar v-if="route.meta.mobileNav" />
+    <ImportProgressChip v-if="authStore.isAuthenticated" />
   </v-app>
 </template>
 
@@ -21,6 +22,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { PAPER_PRESETS, TYPEFACE_PRESETS } from "@/utils/appearance";
 import MobileTabBar from "@/components/MobileTabBar.vue";
+import ImportProgressChip from "@/components/import/ImportProgressChip.vue";
 
 const route = useRoute();
 const vuetifyTheme = useTheme();

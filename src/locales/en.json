@@ -1,5 +1,9 @@
 {
   "app_name": "The Library of Alexandria",
+  "toggle": {
+    "on": "ON",
+    "off": "OFF"
+  },
   "header": {
     "account_menu": "Account menu"
   },
@@ -402,22 +406,50 @@
   "import": {
     "heading": "Import from Goodreads.",
     "subheading": "Upload your Goodreads library export to bring your books into Alexandria.",
-    "leave_confirm": "An import is still in progress. Leave this page anyway?",
+    "paused": {
+      "heading": "Import paused",
+      "description": "\"{fileName}\" was still importing when this tab last closed or reloaded — {imported} of {total} books were handled before it stopped.",
+      "resume": "Resume import",
+      "discard": "Discard",
+      "discard_confirm": "Discard this import session? Books already added or updated stay in your library — you'll just stop tracking this batch's progress."
+    },
+    "chip": {
+      "running": "Importing {done} / {total}",
+      "paused": "Import paused — tap to resume",
+      "complete": "Import complete — {n} books added"
+    },
     "upload": {
       "instructions": "Export your library from Goodreads (My Books → Import/Export) and upload the CSV file here.",
       "choose_file": "Choose file",
-      "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file."
+      "not_goodreads_export": "This doesn't look like a Goodreads export — check you uploaded the right file.",
+      "parse_failed": "This file couldn't be read — check it's a valid CSV export and try again.",
+      "empty_file": "This file has no books in it."
     },
     "mapping": {
-      "instructions": "Review how each Goodreads shelf maps to a status and owning status before importing.",
-      "count": "{n} books",
+      "count": "{n} books"
+    },
+    "confirm": {
+      "summary": "{books} books from {shelves} shelves",
+      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "mapping_heading": "Shelf mapping",
+      "choose_another_file": "Choose a different file",
+      "update_existing": "Update books already in my library",
+      "update_existing_sub": "Apply status and rating to books you've already scanned, instead of skipping them as duplicates.",
+      "shelves_as_tags": "Import Goodreads shelves as tags",
+      "shelves_as_tags_sub": "Save your Goodreads bookshelves into a \"Shelves\" custom field on each newly added book.",
+      "adjust_mapping": "Adjust shelf mapping",
+      "hide_mapping": "Hide shelf mapping",
       "start": "Start import"
     },
     "importing": {
       "progress": "{done} of {total} processed",
       "imported": "Imported: {n}",
+      "updated": "Updated: {n}",
       "duplicate": "Duplicate: {n}",
-      "failed": "Failed: {n}"
+      "failed": "Failed: {n}",
+      "needs_review": "Needs review: {n}",
+      "cancel": "Cancel",
+      "cancelling": "Cancelling…"
     },
     "header": {
       "eyebrow": "Import from Goodreads",
@@ -452,6 +484,7 @@
       "skipped_note": "Skipped — won't be imported",
       "reason_no_isbn": "No ISBN in the export — pick an edition",
       "reason_invalid_isbn": "ISBN couldn't be validated — pick an edition",
+      "reason_cancelled": "Import cancelled before this book was reached — pick an edition",
       "as_imported": "ISBN: {isbn} · as imported from Goodreads",
       "search_placeholder": "Search by title, author or ISBN",
       "use_this": "Use this",
@@ -465,11 +498,19 @@
       "skip": "Skip this book"
     },
     "summary": {
-      "enrichment_note": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_small": "Extra details (genres, series, awards) fill in automatically over the next few hours. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_medium": "Extra details (genres, series, awards) fill in automatically over the next day or so — this batch is large enough to take a while. Books from the same series or work may merge into a single card as that happens.",
+      "enrichment_note_large": "Extra details (genres, series, awards) fill in gradually, over several days for an import this size, since enrichment works through a shared background queue. Books from the same series or work may merge into a single card as that happens.",
       "imported_empty": "No books were imported.",
-      "cancel_confirm": "Remove all {n} imported books? This can't be undone.",
+      "cancel_confirm": "Cancel this import? {n} books will be removed or reverted to their previous state. This can't be undone.",
+      "cancel_dialog_title": "Cancel import?",
+      "cancel_dialog_confirm": "Cancel import",
+      "cancel_dialog_dismiss": "Keep reviewing",
       "card": {
         "remove": "Remove",
+        "undo": "Undo",
+        "already_in_library": "Already in your library — updated",
+        "matched_by_title": "Matched by title — {pct}% confidence",
         "unknown_publisher": "Unknown publisher",
         "error_duplicate": "That edition is already in your library.",
         "error_failed": "Couldn't switch edition — please try again.",
@@ -484,13 +525,13 @@
         "filter_skipped": "Skipped",
         "empty": "No books in this category.",
         "reason": {
-          "direct": "Imported",
-          "review_match": "Imported (matched during review)",
           "in_file": "Duplicate — appears twice in the export",
           "in_library": "Already in your library",
           "request_failed": "Import request failed",
           "invalid_isbn": "Invalid ISBN — skipped",
-          "no_isbn": "No ISBN — skipped"
+          "no_isbn": "No ISBN — skipped",
+          "unreadable_row": "Couldn't read this row from the file — skipped",
+          "cancelled": "Import cancelled before this book was reached — skipped"
         }
       }
     }
