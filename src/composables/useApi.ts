@@ -8,14 +8,17 @@ export function useApi() {
   async function apiFetch(
     path: string,
     init: RequestInit = {},
-    opts: { on401?: "logout" | "ignore" } = {},
+    // `token` overrides the auth store's — for the rare call that has to outlive logout
+    // (a pending preference flush) and would otherwise go out unauthenticated.
+    opts: { on401?: "logout" | "ignore"; token?: string | null } = {},
   ): Promise<Response> {
     const { headers, ...rest } = init;
+    const token = opts.token !== undefined ? opts.token : authStore.token;
     const res = await fetch(`${BASE}${path}`, {
       ...rest,
       headers: {
         "Content-Type": "application/json",
-        ...(authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(headers as Record<string, string>),
       },
     });

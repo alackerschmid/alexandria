@@ -34,7 +34,7 @@
   --color-chart-muted: #8a7a6f;
   --color-chart-total: #8a7a6f;
   /* Reading-status accents: intentionally theme-independent — consumed by the
-     always-dark scanner overlay as well as themed dialogs/cards, so they must
+     scanner's always-dark camera overlay as well as themed dialogs/cards, so they must
      stay legible against both a near-black and a near-white surface. */
   --color-status-read: #22c55e;
   --color-status-dnf: #d9a441;
@@ -62,17 +62,28 @@
   --breakpoint-xxl: 2138px;
 }
 
-/* Dark theme overrides — applied via data-theme="dark" on <html> */
-[data-theme="dark"] {
-  --color-charcoal: #0a0a09;
-  --color-charcoal-light: #1c1b19;
-  --color-charcoal-border: #2e2b28;
-  --color-control-border: #4a453f;
-  --color-search-bg: #16150f;
-  --color-search-border: #232220;
+/* Dark theme overrides — applied via data-theme="dark" on <html>.
+   `.force-dark` is the same palette scoped to a subtree, for a surface that must stay dark
+   regardless of the app theme (the scanner's camera chrome and the sheets that overlay a live
+   video feed). It works because this is a bare attribute/class selector, not :root-anchored:
+   custom properties declared on an element beat the ones it would otherwise inherit.
+
+   The eight vars a paper preset owns read through --dark-color-*, which App.vue publishes on
+   <html> from the active preset's dark half. Without that indirection a nested scope would
+   match this rule directly and so lose the preset — the inline vars App.vue writes on <html>
+   only reach descendants by inheritance, which a matching rule outranks. The literals stay as
+   fallbacks for the pre-hydration paint. The remaining five aren't preset-owned. */
+[data-theme="dark"],
+.force-dark {
+  --color-charcoal: var(--dark-color-charcoal, #0a0a09);
+  --color-charcoal-light: var(--dark-color-charcoal-light, #1c1b19);
+  --color-charcoal-border: var(--dark-color-charcoal-border, #2e2b28);
+  --color-control-border: var(--dark-color-control-border, #4a453f);
+  --color-search-bg: var(--dark-color-search-bg, #16150f);
+  --color-search-border: var(--dark-color-search-border, #232220);
+  --color-text-secondary: var(--dark-color-text-secondary, #8a8078);
+  --color-menu-surface: var(--dark-color-menu-surface, #1c1b19);
   --color-text-primary: #f0ede8;
-  --color-text-secondary: #8a8078;
-  --color-menu-surface: #1c1b19;
   --color-row-card-surface: var(--color-charcoal);
   --color-rating-track: rgba(255, 255, 255, 0.14);
   --color-chart-muted: #5c544e;

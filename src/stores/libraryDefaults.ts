@@ -1,63 +1,12 @@
 import { defineStore } from "pinia";
-import { computed, customRef, type Ref } from "vue";
+import { computed } from "vue";
 import type { ReadStatus } from "@/types/book";
 import type { GroupBy, OwnershipScope, SortOption } from "@/types/library";
-
-// A writable ref that persists to localStorage on every set — so pages can bind the
-// setting directly (v-model / storeToRefs) without a per-setting computed wrapper or
-// setX method.
-function persistedBool(key: string, fallback: boolean): Ref<boolean> {
-  const stored = localStorage.getItem(key);
-  let value = stored === null ? fallback : stored === "true";
-  return customRef((track, trigger) => ({
-    get() {
-      track();
-      return value;
-    },
-    set(v) {
-      value = v;
-      localStorage.setItem(key, String(v));
-      trigger();
-    },
-  }));
-}
-
-function persistedStr<T extends string>(
-  key: string,
-  fallback: T,
-  isValid?: (v: string) => v is T,
-): Ref<T> {
-  const stored = localStorage.getItem(key);
-  let value: T =
-    stored !== null && (!isValid || isValid(stored)) ? (stored as T) : fallback;
-  return customRef((track, trigger) => ({
-    get() {
-      track();
-      return value;
-    },
-    set(v) {
-      value = v;
-      localStorage.setItem(key, v);
-      trigger();
-    },
-  }));
-}
-
-function persistedNum(key: string, fallback: number): Ref<number> {
-  const parsed = parseInt(localStorage.getItem(key) ?? "", 10);
-  let value = Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-  return customRef((track, trigger) => ({
-    get() {
-      track();
-      return value;
-    },
-    set(v) {
-      value = v;
-      localStorage.setItem(key, String(v));
-      trigger();
-    },
-  }));
-}
+import {
+  persistedBool,
+  persistedNum,
+  persistedStr,
+} from "@/stores/preferences";
 
 const VALID_GROUP_BY: GroupBy[] = [
   "none",
@@ -80,24 +29,12 @@ const VALID_OWNERSHIP_SCOPE: OwnershipScope[] = ["owned", "all", "missing"];
 const isValidOwnershipScope = (v: string): v is OwnershipScope =>
   (VALID_OWNERSHIP_SCOPE as string[]).includes(v);
 
-// One-time migration: `ownershipScope` replaces the three booleans below. If the
-// user never explicitly chose an ownershipScope (i.e. this is their first load
-// post-migration), derive it from whichever of the old flags they'd set, instead
-// of silently discarding a customized "owned only" / "show missing" preference.
-function migrateOwnershipScope() {
-  if (localStorage.getItem("libOwnershipScope") !== null) return;
-  const scope: OwnershipScope =
-    localStorage.getItem("libOnlyOwned") === "true"
-      ? "owned"
-      : localStorage.getItem("libShowUnowned") === "true"
-        ? "missing"
-        : "all";
-  localStorage.setItem("libOwnershipScope", scope);
-}
+// These display defaults are per-user preferences, so they live in the preferences store
+// (server-backed, per-user cache) rather than raw localStorage. Each setting is a writable
+// computed over one preference key, so pages can still bind it directly (v-model /
+// storeToRefs) and a write flows straight through to `preferences.set`.
 
 export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
-  migrateOwnershipScope();
-
   const defaultView = persistedStr<"list" | "tile">("defaultView", "list");
   const defaultScanStatus = persistedStr<ReadStatus>(
     "defaultScanStatus",

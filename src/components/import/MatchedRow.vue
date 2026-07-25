@@ -141,7 +141,17 @@ const editionLabel = computed(() => {
         >
           {{ t("import.table.edition") }}
         </p>
+        <!-- A preexisting/title-matched row updates a scan that predates the import, so an
+             edition swap (create-new + delete-old) would destroy the user's original entry.
+             Show the edition read-only for these rows instead of the picker. -->
+        <p
+          v-if="item.preexisting"
+          class="border border-transparent px-2.5 py-2 font-mono text-[9.5px] text-text-secondary/70 truncate"
+        >
+          {{ editionLabel }}
+        </p>
         <button
+          v-else
           type="button"
           class="flex items-center gap-1.5 w-full border border-charcoal-border px-2.5 py-2 font-mono text-[9.5px] text-text-secondary text-left hover:border-primary transition-colors"
           @click="emit('toggle-edition')"

@@ -449,6 +449,11 @@ importRoutes.post("/match", async (c) => {
     })),
   );
 
+  // Two rows in one batch can resolve to the same library scan (e.g. duplicate hand-added CSV
+  // entries). The first claims it and is "updated"; a later row matching an already-claimed scan
+  // is reported "duplicate" so the client doesn't render two cards — and two Undos — for one scan.
+  const claimedScanIds = new Set<number>();
+
   const results: MatchRowResult[] = [];
   for (const row of rows) {
     const validated = validateMatchRow(row);
@@ -472,10 +477,11 @@ importRoutes.post("/match", async (c) => {
       continue;
     }
 
-    if (!update) {
+    if (!update || claimedScanIds.has(matched.scan_id)) {
       results.push({ outcome: "duplicate" });
       continue;
     }
+    claimedScanIds.add(matched.scan_id);
 
     const { sets, binds, resolvedRating } = buildScanUpdate({
       status: validated.status,
@@ -515,12 +521,6 @@ importRoutes.post("/match", async (c) => {
       },
       confidence: match.score,
     });
-
-    // Keep the in-memory row current: if a later row in this same batch (e.g. a duplicate CSV
-    // entry) matches the same scan, its `previous` must reflect this write, not the pre-batch
-    // snapshot — otherwise undoing the later row would also revert this one.
-    matched.status = validated.status;
-    if (resolvedRating !== undefined) matched.rating = resolvedRating;
   }
 
   return c.json({ results });
