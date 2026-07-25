@@ -64,9 +64,10 @@ interface ImportRowResult {
   // post-import summary can render an editable card without a follow-up per-scan fetch.
   book?: ImportedBook;
   // Present only for "imported"/"updated" rows — the scan's status/rating/owning_status as
-  // actually written server-side (an update never touches owning_status; a create forces it to
-  // "owned" when owned_copies > 0). The client renders the summary card straight from this
-  // instead of re-deriving the status/rating/owned-copies rules, which drifted from the server.
+  // actually written server-side (Goodreads import never derives owning_status from the CSV — a
+  // create writes "unknown" unless the caller explicitly passed one, e.g. the edition-swap path;
+  // an update leaves it alone). The client renders the summary card straight from this instead
+  // of re-deriving the status/rating rules, which drifted from the server before.
   resolved?: ScanStateSummary;
   // Present only for "updated" rows — the scan's state before this update, so the client can
   // offer an Undo that restores exactly this.
@@ -258,7 +259,8 @@ async function importRow(
       scan_id: result.meta.last_row_id,
       book: bookSummary(book),
       // The exact values just inserted — validateImportRow already gated rating on status and
-      // forced owning_status to "owned" when owned_copies > 0.
+      // resolved owning_status ("unknown" unless the caller explicitly supplied one), so these
+      // are the same bindings the INSERT above used rather than a re-derivation of them.
       resolved: { status, rating, owning_status },
     };
   } catch (e) {

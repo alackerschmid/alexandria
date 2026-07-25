@@ -5,15 +5,19 @@ import type { OwningStatus } from "@/types/book";
 // Mirrors useBookStatus.ts, but for the independent "do I own this copy" axis.
 // Presentation is border-first (library cards), unlike reading status which is dot-first.
 
+// "unknown" sits last: it's the blank/no-assertion end of the axis, and appending it leaves the
+// existing sort order of the other four untouched (this list is also the library's owning-sort
+// order and the search facet order, not just the pickers').
 export const OWNING_ORDER: OwningStatus[] = [
   "owned",
   "unowned",
   "want",
   "lent_out",
+  "unknown",
 ];
 
-// Statuses that render a corner badge on library cards — "owned"/"unowned" get a border
-// treatment only (see OwningMeta.borderClass), no badge.
+// Statuses that render a corner badge on library cards — "owned"/"unowned"/"unknown" get a
+// border treatment only (see OwningMeta.borderClass), no badge.
 const BADGE_STATUSES = new Set<OwningStatus>(["want", "lent_out"]);
 
 export interface OwningMeta {
@@ -54,6 +58,16 @@ export const OWNING_META: Record<OwningStatus, OwningMeta> = {
     color: "#d4a017",
     tint: "rgba(212,160,23,0.10)",
   },
+  unknown: {
+    // No border treatment, deliberately: a whole imported library lands on this status, and any
+    // card decoration would turn "we don't know" into the loudest thing on the shelf. It reads
+    // as a plain card like "owned" does; where the distinction matters (detail view, grouping,
+    // the `owning:` search facet) it's carried by the label, not the card.
+    borderClass: "",
+    icon: "mdi-help-circle-outline",
+    color: "#8a8078",
+    tint: "rgba(138,128,120,0.08)",
+  },
 };
 
 export interface OwningBadge {
@@ -71,9 +85,10 @@ export function useOwningStatus() {
     unowned: t("owning.unowned"),
     want: t("owning.want"),
     lent_out: t("owning.lent_out"),
+    unknown: t("owning.unknown"),
   }));
 
-  /** Corner-badge info for library cards — null for 'owned'/'unowned' (no badge shown). */
+  /** Corner-badge info for library cards — null for 'owned'/'unowned'/'unknown' (no badge). */
   function owningBadge(status: OwningStatus): OwningBadge | null {
     if (!BADGE_STATUSES.has(status)) return null;
     return {

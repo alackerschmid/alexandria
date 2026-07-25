@@ -42,38 +42,41 @@ describe("validateImportRow", () => {
     expect(result).toEqual({ ok: false, reason: "invalid_isbn" });
   });
 
-  it("falls back to unread/owned for a missing or unknown status/owning_status", () => {
+  it("falls back to unread for a missing or unknown status", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
       status: "some-custom-shelf",
-      owning_status: "bogus",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.row.status).toBe("unread");
-    expect(result.row.owning_status).toBe("owned");
   });
 
-  it("overrides a shelf-mapped owning_status with 'owned' when owned_copies is positive", () => {
+  it("asserts no ownership when the row doesn't supply one (a shelf says nothing about owning)", () => {
+    const result = validateImportRow({ isbn: "9780306406157" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.owning_status).toBe("unknown");
+  });
+
+  it("asserts no ownership for an unrecognized owning_status rather than assuming owned", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
-      owning_status: "want",
-      owned_copies: 1,
+      owning_status: "bogus",
     });
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
-    expect(result.row.owning_status).toBe("owned");
+    expect(result.row.owning_status).toBe("unknown");
   });
 
-  it("leaves the shelf-mapped owning_status alone when owned_copies is 0 or absent", () => {
-    const zero = validateImportRow({
+  it("passes through a valid owning_status when explicitly supplied (edition-swap path)", () => {
+    const result = validateImportRow({
       isbn: "9780306406157",
       owning_status: "want",
-      owned_copies: 0,
     });
-    const absent = validateImportRow({ isbn: "9780306406157", owning_status: "want" });
-    expect(zero.ok && zero.row.owning_status).toBe("want");
-    expect(absent.ok && absent.row.owning_status).toBe("want");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.row.owning_status).toBe("want");
   });
 
   it("trims, dedupes and caps the shelves list", () => {

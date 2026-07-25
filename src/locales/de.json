@@ -215,7 +215,8 @@
     "owned": "Besitze ich",
     "unowned": "Besitze ich nicht",
     "want": "Will ich",
-    "lent_out": "Verliehen"
+    "lent_out": "Verliehen",
+    "unknown": "Unbekannt"
   },
   "detail": {
     "publisher": "Verlag",
@@ -430,7 +431,7 @@
     },
     "confirm": {
       "summary": "{books} Bücher aus {shelves} Regalen",
-      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "shelf_line": "{shelf} ({count}) → {status}",
       "mapping_heading": "Regal-Zuordnung",
       "choose_another_file": "Andere Datei wählen",
       "update_existing": "Bereits vorhandene Bücher aktualisieren",
@@ -439,7 +440,8 @@
       "shelves_as_tags_sub": "Deine Goodreads-Bücherregale in ein benutzerdefiniertes Feld \"Regale\" bei jedem neu hinzugefügten Buch speichern.",
       "adjust_mapping": "Regal-Zuordnung anpassen",
       "hide_mapping": "Regal-Zuordnung ausblenden",
-      "start": "Import starten"
+      "start": "Import starten",
+      "cancel": "Abbrechen"
     },
     "importing": {
       "progress": "{done} von {total} verarbeitet",

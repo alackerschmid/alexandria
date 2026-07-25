@@ -289,11 +289,16 @@ export function attachCustomFields(
 
 export const VALID_STATUSES = ["unread", "reading", "read", "dnf"] as const;
 
+// "unknown" is the deliberate no-assertion state: nothing is claimed about whether the user owns
+// the copy. It's what a Goodreads import writes (a shelf says nothing about ownership) and it is
+// excluded from every "owned" gate — series completeness (routes/catalog.ts) and the ownership
+// stats (routes/stats.ts) both key on `IN ('owned', 'lent_out')`.
 export const VALID_OWNING_STATUSES = [
   "owned",
   "unowned",
   "want",
   "lent_out",
+  "unknown",
 ] as const;
 
 export function isValidRating(v: unknown): v is number {

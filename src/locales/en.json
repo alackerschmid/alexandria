@@ -215,7 +215,8 @@
     "owned": "Owned",
     "unowned": "Unowned",
     "want": "Want",
-    "lent_out": "Lent out"
+    "lent_out": "Lent out",
+    "unknown": "Unknown"
   },
   "detail": {
     "publisher": "Publisher",
@@ -430,7 +431,7 @@
     },
     "confirm": {
       "summary": "{books} books from {shelves} shelves",
-      "shelf_line": "{shelf} ({count}) → {status} · {owning}",
+      "shelf_line": "{shelf} ({count}) → {status}",
       "mapping_heading": "Shelf mapping",
       "choose_another_file": "Choose a different file",
       "update_existing": "Update books already in my library",
@@ -439,7 +440,8 @@
       "shelves_as_tags_sub": "Save your Goodreads bookshelves into a \"Shelves\" custom field on each newly added book.",
       "adjust_mapping": "Adjust shelf mapping",
       "hide_mapping": "Hide shelf mapping",
-      "start": "Start import"
+      "start": "Start import",
+      "cancel": "Cancel"
     },
     "importing": {
       "progress": "{done} of {total} processed",

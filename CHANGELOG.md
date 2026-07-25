@@ -14,7 +14,7 @@ The first stable release of The Library of Alexandria — a personal book catalo
 * ISBN barcode scanning via camera, with manual ISBN entry and title search for books without a usable barcode
 * Automatic metadata from Google Books and OpenLibrary — title, author, cover, publisher, language, page count, publication date
 * Background Wikidata enrichment — series membership, genres, awards, original publication year, first lines, narrative locations
-* Goodreads CSV import: shelf mapping, owned-copy detection, matching of ISBN-less rows against your existing library, and updating existing entries instead of discarding data
+* Goodreads CSV import: shelf-to-reading-status mapping, matching of ISBN-less rows against your existing library, and updating existing entries instead of discarding data
 * Guest mode — scan up to 3 books before creating an account, migrated on register or login
 
 ### Your library

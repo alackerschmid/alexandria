@@ -12,6 +12,11 @@ import {
 export interface ImportRowInput {
   isbn: string;
   status?: string;
+  // Never derived from the CSV (Goodreads import only ever touches reading status) — present
+  // only so the edition-swap path (changeImportedEdition in stores/import.ts) can carry forward
+  // a scan's current owning_status when it re-creates the scan under a different ISBN. Absent
+  // (the normal CSV-import case) means the import asserts nothing about ownership — see
+  // IMPORT_DEFAULT_OWNING_STATUS.
   owning_status?: string;
   rating?: number | null;
   created_at?: string | null;
@@ -22,9 +27,6 @@ export interface ImportRowInput {
   publisher?: string | null;
   publish_date?: string | null;
   number_of_pages?: number | null;
-  // Goodreads' own copy count — when > 0 it overrides the shelf-mapped owning_status (a stronger
-  // ownership signal than which shelf a book happens to sit on).
-  owned_copies?: number;
   // The Goodreads "Bookshelves" column — only ever written to book_custom_fields when the caller
   // opts in and supplies a target field id (see routes/import.ts).
   shelves?: string[];
@@ -34,6 +36,8 @@ export interface ValidatedImportRow {
   isbn13: string;
   isbn10: string | null;
   status: string;
+  // Always concrete — IMPORT_DEFAULT_OWNING_STATUS when the caller supplied nothing usable, so
+  // the create path can bind it unconditionally and report back exactly what it wrote.
   owning_status: string;
   // Gated on status === "read", for the create-new-scan path (mirrors the PATCH /api/scans/:id
   // invariant: a rating only persists on a "read" scan).
@@ -51,6 +55,13 @@ export interface ValidatedImportRow {
   number_of_pages: number | null;
   shelves: string[];
 }
+
+// A Goodreads shelf says nothing about whether the user owns the copy, so an import deliberately
+// asserts nothing: rows that don't carry an explicit owning_status are written as "unknown"
+// rather than inheriting the `scans` table default ("owned", right for a physical scan, wrong for
+// a 400-book to-read shelf). Written explicitly instead of omitting the column so the route can
+// report the value it actually stored without re-deriving the schema default.
+const IMPORT_DEFAULT_OWNING_STATUS = "unknown";
 
 const MAX_TEXT_FIELD_LENGTH = 500;
 
@@ -130,18 +141,11 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
   )
     ? (input.status as string)
     : "unread";
-  const mappedOwningStatus = (
+  const owning_status = (
     VALID_OWNING_STATUSES as readonly string[]
   ).includes(input.owning_status ?? "")
     ? (input.owning_status as string)
-    : "owned";
-  // A positive copy count is a stronger, more direct ownership signal than the shelf a book
-  // happens to sit on (e.g. a book on "to-read" that Goodreads says you own 1 copy of) — only
-  // ever pushes toward "owned", never away from an explicit shelf-mapped status.
-  const owning_status =
-    typeof input.owned_copies === "number" && input.owned_copies > 0
-      ? "owned"
-      : mappedOwningStatus;
+    : IMPORT_DEFAULT_OWNING_STATUS;
   const rawRating = isValidRating(input.rating ?? null)
     ? (input.rating as number)
     : null;
