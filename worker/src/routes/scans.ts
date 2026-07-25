@@ -202,7 +202,7 @@ function validatePatchBody(
       body.owning_status ?? "",
     )
   ) {
-    return "owning_status must be one of: owned, unowned, want, lent_out";
+    return `owning_status must be one of: ${VALID_OWNING_STATUSES.join(", ")}`;
   }
   if (hasRating && body.rating !== null && !isValidRating(body.rating)) {
     return "rating must be an integer 0-10 or null";

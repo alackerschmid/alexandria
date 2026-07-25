@@ -1,5 +1,14 @@
 export type ReadStatus = "unread" | "reading" | "read" | "dnf";
-export type OwningStatus = "owned" | "unowned" | "want" | "lent_out";
+// "unknown" is the no-assertion state (nothing claimed about ownership) — what a Goodreads
+// import writes, since a shelf says nothing about whether the user owns the copy. It is not
+// "owned" anywhere it matters: series completeness and the ownership stats both count only
+// `owned`/`lent_out`.
+export type OwningStatus =
+  | "owned"
+  | "unowned"
+  | "want"
+  | "lent_out"
+  | "unknown";
 
 export interface AuthorRef {
   name: string;

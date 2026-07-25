@@ -25,7 +25,7 @@ The result is a searchable library with statistics you can actually enjoy browsi
 - **Series tracking** — see every volume in a series and exactly which ones you own
 - **Reading status** — mark books as Unread, Reading, or Read
 - **Library statistics** — total titles, read/unread counts, top authors, language distribution, median publication year, and page stats
-- **Goodreads import** — bring in your existing library from a Goodreads CSV export, shelves and owned copies included
+- **Goodreads import** — bring in your existing library from a Goodreads CSV export, reading status and shelves included
 - **Custom fields** — add your own metadata to any book (text, numbers, or dropdowns)
 - **Field overrides** — correct any metadata detail without affecting the shared cache
 - **Multilingual** — Full i18n support, English and German are currently implemented

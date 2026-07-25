@@ -106,13 +106,6 @@ describe("parseGoodreadsRow", () => {
     expect(parseGoodreadsRow({ "Date Added": "" }, 0).createdAt).toBeNull();
   });
 
-  it("parses Owned Copies, treating blank/zero/negative as 0", () => {
-    expect(parseGoodreadsRow({ "Owned Copies": "2" }, 0).ownedCopies).toBe(2);
-    expect(parseGoodreadsRow({ "Owned Copies": "0" }, 0).ownedCopies).toBe(0);
-    expect(parseGoodreadsRow({ "Owned Copies": "" }, 0).ownedCopies).toBe(0);
-    expect(parseGoodreadsRow({}, 0).ownedCopies).toBe(0);
-  });
-
   it("splits, trims and dedupes the Bookshelves column", () => {
     const row = parseGoodreadsRow(
       { Bookshelves: "to-read, favorites , to-read,  " },
@@ -144,22 +137,16 @@ describe("shelfMappingFor", () => {
     expect(shelfMappingFor("to-read")).toEqual(DEFAULT_SHELF_MAPPING["to-read"]);
   });
 
-  it("falls back to unread/owned for an unrecognized shelf", () => {
-    expect(shelfMappingFor("my-custom-shelf")).toEqual({
-      status: "unread",
-      owning_status: "owned",
-    });
+  it("falls back to unread for an unrecognized shelf", () => {
+    expect(shelfMappingFor("my-custom-shelf")).toEqual({ status: "unread" });
   });
 
   it("uses a caller-supplied mapping instead of the default when given one", () => {
-    const custom = { "to-read": { status: "reading" as const, owning_status: "want" as const } };
+    const custom = { "to-read": { status: "reading" as const } };
     expect(shelfMappingFor("to-read", custom)).toEqual(custom["to-read"]);
-    // A shelf missing from the custom mapping still falls back to unread/owned, not the default
+    // A shelf missing from the custom mapping still falls back to unread, not the default
     // mapping's entry for that shelf.
-    expect(shelfMappingFor("read", custom)).toEqual({
-      status: "unread",
-      owning_status: "owned",
-    });
+    expect(shelfMappingFor("read", custom)).toEqual({ status: "unread" });
   });
 });
 
@@ -202,7 +189,6 @@ describe("buildImportPayload", () => {
       publisher: "Ace Books",
       publishDate: "1965",
       numberOfPages: 412,
-      ownedCopies: 1,
       shelves: ["sci-fi", "favorites"],
       ...overrides,
     };
@@ -214,13 +200,13 @@ describe("buildImportPayload", () => {
     expect(payload.author).toBe("Frank Herbert");
   });
 
-  it("maps the shelf to status/owning_status via the given mapping", () => {
+  it("maps the shelf to status via the given mapping, leaving owning_status unset", () => {
     const payload = buildImportPayload(row({ shelf: "to-read" }), DEFAULT_SHELF_MAPPING);
     expect(payload.status).toBe("unread");
-    expect(payload.owning_status).toBe("want");
+    expect(payload.owning_status).toBeUndefined();
   });
 
-  it("carries through rating, dates and the new metadata/ownership fields", () => {
+  it("carries through rating, dates and metadata fields", () => {
     const payload = buildImportPayload(row(), DEFAULT_SHELF_MAPPING);
     expect(payload.isbn).toBe("9780441013593");
     expect(payload.rating).toBe(8);
@@ -228,7 +214,6 @@ describe("buildImportPayload", () => {
     expect(payload.publisher).toBe("Ace Books");
     expect(payload.publish_date).toBe("1965");
     expect(payload.number_of_pages).toBe(412);
-    expect(payload.owned_copies).toBe(1);
     expect(payload.shelves).toEqual(["sci-fi", "favorites"]);
   });
 

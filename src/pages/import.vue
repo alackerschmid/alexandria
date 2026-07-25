@@ -19,7 +19,6 @@ import {
   MATCHED_ROW_PADDING,
 } from "@/components/import/matched-grid";
 import { useBookStatus } from "@/composables/useBookStatus";
-import { useOwningStatus } from "@/composables/useOwningStatus";
 import { useImportStore } from "@/stores/import";
 import type { ImportLogEntry, ImportedItem, ReviewItem } from "@/stores/import";
 import { DEFAULT_SHELF_MAPPING } from "@/utils/goodreads";
@@ -100,11 +99,10 @@ async function onFileChange(e: Event) {
 // ── Confirm ────────────────────────────────────────────────────────────────────
 
 const { statusLabels } = useBookStatus();
-const { owningLabels } = useOwningStatus();
 
 // Auto-expanded only when the export has a shelf the default mapping doesn't know (where
-// "unread/owned" is a guess the user should see), so a standard three-shelf export stays a
-// one-click path. Re-evaluated each time a file is (re)loaded, not just once on mount.
+// "unread" is a guess the user should see), so a standard three-shelf export stays a one-click
+// path. Re-evaluated each time a file is (re)loaded, not just once on mount.
 const mappingExpanded = ref(false);
 watch(step, (s) => {
   if (s === "confirm") {
@@ -116,6 +114,13 @@ watch(step, (s) => {
 
 function chooseAnotherFile() {
   importStore.reset();
+}
+
+// Safe to cancel outright, unlike the review-screen cancel — nothing has been written to the
+// server yet at this point, so there's nothing to revert/delete, just the local session to drop.
+function onCancelConfirm() {
+  importStore.reset();
+  router.push({ name: "library" });
 }
 
 // ── Importing progress ────────────────────────────────────────────────────────
@@ -416,7 +421,6 @@ const tabs = computed(() => [
                     shelf,
                     count,
                     status: statusLabels[mapping[shelf]?.status],
-                    owning: owningLabels[mapping[shelf]?.owning_status],
                   })
                 }}
               </p>
@@ -463,14 +467,22 @@ const tabs = computed(() => [
             <AppToggle :model-value="importShelvesAsTags" />
           </button>
 
-          <AppButton
-            variant="primary"
-            size="sm"
-            class="self-start"
-            @click="startImport"
-          >
-            {{ t("import.confirm.start") }}
-          </AppButton>
+          <div class="flex gap-3">
+            <AppButton
+              variant="primary"
+              size="sm"
+              @click="startImport"
+            >
+              {{ t("import.confirm.start") }}
+            </AppButton>
+            <AppButton
+              variant="secondary"
+              size="sm"
+              @click="onCancelConfirm"
+            >
+              {{ t("import.confirm.cancel") }}
+            </AppButton>
+          </div>
         </section>
 
         <!-- ── Importing ──────────────────────────────────────────────────── -->

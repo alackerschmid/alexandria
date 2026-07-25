@@ -37,8 +37,6 @@ export interface ParsedGoodreadsRow {
   publisher: string | null;
   publishDate: string | null;
   numberOfPages: number | null;
-  /** Goodreads' own copy count — a stronger ownership signal than the shelf mapping when > 0. */
-  ownedCopies: number;
   /** The non-exclusive "Bookshelves" column, trimmed and deduped (includes the exclusive shelf
    *  too, since Goodreads lists it there as well). Only used when importing shelves as tags. */
   shelves: string[];
@@ -48,11 +46,6 @@ export interface ParsedGoodreadsRow {
 function parsePageCount(raw: string | undefined): number | null {
   const n = Number((raw ?? "").trim());
   return Number.isFinite(n) && n > 0 ? n : null;
-}
-
-function parseOwnedCopies(raw: string | undefined): number {
-  const n = Number((raw ?? "").trim());
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : 0;
 }
 
 function parseShelves(raw: string | undefined): string[] {
@@ -94,26 +87,26 @@ export function parseGoodreadsRow(
     publisher: publisher || null,
     publishDate: yearPublished || null,
     numberOfPages: parsePageCount(raw["Number of Pages"]),
-    ownedCopies: parseOwnedCopies(raw["Owned Copies"]),
     shelves: parseShelves(raw["Bookshelves"]),
   };
 }
 
 export interface ShelfMapping {
   status: ReadStatus;
-  owning_status: OwningStatus;
 }
 
+// Goodreads import only ever maps reading status — a shelf says nothing about whether the user
+// owns the copy, so imported scans are left at owning_status "unknown" server-side and the user
+// sets ownership per book afterwards (see buildImportPayload below).
 export const DEFAULT_SHELF_MAPPING: Record<string, ShelfMapping> = {
-  read: { status: "read", owning_status: "owned" },
-  "to-read": { status: "unread", owning_status: "want" },
-  "currently-reading": { status: "reading", owning_status: "owned" },
-  "did-not-finish": { status: "dnf", owning_status: "owned" },
+  read: { status: "read" },
+  "to-read": { status: "unread" },
+  "currently-reading": { status: "reading" },
+  "did-not-finish": { status: "dnf" },
 };
 
 const UNKNOWN_SHELF_MAPPING: ShelfMapping = {
   status: "unread",
-  owning_status: "owned",
 };
 
 export function shelfMappingFor(
@@ -140,7 +133,11 @@ export function stripTitleAnnotations(title: string): string {
 export interface ImportPayloadRow {
   isbn: string;
   status: ReadStatus;
-  owning_status: OwningStatus;
+  // Never set by buildImportPayload below (Goodreads import only ever maps reading status, so a
+  // CSV row asserts nothing about ownership and the server stores "unknown") — optional so the
+  // edition-swap path (stores/import.ts's changeImportedEdition) can pass the item's current
+  // owning_status through explicitly, preserving it across the swap.
+  owning_status?: OwningStatus;
   rating: number | null;
   created_at: string | null;
   title: string | null;
@@ -148,7 +145,6 @@ export interface ImportPayloadRow {
   publisher: string | null;
   publish_date: string | null;
   number_of_pages: number | null;
-  owned_copies: number;
   shelves: string[];
 }
 
@@ -157,12 +153,11 @@ export function buildImportPayload(
   row: ParsedGoodreadsRow & { isbn: string },
   mapping: Record<string, ShelfMapping>,
 ): ImportPayloadRow {
-  const { status, owning_status } = shelfMappingFor(row.shelf, mapping);
+  const { status } = shelfMappingFor(row.shelf, mapping);
   const title = stripTitleAnnotations(row.title).trim();
   return {
     isbn: row.isbn,
     status,
-    owning_status,
     rating: row.rating,
     created_at: row.createdAt,
     title: title || null,
@@ -170,7 +165,6 @@ export function buildImportPayload(
     publisher: row.publisher,
     publish_date: row.publishDate,
     number_of_pages: row.numberOfPages,
-    owned_copies: row.ownedCopies,
     shelves: row.shelves,
   };
 }

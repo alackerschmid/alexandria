@@ -3,9 +3,8 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import AppSegmented from "@/components/AppSegmented.vue";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
-import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { ShelfMapping } from "@/utils/goodreads";
-import type { ReadStatus, OwningStatus } from "@/types/book";
+import type { ReadStatus } from "@/types/book";
 
 const props = defineProps<{
   shelfCounts: Map<string, number>;
@@ -20,20 +19,11 @@ const { t } = useI18n();
 const statusOptions = computed(() =>
   STATUS_ORDER.map((s) => ({ value: s, label: t(`book.${s}`) })),
 );
-const owningOptions = computed(() =>
-  OWNING_ORDER.map((o) => ({ value: o, label: t(`owning.${o}`) })),
-);
 
 function updateStatus(shelf: string, status: string) {
   emit("update-mapping", shelf, {
     ...props.mapping[shelf],
     status: status as ReadStatus,
-  });
-}
-function updateOwning(shelf: string, owning_status: string) {
-  emit("update-mapping", shelf, {
-    ...props.mapping[shelf],
-    owning_status: owning_status as OwningStatus,
   });
 }
 </script>
@@ -51,33 +41,18 @@ function updateOwning(shelf: string, owning_status: string) {
           {{ t("import.mapping.count", { n: count }) }}
         </p>
       </div>
-      <div class="flex flex-col sm:flex-row gap-4">
-        <div>
-          <p
-            class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-          >
-            {{ t("library.filter_status") }}
-          </p>
-          <AppSegmented
-            :options="statusOptions"
-            :model-value="mapping[shelf]?.status"
-            size="sm"
-            @update:model-value="(v) => updateStatus(shelf, v)"
-          />
-        </div>
-        <div>
-          <p
-            class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-          >
-            {{ t("owning.label") }}
-          </p>
-          <AppSegmented
-            :options="owningOptions"
-            :model-value="mapping[shelf]?.owning_status"
-            size="sm"
-            @update:model-value="(v) => updateOwning(shelf, v)"
-          />
-        </div>
+      <div>
+        <p
+          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
+        >
+          {{ t("library.filter_status") }}
+        </p>
+        <AppSegmented
+          :options="statusOptions"
+          :model-value="mapping[shelf]?.status"
+          size="sm"
+          @update:model-value="(v) => updateStatus(shelf, v)"
+        />
       </div>
     </div>
   </div>

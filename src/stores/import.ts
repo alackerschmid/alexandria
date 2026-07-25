@@ -48,8 +48,8 @@ interface ImportRowResult {
   scan_id?: number;
   book?: ImportedBook;
   // Present only for "imported"/"updated" rows — the scan's status/rating/owning_status as
-  // actually written server-side (owning_status untouched on updates, forced to "owned" for a
-  // positive owned_copies on creates). The summary card shows these verbatim.
+  // actually written server-side (Goodreads import never sets owning_status from the CSV — a
+  // create writes "unknown", i.e. no ownership claim). The summary card shows these verbatim.
   resolved?: ScanStateSummary;
   // Present only for "updated" rows — the scan's state before this update (drives Undo).
   previous?: ScanStateSummary;
@@ -466,8 +466,8 @@ export const useImportStore = defineStore("import", () => {
     const book = result.book;
     const preexisting = result.outcome === "updated";
     // The server reports the scan state it actually wrote (status/rating/owning_status), so the
-    // card shows real state rather than re-deriving the shelf-mapping / rating / owned_copies
-    // rules client-side — always present for the "imported"/"updated" outcomes reaching here.
+    // card shows real state rather than re-deriving the shelf-mapping/rating rules client-side —
+    // always present for the "imported"/"updated" outcomes reaching here.
     const resolved = result.resolved!;
     return {
       rowId: row.id,
@@ -635,10 +635,7 @@ export const useImportStore = defineStore("import", () => {
 
     for (const key of Object.keys(mapping)) delete mapping[key];
     for (const shelf of shelfTally.keys()) {
-      mapping[shelf] = DEFAULT_SHELF_MAPPING[shelf] ?? {
-        status: "unread",
-        owning_status: "owned",
-      };
+      mapping[shelf] = DEFAULT_SHELF_MAPPING[shelf] ?? { status: "unread" };
     }
 
     step.value = "confirm";
@@ -1165,6 +1162,9 @@ export const useImportStore = defineStore("import", () => {
       const payload: ImportPayloadRow = {
         isbn,
         status: item.status,
+        // Explicit, unlike a plain CSV-import row — the swap re-creates the scan under a new
+        // ISBN and must carry the item's current owning_status through rather than losing it to
+        // the `scans` table default.
         owning_status: item.owningStatus,
         rating: item.rating,
         created_at: item.createdAt,
@@ -1173,7 +1173,6 @@ export const useImportStore = defineStore("import", () => {
         publisher: null,
         publish_date: null,
         number_of_pages: null,
-        owned_copies: 0,
         shelves: [],
       };
       // update: false — this is an edition swap on the item's own scan, not an import row; the
