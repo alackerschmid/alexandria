@@ -51,30 +51,37 @@ function dismiss(e: Event) {
 </script>
 
 <template>
-  <button
+  <!-- Container, not a button: the dismiss control is a separate button, and a button can't be
+       nested inside another button (the parser would hoist it out). -->
+  <div
     v-if="chipState"
-    type="button"
-    class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 flex items-center gap-2.5 bg-charcoal-light border border-charcoal-border shadow-xl px-4 py-3 text-left hover:border-primary transition-colors max-w-[calc(100vw-2rem)]"
-    @click="go"
+    class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-40 max-w-[calc(100vw-2rem)]"
   >
-    <span
-      v-if="chipState === 'running'"
-      class="w-2 h-2 rounded-full bg-primary flex-none animate-pulse"
-    />
-    <span
-      v-else
-      class="w-2 h-2 rounded-full flex-none"
-      :class="chipState === 'complete' ? 'bg-success' : 'bg-warning'"
-    />
-    <span class="text-[12px] text-text-primary truncate">{{ label }}</span>
+    <button
+      type="button"
+      class="flex items-center gap-2.5 w-full bg-charcoal-light border border-charcoal-border shadow-xl py-3 pl-4 text-left hover:border-primary transition-colors"
+      :class="chipState === 'complete' ? 'pr-9' : 'pr-4'"
+      @click="go"
+    >
+      <span
+        v-if="chipState === 'running'"
+        class="w-2 h-2 rounded-full bg-primary flex-none animate-pulse"
+      />
+      <span
+        v-else
+        class="w-2 h-2 rounded-full flex-none"
+        :class="chipState === 'complete' ? 'bg-success' : 'bg-warning'"
+      />
+      <span class="text-[12px] text-text-primary truncate">{{ label }}</span>
+    </button>
     <button
       v-if="chipState === 'complete'"
       type="button"
       :aria-label="t('detail.close')"
-      class="flex-none text-[14px] leading-none text-text-secondary/60 hover:text-text-primary transition-colors"
+      class="absolute top-1/2 -translate-y-1/2 right-2.5 text-[14px] leading-none text-text-secondary/60 hover:text-text-primary transition-colors"
       @click="dismiss"
     >
       ×
     </button>
-  </button>
+  </div>
 </template>

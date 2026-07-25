@@ -15,12 +15,20 @@
       />
 
       <!-- Manual mode: charcoal backdrop so nothing shows through -->
-      <div v-if="manualMode" class="absolute inset-0 z-0 bg-[#111110]" />
+      <div v-if="manualMode" class="absolute inset-0 z-0 bg-charcoal" />
 
-      <!-- ── Top nav bar ──────────────────────────────────────────────────────── -->
+      <!-- ── Top nav bar (shared by both modes) ───────────────────────────────── -->
+      <!-- Over the camera the bar is `force-dark`, so its children can use the theme tokens
+           unconditionally. The two remaining ternaries are not token-expressible: the bar and
+           its controls are translucent *scrims over a video feed* there, and swapping in an
+           opaque surface token would be a regression. -->
       <div
         class="absolute top-0 inset-x-0 z-30 flex justify-between items-center px-4 md:px-6 py-3.5"
-        :class="manualMode ? 'bg-[#111110] border-b border-[#2e2b28]' : ''"
+        :class="
+          manualMode
+            ? 'bg-charcoal border-b border-charcoal-border'
+            : 'force-dark'
+        "
         :style="
           manualMode
             ? ''
@@ -33,19 +41,13 @@
           @click="router.push('/library')"
         >
           <span
-            class="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-            :class="
-              manualMode
-                ? 'bg-[#1c1b19] border border-[#2e2b28] text-[#f0ede8]'
-                : 'border border-white/15 text-white'
-            "
-            :style="manualMode ? '' : 'background: rgba(20,19,16,.7)'"
+            class="w-9 h-9 rounded-full flex items-center justify-center shrink-0 border border-charcoal-border text-text-primary"
+            :class="manualMode ? 'bg-charcoal-light' : 'bg-[rgba(20,19,16,.7)]'"
           >
             <v-icon icon="mdi-arrow-left" size="18" />
           </span>
           <span
-            class="text-[10px] tracking-[0.22em] uppercase"
-            :class="manualMode ? 'text-[#8a8078]' : 'text-white/55'"
+            class="text-[10px] tracking-[0.22em] uppercase text-text-secondary"
           >
             {{ $t("scanner.back_library") }}
           </span>
@@ -55,14 +57,16 @@
         <button
           v-if="sessionBooks.length"
           class="flex items-center gap-2.5 px-3.5 py-2 hover:opacity-90 transition-opacity border border-orange-neon/45"
-          style="background: rgba(20, 19, 16, 0.7)"
+          :class="
+            manualMode ? 'bg-charcoal-light' : 'bg-[rgba(20,19,16,.7)]'
+          "
           @click="showReview = true"
         >
           <span
             class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
           />
           <span
-            class="text-white text-[11px] font-bold tracking-[0.14em] uppercase"
+            class="text-[11px] font-bold tracking-[0.14em] uppercase text-text-primary"
           >
             {{ $t("scanner.saved_count", { n: sessionBooks.length }) }}
           </span>
@@ -76,11 +80,11 @@
             manualMode &&
             (scanState === 'scanning' || scanState === 'detecting')
           "
-          class="absolute inset-0 z-25 bg-[#111110] flex flex-col md:flex-row"
+          class="absolute inset-0 z-25 bg-charcoal flex flex-col md:flex-row"
         >
           <!-- Entry form -->
           <div
-            class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-[#2e2b28]"
+            class="flex-1 flex flex-col px-8 md:px-14 pt-24 md:pt-0 md:justify-center md:border-r border-charcoal-border"
           >
             <!-- Unified entry form -->
             <form
@@ -88,7 +92,7 @@
               @submit.prevent="submitManual"
             >
               <p
-                class="text-[10px] text-[#8a8078] tracking-[0.3em] uppercase mb-3"
+                class="text-[10px] text-text-secondary tracking-[0.3em] uppercase mb-3"
               >
                 {{
                   cameraFailed
@@ -97,7 +101,7 @@
                 }}
               </p>
               <h1
-                class="font-heading text-5xl font-bold text-[#f0ede8] leading-[1.05] mb-5"
+                class="font-heading text-5xl font-bold text-text-primary leading-[1.05] mb-5"
               >
                 {{ $t("scanner.manual_heading") }}
               </h1>
@@ -105,9 +109,9 @@
                 <v-icon
                   icon="mdi-book-search-outline"
                   size="15"
-                  class="text-[#8a8078]/70 mt-0.5 shrink-0"
+                  class="text-text-secondary/70 mt-0.5 shrink-0"
                 />
-                <p class="text-sm text-[#8a8078] leading-relaxed">
+                <p class="text-sm text-text-secondary leading-relaxed">
                   {{ $t("scanner.manual_hint") }}
                 </p>
               </div>
@@ -116,7 +120,7 @@
               <div
                 class="border-b mb-8 pb-2 transition-colors"
                 :class="{
-                  'border-[#2e2b28]': isbnState === 'hidden',
+                  'border-charcoal-border': isbnState === 'hidden',
                   'border-success': isbnState === 'valid',
                   'border-error': isbnState === 'invalid',
                 }"
@@ -125,7 +129,7 @@
                   for="scanner-isbn"
                   class="block text-[10px] tracking-[0.2em] uppercase mb-1 transition-colors"
                   :class="{
-                    'text-[#8a8078]': isbnState === 'hidden',
+                    'text-text-secondary': isbnState === 'hidden',
                     'text-success': isbnState === 'valid',
                     'text-error': isbnState === 'invalid',
                   }"
@@ -140,26 +144,26 @@
                   inputmode="numeric"
                   :disabled="scanState === 'detecting'"
                   placeholder="978…"
-                  class="w-full bg-transparent text-[#f0ede8] text-lg font-mono tracking-wider placeholder:text-[#2e2b28] disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg font-mono tracking-wider placeholder:text-charcoal-border disabled:opacity-50"
                   @input="onIsbnInput"
                 />
               </div>
 
               <!-- OR divider -->
               <div class="flex items-center gap-3 mb-8">
-                <div class="flex-1 border-t border-[#2e2b28]" />
+                <div class="flex-1 border-t border-charcoal-border" />
                 <span
-                  class="text-[10px] text-[#8a8078] tracking-[0.2em] uppercase"
+                  class="text-[10px] text-text-secondary tracking-[0.2em] uppercase"
                   >{{ $t("scanner.or") }}</span
                 >
-                <div class="flex-1 border-t border-[#2e2b28]" />
+                <div class="flex-1 border-t border-charcoal-border" />
               </div>
 
               <!-- Title -->
-              <div class="border-b mb-6 pb-2 border-[#2e2b28]">
+              <div class="border-b mb-6 pb-2 border-charcoal-border">
                 <label
                   for="scanner-title"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("scanner.title_label") }}
                 </label>
@@ -169,15 +173,15 @@
                   type="text"
                   :placeholder="$t('scanner.title_label')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
               <!-- Author (optional) -->
-              <div class="border-b mb-6 pb-2 border-[#2e2b28]">
+              <div class="border-b mb-6 pb-2 border-charcoal-border">
                 <label
                   for="scanner-author"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("scanner.author_label") }}
                 </label>
@@ -187,15 +191,15 @@
                   type="text"
                   :placeholder="$t('scanner.author_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
               <!-- Publisher (optional) -->
-              <div class="border-b mb-10 pb-2 border-[#2e2b28]">
+              <div class="border-b mb-10 pb-2 border-charcoal-border">
                 <label
                   for="scanner-publisher"
-                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-[#8a8078]"
+                  class="block text-[10px] tracking-[0.2em] uppercase mb-1 text-text-secondary"
                 >
                   {{ $t("detail.publisher") }}
                 </label>
@@ -205,7 +209,7 @@
                   type="text"
                   :placeholder="$t('scanner.publisher_optional')"
                   :disabled="scanState === 'detecting'"
-                  class="w-full bg-transparent text-[#f0ede8] text-lg placeholder:text-[#2e2b28] disabled:opacity-50"
+                  class="w-full bg-transparent text-text-primary text-lg placeholder:text-charcoal-border disabled:opacity-50"
                 />
               </div>
 
@@ -225,14 +229,13 @@
                   v-if="
                     scanState === 'detecting' || searchState === 'searching'
                   "
-                  class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max border border-orange-neon/55"
-                  style="background: rgba(17, 17, 16, 0.88)"
+                  class="mt-4 flex items-center gap-2.5 px-5 py-2.5 w-max border border-orange-neon/55 bg-charcoal-light"
                 >
                   <span
                     class="w-1.5 h-1.5 rounded-full bg-orange-neon animate-pulse shrink-0"
                   />
                   <span
-                    class="text-white text-xs font-bold tracking-[0.2em] uppercase"
+                    class="text-text-primary text-xs font-bold tracking-[0.2em] uppercase"
                   >
                     {{
                       scanState === "detecting"
@@ -244,7 +247,7 @@
               </Transition>
               <p
                 v-if="searchState === 'empty'"
-                class="mt-4 text-sm text-[#8a8078]/60"
+                class="mt-4 text-sm text-text-secondary/60"
               >
                 {{ $t("scanner.no_results") }}
               </p>
@@ -259,7 +262,7 @@
               <button
                 v-if="mdAndUp && !cameraFailed"
                 type="button"
-                class="mt-6 flex items-center gap-2 text-[10px] text-[#8a8078] tracking-[0.2em] uppercase hover:text-[#f0ede8] transition-colors"
+                class="mt-6 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
                 @click="useCamera"
               >
                 <v-icon icon="mdi-camera-outline" size="14" />
@@ -270,7 +273,7 @@
               <button
                 v-if="!mdAndUp && manualOverride"
                 type="button"
-                class="mt-4 flex items-center gap-2 text-[10px] text-[#8a8078] tracking-[0.2em] uppercase hover:text-[#f0ede8] transition-colors"
+                class="mt-4 flex items-center gap-2 text-[10px] text-text-secondary tracking-[0.2em] uppercase hover:text-text-primary transition-colors"
                 @click="backToCamera"
               >
                 <v-icon icon="mdi-camera-outline" size="14" />
@@ -288,12 +291,12 @@
             <template v-if="showSearchResults">
               <div class="flex justify-between items-baseline mb-1">
                 <span
-                  class="text-[10px] text-[#8a8078] tracking-[0.26em] uppercase"
+                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.add_label") }}
                 </span>
                 <button
-                  class="text-[#8a8078]/55 hover:text-[#f0ede8] transition-colors"
+                  class="text-text-secondary/55 hover:text-text-primary transition-colors"
                   :aria-label="$t('detail.close')"
                   @click="closeSearchResults"
                 >
@@ -301,7 +304,7 @@
                 </button>
               </div>
               <p
-                class="font-heading font-bold text-lg text-[#f0ede8] leading-tight mb-4"
+                class="font-heading font-bold text-lg text-text-primary leading-tight mb-4"
               >
                 {{ $t("scanner.search_results") }}
               </p>
@@ -310,12 +313,12 @@
                   v-for="candidate in searchResults"
                   :key="candidate.isbn"
                   type="button"
-                  class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-[#2e2b28] hover:bg-[#1c1b19] transition-colors"
+                  class="flex gap-3.5 items-start w-full text-left px-2 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
                   @click="selectCandidate(candidate)"
                 >
                   <div
                     class="w-9 h-14 shrink-0 relative overflow-hidden"
-                    style="background: #232220; border: 1px solid #2e2b28"
+                    style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                   >
                     <img
                       v-if="candidate.cover_url"
@@ -330,14 +333,14 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <p
-                      class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
+                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
                     >
                       {{ candidate.title || candidate.isbn }}
                     </p>
-                    <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
+                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
                       {{ candidate.author }}
                     </p>
-                    <p class="text-[10px] text-[#8a8078]/55 mt-1 truncate">
+                    <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
                       {{
                         [
                           candidate.publish_date?.slice(0, 4),
@@ -362,7 +365,7 @@
             <template v-else>
               <div class="flex justify-between items-baseline mb-1">
                 <span
-                  class="text-[10px] text-[#8a8078] tracking-[0.26em] uppercase"
+                  class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.added_session") }}
                 </span>
@@ -374,18 +377,18 @@
               <div class="flex-1 min-h-0 overflow-y-auto">
                 <p
                   v-if="!sessionBooks.length"
-                  class="text-xs text-[#8a8078]/60 mt-6"
+                  class="text-xs text-text-secondary/60 mt-6"
                 >
                   {{ $t("scanner.point_at_barcode") }}
                 </p>
                 <div
                   v-for="b in sessionBooks"
                   :key="b.isbn"
-                  class="flex gap-3.5 items-start py-4 border-b border-[#2e2b28]"
+                  class="flex gap-3.5 items-start py-4 border-b border-charcoal-border"
                 >
                   <div
                     class="w-9 h-14 shrink-0 relative overflow-hidden"
-                    style="background: #232220; border: 1px solid #2e2b28"
+                    style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                   >
                     <img
                       v-if="b.coverUrl"
@@ -400,11 +403,11 @@
                   </div>
                   <div class="flex-1 min-w-0">
                     <p
-                      class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
+                      class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
                     >
                       {{ b.title }}
                     </p>
-                    <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
+                    <p class="text-[11px] text-text-secondary mt-0.5 truncate">
                       {{ b.author }}
                     </p>
                     <span
@@ -420,12 +423,12 @@
                   </div>
                   <div class="flex flex-col items-end gap-1.5 shrink-0">
                     <span
-                      class="font-mono text-[9px] text-[#8a8078]/55 whitespace-nowrap pt-0.5"
+                      class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap pt-0.5"
                     >
                       {{ sessionTime(b.addedAt) }}
                     </span>
                     <button
-                      class="text-[#8a8078]/45 hover:text-error transition-colors"
+                      class="text-text-secondary/45 hover:text-error transition-colors"
                       :title="$t('scanner.remove')"
                       @click="removeSessionBook(b)"
                     >
@@ -437,7 +440,7 @@
 
               <button
                 v-if="sessionBooks.length"
-                class="shrink-0 mt-4 border border-[#2e2b28] text-[#f0ede8] text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                class="shrink-0 mt-4 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
                 @click="router.push('/library')"
               >
                 {{ $t("scanner.done_library") }}
@@ -538,7 +541,7 @@
             scanState === 'scanning' &&
             sessionBooks.length
           "
-          class="absolute inset-x-0 bottom-0 z-20 px-4 pt-12 pb-4 pointer-events-none"
+          class="force-dark absolute inset-x-0 bottom-0 z-20 px-4 pt-12 pb-4 pointer-events-none"
           style="
             background: linear-gradient(
               180deg,
@@ -548,7 +551,9 @@
           "
         >
           <div class="flex justify-between items-center mb-3">
-            <span class="text-[10px] text-white/50 tracking-[0.26em] uppercase">
+            <span
+              class="text-[10px] text-text-secondary tracking-[0.26em] uppercase"
+            >
               {{ $t("scanner.scanned_session") }}
             </span>
             <button
@@ -563,16 +568,10 @@
             <div
               v-for="b in sessionBooks.slice(0, 3)"
               :key="b.isbn"
-              class="flex gap-2.5 items-center flex-1 min-w-0"
-              style="
-                background: #1c1b19;
-                border: 1px solid #2e2b28;
-                padding: 9px 11px;
-              "
+              class="flex gap-2.5 items-center flex-1 min-w-0 bg-charcoal-light border border-charcoal-border px-[11px] py-[9px]"
             >
               <div
-                class="w-6 h-8.5 shrink-0 relative overflow-hidden"
-                style="background: #232220; border: 1px solid #2e2b28"
+                class="w-6 h-8.5 shrink-0 relative overflow-hidden bg-search-border border border-charcoal-border"
               >
                 <img
                   v-if="b.coverUrl"
@@ -587,11 +586,11 @@
               </div>
               <div class="min-w-0">
                 <p
-                  class="font-heading font-bold text-[11px] text-white leading-tight truncate"
+                  class="font-heading font-bold text-[11px] text-text-primary leading-tight truncate"
                 >
                   {{ b.title }}
                 </p>
-                <p class="text-[9px] text-white/50 mt-0.5 truncate">
+                <p class="text-[9px] text-text-secondary mt-0.5 truncate">
                   {{ b.author }}
                 </p>
               </div>
@@ -601,23 +600,25 @@
       </Transition>
 
       <!-- ── Detected-book sheet ──────────────────────────────────────────────── -->
+      <!-- `force-dark` whenever it overlays the live camera: the theme tokens below would
+           otherwise render this as a near-white panel on top of a video feed in light mode.
+           In manual mode it sits on the normal charcoal backdrop and follows the theme. -->
       <Transition name="slide-up">
         <div
           v-if="
             (scanState === 'preview' || scanState === 'saving') && detectedBook
           "
           class="absolute bottom-0 left-0 right-0 z-40 md:flex md:justify-center md:pointer-events-none"
+          :class="manualMode ? '' : 'force-dark'"
         >
           <div
             ref="detectedSheetEl"
             tabindex="-1"
-            class="px-6 pt-6 pb-8 md:max-w-md md:w-full md:mb-12 md:border md:border-[#2e2b28] md:pointer-events-auto"
-            style="background: #111110"
+            class="px-6 pt-6 pb-8 bg-charcoal-light md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
           >
             <!-- Drag handle (mobile) -->
             <div
-              class="md:hidden w-9 h-1 rounded-sm mx-auto mb-5"
-              style="background: #2e2b28"
+              class="md:hidden w-9 h-1 rounded-sm mx-auto mb-5 bg-charcoal-border"
             />
 
             <!-- Match indicator -->
@@ -644,8 +645,7 @@
               />
               <div
                 v-else
-                class="w-20 h-30 flex items-center justify-center shrink-0"
-                style="background: #1c1b19; border: 1px solid #2e2b28"
+                class="w-20 h-30 flex items-center justify-center shrink-0 bg-charcoal-light border border-charcoal-border"
               >
                 <v-icon icon="mdi-book-outline" size="28" color="grey" />
               </div>
@@ -653,19 +653,19 @@
               <div class="flex-1 min-w-0">
                 <p
                   v-if="detectedBook.notFound"
-                  class="text-lg text-white/40 italic leading-snug mb-1"
+                  class="text-lg text-text-secondary italic leading-snug mb-1"
                 >
                   {{ $t("scanner.unknown_book") }}
                 </p>
                 <p
                   v-else
-                  class="font-heading text-xl font-bold text-white leading-tight line-clamp-3 mb-2"
+                  class="font-heading text-xl font-bold text-text-primary leading-tight line-clamp-3 mb-2"
                 >
                   {{ detectedBook.title }}
                 </p>
                 <p
                   v-if="!detectedBook.notFound"
-                  class="text-[13px] text-white/65"
+                  class="text-[13px] text-text-secondary"
                 >
                   {{ detectedBook.author }}
                 </p>
@@ -678,13 +678,12 @@
                   <span
                     v-for="(chip, i) in detectedMeta"
                     :key="i"
-                    class="font-mono text-[10px] text-white/55 px-2 py-1"
-                    style="border: 1px solid #2e2b28"
+                    class="font-mono text-[10px] text-text-secondary px-2 py-1 border border-charcoal-border"
                   >
                     {{ chip }}
                   </span>
                 </div>
-                <p v-else class="text-[10px] text-white/30 font-mono mt-3">
+                <p v-else class="text-[10px] text-text-secondary font-mono mt-3">
                   {{ detectedBook.isbn }}
                 </p>
               </div>
@@ -697,7 +696,7 @@
                 class="flex items-center gap-2.5 mb-6"
               >
                 <span
-                  class="text-[10px] text-white/50 tracking-[0.24em] uppercase"
+                  class="text-[10px] text-text-secondary tracking-[0.24em] uppercase"
                 >
                   {{ $t("scanner.shelved_as") }}
                 </span>
@@ -728,10 +727,10 @@
 
             <!-- Guest limit reached: prompt to create account -->
             <template v-else-if="isGuest && guestStore.isAtLimit">
-              <p class="text-sm font-bold text-white mb-1">
+              <p class="text-sm font-bold text-text-primary mb-1">
                 {{ $t("guest.limit_heading") }}
               </p>
-              <p class="text-xs text-white/50 mb-6">
+              <p class="text-xs text-text-secondary mb-6">
                 {{ $t("guest.limit_body") }}
               </p>
               <AppButton
@@ -744,7 +743,7 @@
                 {{ $t("guest.register") }}
               </AppButton>
               <button
-                class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2"
+                class="w-full text-text-secondary text-xs tracking-[0.2em] uppercase py-2"
                 @click="scanAgain"
               >
                 {{ $t("guest.sign_in") }}
@@ -755,7 +754,7 @@
             <template v-else>
               <!-- Status picker -->
               <p
-                class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+                class="text-[10px] text-text-secondary tracking-[0.24em] uppercase mb-2.5"
               >
                 {{ $t("scanner.shelve_as") }}
               </p>
@@ -767,8 +766,8 @@
                   class="flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] tracking-[0.14em] uppercase transition-colors"
                   :style="
                     selectedStatus === s
-                      ? `border: 1px solid ${STATUS_META[s].color}; background: ${STATUS_META[s].tint}; color: #f0ede8`
-                      : 'border: 1px solid #2e2b28; color: #8a8078'
+                      ? `border: 1px solid ${STATUS_META[s].color}; background: ${STATUS_META[s].tint}; color: var(--color-text-primary)`
+                      : 'border: 1px solid var(--color-charcoal-border); color: var(--color-text-secondary)'
                   "
                   @click="selectedStatus = s"
                 >
@@ -782,7 +781,7 @@
 
               <!-- Owning status picker -->
               <p
-                class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+                class="text-[10px] text-text-secondary tracking-[0.24em] uppercase mb-2.5"
               >
                 {{ $t("owning.label") }}
               </p>
@@ -794,8 +793,8 @@
                   class="flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] tracking-[0.14em] uppercase transition-colors"
                   :style="
                     selectedOwning === s
-                      ? `border: 1px solid ${OWNING_META[s].color}; background: ${OWNING_META[s].tint}; color: #f0ede8`
-                      : 'border: 1px solid #2e2b28; color: #8a8078'
+                      ? `border: 1px solid ${OWNING_META[s].color}; background: ${OWNING_META[s].tint}; color: var(--color-text-primary)`
+                      : 'border: 1px solid var(--color-charcoal-border); color: var(--color-text-secondary)'
                   "
                   @click="selectedOwning = s"
                 >
@@ -806,7 +805,7 @@
               <!-- Rating picker (read only — rating a book you haven't finished doesn't make sense) -->
               <template v-if="selectedStatus === 'read'">
                 <p
-                  class="text-[10px] text-white/50 tracking-[0.24em] uppercase mb-2.5"
+                  class="text-[10px] text-text-secondary tracking-[0.24em] uppercase mb-2.5"
                 >
                   {{ $t("scanner.rate_as") }}
                 </p>
@@ -837,7 +836,7 @@
                 }}
               </AppButton>
               <button
-                class="w-full text-white/40 text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
+                class="w-full text-text-secondary text-xs tracking-[0.2em] uppercase py-2 disabled:opacity-40"
                 :disabled="scanState === 'saving'"
                 @click="scanAgain"
               >
@@ -853,18 +852,19 @@
         <div
           v-if="showReview"
           class="absolute bottom-0 left-0 right-0 z-50 md:flex md:justify-center md:pointer-events-none"
+          :class="manualMode ? '' : 'force-dark'"
         >
           <div
             ref="reviewSheetEl"
             tabindex="-1"
-            class="bg-[#111110] border-t border-[#2e2b28] flex flex-col max-h-[85dvh] md:max-h-[80dvh] md:max-w-md md:w-full md:mb-12 md:border md:border-[#2e2b28] md:pointer-events-auto"
+            class="bg-charcoal-light border-t border-charcoal-border flex flex-col max-h-[85dvh] md:max-h-[80dvh] md:max-w-md md:w-full md:mb-12 md:border md:border-charcoal-border md:pointer-events-auto"
           >
             <!-- Header -->
             <div
-              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-[#2e2b28]"
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
             >
               <button
-                class="w-9 h-9 rounded-full bg-[#1c1b19] border border-[#2e2b28] flex items-center justify-center text-[#f0ede8] shrink-0 hover:opacity-80 transition-opacity"
+                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
                 :aria-label="$t('detail.close')"
                 @click="showReview = false"
               >
@@ -872,12 +872,12 @@
               </button>
               <div class="min-w-0">
                 <p
-                  class="text-[9px] text-[#8a8078] tracking-[0.26em] uppercase"
+                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.this_session") }}
                 </p>
                 <p
-                  class="font-heading font-bold text-lg text-[#f0ede8] leading-tight"
+                  class="font-heading font-bold text-lg text-text-primary leading-tight"
                 >
                   {{
                     $t(
@@ -896,7 +896,7 @@
                 <div
                   v-for="b in sessionBooks"
                   :key="b.isbn"
-                  class="relative overflow-hidden border-b border-[#2e2b28]"
+                  class="relative overflow-hidden border-b border-charcoal-border"
                 >
                   <!-- Delete affordance, revealed while swiping left -->
                   <div
@@ -911,7 +911,7 @@
                   </div>
                   <!-- Row content (swipes on touch; delete button on desktop) -->
                   <div
-                    class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-[#111110]"
+                    class="relative flex gap-4 items-start py-5 px-4 md:px-6 bg-charcoal-light"
                     :class="swipeIsbn === b.isbn ? '' : 'swipe-snap'"
                     :style="{
                       transform: `translateX(${swipeIsbn === b.isbn ? swipeX : 0}px)`,
@@ -923,7 +923,7 @@
                   >
                     <div
                       class="w-12 h-18 shrink-0 relative overflow-hidden"
-                      style="background: #232220; border: 1px solid #2e2b28"
+                      style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                     >
                       <img
                         v-if="b.coverUrl"
@@ -938,11 +938,11 @@
                     </div>
                     <div class="flex-1 min-w-0">
                       <p
-                        class="font-heading font-bold text-base text-[#f0ede8] leading-snug"
+                        class="font-heading font-bold text-base text-text-primary leading-snug"
                       >
                         {{ b.title }}
                       </p>
-                      <p class="text-xs text-[#8a8078] mt-1">
+                      <p class="text-xs text-text-secondary mt-1">
                         {{ b.author }}
                       </p>
                       <div class="flex items-center gap-3 mt-2.5">
@@ -957,7 +957,7 @@
                           {{ statusLabels[b.status] }}
                         </span>
                         <span
-                          class="font-mono text-[9px] text-[#8a8078]/55 tracking-wide"
+                          class="font-mono text-[9px] text-text-secondary/55 tracking-wide"
                         >
                           {{ b.isbn }}
                         </span>
@@ -965,12 +965,12 @@
                     </div>
                     <div class="flex flex-col items-end gap-2 shrink-0 pt-1">
                       <span
-                        class="font-mono text-[9px] text-[#8a8078]/55 whitespace-nowrap"
+                        class="font-mono text-[9px] text-text-secondary/55 whitespace-nowrap"
                       >
                         {{ sessionTime(b.addedAt) }}
                       </span>
                       <button
-                        class="hidden md:flex text-[#8a8078]/45 hover:text-error transition-colors"
+                        class="hidden md:flex text-text-secondary/45 hover:text-error transition-colors"
                         :title="$t('scanner.remove')"
                         @click="removeSessionBook(b)"
                       >
@@ -984,10 +984,10 @@
 
             <!-- Footer actions -->
             <div
-              class="shrink-0 px-4 md:px-6 py-4 border-t border-[#2e2b28] flex gap-3"
+              class="shrink-0 px-4 md:px-6 py-4 border-t border-charcoal-border flex gap-3"
             >
               <button
-                class="w-36 shrink-0 border border-[#2e2b28] text-[#f0ede8] text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
+                class="w-36 shrink-0 border border-charcoal-border text-text-primary text-[11px] font-bold tracking-[0.18em] uppercase py-4 hover:opacity-80 transition-opacity"
                 @click="showReview = false"
               >
                 {{ $t("scanner.scan_more") }}
@@ -1010,18 +1010,19 @@
         <div
           v-if="showSearchResults && !mdAndUp"
           class="absolute bottom-0 left-0 right-0 z-50"
+          :class="manualMode ? '' : 'force-dark'"
         >
           <div
             ref="mobileSearchSheetEl"
             tabindex="-1"
-            class="bg-[#111110] border-t border-[#2e2b28] flex flex-col max-h-[80dvh]"
+            class="bg-charcoal-light border-t border-charcoal-border flex flex-col max-h-[80dvh]"
           >
             <!-- Header -->
             <div
-              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-[#2e2b28]"
+              class="shrink-0 flex items-center gap-3 px-4 md:px-6 py-3.5 border-b border-charcoal-border"
             >
               <button
-                class="w-9 h-9 rounded-full bg-[#1c1b19] border border-[#2e2b28] flex items-center justify-center text-[#f0ede8] shrink-0 hover:opacity-80 transition-opacity"
+                class="w-9 h-9 rounded-full bg-charcoal-light border border-charcoal-border flex items-center justify-center text-text-primary shrink-0 hover:opacity-80 transition-opacity"
                 :aria-label="$t('detail.close')"
                 @click="closeSearchResults"
               >
@@ -1029,12 +1030,12 @@
               </button>
               <div class="min-w-0">
                 <p
-                  class="text-[9px] text-[#8a8078] tracking-[0.26em] uppercase"
+                  class="text-[9px] text-text-secondary tracking-[0.26em] uppercase"
                 >
                   {{ $t("scanner.add_label") }}
                 </p>
                 <p
-                  class="font-heading font-bold text-lg text-[#f0ede8] leading-tight"
+                  class="font-heading font-bold text-lg text-text-primary leading-tight"
                 >
                   {{ $t("scanner.search_results") }}
                 </p>
@@ -1047,12 +1048,12 @@
                 v-for="candidate in searchResults"
                 :key="candidate.isbn"
                 type="button"
-                class="flex gap-3.5 items-start w-full text-left px-4 md:px-6 py-4 border-b border-[#2e2b28] hover:bg-[#1c1b19] transition-colors"
+                class="flex gap-3.5 items-start w-full text-left px-4 md:px-6 py-4 border-b border-charcoal-border hover:bg-charcoal-light transition-colors"
                 @click="selectCandidate(candidate)"
               >
                 <div
                   class="w-9 h-14 shrink-0 relative overflow-hidden"
-                  style="background: #232220; border: 1px solid #2e2b28"
+                  style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                 >
                   <img
                     v-if="candidate.cover_url"
@@ -1067,14 +1068,14 @@
                 </div>
                 <div class="flex-1 min-w-0">
                   <p
-                    class="font-heading font-bold text-sm text-[#f0ede8] leading-snug truncate"
+                    class="font-heading font-bold text-sm text-text-primary leading-snug truncate"
                   >
                     {{ candidate.title || candidate.isbn }}
                   </p>
-                  <p class="text-[11px] text-[#8a8078] mt-0.5 truncate">
+                  <p class="text-[11px] text-text-secondary mt-0.5 truncate">
                     {{ candidate.author }}
                   </p>
-                  <p class="text-[10px] text-[#8a8078]/55 mt-1 truncate">
+                  <p class="text-[10px] text-text-secondary/55 mt-1 truncate">
                     {{
                       [candidate.publish_date?.slice(0, 4), candidate.publisher]
                         .filter(Boolean)
@@ -1217,10 +1218,11 @@ const DUPLICATE_COLOR = "#e8a838";
 // duplicate, grey no-match.
 const detectedIndicator = computed(() => {
   const b = detectedBook.value;
-  if (!b) return { color: "#8a8078", label: "" };
+  if (!b) return { color: "var(--color-text-secondary)", label: "" };
   if (b.duplicate)
     return { color: DUPLICATE_COLOR, label: t("scanner.in_library") };
-  if (b.notFound) return { color: "#8a8078", label: t("scanner.no_match") };
+  if (b.notFound)
+    return { color: "var(--color-text-secondary)", label: t("scanner.no_match") };
   return { color: "#22c55e", label: t("scanner.match_found") };
 });
 

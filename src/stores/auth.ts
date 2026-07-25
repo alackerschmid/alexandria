@@ -4,6 +4,20 @@ import { useRouter } from "vue-router";
 
 export const WELCOME_SEEN_KEY = "welcome_seen";
 
+// The JWT's `userId` claim — stable across an email change, unlike the address, so it's what
+// per-user client-side storage keys on (see stores/preferences.ts).
+function userIdFromToken(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
+    const userId = JSON.parse(json)?.userId;
+    return userId == null ? null : String(userId);
+  } catch {
+    return null;
+  }
+}
+
 export const useAuthStore = defineStore("auth", () => {
   const token = ref<string | null>(localStorage.getItem("token"));
   const email = ref<string | null>(localStorage.getItem("email"));
@@ -11,6 +25,9 @@ export const useAuthStore = defineStore("auth", () => {
   const router = useRouter();
 
   const isAuthenticated = computed(() => !!token.value);
+  const userId = computed(() =>
+    token.value ? userIdFromToken(token.value) : null,
+  );
 
   const setAuth = (
     newToken: string,
@@ -55,6 +72,7 @@ export const useAuthStore = defineStore("auth", () => {
     email,
     firstname,
     isAuthenticated,
+    userId,
     setAuth,
     setFirstname,
     setEmail,

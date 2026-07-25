@@ -739,8 +739,9 @@ const { serverBooks, seriesMemberships, error, fetchBooks, fetchMemberships } =
 
 const search = ref("");
 // Persisted display settings bind straight to the store's writable refs (each
-// persists to localStorage on set — see libraryDefaults.ts). onlyOwned/groupEditions
-// are pulled here, ahead of the search pipeline below, because it needs them at setup.
+// persists per-user via the preferences store on set — see libraryDefaults.ts).
+// onlyOwned/groupEditions are pulled here, ahead of the search pipeline below, because
+// it needs them at setup.
 const {
   groupBy,
   sortDirection,

@@ -3,6 +3,7 @@ import type { Env } from "../types";
 import { EMAIL_RE, signToken, authMiddleware } from "../auth";
 import { hashPassword, verifyPassword, needsRehash } from "../password";
 import { rateLimitOrReject } from "../rate-limit";
+import { parsePreferences, sanitizePreferences } from "../preferences";
 
 const auth = new Hono<Env>();
 
@@ -54,7 +55,10 @@ auth.post("/register", async (c) => {
   }
 
   const token = await signToken(userId, c.env.JWT_SECRET);
-  return c.json({ token, email, firstname: null }, 201);
+  // `preferences` is constant-empty here (the INSERT never sets it), but it's returned for the
+  // same reason login returns it: the client seeds its preferences store from the auth response
+  // rather than spending a round-trip on GET /preferences.
+  return c.json({ token, email, firstname: null, preferences: {} }, 201);
 });
 
 auth.post("/login", async (c) => {
@@ -81,9 +85,16 @@ auth.post("/login", async (c) => {
 
   const db = c.env.DB;
   const user = await db
-    .prepare("SELECT id, password_hash, firstname FROM users WHERE email = ?")
+    .prepare(
+      "SELECT id, password_hash, firstname, preferences FROM users WHERE email = ?",
+    )
     .bind(email)
-    .first<{ id: number; password_hash: string; firstname: string | null }>();
+    .first<{
+      id: number;
+      password_hash: string;
+      firstname: string | null;
+      preferences: string | null;
+    }>();
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
     return c.json({ error: "Invalid email or password" }, 401);
@@ -106,7 +117,14 @@ auth.post("/login", async (c) => {
   }
 
   const token = await signToken(user.id, c.env.JWT_SECRET);
-  return c.json({ token, email, firstname: user.firstname ?? null });
+  // Carried on the same row we already read to verify the password, so this costs no extra
+  // query and saves the client a GET /preferences before it can paint the user's look.
+  return c.json({
+    token,
+    email,
+    firstname: user.firstname ?? null,
+    preferences: parsePreferences(user.preferences),
+  });
 });
 
 auth.patch("/me", authMiddleware, async (c) => {
@@ -213,6 +231,28 @@ auth.patch("/me", authMiddleware, async (c) => {
   }
 
   return c.json(result);
+});
+
+auth.get("/preferences", authMiddleware, async (c) => {
+  const row = await c.env.DB.prepare("SELECT preferences FROM users WHERE id = ?")
+    .bind(c.get("userId"))
+    .first<{ preferences: string | null }>();
+  return c.json({ preferences: parsePreferences(row?.preferences ?? null) });
+});
+
+// Full replace, not a merge: the client holds the complete preference set in memory and
+// sends all of it, so a key it deleted actually disappears.
+auth.put("/preferences", authMiddleware, async (c) => {
+  const body = await c.req.json<{ preferences?: unknown }>();
+  const preferences = sanitizePreferences(body.preferences);
+  if (!preferences) {
+    return c.json({ error: "Invalid preferences payload" }, 400);
+  }
+
+  await c.env.DB.prepare("UPDATE users SET preferences = ? WHERE id = ?")
+    .bind(JSON.stringify(preferences), c.get("userId"))
+    .run();
+  return c.body(null, 204);
 });
 
 auth.delete("/me", authMiddleware, async (c) => {

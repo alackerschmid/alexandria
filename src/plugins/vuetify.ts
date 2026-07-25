@@ -8,11 +8,14 @@ import { createVuetify } from "vuetify";
 import "@mdi/font/css/materialdesignicons.css";
 import "../styles/layers.css";
 import "vuetify/styles";
+import { THEME_HINT_KEY } from "../stores/theme";
 
 export default createVuetify({
   theme: {
     defaultTheme:
-      localStorage.getItem("theme") === "dark" ? "editorial-dark" : "editorial",
+      localStorage.getItem(THEME_HINT_KEY) === "dark"
+        ? "editorial-dark"
+        : "editorial",
     themes: {
       editorial: {
         dark: false,

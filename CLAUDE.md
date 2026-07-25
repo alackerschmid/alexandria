@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 5. I’m always open to ideas on better ways to do things. Please don’t hesitate to suggest a better way, or one that has long lasting impact over a tactical change. If what we are trying to do is similar to settled science or industry practice, let me know. We don’t have to reinvent the wheel.
 
-6. Keep this file in sync with the code: when adding, renaming, or removing a route, table, store, composable, page, or component, update the corresponding CLAUDE.md inventory in the same change. The behavioral sections age well; the inventories rot silently unless this is enforced.
+6. Keep these files in sync with the code: when adding, renaming, or removing a route, table, store, composable, page, or component, update the corresponding inventory in the same change — frontend inventories live in `src/CLAUDE.md`, backend routes/schema in `worker/CLAUDE.md`. The behavioral sections age well; the inventories rot silently unless this is enforced.
 
 7. Ignore `to-do.md` at the repo root — it's personal notes, not tasks for you. Don't read, update, or act on it unless explicitly asked.
 
@@ -23,73 +23,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Scale response length to task requirements. Be concise but comprehensive.
 - No performative tics: no unnecessary validation ("Fair point"), narrating the next move ("Let me name them plainly"), flagging significance ("This is the real issue"), or advertising honesty ("to be honest"). Lead with substance.
 - No filler questions. "What's next?", "How can I help?", "What's up?" are social performance, not real questions. Only ask a question when you need the answer to proceed.
-- End the response when the substantive answer ends. No trailing asides set apart from the main reply — no "One thing I notice," "One small residual," "Worth flagging," "Also worth knowing," "One note," "One genuinely marginal note," or any closing observation appended after the answer is complete. If a point matters, state it in the body with a clear verdict on whether it's an issue or not. A point held for the end and hedged as "non-blocking" or "marginal" forces the reader to evaluate something the writer already judged unimportant — either give it a real place in the body or cut it.
+- Keep responses focused, brief, and concise. Keep disclaimers and caveats short, and spend most of the response on the main answer. When asked to explain something, give a high-level summary unless an in-depth explanation is specifically requested.
 
-## Development Setup
+## Where things are documented
 
-**Prerequisites:**
-
-- Node.js 22+ (as per `@tsconfig/node22`)
-- npm 10+
-
-**Local development:**
-
-1. `npm install` at root, then `cd worker && npm install` — the worker has its own `package.json`/lockfile and is not covered by the root install
-2. Create `worker/.dev.vars` with required secrets:
-   ```
-   JWT_SECRET=<any-random-string-for-local-dev>
-   GOOGLE_BOOKS_API_KEY=<your-google-books-api-key>
-   ```
-3. Run **both** dev servers simultaneously:
-   - `npm run dev` (frontend on `:3000`)
-   - `npm run dev:worker` (worker on `:8787`, in separate terminal/tab)
-
-   The frontend proxies `/api/*` to the worker — API calls fail silently if the worker isn’t running.
-
-4. Optional: `cd worker && npm run seed:dev` (worker must already be running) creates/reuses a fixed local test account — `dev@example.com` / `devpassword123` — and seeds it with a handful of scans spanning different statuses/owning-states/ratings, so manual QA doesn't need a throwaway registration each time. Talks to the local worker over HTTP and only ever targets local D1; safe to re-run (skips ISBNs already in the account's library).
-
-## Commands
-
-### Frontend (root)
-
-```bash
-npm run dev          # Vite dev server on :3000 (proxies /api → :8787)
-npm run build        # Type-check + Vite build → dist/
-npm run type-check   # vue-tsc --build --force
-npm run lint         # ESLint
-npm run lint:fix     # ESLint --fix
-```
-
-### Worker (Cloudflare Worker backend)
-
-```bash
-npm run dev:worker     # wrangler dev (local worker on :8787)
-npm run deploy:worker  # wrangler deploy to production
-# Or from worker/ directly:
-cd worker && npm run dev
-cd worker && npm run deploy
-```
-
-### Database migrations
-
-```bash
-# Local D1 (during wrangler dev)
-cd worker && npx wrangler d1 migrations apply bookscan --local
-# Production D1
-cd worker && npx wrangler d1 migrations apply bookscan --remote
-```
-
-### Verification
-
-```bash
-npm run type-check          # Verify TypeScript (required before commit)
-npm run lint                # ESLint — the root flat config covers both src/ and worker/src/
-npm test                    # Vitest (root) — frontend pure-logic tests (search-suggestions, shelf-packing, offline-queue, goodreads)
-cd worker && npm test       # Vitest — pure-logic unit tests (isbn, library-query, editions, enrichment, auth, password)
-cd worker && npx vitest run test/enrichment.spec.ts   # run a single test file
-```
-
-Note: Both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`, `vitest run`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests.
+- `src/CLAUDE.md` — frontend: pages/components/composables/stores/utils inventory, the library display pipeline, styling system (Tailwind + Vuetify + user appearance presets), i18n
+- `worker/CLAUDE.md` — backend: API routes, key modules, auth, rate limiting, D1 schema, the Wikidata enrichment pipeline and its state machine
+- `/dev-setup` skill — running both dev servers locally, `worker/.dev.vars` secrets, seeding a test account
+- `/troubleshooting` skill — API 404s in dev, enrichment stuck on `pending`
 
 ## Architecture
 
@@ -102,269 +43,17 @@ Two separate deployments, both triggered by pushing to `main`:
 
 CI: the **CI** workflow (`.github/workflows/ci.yml`) runs the same verify workflow on every push to non-`main` branches.
 
-Pushing to GitHub redeploys both the frontend and the worker. Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote` (see below).
-
-### Frontend (`src/`)
-
-Vue 3 + TypeScript + Vite.
-
-- `src/pages/` — route-level components:
-  - `landing.vue` — unauthenticated marketing page (`/`)
-  - `home.vue` — authenticated dashboard: stats, greeting, recently-added (`/home`)
-  - `index.vue` — full paginated library (`/library`)
-  - `welcome.vue` — first-run onboarding (`/welcome`); seen-state stored in `localStorage` under `WELCOME_SEEN_KEY`
-  - `series.vue` — series completeness view (`/series/:id`)
-  - `settings.vue` — custom field management (`/settings`)
-  - `import.vue` — Goodreads CSV import wizard (`/import`, requires auth); state lives in `src/stores/import.ts` (see below), not held locally, so the import survives navigating away
-  - `login.vue`, `scanner.vue`, `privacy.vue`, `NotFound.vue`
-- `src/components/` —
-  - App chrome/shared: `AppHeader`, `AppFooter`, `AppToast`, `AppPagination`, `AppSelect`, `AppButton` (**the shared action-button primitive** — `variant` `primary`/`secondary`/`ghost`/`danger`/`inverse` × `size` `sm`/`md`/`lg`, plus `block`/`outlined`/`loading`; `primary` fills with the user's accent via theme `primary`, `inverse` is the ink/white marketing treatment on dark heroes. Use it for all action buttons; segmented pickers and `AppToggle` are deliberately not this. The always-dark scanner keeps its dark-hardcoded secondary/ghost buttons — only its accent-fill buttons use `AppButton`), `AppSegmented` (**the shared single-select segmented control** — generic over the option value, `variant` `fill` (default — accent-filled active option; used by every labelled settings-style row, i.e. the settings page defaults and the library display-options panel) / `highlight` (accent-tinted active text; reserved for toolbar chrome, i.e. the library's inline view toggle), `size` `sm`/`md`, options `{ value, label?, icon?, ariaLabel? }`; active state follows the accent. Not for the scanner's per-status colored pickers or login's auth-mode pills — those stay bespoke), `AppToggle` (presentational dot + ON/OFF label toggle — the same shape as the card status tags; parent owns the click handler), `MobileTabBar`, `OverrideDot`, `PlaceholderCover`, `CoverImage` (the shared cover-image wrapper — renders the `<img>` when `coverUrl` is set, falling back to `PlaceholderCover` when it's absent or the image fails to load; used everywhere a book cover is displayed instead of hand-rolling the `<img v-if>`/`PlaceholderCover v-else` pair), `ConfirmDialog` (shared destructive-confirm dialog — title/body/danger/loading/confirm-disabled + default slot; used by the library delete + settings account-delete + Goodreads-import cancel flows), `ScannerPreview` (decorative barcode/scan-line widget used by `landing.vue` and `welcome.vue`; `dark` prop defaults to always-dark, pass `:dark="false"` to follow the app theme), `CyclePill` (one-click enum picker that advances to the next option on click — dense-row alternative to `AppSegmented`; used by the Goodreads-import matched table's status/owning cells), `RatingStars` (read-only star display for a 0-10 rating, used by `BookDetail` and the import summary)
-  - Library page: `LibrarySearchBar` (the smart-search widget — hero, highlight overlay, autocomplete dropdown, token pills, ⌘K; backed by `useSearchSuggestions`), `LibraryCoverCard`, `LibraryRowCard`, `LibraryGhostRow`, `LibraryGroupHeader` (one shelf-group header — packed `compact` / mobile `full` sizes), `LibraryGroupTabs`, `LibraryDisplaySettings`
-  - `BookDetail.vue` (card/full mode switch + shared edit/enrichment/edition state) plus its subcomponents in `src/components/book-detail/`: `BookDetailCard` (the compact card-mode view), `AuthorChips`, `BookEditForm`, `CustomFieldsPanel`, `EditionCarousel`, `EditionDetails`, `EditionsDialog`, `EnrichmentBadge`, `RatingDialog`, `TagInput`
-  - `src/components/import/` — the Goodreads-import wizard's pieces (`import.vue`'s state comes entirely from `src/stores/import.ts`): `ImportHeaderBar` (review-screen file name/counts + cancel/finalize), `MatchedRow` (one editable card in the Matched tab: cover, edition picker, status/owning `CyclePill`s, rating, remove/undo), `AttentionRow` (one review-queue row), `ResolveDrawer` (manual title/ISBN search side panel for a review-queue row — `useFocusTrap`'d, always-mounted with a nullable `item` prop so its focus-trap state survives across opens instead of leaking a listener per open/close cycle), `ShelfMappingPanel` (the per-shelf status/owning `AppSegmented` controls, behind the confirm step's "Adjust shelf mapping" disclosure), `ImportProgressChip` (global fixed-position indicator hosted in `App.vue`, hidden on `/import` itself; shows running/paused/complete state and routes to `/import` on click), `matched-grid.ts` (shared grid-column geometry for the Matched table's header + rows)
-  - `src/components/settings/` — settings section building blocks (formerly inline `defineComponent`s): `SettingsSectionHeading`, `SettingsField`, `SettingsDefaultRow`
-- `src/composables/` — shared logic extracted from pages:
-  - `useApi.ts` — **the canonical API client.** `useApi().apiFetch(path, init?, opts?)` prepends `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user out on a 401 (opt out with `{ on401: "ignore" }`). All authenticated frontend API calls must go through it — don't hand-roll `fetch`.
-  - `useLibraryData.ts` — the library page's server data: paginated `GET /api/scans` (with a sequence guard against overlapping fetches) + `GET /api/series` membership map, exposing `serverBooks`/`seriesMemberships`/`error`
-  - `useLibrarySearch.ts` / `useLibraryGrouping.ts` / `useEditionGrouping.ts` — the library display pipeline: text/filter search → collapse same-work editions into one synthetic card per work (must run downstream of search, so filters match real per-edition fields) → group/sort. `useGroupDimensions.ts` supplies the group-by dimensions incl. custom fields.
-  - `useSearchSuggestions.ts` — the library search bar's autocomplete engine (prefix chips, facet-value + title matches, highlight segmentation); reads `useLibrarySearch`'s outputs
-  - `useShelfGroups.ts` — turns `useLibraryGrouping`'s output into display-ready shelves (series completeness counts, unowned reveal, collapse/"show all" helpers) consumed by the packed-row layout
-  - `useEnrichmentPoll.ts` — polls `GET /api/scans/:id` with backoff while enrichment is `pending`
-  - `useBookStatus.ts` / `useOwningStatus.ts` / `useRating.ts` / `useScanStatus.ts` — status/owning/rating config + ordering (locale-reactive)
-  - `useToast.ts` — per-page toast state (`visible`/`message`/`type` + `showToast`) bound to `AppToast`
-  - `useBarcodeScanner.ts` — Quagga2 live-camera lifecycle (init/start/stop + consecutive-read buffer) for the scanner page
-  - `useDetailRoute.ts` (detail dialog state in route query params), `useNavLinks.ts`, `useFocusTrap.ts`
-- `src/utils/` — pure helpers: `book-display.ts`, `cover.ts`, `custom-fields.ts`, `language.ts`, `tags.ts`, `appearance.ts` (paper + typeface preset definitions), `search-parse.ts` (search fragment/highlight parsers), `shelf-packing.ts` (grouped-shelf bin-packer `packRows` + shelf/packing types), `offline-queue.ts` (scanner offline-scan localStorage queue), `goodreads.ts` (Goodreads CSV row parsing/shelf-mapping/import-payload building for `src/stores/import.ts`). `search-parse.ts`, `shelf-packing.ts`, `offline-queue.ts` and `goodreads.ts` are unit-tested (`test/*.spec.ts`).
-- `src/stores/` — Pinia stores:
-  - `auth.ts` — JWT + email + firstname in localStorage; exports `WELCOME_SEEN_KEY`
-  - `guest.ts` — **guest mode:** unauthenticated users can save up to 3 scans to localStorage; on register/login, `syncToAccount()` migrates them to the user's account server-side
-  - `fieldDefs.ts` — the user's custom field definitions + lazily-loaded distinct tag values for autocomplete
-  - `libraryDefaults.ts` — user display preferences in localStorage (default view/list vs tile, scan status, page size, etc.)
-  - `theme.ts` (dark/light), `accent.ts` (accent color, default `#ff6600`), `locale.ts` (i18n locale)
-  - `paper.ts` (background/surface palette preset, default `warm`), `typeface.ts` (font pairing preset, default `editorial`) — both store a preset **key** from `src/utils/appearance.ts`, not raw values
-  - `import.ts` — **deliberate exception to the cross-page-only rule below**: holds the entire Goodreads-import session (parsed rows, mapping, review queue, matched items) so the send loop keeps running when the user navigates away from `/import`. Persists to `localStorage` after every batch/edit (stripped of re-fetchable candidate-search state) and rehydrates on boot into a "paused" state if a run was interrupted mid-batch — resuming re-derives the unsent rows from what's already been resolved rather than tracking a batch cursor. `import.vue` and `ImportProgressChip.vue` are both thin views over this store.
-- `src/types/` — `book.ts` (`Book`, `ReadStatus`, `OwningStatus` — the scan-row shape; extend it when adding API response columns), `library.ts` (`GroupBy`, `SortOption`), `stats.ts` (`CollectionStats`, matching the `GET /api/stats` response shape)
-- `src/locales/` — `en.json`, `de.json` — all UI strings; add new languages here
-- `src/plugins/i18n.ts` — vue-i18n setup (legacy: false, reads locale from localStorage)
-- `src/plugins/vuetify.ts` — Vuetify 4 with `editorial` / `editorial-dark` themes
-- `src/styles/tailwind.css` — Tailwind v4 config with custom design tokens
-- `src/router/index.ts` — Vue Router guards: authenticated users redirect from `/`, `/login` → `/home`; unauthenticated from `/home`, `/series/:id`, `/welcome` → `/`; `/welcome` also redirects to `/home` if `WELCOME_SEEN_KEY` is set
+Pushing to GitHub redeploys both the frontend and the worker. Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote`.
 
 The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
 
-**Frontend data flow:** pages fetch via `useApi().apiFetch` and hold their own page-level state; Pinia stores mostly hold cross-page state (auth/guest session, field definitions, display preferences, theme/accent/locale) — `stores/import.ts` is the deliberate exception, holding page-level-shaped state in a store specifically so it survives navigation (see above). The library page (`index.vue`) runs its book list through the composable pipeline: `useLibrarySearch` (filters like `status:unread` against real per-edition fields) → `useEditionGrouping` (collapses same-work editions into one card) → `useLibraryGrouping` (group + sort) → pagination. After a scan, `useEnrichmentPoll` polls the scan row until `enrichment_status` resolves.
-
-### Worker (`worker/src/`)
-
-Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts` is just CORS + route mounting; the routes live in `worker/src/routes/`, one file per resource: `auth.ts` (`/api/auth`), `books.ts` (`/api/books`), `scans.ts` (`/api/scans`), `fields.ts` (`/api/field-definitions`), `catalog.ts` (`/api/works` + `/api/series`), `stats.ts` (`/api/stats`), `import.ts` (`/api/import`).
-
-**Key modules:**
-
-- `editions.ts` — `resolveEdition` (fetch-or-create a `books` row, optionally seeded with caller-supplied `FallbackMetadata` when the ISBN can't be resolved externally), `fetchBookMetadata` (Google Books + OpenLibrary merge), `linkWork` (dedup into `works`/`authors`). The central entry point for all ISBN resolution.
-- `library-query.ts` — shared `SCAN_SELECT` (the big JOIN), `OVERRIDE_FIELDS`, `SORT_CLAUSES`, `resolveRatingForUpdate` (the shared status/rating invariant used by both `PATCH /api/scans/:id` and the Goodreads-import update-on-duplicate path). Add new columns here when extending the scan response.
-- `title-match.ts` — pure title/author matching for the Goodreads-import no-ISBN path: `titleSimilarity` (Dice-coefficient bigram comparison with a prefix-containment shortcut) + `pickBestMatch` (confident-and-unambiguous match against a candidate list, else no match).
-- `enrichment.ts` — Wikidata SPARQL pipeline; exports `CURRENT_ENRICHMENT_SCHEMA_VERSION`.
-- `sweeper.ts` — cron handler; imported by `index.ts` as the `scheduled` export.
-- `auth.ts` — `authMiddleware` (JWT verify, injects `userId`), `signToken` (HS256, 7-day expiry).
-- `isbn.ts` — ISBN normalization/validation (`normalizeIsbn`, `isValidIsbn`).
-- `rate-limit.ts` — `checkRateLimit` (fixed-window D1 counter, optional `cost` param to charge more than one unit per call — e.g. a Goodreads-import batch charges its row count) + `rateLimitOrReject` (returns a ready 429 `Response` or null).
-
-**Public routes** (no auth required):
-
-- `POST /api/auth/register` — creates user, returns JWT; migrates any guest scans to account
-- `POST /api/auth/login` — returns JWT; migrates any guest scans to account
-- `GET /api/books/guest-lookup?isbn=` — metadata lookup for guest mode (same cache-then-fetch as authenticated `/api/books/lookup`, but **skips Wikidata enrichment** to reduce anonymous load)
-- `GET /api/books/guest-search?title=` — title search for guest mode (Google Books, no DB writes)
-
-**Protected routes** (require `Authorization: Bearer <jwt>`):
-
-- `PATCH /api/auth/me` — update authenticated user's `firstname`, `email`, and/or password; changing `email` or password requires the current `password` in the body (re-verified server-side) and is rate-limited per user (`me-verify:<userId>`, shared with `DELETE /me`)
-- `DELETE /api/auth/me` — **delete the account** and all its data; requires the current `password` in the body (re-verified server-side), returns `204`
-- `GET /api/books/lookup?isbn=` — DB cache → Google Books → OpenLibrary fallback; caches result in `books` table
-- `GET /api/books/search?title=&author=&publisher=` — candidate editions from Google Books; writes only to the `search_cache` table (see below), never to `books` — a `books` row is only created when the user picks an edition and it flows through lookup/scan
-- `POST /api/books/refresh?isbn=` — re-fetches metadata, fills only NULL fields (`COALESCE` updates; a `number_of_pages_median` of 0 is treated as NULL — Google Books returns 0 for unknown page counts, and ingestion in `editions.ts` nulls out non-positive counts)
-- `PATCH /api/books/override` — write per-user field overrides to `book_overrides`; body `{ isbn, changes: { field: value } }`
-- `GET /api/scans` — paginated list (`limit`/`offset`/`sort`); returns merged rows with `*_overridden` boolean flags
-- `POST /api/scans` — save a scan by ISBN; resolves book metadata automatically
-- `PATCH /api/scans/:id` — update status (`unread` | `reading` | `read` | `dnf`), `owning_status`, and/or `rating` (integer 0-10 or `null` to clear). Server-enforced invariants: a rating can only be set while the effective status is `read` (400 otherwise), and moving off `read` without an explicit rating change silently clears any existing rating.
-- `PATCH /api/scans/:id/edition` — switch the scan to a different edition (ISBN) of the same work; status and custom field values follow the scan, per-user metadata overrides are dropped (they corrected the old edition's metadata)
-- `DELETE /api/scans/:id` — remove a scan and its associated `book_overrides`
-
-Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Local dev uses `worker/.dev.vars`. `CORS_ORIGIN` is **not** a secret — it's a plain `[vars]` entry in `worker/wrangler.toml` (set to `https://bookscan.pages.dev` in production; the code falls back to `*` when unset).
-
-**Authentication:**
-
-- JWT tokens expire after 7 days (no refresh token mechanism; users re-login after expiry)
-- Passwords hashed with Web Crypto PBKDF2 (`worker/src/password.ts`, 100k iterations, self-describing `pbkdf2$<iter>$<salt>$<hash>` format); legacy `bcryptjs` hashes still verify and are re-hashed to PBKDF2 on the next successful login (`bcryptjs` stays a dependency until all users have logged in post-migration)
-- Auth header format: `Authorization: Bearer <token>`
-
-**Offline/Queue behavior:**
-
-- `POST /api/scans` accepts `isbn` only and always succeeds, even if metadata fetch fails (`allowEmpty: true`) — unless rate-limited (see below)
-- Scans remain `enrichment_status: pending` until background enrichment completes or is triggered manually
-- Allows users to queue scans offline; metadata resolves asynchronously in the background
-
-**Rate limiting:** `POST /api/scans` is capped at 30 scans/minute per user (`SCAN_RATE_LIMIT` in `routes/scans.ts`) via `checkRateLimit` (`rate-limit.ts`) — a generic fixed-window D1 counter backed by the `rate_limits` table (`key` TEXT, `window_start` ms-epoch bucket, `window_ms` window length, `count`). `key` is caller-defined (e.g. `scan:<userId>`) so the same table can back other rate-limited routes without a migration. Exceeding the limit returns `429` with a `Retry-After` header; a duplicate-scan request (ISBN already in the user's library) is rejected with `409` before the rate limit is even checked, so retrying/rescanning an owned book doesn't burn quota. The following routes are also rate-limited by caller IP (`CF-Connecting-IP`, keyed `<route>:<ip>`): `POST /api/auth/login` (10/min), `POST /api/auth/register` (5 per 10 min), `GET /api/books/guest-lookup` (20/min), `GET /api/books/guest-search` (15/min). Two more are rate-limited per user: `POST /api/books/refresh` (10/min, keyed `refresh:<userId>`) and `POST /api/works/:workId/editions/discover` (20/min, keyed `discover:<userId>`). No other routes are rate-limited today. The cron sweeper prunes `rate_limits` rows once their own window (`window_start + window_ms`) has elapsed, so retention is correct regardless of window size.
-
-### Additional API routes
-
-**Public:**
-
-- `GET /api/books/sample?limit=` — random sample of hand-picked catalogued books, i.e. `is_featured = 1` (powers the marketing preview, max 12); the flag is set manually (no UI/endpoint — e.g. `wrangler d1 execute`)
-
-**Title search** (`GET /api/books/search`, `GET /api/books/guest-search`) — both go through `handleTitleSearch` in `routes/books.ts`. Google Books is the only candidate source (there's no OpenLibrary fallback for title search), and the project has a hard **daily query quota**, so:
-
-- Successful responses (including legitimate zero-result ones) are stored in the Workers edge cache (`caches.default`) for 6h, keyed on the `normalizeStr`'d title+author+publisher and **not** on the user — the answer depends only on the query. Repeated searches then cost no quota.
-- Upstream failures are **never cached** and surface as `503 {"error": "search_unavailable"}` (with `Retry-After` when Google supplies one). `searchBooksByTitle` throws `UpstreamSearchError` rather than returning `[]`: a 429/5xx body has no `items` key, which would otherwise be indistinguishable from "this title doesn't exist". Frontends must treat 503 as "search unavailable", not "no matches" (`import.review.search_unavailable`, `scanner.search_error`).
-- `fetchGoogleBooksJson(url, { retryOn429 })` retries 5xx up to 4 times with backoff. A 429 is retried **only for title search** (once — enough to rescue a per-minute rate limit, while a daily-quota 429 can only fail). The ISBN metadata path (`fetchFromGoogleBooks`) passes `retryOn429: false` because `fetchBookMetadata` falls back to OpenLibrary; retrying there added ~2.2s to every uncached import row while the quota was exhausted.
-
-**Protected:**
-
-- `GET /api/scans/:id` — single scan row; used to poll `enrichment_status` after a scan
-- `PATCH /api/books/custom-fields` — save custom field values; body `{ isbn, values: [{ field_def_id, value }] }` (replaces all values for that book in one batch)
-- `GET /api/field-definitions` — list the user's custom field schema
-- `POST /api/field-definitions` — create a field; body `{ name, type?, options? }` (`type`: `text` | `integer` | `select` | `tag` | `date`, defaults to `text`; `options` is a `select` field's fixed value set — a string array, sanitized/deduped server-side and ignored by every other type)
-- `PATCH /api/field-definitions/:id` — update a field; body `{ name?, type?, required?, options? }`. Every `PATCH /api/books/custom-fields` save re-validates each value against its field's current `field_type`: a `select` value must be one of its current `options` (e.g. catches a value orphaned by a since-renamed/removed option) and an `integer` value must match `^-?\d+$`; either way an invalid value is silently cleared rather than stored
-- `DELETE /api/field-definitions/:id` — remove a field and all its stored values
-- `GET /api/field-definitions/:id/values` — distinct tag values used across the user's books for that field (powers tag autocomplete)
-- `DELETE /api/field-definitions/:id/values?value=` — remove one tag value from every book the user owns (global tag delete)
-- `GET /api/works/:workId/editions` — other editions of the same work; `scan_id` is non-null for editions the user owns
-- `POST /api/works/:workId/editions/discover` — user-triggered OpenLibrary edition discovery into `work_edition_isbns` (seed-ISBN path, falling back to the stored `openlibrary_work_id`); only runs when `editions_checked_at` is NULL (a failed OpenLibrary call leaves it retryable), then returns the same edition list as GET plus a `discoveryFailed` flag
-- `GET /api/series?locale=` — bulk membership: every entry of every series the user owns ≥1 book in, grouped by series id (powers the library's grouped-by-series shelves without a round-trip per series); "owned" requires `owning_status` `owned` or `lent_out` — `want`/`unowned` don't count
-- `GET /api/series/:seriesId?locale=` — series name + all member works with ownership status
-- `GET /api/stats` — aggregated library statistics (status counts, top authors, genres, languages, page/year stats); response shape defined in `src/types/stats.ts`
-- `POST /api/import/goodreads` — batch-import scans from a parsed Goodreads CSV export; body `{ rows: [{ isbn, status?, owning_status?, rating?, created_at?, title?, author?, publisher?, publish_date?, number_of_pages?, owned_copies?, shelves? }], update?: boolean, shelves_field_def_id? }` (1-10 rows); returns `{ results: [{ isbn, outcome: "imported"|"updated"|"duplicate"|"invalid_isbn"|"failed", scan_id?, book?, resolved?, previous? }] }`. `resolved: { status, rating, owning_status }` (on `imported`/`updated`) is the scan state **as actually written** — the client renders the summary card straight from it instead of re-deriving the shelf-mapping/rating/`owned_copies` rules, which had drifted (an `owned_copies>0` create was stored `owned` but shown as its shelf-mapped `want`). Rate-limited to ~600 rows/min per user (`import:<userId>`, same `rate_limits` table, charged via `checkRateLimit`'s `cost` param as `rows.length` rather than 1 per request). `worker/src/import-validation.ts` does checksum validation (stricter than the scan queue's format-only check) and the status/rating/date/metadata normalization; a checksum-invalid ISBN comes back as `invalid_isbn` rather than a 400, so the frontend wizard can route it to a review step instead of failing the whole batch. No `enrichWork`/`waitUntil` call here — new works are left `pending` for the cron sweeper to drain, deliberately avoiding a Wikidata traffic spike across an entire imported library at once.
-
-  `title`/`author`/`publisher`/`publish_date`/`number_of_pages` seed a fallback `books` row (via `resolveEdition`'s `FallbackMetadata`) when neither Google Books nor OpenLibrary has the ISBN, instead of inserting an all-NULL row. `owned_copies > 0` forces `owning_status` to `owned` on a newly created scan, overriding the shelf mapping. `update: true` makes a duplicate-ISBN hit apply the row's `status` (always) and `rating` (only when the row has one) to the *existing* scan via the shared `resolveRatingForUpdate` invariant — `owning_status` is never touched on an update — returning `outcome: "updated"` with `resolved` (post-update state) and `previous: { status, rating, owning_status }` (pre-update state, for Undo) instead of the inert `"duplicate"`. `shelves_field_def_id` (request-level, verified server-side to belong to the caller and be a `tag` field) writes each row's `shelves` into `book_custom_fields` — only for newly created scans, not updates.
-
-  Rows within a batch are resolved **concurrently** (`mapWithConcurrency` in `worker/src/concurrency.ts`, `ROW_CONCURRENCY = 4`, order-preserving). An uncached ISBN costs 3 external fetches (1 Google Books + 2 OpenLibrary, ~1.1s); serializing them made a 10-row batch take ~11s, now ~4.5s. The cap stays well under the free-plan limit of 50 external subrequests per invocation (10 rows × 3 = 30) and keeps the burst against OpenLibrary polite — raising it past ~6 gains nothing, since Workers allow only 6 simultaneous connections awaiting response headers. Concurrent rows can race in `linkWork` when they share a work or author; every write there is `INSERT OR IGNORE` (`works.match_key` and `authors.normalized_name` are UNIQUE) and the `scans` insert is guarded by a UNIQUE constraint caught as `duplicate`, so the races are benign. The client sends batches sequentially with `BATCH_SIZE = 10` (`src/stores/import.ts`) — keep it ≤ `MAX_BATCH_SIZE`.
-
-- `POST /api/import/match` — the title/author matching pass for rows with no usable ISBN (a Goodreads export commonly has these for hand-added books); body `{ rows: [{ title, author?, status?, rating? }], update?: boolean }` (1-50 rows — no external fetches, so a much larger batch than `/goodreads` costs nothing); returns `{ results: [{ outcome: "duplicate"|"updated"|"no_match", scan_id?, book?, resolved?, previous?, confidence? }] }` (`resolved`/`previous` same shape and purpose as `/goodreads`). Shares the `/goodreads` rate-limit bucket (`import:<userId>`) so the two passes of one import session jointly stay under budget. Loads the caller's whole scan list once per request (scan id, book id, effective title/author, work's canonical title) and scores every row against it in-memory via `worker/src/title-match.ts`'s `pickBestMatch` — skipped (every row returns `no_match`) above 20k scans, a bound realistically unreachable for a personal library. A confident match applies the same update rules as `/goodreads`; below the confidence/ambiguity threshold, `no_match` sends the row to manual review instead of guessing.
-
-`GET /api/scans` accepts a `locale` query param (default `en`) for localized series names, and `sort` with values: `date_desc` (default), `date_asc`, `title_asc`, `title_desc`, `author_asc`, `author_desc`, `series_asc`.
-
-Each scan row includes: `enrichment_status` (`pending` | `done` | `failed`), `work_id`, `series_id`, `series_name`, `series_ordinal`, `series_total`, `rating` (integer 0-10 | null), `genres`/`awards`/`nominations`/`narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays, parsed via `parseTagArray` in `library-query.ts` — `[]` when absent, never `null`), `original_pub_date` (4-digit year | null), `main_subject`, `form_of_work`, `language_of_work`, `first_line`, `epigraph`, `subtitle` (strings | null), `physical_format`, `edition_name`, `physical_dimensions` (strings | null, from OpenLibrary only), `reference_page_count` (number | null, page count of the work's Wikidata reference edition — the frontend shows it as "N" with a tooltip when the edition's own page count is unknown), `description` (falls back to another edition's `books.description` sharing the same `work_id` when the scan's own edition and its override both have none — display-only, `books.description` itself is untouched), `custom_field_values` (array of `{ field_def_id, value }`), plus `*_overridden` flags for each overridable field. `author` is never overridable — it's managed through the works/authors model.
-
-### Database schema
-
-Migrations in `worker/migrations/`. The `schema.sql` at root reflects only the initial state — migrations are authoritative.
-
-**Core tables:**
-
-**`users`** — `id`, `email` (UNIQUE), `password_hash`, `firstname`
-
-**`books`** — deduplicated edition metadata keyed by ISBN: `id`, `isbn` (UNIQUE), `title`, `author`, `cover_url`, `language`, `publish_date`, `number_of_pages_median`, `description`, `publisher`, `physical_format`, `edition_name`, `physical_dimensions` (last three from OpenLibrary only; Google Books returns null), `categories` (JSON array, Google Books BISAC categories — used only as a fallback for `works.genres` when Wikidata has none), `is_featured` (INTEGER 0/1, DEFAULT 0 — manually flipped to hand-pick books for the landing page preview; see `GET /api/books/sample`), `fetched_at`, `work_id` → `works`
-
-**`book_overrides`** — per-user field overrides: `user_id` → `users`, `book_id` → `books`, same nullable fields as `books` (except `author` — not overridable), `updated_at`. Unique on `(user_id, book_id)`.
-
-**`scans`** — per-user library entries: `id`, `user_id` → `users`, `book_id` → `books`, `status` (`unread` | `reading` | `read` | `dnf`), `owning_status` (`owned` | `unowned` | `want` | `lent_out`), `rating` (integer 0-10, nullable — unrated is the default, no `NOT NULL DEFAULT` unlike the other scan-level fields), `created_at`. Unique on `(user_id, book_id)`.
-
-**FRBR-style works/series model** (added in migrations 0009–0011):
-
-**`works`** — one row per logical work (groups editions): `match_key` (dedup key, `normalizeStr(title)|normalizeAuthorKey(primary-author)`), `wikidata_qid` (set after enrichment), `canonical_title`, `original_language`, `enrichment_status` (`pending` | `done` | `failed` | `exhausted` — the authoritative enrichment state), `next_retry_at` (when a `failed`/`exhausted` work is next due for a sweeper retry; NULL = due immediately; computed at failure time by `scheduleRetry` in `enrichment.ts`), `series_checked_at` (informational: last successful enrichment timestamp), `enrichment_failed_at` (informational: last failure timestamp; dynamic-typed TEXT in a `boolean`-declared column from migration 0010, harmless), `enrichment_failure_reason` (`timeout` | `rate_limited` | `http_5xx` | `network` | `other`, set by `classifyError` in `enrichment.ts`; drives `scheduleRetry`'s per-reason policy), `enrichment_attempts` (failure count; `scheduleRetry` caps retries per reason), `enrichment_schema_version` (INTEGER, DEFAULT 0 — see below), `genres`/`awards`/`nominations` (JSON arrays), `original_pub_date` (year string), `main_subject`, `form_of_work`, `language_of_work`, `language_of_work_code` (ISO 639-1 code via Wikidata P407→P218; stats-only — lets `stats.ts` compare languages by code instead of fragile English-label matching, with the label comparison as a fallback for works the sweeper hasn't backfilled yet), `first_line`, `epigraph`, `subtitle` (strings), `narrative_locations`/`countries_of_origin`/`translator`/`illustrator`/`characters` (JSON arrays), `openlibrary_work_id` (from Wikidata P648, drives edition discovery), `reference_page_count` (page count of the work's Wikidata reference edition P747→P1104; display-only fallback for editions with unknown page count), `editions_checked_at` (non-NULL = OpenLibrary edition discovery already ran)
-
-**`authors`** — `normalized_name` (UNIQUE dedup key, `normalizeAuthorKey`), `name` (display form), `wikidata_qid`
-
-Author identity keys come from `normalizeAuthorKey` (`editions.ts`), which is deliberately more aggressive than `normalizeStr`: it drops a trailing parenthetical qualifier, periods, and all whitespace, so `J. R. R. Tolkien` / `J.R.R. Tolkien` collapse to `jrrtolkien`. It only unifies names differing in _formatting_ — names differing in _content_ (`Mary Shelley` vs `Mary Wollstonecraft Shelley`, `村上春樹` vs `Haruki Murakami`) still key apart and converge later via `wikidata_qid` in `mergeWorks`. **The expression is duplicated in SQL in migration 0040**, which backfilled both columns and merged the rows that collided; keep the two in sync if you change it. Relatedly, `splitAuthors` excises parenthetical spans before splitting on `,` — qualifiers contain their own commas and used to produce fragment author rows.
-
-**`work_authors`** — M:N between `works` and `authors`; `ordinal` (INTEGER) preserves credited author order (legacy rows all tie at 0)
-
-**`series`** — `wikidata_qid` (UNIQUE), `canonical_name` (English/fallback)
-
-**`series_names`** — localized series names: `(series_id, language)` PK
-
-**`work_series`** — `(work_id, series_id)` PK, `ordinal` (REAL, supports decimal interludes like 5.5)
-
-**`work_edition_isbns`** (migrations 0018/0020) — candidate ISBNs discovered for a work, decoupled from full metadata: `(work_id, isbn)` PK, plus lightweight display metadata (`title`, `language`, `cover_url`, `publish_date`, `publisher` — nullable, from a single batched OpenLibrary lookup at discovery time) and `source`. A row means "this ISBN is an edition of this work"; the full `books` row is only materialized when the user switches to that edition.
-
-**`search_cache`** (migration 0038) — D1-backed global cache for `GET /api/books/search`/`guest-search` results: `query_key` (PK, the normalized title+author+publisher key), `response` (raw JSON body), `expires_at` (ms-epoch). Sits behind the per-colo Workers edge cache (`caches.default`) as a deployment-wide L1, so a title search is only repeated once per TTL across every colo, not once per colo. The cron sweeper prunes expired rows.
-
-**Custom fields** (migration 0008):
-
-**`user_field_definitions`** — per-user schema: `user_id`, `field_name`, `field_type` (`text`/`integer`/`select`/`tag`/`date`), `field_options`, `sort_order`, `required` (INTEGER 0/1, migration 0013). Unique on `(user_id, field_name)`.
-
-**`book_custom_fields`** — per-user, per-book values: `user_id`, `book_id`, `field_def_id` → `user_field_definitions`, `field_value`. Unique on `(user_id, book_id, field_def_id)`.
-
-`GET /api/scans` JOINs all tables and uses `COALESCE(book_overrides.field, books.field)` for each overridable field. `POST /api/scans` accepts only `isbn`; metadata and work links are resolved server-side (using `allowEmpty` so offline-queued scans always succeed). `DELETE /api/scans/:id` clears the user's `book_overrides` and `book_custom_fields` for that book, then deletes the scan.
-
-### Wikidata enrichment pipeline
-
-Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWork(...))` after lookups and scans, and in the background via a cron sweeper (see below). It is intentionally skipped for guest lookups to avoid anonymous SPARQL load.
-
-**Flow:** `enrichWork(db, workId, force?, apiKey?, source?)` (`source` is `scan` | `lookup` | `refresh` | `sweeper` | `unknown`, recorded in `enrichment_runs` for observability — see below) →
-
-- If the work **already has a `wikidata_qid`** (a series-member placeholder, or a force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
-- Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → work QID + primary series) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as placeholder works with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
-
-Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an identified work with no linked edition it resolves a representative ISBN from Wikidata (`P747` editions → `P212`/`P957`, preferring en/de), fetches metadata via `fetchBookMetadata`, and inserts a `books` row with `work_id` set directly. This gives unowned/placeholder works a cover so the series-completeness view renders them. If Wikidata linked an OpenLibrary work id (`P648`), `discoverEditionsFromOpenLibrary` then pre-populates `work_edition_isbns` from OpenLibrary's `works/{olid}/editions.json` (best-effort; only when the work has no candidate editions yet) — this covers works whose owned ISBN is unknown to OpenLibrary, where the user-triggered seed-ISBN discovery (`POST /api/works/:workId/editions/discover`) finds nothing; that route also falls back to the stored `openlibrary_work_id` when its seed-ISBN path comes up empty. Finally it writes genres/pub date/awards/nominations back to `works`.
-
-**Merge logic:** If `fetchBookInfo` returns a QID already assigned to another work row, `mergeWorks` repoints all `books`, `work_authors`, and `work_series` rows from the duplicate onto the canonical row and deletes the duplicate.
-
-**Enrichment state machine:** `works.enrichment_status` is the authoritative state — `pending` (never enriched, or force-refresh in progress), `done` (enriched; a legitimate "not found on Wikidata" is also `done`, queryable via `wikidata_qid IS NULL`), `failed` (last run threw, retryable), `exhausted` (failed past its reason's attempt cap; still retried once per 2-day long cooldown so nothing is stuck forever). Retry scheduling happens **at failure time, in code**: `enrichWork`'s catch block calls `scheduleRetry(reason, attempts, retryAfter?)` (`enrichment.ts`, unit-tested) which applies the per-reason `RETRY_POLICY` (`rate_limited`: 5 min backoff / cap 5; `timeout`: 60 min / cap 3; `other`: 30 min / cap 2 — usually a bug, not transient; `http_5xx`/`network`: 30 min / cap 5), honors a longer Wikidata `Retry-After` hint, and writes `next_retry_at`. The API surface (`GET /api/scans`) maps `exhausted` → `failed` and only ever exposes `pending | done | failed`. In-flight claims use `enrichment_started_at` (atomic claim in `claimWork`, 5-min stale-claim TTL); `force=true` resets status to `pending` after winning the claim so polls see it. `series_checked_at`/`enrichment_failed_at` are informational timestamps only.
-
-**Cron sweeper** (`worker/src/sweeper.ts`, `scheduled` handler exported from `index.ts`, cron `*/2 * * * *` in `wrangler.toml`): each tick first links up to `LINK_BATCH_SIZE` (5) books with no `work_id`, then enriches a bounded batch of `BATCH_SIZE` (7) from three indexed queries — Q1a: due works that at least one user holds a scan for (`EXISTS (books JOIN scans)`), capped at `BATCH_SIZE - 1` so placeholders still progress; Q1b: `enrichment_status != 'done' AND (next_retry_at IS NULL OR next_retry_at <= now)` (backlog + due retries, pending first), filling the remaining slots and deduped against Q1a; Q2: `enrichment_status = 'done' AND enrichment_schema_version < CURRENT_ENRICHMENT_SCHEMA_VERSION` (already enriched but missing newer Wikidata columns). Q2 is the backfill mechanism: when new columns are added to `works`, bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` (exported from `enrichment.ts`) and all existing enriched works drain through the sweeper automatically; a failed backfill moves the work to `failed`, so it drains through Q1 from then on. Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs` rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
-
-**Observability — `enrichment_runs`:** every `enrichWork` call that actually attempts enrichment (not the "already enriched, skip" no-op) writes one row: `work_id`, `started_at`, `duration_ms`, `outcome` (`done` | `not_found` | `failed`), `failure_reason` (set only when `outcome = 'failed'`), `source`. Query it directly for pending/failure-rate/timing stats — there's no dashboard, this is a queryable log table, not a UI feature. Telemetry writes are best-effort (wrapped so a logging failure can't fail the enrichment itself).
-
-**Adding new Wikidata fields:** (1) add `ALTER TABLE works ADD COLUMN` in a new migration, (2) bump `CURRENT_ENRICHMENT_SCHEMA_VERSION` in `enrichment.ts`, (3) add the SPARQL subquery + `WorkDetails` field + `UPDATE works SET` binding, (4) add to `SCAN_SELECT` in `library-query.ts`, (5) JSON-parse in `attachCustomFields` if it's an array.
-
-## Common Development Flows
-
-**User scans a book:**
-
-1. Frontend calls `POST /api/scans` with ISBN
-2. Worker calls `resolveEdition()` → `fetchBookMetadata()` (Google Books → OpenLibrary fallback) → inserts/updates `books` row
-3. Worker calls `enrichWork()` asynchronously (does not block response)
-4. Frontend receives scan row with `enrichment_status: pending`
-5. Cron sweeper (`*/2 * * * *`) or manual `POST /api/books/refresh` triggers enrichment pipeline
-6. Wikidata data populates `works` table; series members become placeholder works with covers
-
-**User overrides a book field (e.g., title):**
-
-1. Frontend calls `PATCH /api/books/override` with `{ isbn, changes: { title: "..." } }`
-2. Worker upserts `book_overrides` row
-3. Subsequent `GET /api/scans` uses `COALESCE(book_overrides.field, books.field)` to merge overrides
-
-**Add a new column to the API response:**
-
-1. If it's a Wikidata field: follow "Adding new Wikidata fields" (5-step process in enrichment section)
-2. If it's a new book metadata field: (1) add `ALTER TABLE books ADD COLUMN` migration, (2) add to `SCAN_SELECT` in `library-query.ts`, (3) update the `Book` type in `src/types/book.ts`
-3. If it's a custom field: use the existing `user_field_definitions` + `book_custom_fields` schema (already query-merged in `SCAN_SELECT`)
-
-### Styling system
-
 Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
 
-Tailwind for layout/spacing, Vuetify components for interactive elements. Do not mix — use Tailwind classes on plain HTML, Vuetify props on `<v-*>` components. Deliberate exception: `CustomFieldsPanel`'s per-type value inputs (text/integer/date/select) are all plain Tailwind-styled HTML, not Vuetify — a book can have several custom fields of different types shown as one visually uniform stack of rows, and mixing in a `<v-*>` control for just one type would stand out rather than blend in.
+## Add a new column to the API response
 
-**Tailwind tokens** (defined in `src/styles/tailwind.css`, theme-aware via CSS variables):
-
-- Colors: `bg-charcoal`, `bg-charcoal-light`, `border-charcoal-border` (subtle hairline for dividers/card edges), `border-control-border` (stronger border for interactive controls — segmented toggles, secondary buttons, "add field"; use this, not the hairline, on actionable outlines), `text-orange-neon`, `text-text-primary`, `text-text-secondary`
-- Fonts: `font-heading` (Playfair Display), `font-body` (Roboto), `font-mono` (Roboto Mono)
-- Semantic Vuetify colors aliased: `bg-primary`, `bg-success`, `bg-error`, etc.
-
-**User appearance presets.** Three token groups are user-overridable at runtime from Settings → Appearance, and `App.vue` applies them by writing the variables **inline on `<html>`**, which outranks both the `@theme` defaults and the `[data-theme="dark"]` block in `tailwind.css`:
-
-- accent (`--color-orange-neon` + Vuetify `primary`), from `accent.ts`
-- paper — the surface/border family (`--color-charcoal`, `-light`, `-border`, `--color-control-border`, `--color-search-bg`, `--color-search-border`, `--color-menu-surface`) plus Vuetify `background`/`surface`/`border`, from `paper.ts`
-- typeface (`--font-heading`, `--font-body` **and `--font-mono`** — the mono face is customized too, because it styles every uppercase letter-spaced micro-label, a large share of the visible text; holding it fixed made a typeface switch look like it had barely applied), from `typeface.ts`
-
-Editing those defaults in `tailwind.css` alone is therefore not enough — the `warm` paper preset in `src/utils/appearance.ts` mirrors them and must be kept in sync. No paper preset touches the text tokens, and the rule that keeps contrast safe differs by mode: **light** presets hold lightness roughly constant and differentiate through hue/chroma (`--color-text-secondary` only clears ~4.2:1 on the default paper, so a darker light surface pushes marginal small text further down), while **dark** presets may vary lightness as well — at near-black, chroma is imperceptible, so a hue-only dark palette would render as three identical blacks. The header docblock in `appearance.ts` states the binding constraint for each; keep it accurate when adding a preset.
-
-**Fonts are entirely self-hosted** via `unplugin-fonts` + fontsource, configured in `vite.config.mts` — there is no Google Fonts CDN link, deliberately (same-origin loading, and no visitor IP transferred to a third party). Adding a typeface preset therefore means installing the matching `@fontsource/*` package and registering its weights/styles in `vite.config.mts`, not editing `index.html`. **The UI tops out at weight 700** (headings are `font-bold`, not `font-black`) so the presets stay weight-matched — Lora and Space Mono have no 900, so a heavier heading would let the others outrun them. Don't reintroduce `font-black` without checking every preset's family has a 900. Register `styles: ['normal', 'italic']` only for families that actually ship italics (Space Grotesk and Oswald don't — the browser synthesizes there); listing a style fontsource doesn't have breaks the build.
-
-A preset only earns its place if it's **recognizably** different from the others in a screenshot — the setting is pointless if two read as the same page. Neutral grotesques (Inter, Work Sans) are a trap here: next to the default Roboto body they're near-invisible as a change.
-
-**Breakpoints** (identical in Tailwind and Vuetify): `sm` 600px / `md` 840px / `lg` 1145px / `xl` 1545px — `md` is the mobile/desktop threshold.
-
-**Vuetify theme colors** (use via `:color` prop):
-
-- `editorial` (light): `primary` #ff6600, `success` #276749, `warning` #d97706, `error` #c0392b
-- `editorial-dark` (dark): `primary` #ff6600, `success` #4caf80, `warning` #e8a838, `error` #e05252
-
-### i18n
-
-All user-visible strings must go through `$t()` / `t()`. Add new strings to both `src/locales/en.json` and `src/locales/de.json`. The `useLocaleStore` store handles locale persistence and updates `i18n.global.locale` reactively. Status/owning/rating label config lives in `computed`s (`STATUS_CONFIG` in `BookDetail`, `useBookStatus`/`useOwningStatus` composables) so labels update on locale change — follow that pattern for any new locale-dependent config object.
+1. If it's a Wikidata field: follow "Adding new Wikidata fields" (5-step process in `worker/CLAUDE.md`'s enrichment section)
+2. If it's a new book metadata field: (1) add `ALTER TABLE books ADD COLUMN` migration, (2) add to `SCAN_SELECT` in `library-query.ts`, (3) update the `Book` type in `src/types/book.ts`
+3. If it's a custom field: use the existing `user_field_definitions` + `book_custom_fields` schema (already query-merged in `SCAN_SELECT`)
 
 ## Versioning
 
@@ -390,41 +79,4 @@ cd worker && npm test   # if you touched worker pure-logic functions covered by 
 
 This applies to code review as well: a `/code-review` pass (and any fixes applied from one) isn't done until these commands have actually been run and shown to pass — don't stop at static-analysis findings.
 
-## Troubleshooting
-
-**API calls fail or return 404 in dev:**
-
-- Ensure both dev servers are running: `npm run dev` (frontend) + `npm run dev:worker` (worker) in separate terminals
-- Check that worker is on `:8787` and frontend is proxying `/api/*` to it (see vite.config.ts)
-
-**Enrichment stuck on `pending` status:**
-
-- Cron sweeper runs every 2 minutes (check `wrangler.toml` for `*/2 * * * *`). **`wrangler dev` does not fire cron triggers automatically** — in local dev, nothing ever drains the backlog unless you hit `curl "http://localhost:8787/__scheduled"`. A large local backlog (e.g. after a Goodreads import) is expected, not a bug.
-- Throughput is `BATCH_SIZE` × tick rate (7 per 2 min ≈ 210/hr). A bulk import creates hundreds of pending works at once, so books can legitimately sit queued for a while; the detail view's badge switches from "series lookup pending" to "series lookup queued" once its poll gives up.
-- The backlog is **self-amplifying**: enriching one work that belongs to a series inserts that series' whole roster as placeholder works via `populateSeriesMembers` (~10 per work, measured). Placeholder ids interleave with owned ones, which is why Q1a prioritizes works a user actually holds a scan for — without it, placeholders nobody is looking at push freshly-imported books arbitrarily far back.
-- Check wrangler dev logs for SPARQL errors or timeouts
-- Manual retry: `POST /api/books/refresh?isbn=<isbn>`
-
-**Type-check fails after pulling changes:**
-
-- Run with `--force`: `npm run type-check -- --force`
-- Clear build cache: `rm -rf dist/ && npm run type-check`
-
-**Guest scans not migrating on login:**
-
-- Check `localStorage` for `guest_scans` key in browser DevTools
-- Ensure `guest.ts` `syncToAccount()` is called after successful login/register
-- Check server logs for migration errors
-
-**Worker not deploying:**
-
-- Check the GitHub Actions **Deploy** workflow run for the failing step (verify, migrations, or `wrangler deploy`)
-- Ensure the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets are set
-- Ensure D1 database binding exists in `worker/wrangler.toml`
-- For manual deploys: `npm run deploy:worker` prompts if wrangler secrets are missing
-
-**D1 migrations not applied:**
-
-- Local: run manually during dev (`npx wrangler d1 migrations apply bookscan --local`)
-- Production: applied automatically by the Deploy workflow before `wrangler deploy`; after a **manual** deploy, run `npx wrangler d1 migrations apply bookscan --remote` yourself
-- Check migration status: `npx wrangler d1 info bookscan`
+Note: Both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`, `vitest run`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests.

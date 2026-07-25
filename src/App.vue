@@ -18,6 +18,7 @@ import { useThemeStore } from "@/stores/theme";
 import { useAccentStore } from "@/stores/accent";
 import { usePaperStore } from "@/stores/paper";
 import { useTypefaceStore } from "@/stores/typeface";
+import { useLocaleStore } from "@/stores/locale";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
 import { PAPER_PRESETS, TYPEFACE_PRESETS } from "@/utils/appearance";
@@ -30,6 +31,9 @@ const themeStore = useThemeStore();
 const accentStore = useAccentStore();
 const paperStore = usePaperStore();
 const typefaceStore = useTypefaceStore();
+// Instantiated here, before any child renders, so its watcher pushes the stored locale into
+// vue-i18n up front rather than whenever the first locale-aware component happens to mount.
+useLocaleStore();
 const authStore = useAuthStore();
 const guestStore = useGuestStore();
 
@@ -73,9 +77,15 @@ watch(
 watch(
   [() => paperStore.preset, () => themeStore.isDark],
   ([preset, dark]) => {
-    const mode = PAPER_PRESETS[preset][dark ? "dark" : "light"];
+    const definition = PAPER_PRESETS[preset];
+    const mode = definition[dark ? "dark" : "light"];
     for (const [name, value] of Object.entries(mode.vars))
       document.documentElement.style.setProperty(`--color-${name}`, value);
+    // The preset's dark half published under a second namespace, always — `.force-dark`
+    // (tailwind.css) remaps the tokens from these, so an always-dark subtree still honors the
+    // user's paper preset instead of falling back to the baseline dark palette.
+    for (const [name, value] of Object.entries(definition.dark.vars))
+      document.documentElement.style.setProperty(`--dark-color-${name}`, value);
     const theme =
       vuetifyTheme.themes.value[dark ? "editorial-dark" : "editorial"];
     Object.assign(theme.colors, mode.vuetify);

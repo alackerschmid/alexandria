@@ -154,6 +154,7 @@
 import { ref } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { useAuthStore, WELCOME_SEEN_KEY } from "@/stores/auth";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import AppFooter from "@/components/AppFooter.vue";
@@ -163,6 +164,7 @@ import AppButton from "@/components/AppButton.vue";
 const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
+const preferencesStore = usePreferencesStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
 
@@ -206,6 +208,10 @@ const submit = async () => {
       throw new Error(data.error || "Authentication failed");
     }
 
+    // Before setAuth: that's what flips the token, and the preferences store's watcher runs
+    // synchronously off it. Seeded, it skips the GET round-trip. `?? {}` keeps an older worker
+    // deploy working — an absent field just takes the same path as an empty server blob.
+    preferencesStore.seed(data.preferences ?? {});
     authStore.setAuth(data.token, data.email, data.firstname ?? null);
 
     // Guest scan migration is handled centrally in App.vue (reacts to isAuthenticated),

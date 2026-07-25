@@ -1151,7 +1151,11 @@ export const useImportStore = defineStore("import", () => {
     item: ImportedItem,
     isbn: string,
   ): Promise<void> {
-    if (item.busy) return;
+    // Never for a preexisting/title-matched row: the swap creates a new scan and deletes the
+    // old one, but here "old" is the user's own scan that predated the import — deleting it
+    // (and its overrides/custom fields) is silent data loss. The UI hides the picker for these
+    // rows; this is the backstop.
+    if (item.busy || item.preexisting) return;
     item.busy = true;
     item.error = "";
     try {
