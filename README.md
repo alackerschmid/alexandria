@@ -25,6 +25,7 @@ The result is a searchable library with statistics you can actually enjoy browsi
 - **Series tracking** — see every volume in a series and exactly which ones you own
 - **Reading status** — mark books as Unread, Reading, or Read
 - **Library statistics** — total titles, read/unread counts, top authors, language distribution, median publication year, and page stats
+- **Goodreads import** — bring in your existing library from a Goodreads CSV export, shelves and owned copies included
 - **Custom fields** — add your own metadata to any book (text, numbers, or dropdowns)
 - **Field overrides** — correct any metadata detail without affecting the shared cache
 - **Multilingual** — Full i18n support, English and German are currently implemented
@@ -55,7 +56,7 @@ Built on Cloudflare's edge infrastructure — Cloudflare Pages for the frontend 
 
 ## To be implemented
 
-This is currently an early alpha versions. Some of the features I'm aiming to implement in the future are:
-- .csv bulk import and export
-- full support for managing multiple editions 
+Some of the features I'm aiming to implement in the future are:
+- library export (Goodreads CSV import already works)
+- richer edition management on top of the existing works/editions model
 - more granular support for playing with and visualizing collection statistics
