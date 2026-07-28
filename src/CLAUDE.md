@@ -1,92 +1,106 @@
 # Frontend (`src/`)
 
-Frontend guidance. Loaded when working under `src/`.
-For the API routes, DB schema and the scan-row shape see `worker/CLAUDE.md`.
+Vue 3 + TypeScript + Vite. Loaded when working under `src/`.
+For the API routes and the scan-row shape see `worker/CLAUDE.md`; for the D1 schema,
+`worker/migrations/CLAUDE.md`.
 
-### Frontend (`src/`)
+Feature-specific guidance loads on its own from `.claude/rules/` when you open a matching
+file — `book-detail`, `import-wizard`, `library-pipeline`, `appearance`, `preferences`.
+For the roster of an area (which components/composables/stores exist and what each is for),
+ask the `inventory` subagent rather than expecting a list here.
 
-Vue 3 + TypeScript + Vite.
+## Layout
 
-- `src/pages/` — route-level components:
-  - `landing.vue` — unauthenticated marketing page (`/`)
-  - `home.vue` — authenticated dashboard: stats, greeting, recently-added (`/home`)
-  - `index.vue` — full paginated library (`/library`)
-  - `welcome.vue` — first-run onboarding (`/welcome`); seen-state stored in `localStorage` under `WELCOME_SEEN_KEY`
-  - `series.vue` — series completeness view (`/series/:id`)
-  - `settings.vue` — custom field management (`/settings`)
-  - `import.vue` — Goodreads CSV import wizard (`/import`, requires auth); state lives in `src/stores/import.ts` (see below), not held locally, so the import survives navigating away
-  - `login.vue`, `scanner.vue`, `privacy.vue`, `NotFound.vue`
-- `src/components/` —
-  - App chrome/shared: `AppHeader`, `AppFooter`, `AppToast`, `AppPagination`, `AppSelect` (the themed `v-menu` dropdown; options may carry an optional `dotColor` swatch, and `block` fills the container for a full-width mobile row), `AppButton` (**the shared action-button primitive** — `variant` `primary`/`secondary`/`ghost`/`danger`/`inverse` × `size` `sm`/`md`/`lg`, plus `block`/`outlined`/`loading`; `primary` fills with the user's accent via theme `primary`, `inverse` is the ink/white marketing treatment on dark heroes. Use it for all action buttons; segmented pickers and `AppToggle` are deliberately not this. The scanner's camera mode keeps its dark-hardcoded secondary/ghost buttons — only its accent-fill buttons use `AppButton`), `AppSegmented` (**the shared single-select segmented control** — generic over the option value, `variant` `fill` (default — accent-filled active option; used by every labelled settings-style row, i.e. the settings page defaults and the library display-options panel) / `highlight` (accent-tinted active text; reserved for toolbar chrome, i.e. the library's inline view toggle), `size` `sm`/`md`, options `{ value, label?, icon?, ariaLabel? }`; active state follows the accent. Not for the scanner's per-status colored pickers or login's auth-mode pills — those stay bespoke), `AppToggle` (presentational dot + ON/OFF label toggle — the same shape as the card status tags; parent owns the click handler), `MobileTabBar`, `OverrideDot`, `PlaceholderCover`, `CoverImage` (the shared cover-image wrapper — renders the `<img>` when `coverUrl` is set, falling back to `PlaceholderCover` when it's absent or the image fails to load; used everywhere a book cover is displayed instead of hand-rolling the `<img v-if>`/`PlaceholderCover v-else` pair), `ConfirmDialog` (shared destructive-confirm dialog — title/body/danger/loading/confirm-disabled + default slot; used by the library delete + settings account-delete + Goodreads-import cancel flows), `ScannerPreview` (decorative barcode/scan-line widget used by `landing.vue` and `welcome.vue`; `dark` prop defaults to always-dark, pass `:dark="false"` to follow the app theme), `CyclePill` (one-click enum picker that advances to the next option on click — dense-row alternative to `AppSegmented`; used by the Goodreads-import matched table's status/owning cells), `RatingStars` (the 5-star half-star row for a 0-10 rating — display-only by default, `interactive` for the rating dialog and the book detail's masthead, where clicking the half that already represents the current value clears it), `MarkdownText` (**the only `v-html` in the app** — renders a markdown string through `utils/markdown.ts`, which sanitizes with DOMPurify; used for a scan's review/notes. Never bind unsanitized HTML anywhere else)
-  - Library page: `LibrarySearchBar` (the smart-search widget — hero, highlight overlay, autocomplete dropdown, token pills, ⌘K; backed by `useSearchSuggestions`), `LibraryCoverCard`, `LibraryRowCard`, `LibraryGhostRow`, `LibraryGroupHeader` (one shelf-group header — packed `compact` / mobile `full` sizes), `LibraryGroupTabs`, `LibraryDisplaySettings`
-  - `BookDetail.vue` (the detail dialog shell: card/full mode switch, tab state, enrichment poll, edit state and both saves) plus its subcomponents in `src/components/book-detail/`: `BookDetailCard` (the compact card-mode view), `DetailMeasure`, `DetailMasthead`, `RecordControls`, `DetailTabs`, `DetailSection`, `OverviewPane`, `RecordPane`, `DetailsPane`, `WorkFacts`, `ReviewPane`, `EditionsPane`, `AuthorChips`, `BookEditForm`, `CustomFieldsPanel`, `EditionDetails`, `EditionsDialog`, `EnrichmentBadge`, `RatingDialog`, `TagInput`. **Full mode is a masthead over tabbed panes.** Everything sits on `DetailMeasure`, the shared middle-⅔ content column with empty gutters that the rest of the app uses (`w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10`) — the *bands* (top bar, masthead, tab row, edit footer) stay full-bleed so their backgrounds and hairlines span the page, exactly like `AppHeader`, and only their contents are constrained. It is a component rather than a repeated utility string because four bands have to agree on that width or their contents visibly fail to line up, and it is needed at all because the fullscreen `v-dialog` teleports to the overlay container and escapes `App.vue`'s `max-w-[1440px]` wrapper. The masthead carries identity plus the four things the user sets (status / owning / rating / "Edit fields") via `RecordControls`, which renders `inline` there on desktop and stacked inside `RecordPane` on mobile — one component, two layouts, so the behaviour can't drift between breakpoints. The mockup sat that cluster *beside* the title; on the app's ⅔ measure it doesn't fit (it needs ~720px and would leave the title under 100px), so the masthead is a two-row grid instead — cover + identity, then the cluster indented under the identity column. The status picker is deliberately not `AppSegmented` (that primitive can't colour an option by its value) but it is squared and hairline-bordered like everything else, with the status colour carried as text + tint + inset underline; owning is an `AppSelect` menu, because five states never fit a segmented track. **Which tabs exist is derived from the book by `utils/detail-tabs.ts`, not by `v-if`s in the template: a pane that would be empty is never a tab** — no description and no first line means no Overview tab, and the view opens on Details. `review` is the deliberate exception: always offered for an owned book, dotted until written, because an empty review is the state the user is most meant to act on, so its empty pane is a full-width invitation rather than a dash in a corner. **`all` is last and is the default** — it stacks every pane in one scroll under `DetailSection` rules that double as disclosures; pick a single tab and the rule disappears, since the tab already names it. The active tab and the collapse set are component-local and reset on book change, exactly like `mode`: `useDetailRoute` identifies the *book*, not how far into it you are. Delete lives in the pane footer (not the top bar, where it was one unlabelled icon among four) and the manual enrichment refresh lives in `DetailsPane` beside the facts it repopulates — it's the only user-facing retry for a work whose Wikidata lookup failed, so it can't simply go away; the top bar keeps only back and close. **Editing is one screen with every editable field**: `BookEditForm` holds the metadata overrides *and* `CustomFieldsPanel`, both behind one Cancel/Save, and `BookDetail.save()` issues the two PATCHes (`/api/books/override`, `/api/books/custom-fields`) as one action. **`CustomFieldsPanel` is controlled and no longer saves on blur** — that is what makes a single Save honest; its one immediate write is the tag *global* delete, which is a destructive cross-library action rather than a field edit. `EditionsPane` is the browsing grid (owned copies first, the open edition marked in accent) and every tile opens `EditionsDialog`, which keeps the language filter, discovery and the click-twice-to-confirm switch — a mis-tap in a grid must never move a scan to another edition. **`RatingDialog` is owned by the host page, not by `BookDetail`** — `index.vue`/`series.vue` render it and `BookDetail` only emits `open-rating`, because marking a book read from a library card (with no detail open) has to raise the same dialog. The masthead stars are the exception: they are `interactive` and emit `set-rating` straight to the host's `useScanStatus.setRating`, so setting a rating is one tap and doesn't raise a dialog at all — the dialog is still what edits the *review*. It takes `with-review` to show the review/notes textarea (rating stars save per click; the review is a draft flushed once on close) — the Goodreads-import wizard reuses it without that flag for rating only. **The flush hangs off the `modelValue` true→false transition, with `flush: "sync"`, and nowhere else**: that is the only hook that also fires when the *host* closes the dialog rather than the user (series.vue clears the flag when the detail route unwinds on Back), and sync is what lets it run before a host that closes-and-unmounts in one tick takes the component down with the draft still in it. So a host must `v-model` it, never `:model-value` alone. Both halves are offered at every reading status: a rating belongs to the work, not to having finished a copy. The panel is a fixed-header / scrolling-body / fixed-footer column (same shape as `BookDetail`'s full mode) and the **textarea auto-grows instead of scrolling** — a scrollbar inside a form field never reads as designed, so the review region owns the scrolling and DONE stays reachable however long the review runs. `autoGrow` must be re-run whenever the textarea is re-created (it is `v-if`'d out in preview mode) or re-seeded on open
-  - `src/components/import/` — the Goodreads-import wizard's pieces (`import.vue`'s state comes entirely from `src/stores/import.ts`): `ImportHeaderBar` (review-screen file name/counts + cancel/finalize), `MatchedRow` (one editable card in the Matched tab: cover, edition picker, status/owning `CyclePill`s, rating, remove/undo), `AttentionRow` (one review-queue row), `ResolveDrawer` (manual title/ISBN search side panel for a review-queue row — `useFocusTrap`'d, always-mounted with a nullable `item` prop so its focus-trap state survives across opens instead of leaking a listener per open/close cycle), `ShelfMappingPanel` (the per-shelf reading-status `AppSegmented` control, behind the confirm step's "Adjust shelf mapping" disclosure — Goodreads import never maps owning_status, only status; imported scans land on owning_status `unknown` and the user sets ownership per book afterwards), `ImportProgressChip` (global fixed-position indicator hosted in `App.vue`, hidden on `/import` itself; shows running/paused/complete state and routes to `/import` on click), `matched-grid.ts` (shared grid-column geometry for the Matched table's header + rows)
-  - `src/components/settings/` — settings section building blocks (formerly inline `defineComponent`s): `SettingsSectionHeading`, `SettingsField`, `SettingsDefaultRow`
-- `src/composables/` — shared logic extracted from pages:
-  - `useApi.ts` — **the canonical API client.** `useApi().apiFetch(path, init?, opts?)` prepends `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user out on a 401 (opt out with `{ on401: "ignore" }`; `{ token }` overrides the store's token, for a call that has to outlive logout). All authenticated frontend API calls must go through it — don't hand-roll `fetch`.
-  - `useLibraryData.ts` — the library page's server data: paginated `GET /api/scans` (with a sequence guard against overlapping fetches) + `GET /api/series` membership map, exposing `serverBooks`/`seriesMemberships`/`error`
-  - `useLibrarySearch.ts` / `useLibraryGrouping.ts` / `useEditionGrouping.ts` — the library display pipeline: text/filter search → collapse same-work editions into one synthetic card per work (must run downstream of search, so filters match real per-edition fields) → group/sort. `useGroupDimensions.ts` supplies the group-by dimensions incl. custom fields.
-  - `useSearchSuggestions.ts` — the library search bar's autocomplete engine (prefix chips, facet-value + title matches, highlight segmentation); reads `useLibrarySearch`'s outputs
-  - `useShelfGroups.ts` — turns `useLibraryGrouping`'s output into display-ready shelves (series completeness counts, unowned reveal, collapse/"show all" helpers) consumed by the packed-row layout
-  - `useEnrichmentPoll.ts` — polls `GET /api/scans/:id` with backoff while enrichment is `pending`
-  - `useBookStatus.ts` / `useOwningStatus.ts` / `useRating.ts` / `useScanStatus.ts` — status/owning/rating config + ordering (locale-reactive). `useScanStatus` also owns the optimistic `setRating`/`setReview` writes (guest scans go to `stores/guest.ts` instead of the API). **Rating and review are stored per work, not per scan**, so those two writes fan out across every owned edition sharing a `work_id` — pass `useScanStatus({ books: () => allBooks.value })` from a page that holds a list, or the collapsed work-card and the edition carousel drift apart until the next refetch. Nothing clears a rating implicitly any more: it survives every status change
-  - `useRatingPrompt.ts` — page-level state for the rating/review dialog (`promptBook`/`promptOpen`) plus `promptIfRead`, the rule that raises it on a transition *into* `read` (and only that transition). Used by `index.vue`; `series.vue` only needs the open flag, since every status change there comes from the one open detail
-  - `useToast.ts` — per-page toast state (`visible`/`message`/`type` + `showToast`) bound to `AppToast`
-  - `useBarcodeScanner.ts` — Quagga2 live-camera lifecycle (init/start/stop + consecutive-read buffer) for the scanner page
-  - `useWorkEditions.ts` — the other editions of a work, loaded once per work by the detail shell. It lives there rather than in `EditionsPane` because the *tab row* needs the count before the pane is ever rendered (a single-edition work gets no Editions tab), and it discards a response superseded by a newer work while in flight
-  - `useDetailRoute.ts` (detail dialog state in route query params), `useNavLinks.ts`, `useFocusTrap.ts`
-- `src/utils/` — pure helpers: `book-display.ts` (incl. `pickRepresentativeEdition`, which picks the edition a collapsed work-card shows, and `workSiblings`, the set a per-work write must cover — both unit-tested), `cover.ts`, `custom-fields.ts` (the custom-field editor model: seed it from a book, serialize it for `PATCH /api/books/custom-fields`, and answer whether the draft differs from what's stored — the edit form's save runs off these), `detail-tabs.ts` (**which panes the book detail offers, and the rule that an empty pane is never a tab**), `review.ts` (`reviewWordCount`, which strips markdown structure so a review full of links doesn't read as twice its length, for the review pane's metadata line — shown for every review, however short), `language.ts`, `tags.ts`, `appearance.ts` (paper + typeface preset definitions), `search-parse.ts` (search fragment/highlight parsers), `shelf-packing.ts` (grouped-shelf bin-packer `packRows` + shelf/packing types), `offline-queue.ts` (scanner offline-scan localStorage queue), `goodreads.ts` (Goodreads CSV row parsing/shelf-mapping/import-payload building for `src/stores/import.ts`), `markdown.ts` (`renderMarkdown` — marked + DOMPurify behind a fixed tag/attribute allowlist; images are dropped deliberately, since a remote `<img>` in a review would leak the reader's IP the same way a font CDN would). `search-parse.ts`, `shelf-packing.ts`, `offline-queue.ts`, `goodreads.ts`, `detail-tabs.ts`, `review.ts` and `custom-fields.ts` are unit-tested (`test/*.spec.ts`).
-- `src/stores/` — Pinia stores:
-  - `auth.ts` — JWT + email + firstname in localStorage; exposes `userId` (decoded from the token's `userId` claim — what per-user client-side storage keys on, stable across an email change) and exports `WELCOME_SEEN_KEY`
-  - `guest.ts` — **guest mode:** unauthenticated users can save up to 3 scans to localStorage; on register/login, `syncToAccount()` migrates them to the user's account server-side
-  - `fieldDefs.ts` — the user's custom field definitions + lazily-loaded distinct tag values for autocomplete
-  - `libraryDefaults.ts` — user display preferences in localStorage (default view/list vs tile, scan status, page size, etc.)
-  - `theme.ts` (dark/light; also owns `THEME_HINT_KEY` — the device-global `theme` localStorage hint read by `index.html`/`plugins/vuetify.ts` before Vue boots, kept in sync by a watcher on `isDark` so a logged-out reload doesn't flash the previous user's dark theme), `accent.ts` (accent color, default `#ff6600`), `locale.ts` (i18n locale — the sole authority; `plugins/i18n.ts` just starts at `en` and the store pushes the real locale in, so `App.vue` instantiates it before any child renders)
-  - `paper.ts` (background/surface palette preset, default `warm`), `typeface.ts` (font pairing preset, default `editorial`) — both store a preset **key** from `src/utils/appearance.ts`, not raw values
-  - `preferences.ts` — **the single owner of every persisted user preference** (accent/paper/typeface/theme/locale + all library display defaults). Preferences are strictly per-user: the server row (`users.preferences`, via `GET`/`PUT /api/auth/preferences`) is the source of truth, a per-user `localStorage` bucket keyed by JWT `userId` (`prefs:<id>`) is only a paint-before-load cache, and a **logged-out visitor always starts from the defaults** and persists nothing. The appearance/locale/library-defaults stores below are thin reactive wrappers that read/write individual string keys through this store (never `localStorage` directly) — so on login the look switches to that user's saved preferences, and on logout it reverts to defaults. Each of those wrappers is built from the `persistedStr`/`persistedBool`/`persistedNum` helpers this module exports (a key + fallback + optional validator → a writable computed that reads through `get` and writes through `set`); use them rather than calling `get`/`set` by hand, so validation stays the default. Adding a preference means one `persisted*` call and nothing else — there is no second key list to keep in sync. `POST /api/auth/login`/`register` return the user's blob, and `login.vue` hands it to `seed()` **before** `authStore.setAuth` (which is what flips the token the store's watcher runs off), so a login paints the right look with no `GET /api/auth/preferences` round-trip; that GET is only for a token restored from localStorage on boot.
-  - `import.ts` — **deliberate exception to the cross-page-only rule below**: holds the entire Goodreads-import session (parsed rows, mapping, review queue, matched items) so the send loop keeps running when the user navigates away from `/import`. Persists to `localStorage` after every batch/edit (stripped of re-fetchable candidate-search state) and rehydrates on boot into a "paused" state if a run was interrupted mid-batch — resuming re-derives the unsent rows from what's already been resolved rather than tracking a batch cursor. `import.vue` and `ImportProgressChip.vue` are both thin views over this store.
-- `src/types/` — `book.ts` (`Book`, `ReadStatus`, `OwningStatus` — the scan-row shape; `rating`/`review`/`review_updated_at` are per-user × per-**work** values joined onto every edition, not per-scan columns. Extend it when adding API response columns. Also `BookWithOverrides` (the scan row plus its `*_overridden` flags), `CustomFieldValue` and `WorkEdition` — these three used to be exported from `BookDetail.vue` and were imported by four other modules; a type living in a component is a cycle waiting to happen, so they live here), `library.ts` (`GroupBy`, `SortOption`), `stats.ts` (`CollectionStats`, matching the `GET /api/stats` response shape)
-- `src/locales/` — `en.json`, `de.json` — all UI strings; add new languages here
-- `src/plugins/i18n.ts` — vue-i18n setup (legacy: false, reads locale from localStorage)
-- `src/plugins/vuetify.ts` — Vuetify 4 with `editorial` / `editorial-dark` themes
-- `src/styles/tailwind.css` — Tailwind v4 config with custom design tokens
-- `src/router/index.ts` — Vue Router guards: authenticated users redirect from `/`, `/login` → `/home`; unauthenticated from `/home`, `/series/:id`, `/welcome` → `/`; `/welcome` also redirects to `/home` if `WELCOME_SEEN_KEY` is set
+| Directory | Holds |
+| --- | --- |
+| `src/pages/` | Route-level components — `landing` (`/`), `home` (`/home`), `index` (`/library`), `series/:id`, `settings`, `import`, `welcome`, `login`, `scanner`, `privacy`, `NotFound` |
+| `src/components/` | App chrome and shared primitives, plus `book-detail/`, `import/` and `settings/` subfolders |
+| `src/composables/` | Shared logic extracted from pages (API client, library pipeline, status/rating writes, polling, focus trap) |
+| `src/stores/` | Pinia — cross-page state: auth/guest session, field definitions, preferences, theme/accent/locale |
+| `src/utils/` | Pure helpers. Several are unit-tested in `test/*.spec.ts` — keep new pure logic here so it can be tested without mounting a component |
+| `src/types/` | `book.ts` (the scan-row shape), `library.ts`, `stats.ts` |
+| `src/locales/` | `en.json`, `de.json` — all UI strings |
+| `src/plugins/` | `i18n.ts`, `vuetify.ts` (Vuetify 4, `editorial` / `editorial-dark` themes) |
+| `src/styles/` | `tailwind.css` — Tailwind v4 config and design tokens |
+| `src/router/` | Route guards — authed users redirect from `/`, `/login` → `/home`; unauthed from `/home`, `/series/:id`, `/welcome` → `/`; `/welcome` → `/home` once `WELCOME_SEEN_KEY` is set |
 
-The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
+## Invariants
 
-**Frontend data flow:** pages fetch via `useApi().apiFetch` and hold their own page-level state; Pinia stores mostly hold cross-page state (auth/guest session, field definitions, display preferences, theme/accent/locale) — `stores/import.ts` is the deliberate exception, holding page-level-shaped state in a store specifically so it survives navigation (see above). The library page (`index.vue`) runs its book list through the composable pipeline: `useLibrarySearch` (filters like `status:unread` against real per-edition fields) → `useEditionGrouping` (collapses same-work editions into one card) → `useLibraryGrouping` (group + sort) → pagination. After a scan, `useEnrichmentPoll` polls the scan row until `enrichment_status` resolves.
+- **`useApi().apiFetch(path, init?, opts?)` is the canonical API client.** It prepends
+  `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user
+  out on a 401 (opt out with `{ on401: "ignore" }`; `{ token }` overrides the store's token,
+  for a call that has to outlive logout). All authenticated frontend calls go through it —
+  don't hand-roll `fetch`.
+- **`MarkdownText` is the only `v-html` in the app.** It renders through `utils/markdown.ts`,
+  which sanitizes with DOMPurify behind a fixed tag/attribute allowlist; images are dropped
+  deliberately, since a remote `<img>` in a review would leak the reader's IP the same way a
+  font CDN would. Never bind unsanitized HTML anywhere else.
+- **`AppButton` is the shared action-button primitive** — `variant`
+  `primary`/`secondary`/`ghost`/`danger`/`inverse` × `size` `sm`/`md`/`lg`, plus
+  `block`/`outlined`/`loading`. Use it for all action buttons. Segmented pickers and
+  `AppToggle` are deliberately not this, and the scanner's camera mode keeps its
+  dark-hardcoded secondary/ghost buttons — only its accent-fill buttons use `AppButton`.
+- **`AppSegmented` is the shared single-select segmented control** — `variant` `fill`
+  (default, accent-filled active option; every labelled settings-style row) / `highlight`
+  (accent-tinted active text; toolbar chrome only). Not for the scanner's per-status colored
+  pickers or login's auth-mode pills — those stay bespoke.
+- **`CoverImage` wraps every book cover** — renders the `<img>` when `coverUrl` is set and
+  falls back to `PlaceholderCover` when it's absent or the image fails. Don't hand-roll the
+  `<img v-if>` / `PlaceholderCover v-else` pair.
+- **`ConfirmDialog` is the shared destructive-confirm dialog** (library delete, account
+  delete, import cancel).
+- **Rating and review are stored per work, not per scan.** `useScanStatus`'s
+  `setRating`/`setReview` fan out across every owned edition sharing a `work_id` — pass
+  `useScanStatus({ books: () => allBooks.value })` from a page that holds a list, or the
+  collapsed work-card and the edition carousel drift apart until the next refetch. Nothing
+  clears a rating implicitly: it survives every status change.
+- **`stores/preferences.ts` is the single owner of every persisted preference.** The
+  appearance/locale/library-default stores are thin wrappers over it — never touch
+  `localStorage` directly.
+- **`types/book.ts` is where the scan-row shape lives.** Extend it when adding API response
+  columns. `BookWithOverrides`, `CustomFieldValue` and `WorkEdition` live there too — they
+  used to be exported from `BookDetail.vue` and imported by four other modules, and a type
+  living in a component is a cycle waiting to happen.
+- **`stores/guest.ts` caps unauthenticated users at 3 localStorage scans**; `syncToAccount()`
+  migrates them server-side on register/login.
+- **`stores/import.ts` is the deliberate exception to the cross-page-only store rule** — it
+  holds page-shaped state specifically so an import survives navigation.
 
-### Styling system
+## Data flow
 
-Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
+Pages fetch via `useApi().apiFetch` and hold their own page-level state; Pinia stores mostly
+hold cross-page state. The library page runs its book list through the composable pipeline
+(`useLibrarySearch` → `useEditionGrouping` → `useLibraryGrouping` → pagination — see the
+`library-pipeline` rule). After a scan, `useEnrichmentPoll` polls the scan row until
+`enrichment_status` resolves.
 
-Tailwind for layout/spacing, Vuetify components for interactive elements. Do not mix — use Tailwind classes on plain HTML, Vuetify props on `<v-*>` components. Deliberate exception: `CustomFieldsPanel`'s per-type value inputs (text/integer/date/select) are all plain Tailwind-styled HTML, not Vuetify — a book can have several custom fields of different types shown as one visually uniform stack of rows, and mixing in a `<v-*>` control for just one type would stand out rather than blend in.
+## Styling
+
+Tailwind for layout/spacing, Vuetify components for interactive elements. **Do not mix** — use
+Tailwind classes on plain HTML, Vuetify props on `<v-*>` components. Deliberate exception:
+`CustomFieldsPanel`'s per-type value inputs (text/integer/date/select) are all plain
+Tailwind-styled HTML, because a book can have several custom fields of different types shown as
+one visually uniform stack, and a `<v-*>` control for just one type would stand out rather than
+blend in.
 
 **Tailwind tokens** (defined in `src/styles/tailwind.css`, theme-aware via CSS variables):
+`bg-charcoal`, `bg-charcoal-light`, `border-charcoal-border` (subtle hairline for
+dividers/card edges), `border-control-border` (stronger border for interactive controls —
+segmented toggles, secondary buttons, "add field"; use this, not the hairline, on actionable
+outlines), `text-orange-neon`, `text-text-primary`, `text-text-secondary`.
 
-- Colors: `bg-charcoal`, `bg-charcoal-light`, `border-charcoal-border` (subtle hairline for dividers/card edges), `border-control-border` (stronger border for interactive controls — segmented toggles, secondary buttons, "add field"; use this, not the hairline, on actionable outlines), `text-orange-neon`, `text-text-primary`, `text-text-secondary`
+Accent, paper and typeface are user-overridable at runtime, and scrollbars are restyled
+globally — see the `appearance` rule before touching `tailwind.css`,
+`src/utils/appearance.ts` or the font config in `vite.config.mts`.
 
+**Breakpoints** (identical in Tailwind and Vuetify): `sm` 600px / `md` 840px / `lg` 1145px /
+`xl` 1545px — `md` is the mobile/desktop threshold.
 
-**User appearance presets.** Three token groups are user-overridable at runtime from Settings → Appearance, and `App.vue` applies them by writing the variables **inline on `<html>`**, which outranks both the `@theme` defaults and the `[data-theme="dark"]` block in `tailwind.css`:
+## i18n
 
-- accent (`--color-orange-neon` + Vuetify `primary`), from `accent.ts`
-- paper — the surface/border family (`--color-charcoal`, `-light`, `-border`, `--color-control-border`, `--color-search-bg`, `--color-search-border`, `--color-menu-surface`) plus Vuetify `background`/`surface`/`border`, from `paper.ts`
-- typeface (`--font-heading`, `--font-body` **and `--font-mono`** — the mono face is customized too, because it styles every uppercase letter-spaced micro-label, a large share of the visible text; holding it fixed made a typeface switch look like it had barely applied), from `typeface.ts`
-
-**Scrollbars are restyled globally** in `tailwind.css` — thin, square, no stepper arrows, thumb in `--color-control-border`. Every scroll container in the app gets it for free; don't hand-roll per-component scrollbar CSS. Both the standard (`scrollbar-width`/`scrollbar-color`) and `::-webkit-scrollbar-*` forms are declared because Chromium 121+ honours the former and ignores the latter, while Safari and older Chromium do the opposite.
-
-**`.force-dark`** (`tailwind.css`) is the way to render an **always-dark subtree** inside a themed page — the scanner's camera chrome and the sheets that overlay a live video feed use it, since theme tokens there would paint a near-white panel on top of the camera in light mode. It re-declares the same tokens as `[data-theme="dark"]`, which works on any element because both are unanchored selectors and a custom property declared on an element beats the one it would inherit. That same fact is why it can't simply reuse the dark literals: `App.vue` applies the user's paper preset as inline vars on `<html>`, which reach descendants only by inheritance, so a nested scope would silently drop the preset. Hence `App.vue` also publishes the preset's dark half as `--dark-color-*`, and `.force-dark` remaps from those (with the old literals as pre-hydration fallbacks). Only the eight `PaperVars` are preset-sourced; the rest of the block stays literal. **Vuetify-derived tokens don't follow the scope** (`text-error`, `border-success`, `AppButton variant="primary"`, `RatingStars`' color all resolve through `--v-theme-*` at the `<v-app>` root), and `AppToast` teleports out of the subtree entirely — both are accepted.
-
-Editing those defaults in `tailwind.css` alone is therefore not enough — the `warm` paper preset in `src/utils/appearance.ts` mirrors them and must be kept in sync. No paper preset touches the text tokens, and the rule that keeps contrast safe differs by mode: **light** presets hold lightness roughly constant and differentiate through hue/chroma (`--color-text-secondary` only clears ~4.2:1 on the default paper, so a darker light surface pushes marginal small text further down), while **dark** presets may vary lightness as well — at near-black, chroma is imperceptible, so a hue-only dark palette would render as three identical blacks. The header docblock in `appearance.ts` states the binding constraint for each; keep it accurate when adding a preset.
-
-**Fonts are entirely self-hosted** via `unplugin-fonts` + fontsource, configured in `vite.config.mts` — there is no Google Fonts CDN link, deliberately (same-origin loading, and no visitor IP transferred to a third party). Adding a typeface preset therefore means installing the matching `@fontsource/*` package and registering its weights/styles in `vite.config.mts`, not editing `index.html`. **The UI tops out at weight 700** (headings are `font-bold`, not `font-black`) so the presets stay weight-matched — Lora and Space Mono have no 900, so a heavier heading would let the others outrun them. Don't reintroduce `font-black` without checking every preset's family has a 900. Register `styles: ['normal', 'italic']` only for families that actually ship italics (Space Grotesk and Oswald don't — the browser synthesizes there); listing a style fontsource doesn't have breaks the build.
-
-A preset only earns its place if it's **recognizably** different from the others in a screenshot — the setting is pointless if two read as the same page. Neutral grotesques (Inter, Work Sans) are a trap here: next to the default Roboto body they're near-invisible as a change.
-
-**Breakpoints** (identical in Tailwind and Vuetify): `sm` 600px / `md` 840px / `lg` 1145px / `xl` 1545px — `md` is the mobile/desktop threshold.
-
-
-
-### i18n
-
-All user-visible strings must go through `$t()` / `t()`. Add new strings to both `src/locales/en.json` and `src/locales/de.json`. The `useLocaleStore` store handles locale persistence and updates `i18n.global.locale` reactively. Status/owning/rating label config lives in `computed`s (`STATUS_CONFIG` in `BookDetail`, `useBookStatus`/`useOwningStatus` composables) so labels update on locale change — follow that pattern for any new locale-dependent config object.
+All user-visible strings must go through `$t()` / `t()`, and every key must exist in **both**
+`src/locales/en.json` and `src/locales/de.json` — `test/locales.spec.ts` fails `npm test`
+otherwise (not `npm run build`, which doesn't run the tests). `useLocaleStore` handles persistence and updates `i18n.global.locale` reactively.
+Status/owning/rating label config lives in `computed`s (`useBookStatus`/`useOwningStatus`) so
+labels update on locale change — follow that pattern for any new locale-dependent config
+object.

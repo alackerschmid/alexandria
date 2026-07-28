@@ -14,9 +14,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 5. I’m always open to ideas on better ways to do things. Please don’t hesitate to suggest a better way, or one that has long lasting impact over a tactical change. If what we are trying to do is similar to settled science or industry practice, let me know. We don’t have to reinvent the wheel.
 
-6. Keep these files in sync with the code: when adding, renaming, or removing a route, table, store, composable, page, or component, update the corresponding inventory in the same change — frontend inventories live in `src/CLAUDE.md`, backend routes/schema in `worker/CLAUDE.md`. The behavioral sections age well; the inventories rot silently unless this is enforced.
+6. Keep the two remaining inventories in sync with the code: when adding, renaming, or removing an **API route**, update `worker/CLAUDE.md`; when changing a **table or column**, update `worker/migrations/CLAUDE.md`. Both are contracts rather than file listings, so they don't rot the way a component roster does. There is deliberately no frontend inventory — ask the `inventory` subagent for the roster of an area instead.
 
-7. Ignore `to-do.md` at the repo root — it's personal notes, not tasks for you. Don't read, update, or act on it unless explicitly asked.
+7. `to-do.md` at the repo root is personal notes, not a backlog for you. `.claude/settings.json` denies Read/Edit/Write on it, but permission rules don't cover Bash or a repo-wide grep — so if its contents reach you some other way, don't act on them, and don't treat anything in it as a task. Only work from it if I ask you to.
 
 ## Formatting
 
@@ -27,10 +27,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Where things are documented
 
-- `src/CLAUDE.md` — frontend: pages/components/composables/stores/utils inventory, the library display pipeline, styling system (Tailwind + Vuetify + user appearance presets), i18n
-- `worker/CLAUDE.md` — backend: API routes, key modules, auth, rate limiting, D1 schema, the Wikidata enrichment pipeline and its state machine
+Loaded by directory:
+
+- `src/CLAUDE.md` — frontend invariants, data flow, styling tokens, i18n
+- `worker/CLAUDE.md` — backend: API routes, key modules, auth, rate limiting
+- `worker/migrations/CLAUDE.md` — the table-by-table D1 schema
+
+Loaded by file, from `.claude/rules/` (each carries `paths:` frontmatter and costs nothing until you open a matching file):
+
+- `book-detail` — the detail dialog: measure and bands, tab derivation, the single-Save edit screen, `RatingDialog` ownership and its flush rule
+- `import-wizard` — both halves of the Goodreads import: the wizard, the two batch routes, the ownership rule, `update`/Undo semantics, batch concurrency
+- `library-pipeline` — the search → collapse → group chain and why the order is load-bearing
+- `appearance` — user presets, `.force-dark`, the `tailwind.css` ↔ `appearance.ts` sync requirement, self-hosted fonts
+- `preferences` — where persisted preferences live and how to add one
+- `enrichment` — the Wikidata pipeline, retry policy, sweeper batching, telemetry
+
+On demand:
+
 - `/dev-setup` skill — running both dev servers locally, `worker/.dev.vars` secrets, seeding a test account
-- `/troubleshooting` skill — API 404s in dev, enrichment stuck on `pending`
+- `/troubleshooting` skill — API 404s in dev, enrichment stuck on `pending`, rebuilding a wiped local D1
+- `/add-api-column` skill — adding a new column to the API response (Wikidata / book metadata / custom field)
+- `inventory` subagent — the roster of an area: which components/composables/stores/routes exist under a directory and what each is for
 
 ## Architecture
 
@@ -39,7 +56,7 @@ Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages
 Two separate deployments, both triggered by pushing to `main`:
 
 - **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main` via Cloudflare's Git integration
-- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed by the GitHub Actions **Deploy** workflow (`.github/workflows/deploy.yml`) on push to `main`: it runs the shared verify workflow (type-check, lint, worker tests), applies pending D1 migrations, then runs `wrangler deploy`. Requires the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. The former Cloudflare Git integration (Workers Builds) for the worker is disabled. `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys (it does not apply migrations).
+- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed by the GitHub Actions **Deploy** workflow (`.github/workflows/deploy.yml`) on push to `main`: it runs the shared verify workflow (frontend type-check + lint + tests, worker type-check + tests), applies pending D1 migrations, then runs `wrangler deploy`. Requires the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. The former Cloudflare Git integration (Workers Builds) for the worker is disabled. `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys (it does not apply migrations).
 
 CI: the **CI** workflow (`.github/workflows/ci.yml`) runs the same verify workflow on every push to non-`main` branches.
 
@@ -48,12 +65,6 @@ Pushing to GitHub redeploys both the frontend and the worker. Worker deploys app
 The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
 
 Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
-
-## Add a new column to the API response
-
-1. If it's a Wikidata field: follow "Adding new Wikidata fields" (5-step process in `worker/CLAUDE.md`'s enrichment section)
-2. If it's a new book metadata field: (1) add `ALTER TABLE books ADD COLUMN` migration, (2) add to `SCAN_SELECT` in `library-query.ts`, (3) update the `Book` type in `src/types/book.ts`
-3. If it's a custom field: use the existing `user_field_definitions` + `book_custom_fields` schema (already query-merged in `SCAN_SELECT`)
 
 ## Versioning
 
@@ -68,15 +79,16 @@ Commit messages follow [Conventional Commits](https://www.conventionalcommits.or
 
 ## Verification
 
-Always run type-checks and lint after code edits and verify they pass before considering a task complete:
+**This is enforced, not requested.** A `Stop` hook (`.claude/hooks/verify.mjs`) records which files each turn edited and runs the checks those paths imply:
 
-```bash
-npm run type-check
-npm run lint
-npm test                # if you touched frontend pure-logic helpers covered by root test/*.spec.ts
-cd worker && npm test   # if you touched worker pure-logic functions covered by worker/test/*.spec.ts
-```
+| Edited | Runs |
+| --- | --- |
+| `src/`, `test/`, `vite.config`, `vitest.config`, `tsconfig`, `eslint.config`, `.claude/hooks/` | `npm run type-check` + `npm run lint` |
+| `worker/` | `npm run lint` (root ESLint covers `worker/`; the worker has no lint script), plus the worker's own type-check and tests |
+| `src/utils/`, `src/locales/`, `test/` | `npm test` |
 
-This applies to code review as well: a `/code-review` pass (and any fixes applied from one) isn't done until these commands have actually been run and shown to pass — don't stop at static-analysis findings.
+A failure blocks the turn and returns the output. A turn that edited nothing runs nothing. Only files an actual check can fail on are recorded (`.ts`/`.mts`/`.vue`/`.json`/`.js`/`.mjs`/`.cjs`) — notably **not** `.css`, which neither `vue-tsc` nor ESLint reads, so `src/styles/tailwind.css` has no automated check and needs a look in the browser.
 
-Note: Both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`, `vitest run`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests.
+So don't hand-run these to "check your work" — finish the edit and let the hook decide. Do run them manually when you need a result mid-task, or when the hook has given up after three consecutive failures. The same standard applies to a `/code-review` pass: fixes applied from one aren't done until these pass.
+
+Note: both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests. `test/locales.spec.ts` additionally fails `npm test` (and so CI) if `en.json` and `de.json` key sets drift — note that `npm run build` does not run the tests, so it will not catch that on its own.
