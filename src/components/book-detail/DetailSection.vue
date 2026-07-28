@@ -14,9 +14,14 @@
       :aria-controls="`detail-body-${sectionKey}`"
       @click="$emit('toggle')"
     >
-      <span class="text-xs shrink-0" aria-hidden="true">{{
-        collapsed ? "›" : "⌄"
-      }}</span>
+      <!-- An icon rather than a text glyph: `⌄` (U+2304) and `›` (U+203A) sit at different
+           heights in their em boxes, so swapping between them made the expanded state look
+           mis-centred against the collapsed one. Same chevrons the Recognition disclosure uses. -->
+      <v-icon
+        :icon="collapsed ? 'mdi-chevron-right' : 'mdi-chevron-down'"
+        size="14"
+        class="shrink-0"
+      />
       {{ title }}
       <span
         v-if="summary"
