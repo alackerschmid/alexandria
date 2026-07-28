@@ -1,15 +1,21 @@
 import type { Book } from "@/types/book";
 
-// Which panes the book detail offers, derived from what the book actually has.
+// Which panes the book detail offers.
 //
-// The rule (and the reason this is a pure module rather than a tangle of `v-if`s): **a pane that
-// would be empty is not a tab.** A book with no description and no first line has no Overview tab
-// at all and opens on Details, instead of presenting a tab that leads to a hole. `review` is the
-// deliberate exception — it is always offered when the user owns the book, because an unwritten
-// review is the state they are most meant to act on; it carries a dot instead of disappearing.
+// The rule: **the tab row is the same for every book.** Overview, Details, Review, Editions and
+// All are always present, whether or not the book has anything to put in them — a pane that has
+// nothing says so (an empty Overview reads "no description available") rather than vanishing, so
+// the row doesn't reshuffle as the user moves between books.
 //
-// `all` is last and is the default: it stacks every other pane in one scroll, so the tabs read as
-// a filter rather than a wall.
+// The two conditions left are neither of them about emptiness:
+//   - `readonly` — `series.vue` shows editions the user doesn't own, and Record/Review there
+//     would offer controls that write to a scan that doesn't exist.
+//   - `mobile` — Record is *only* a tab below `md`. On desktop the masthead already holds the
+//     same four controls, and the pane would be a second copy of them on the same screen.
+//
+// `all` is last — it stacks every other pane in one scroll, so the tabs read as a filter rather
+// than a wall — but **`DEFAULT_TAB` (`overview`) is what the view opens on**: what the book *is*
+// comes before a dump of everything known about it.
 
 export type TabKey =
   | "overview"
@@ -22,17 +28,6 @@ export type TabKey =
 export interface TabDescriptor {
   key: TabKey;
   badge?: number;
-  dot?: boolean;
-}
-
-/** True when the Overview pane would render something. */
-export function hasOverview(book: Book): boolean {
-  return !!(
-    book.description ||
-    book.first_line ||
-    book.epigraph ||
-    book.genres?.length
-  );
 }
 
 /** True when the Details pane's "The work" ledger would render something. `This edition` always
@@ -63,15 +58,15 @@ export function detailsFieldCount(book: Book): number {
   return edition + workFactCount(book);
 }
 
+/** The tab a book opens on. Exported because `BookDetail` needs the same value to seed and reset
+ *  `activeTab` — `resolveActiveTab` only ever *replaces* a tab that has ceased to exist, so it
+ *  never moves a freshly-opened book onto the default by itself. One literal, two call sites. */
+export const DEFAULT_TAB: TabKey = "overview";
+
 export interface TabContext {
-  book: Book;
   /** `series.vue` renders editions the user doesn't own — nothing there is theirs to set. */
   readonly?: boolean;
-  /** Custom field definitions the user has created; 0 means the Record pane has nothing to show
-   *  beyond the controls, which on desktop already live in the masthead. Guest mode passes 0 —
-   *  guests have no custom fields — which is the whole of guest's effect on the tab set. */
-  customFieldCount: number;
-  /** Owned + discoverable editions of this work, once known. */
+  /** Owned + discoverable editions of this work, once known. Drives the badge only. */
   editionCount?: number;
   /** True below the `md` breakpoint, where the masthead's control cluster doesn't fit and the
    *  Record pane is the only place status/owning/rating can be set. */
@@ -79,40 +74,27 @@ export interface TabContext {
 }
 
 export function buildTabs(ctx: TabContext): TabDescriptor[] {
-  const tabs: TabDescriptor[] = [];
-
-  if (hasOverview(ctx.book)) tabs.push({ key: "overview" });
-
-  // On mobile Record always earns its place — it holds the only copy of the controls. On desktop
-  // those are in the masthead, so it is worth a tab only when there are custom fields in it.
-  if (!ctx.readonly && (ctx.mobile || ctx.customFieldCount > 0)) {
-    tabs.push({ key: "record" });
-  }
-
-  tabs.push({ key: "details" });
-
-  if (!ctx.readonly) {
-    tabs.push({ key: "review", dot: !ctx.book.review });
-  }
-
-  if (ctx.book.work_id != null && (ctx.editionCount ?? 0) > 1) {
-    tabs.push({ key: "editions", badge: ctx.editionCount });
-  }
-
-  // "All" only means something when there is more than one pane to stack.
-  if (tabs.length > 1) tabs.push({ key: "all" });
-
-  return tabs;
+  const own = !ctx.readonly;
+  const tabs: (TabDescriptor | null)[] = [
+    { key: "overview" },
+    own && ctx.mobile ? { key: "record" } : null,
+    { key: "details" },
+    own ? { key: "review" } : null,
+    // The badge is the only thing the count still drives — an unknown or empty count (the lookup
+    // hasn't returned, or the work has one edition) shows the tab without one.
+    { key: "editions", badge: ctx.editionCount || undefined },
+    { key: "all" },
+  ];
+  return tabs.filter((tab) => tab !== null);
 }
 
-/** The tab to show, given the available set and whatever was previously active. Defaults to `all`
- *  (or the single remaining pane), and falls back rather than leaving a dead tab selected when the
- *  set shrinks — e.g. switching to a book with no description while Overview was active. */
+/** The tab to show, given the available set and whatever was previously active. Falls back to the
+ *  default rather than leaving a dead tab selected when the set shrinks — e.g. Record was active
+ *  and the next book is a readonly edition. */
 export function resolveActiveTab(
   tabs: TabDescriptor[],
   current: TabKey | null,
 ): TabKey {
   if (current && tabs.some((t) => t.key === current)) return current;
-  const last = tabs.at(-1);
-  return last?.key ?? "details";
+  return DEFAULT_TAB;
 }

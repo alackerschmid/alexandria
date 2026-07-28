@@ -133,6 +133,22 @@
   padding: 8px 12px;
 }
 
+/* Dialogs get a blurred backdrop, not just a dimmed one: Vuetify's scrim alone leaves the page
+   underneath fully legible, so the eye keeps reading the library behind the panel. Scoped to
+   .v-dialog on purpose — menus, selects and tooltips are lightweight overlays that shouldn't
+   push the whole page out of focus.
+
+   It goes on the overlay *root*, not on .v-overlay__scrim, even though the scrim is the element
+   that does the dimming: the scrim carries opacity 0.32 (and fades in from 0), and a
+   backdrop-filter is composited through its element opacity — so on the scrim the blur would
+   land at a third of its strength and need an implausible radius to read at all. The root has
+   no opacity of its own. The dialog's own content is a child, so it stays sharp; the cost is
+   that the blur appears with the dialog rather than fading in with the scrim. */
+.v-overlay.v-dialog {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
 /* The OS scrollbar — chunky, grey, with stepper arrows — is the one piece of chrome that never
    matched the editorial look, and it shows up in every scroll container (the detail dialog body,
    the review textarea, the resolve drawer, the editions list). Restyle it globally: thin, square,

@@ -88,17 +88,29 @@ export function editionBorderClass(
   return "border border-charcoal-border";
 }
 
+/**
+ * The 4-digit year in a publish date, wherever it sits in the string, or "" when there isn't one.
+ *
+ * `publish_date` is **not** guaranteed ISO: OpenLibrary hands back whatever the edition record
+ * carries, so alongside `2004` and `2004-01` there are strings like `January 1, 2004`. Slicing
+ * the first four characters off that yields "Janu", which is what used to reach the card.
+ */
+const YEAR_RE = /\b\d{4}\b/;
+
+export function publishYear(date: string | null | undefined): string {
+  return YEAR_RE.exec(date ?? "")?.[0] ?? "";
+}
+
 /** Publication year of an edition, or "" when unknown. */
 export function editionYear(edition: Pick<WorkEdition, "publish_date">): string {
-  return edition.publish_date?.slice(0, 4) ?? "";
+  return publishYear(edition.publish_date);
 }
 
 /** 4-digit year, preferring the edition's publish date then the work's original date. */
 export function bookYear(
   book: Pick<Book, "publish_date" | "original_pub_date">,
 ): string {
-  const d = book.publish_date || book.original_pub_date;
-  return d ? String(d).slice(0, 4) : "";
+  return publishYear(book.publish_date || book.original_pub_date);
 }
 
 /**

@@ -4,25 +4,36 @@
   <div>
     <!-- The publisher blurb may be clamped; the user's own review never is. It is the one long
          block here that isn't theirs, so it must not push everything else off screen. -->
-    <div v-if="book.description" class="mb-8">
+    <div class="mb-8">
+      <div class="micro-label mb-3 flex items-center gap-1.5">
+        {{ $t("detail.description") }}
+        <OverrideDot
+          v-if="book.description_overridden"
+          class="w-1.5 h-1.5"
+        />
+      </div>
+      <template v-if="book.description">
+        <p
+          ref="blurbEl"
+          class="text-[15px] md:text-base leading-[1.8] text-text-secondary text-pretty"
+          :class="expanded ? '' : 'line-clamp-7'"
+        >
+          {{ book.description }}
+        </p>
+        <button
+          v-if="clampable"
+          class="mt-2 text-[10px] tracking-[0.18em] uppercase text-text-secondary hover:text-orange-neon transition-colors"
+          @click="$emit('update:expanded', !expanded)"
+        >
+          {{ expanded ? $t("detail.show_less") : $t("detail.show_more") }}
+        </button>
+      </template>
       <p
-        ref="blurbEl"
-        class="text-[15px] md:text-base leading-[1.8] text-text-secondary text-pretty"
-        :class="expanded ? '' : 'line-clamp-7'"
+        v-else
+        class="text-[15px] md:text-base leading-[1.8] text-text-secondary/70 italic"
       >
-        {{ book.description }}
+        {{ $t("detail.description_empty") }}
       </p>
-      <button
-        v-if="clampable"
-        class="mt-2 text-[10px] tracking-[0.18em] uppercase text-text-secondary hover:text-orange-neon transition-colors"
-        @click="$emit('update:expanded', !expanded)"
-      >
-        {{ expanded ? $t("detail.show_less") : $t("detail.show_more") }}
-      </button>
-      <OverrideDot
-        v-if="book.description_overridden"
-        class="w-1.5 h-1.5 inline-block ml-2 align-middle"
-      />
     </div>
 
     <div v-if="book.first_line" class="mb-8">
@@ -43,36 +54,31 @@
       </p>
     </div>
 
-    <!-- Genres are identity, not trivia — squared hairline chips sitting with the text rather
-         than a labelled list of their own. -->
-    <div v-if="book.genres?.length" class="flex flex-wrap gap-2">
-      <button
-        v-for="genre in book.genres"
-        :key="genre"
-        class="border border-control-border px-3 py-1.5 text-[11px] text-text-primary hover:border-orange-neon hover:text-orange-neon transition-colors"
-        @click="$emit('filter', 'genre', genre)"
-      >
-        {{ genre }}
-      </button>
+    <!-- Genres are identity, not trivia — squared hairline chips rather than a plain list. -->
+    <div v-if="book.genres?.length">
+      <div class="micro-label mb-3">{{ $t("detail.genres") }}</div>
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="genre in book.genres"
+          :key="genre"
+          class="border border-control-border px-3 py-1.5 text-[11px] text-text-primary hover:border-orange-neon hover:text-orange-neon transition-colors"
+          @click="$emit('filter', 'genre', genre)"
+        >
+          {{ genre }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script lang="ts" setup>
-import {
-  nextTick,
-  onMounted,
-  onUnmounted,
-  ref,
-  useTemplateRef,
-  watch,
-} from "vue";
+import { nextTick, onUnmounted, ref, useTemplateRef, watch } from "vue";
 import OverrideDot from "@/components/OverrideDot.vue";
 import type { BookWithOverrides } from "@/types/book";
 
-// What the book is about, in the publisher's words and the author's first. Whether it renders at
-// all is decided upstream by `hasOverview` in utils/detail-tabs.ts — a pane that would be empty
-// never becomes a tab.
+// What the book is about, in the publisher's words and the author's first. The tab is offered for
+// every book (see utils/detail-tabs.ts), so the pane owns its own empty state: a labelled
+// "no description available" rather than a section that silently isn't there.
 const props = defineProps<{
   book: BookWithOverrides;
   expanded: boolean;
@@ -99,13 +105,23 @@ function measureClamp() {
   clampable.value = el.scrollHeight - el.clientHeight > 1;
 }
 
-let observer: ResizeObserver | null = null;
-onMounted(() => {
-  observer = new ResizeObserver(measureClamp);
-  if (blurbEl.value) observer.observe(blurbEl.value);
-  measureClamp();
-});
-onUnmounted(() => observer?.disconnect());
+// The <p> is `v-if`'d on there being a description at all, so the element to watch can arrive long
+// after mount — a description filled in by enrichment while the pane is open is exactly that. An
+// observer bound once in `onMounted` would have attached to nothing and stayed that way, leaving
+// the clamp measured once and never re-measured on resize or rotation: the stale-`clampable` bug
+// this observer exists to prevent. Re-target on every change of the ref instead.
+const observer = new ResizeObserver(() => measureClamp());
+watch(
+  blurbEl,
+  (el) => {
+    observer.disconnect();
+    if (el) observer.observe(el);
+    measureClamp();
+  },
+  // `post`, so the measurement reads an element the DOM update has already committed.
+  { immediate: true, flush: "post" },
+);
+onUnmounted(() => observer.disconnect());
 
 // A new book re-renders the same <p>, so the observer may not fire — re-measure explicitly.
 watch(

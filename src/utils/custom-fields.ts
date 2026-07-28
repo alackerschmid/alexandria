@@ -10,6 +10,14 @@ export function bookCustomValue(book: Book, defId: number): string | null {
   );
 }
 
+/** A book's value for one definition as a single display string, "" when unset — the read-only
+ *  rendering the detail ledger and any other read surface should use. Tag values are stored as a
+ *  JSON array, so they need `parseTagList` rather than the raw string. */
+export function customFieldDisplay(book: Book, def: FieldDef): string {
+  const raw = bookCustomValue(book, def.id);
+  return def.type === "tag" ? parseTagList(raw).join(", ") : (raw ?? "");
+}
+
 /** The editor model for one field: a string for text/integer/select/date, a string[] for tag. */
 export type CustomFieldModel = Record<number, string | string[]>;
 
