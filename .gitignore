@@ -9,3 +9,4 @@ worker/*.sql
 *.csv
 *.dc.html
 .playwright-mcp
+.claude/hooks/.state/
