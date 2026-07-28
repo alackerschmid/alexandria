@@ -69,4 +69,12 @@ export default [
       "no-empty": ["error", { allowEmptyCatch: true }],
     },
   },
+  {
+    // Claude Code hook scripts. The exit code *is* the hook protocol — 0 allows,
+    // 2 blocks — so `process.exit()` is the interface here, not a smell.
+    files: [".claude/hooks/**/*.mjs"],
+    rules: {
+      "unicorn/no-process-exit": "off",
+    },
+  },
 ];

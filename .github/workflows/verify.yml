@@ -16,6 +16,7 @@ jobs:
       - run: npm ci
       - run: npm run type-check
       - run: npm run lint
+      - run: npm test
 
   worker:
     runs-on: ubuntu-latest
