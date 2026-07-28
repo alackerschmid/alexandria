@@ -32,7 +32,7 @@
     <div
       v-show="!rule || !collapsed"
       :id="`detail-body-${sectionKey}`"
-      class="px-4 md:px-5"
+      class="px-8 md:px-10"
       :class="rule ? 'pt-6' : ''"
     >
       <slot />
