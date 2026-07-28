@@ -15,7 +15,7 @@
         @close="$emit('update:modelValue', false)"
         @expand="expand"
         @cycle-status="$emit('cycle-status')"
-        @open-rating="ratingDialogOpen = true"
+        @open-rating="$emit('open-rating')"
         @go-series="goToSeries"
         @filter="filterBy"
       />
@@ -209,6 +209,16 @@
                     </p>
                   </div>
 
+                  <!-- review / notes (the user's own, rendered from markdown) -->
+                  <div v-if="book.review" class="mb-10">
+                    <div
+                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
+                    >
+                      {{ $t("detail.review") }}
+                    </div>
+                    <MarkdownText :source="book.review" />
+                  </div>
+
                   <!-- genres (moved below description) -->
                   <div v-if="book.genres?.length" class="mb-10">
                     <div
@@ -366,11 +376,12 @@
                     </div>
                   </div>
 
-                  <!-- rating (read only — rating a book you haven't finished doesn't make sense) -->
+                  <!-- rating — offered at any status; it belongs to the work, not to this copy
+                       or to having finished it -->
                   <div
-                    v-if="!readonly && book.status === 'read'"
+                    v-if="!readonly"
                     class="py-4 border-b border-charcoal-border/50 flex items-center justify-between cursor-pointer"
-                    @click="ratingDialogOpen = true"
+                    @click="$emit('open-rating')"
                   >
                     <span
                       class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
@@ -382,6 +393,29 @@
                       <span class="font-mono text-[13px] text-text-primary">
                         {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
                       </span>
+                      <span class="text-[9px] text-text-secondary/50">▾</span>
+                    </span>
+                  </div>
+
+                  <!-- review / notes — unlike rating, offered at any reading status -->
+                  <div
+                    v-if="!readonly"
+                    class="py-4 border-b border-charcoal-border/50 flex items-center justify-between cursor-pointer"
+                    @click="$emit('open-rating')"
+                  >
+                    <span
+                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
+                    >
+                      {{ $t("detail.review") }}
+                    </span>
+                    <span
+                      class="flex items-center gap-2 text-[11px] text-text-primary"
+                    >
+                      {{
+                        book.review
+                          ? $t("detail.review_edit")
+                          : $t("detail.review_add")
+                      }}
                       <span class="text-[9px] text-text-secondary/50">▾</span>
                     </span>
                   </div>
@@ -674,12 +708,6 @@
       </div>
     </template>
 
-    <!-- shared across both card and full mode -->
-    <RatingDialog
-      v-model="ratingDialogOpen"
-      :rating="book.rating"
-      @set-rating="$emit('set-rating', $event)"
-    />
   </v-dialog>
 </template>
 
@@ -705,8 +733,8 @@ import BookDetailCard from "@/components/book-detail/BookDetailCard.vue";
 import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
-import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import RatingStars from "@/components/RatingStars.vue";
+import MarkdownText from "@/components/MarkdownText.vue";
 import EditionDetails from "@/components/book-detail/EditionDetails.vue";
 import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
@@ -745,7 +773,9 @@ const emit = defineEmits<{
   "cycle-status": [];
   "set-status": [status: ReadStatus];
   "set-owning-status": [status: OwningStatus];
-  "set-rating": [rating: number | null];
+  /** Ask the host page to raise the rating/review prompt for this book — the dialog is owned
+   *  there, so a status change from a library card can raise the same one (useRatingPrompt). */
+  "open-rating": [];
   delete: [];
   refreshed: [updated: Partial<BookWithOverrides>];
   "switch-edition": [payload: { isbn: string; scanId: number }];
@@ -762,7 +792,6 @@ const router = useRouter();
 
 const mode = ref<"card" | "full">("card");
 const editionsDialogOpen = ref(false);
-const ratingDialogOpen = ref(false);
 
 function expand() {
   mode.value = "full";

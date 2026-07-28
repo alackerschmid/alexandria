@@ -1259,8 +1259,6 @@ export const useImportStore = defineStore("import", () => {
   function setImportedStatus(item: ImportedItem, status: ReadStatus): Promise<void> {
     return patchImportedField(item, { status }, () => {
       item.status = status;
-      // Mirror the server: moving off "read" clears any rating.
-      if (status !== "read") item.rating = null;
     });
   }
 
@@ -1272,7 +1270,12 @@ export const useImportStore = defineStore("import", () => {
 
   function setImportedRating(item: ImportedItem, rating: number | null): Promise<void> {
     return patchImportedField(item, { rating }, () => {
-      item.rating = rating;
+      // A rating is stored per work, so it applies to every imported row of the same work — two
+      // editions of one book in the same CSV would otherwise show conflicting scores.
+      for (const other of importedItems.value) {
+        if (other === item || (other.workId != null && other.workId === item.workId))
+          other.rating = rating;
+      }
     });
   }
 

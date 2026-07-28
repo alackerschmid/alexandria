@@ -33,6 +33,20 @@ export function pickRepresentativeEdition(editions: Book[]): Book {
   });
 }
 
+/**
+ * Every book in `all` that shares this book's work — the set a per-work value (rating, review)
+ * has to be written to at once. `book` is always included, even when it isn't a member of `all`
+ * (the detail dialog can hold a copy that a re-filter has since dropped from the list).
+ *
+ * A book with no work link is its own only sibling: `work_id` is NULL until enrichment links it,
+ * and grouping unrelated unlinked books together would be wrong.
+ */
+export function workSiblings(book: Book, all: Book[] | undefined): Book[] {
+  if (!all || book.work_id == null) return [book];
+  const siblings = all.filter((b) => b.work_id === book.work_id);
+  return siblings.includes(book) ? siblings : [book, ...siblings];
+}
+
 /** Title with ISBN fallback when a book has no catalogued title. */
 export function displayTitle(book: Pick<Book, "title" | "isbn">): string {
   return book.title || book.isbn;

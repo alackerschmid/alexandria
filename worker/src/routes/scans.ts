@@ -1,7 +1,7 @@
 import { Hono } from "hono";
-import type { Env } from "../types";
+import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
-import { resolveEdition, materializeEdition } from "../editions";
+import { resolveEdition, materializeEdition, linkWork } from "../editions";
 import { enrichWork } from "../enrichment";
 import {
   SORT_CLAUSES,
@@ -11,10 +11,14 @@ import {
   VALID_STATUSES,
   VALID_OWNING_STATUSES,
   isValidRating,
+  isValidReview,
+  normalizeReview,
+  REVIEW_MAX_LENGTH,
   findExistingScan,
   isUniqueConstraintError,
   parseIntOr,
   buildScanUpdate,
+  upsertWorkRating,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
 import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
@@ -62,6 +66,7 @@ scans.post("/", async (c) => {
     status?: string;
     owning_status?: string;
     rating?: number | null;
+    review?: string | null;
   }>();
   if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
@@ -82,9 +87,14 @@ scans.post("/", async (c) => {
   if (body.rating != null && !isValidRating(body.rating)) {
     return c.json({ error: "rating must be an integer 0-10 or null" }, 400);
   }
-  // Rating only makes sense for a book marked "read" — silently drop it otherwise, mirroring
-  // the silent status/owning_status fallback above rather than hard-rejecting the whole scan.
-  const initialRating = initialStatus === "read" ? (body.rating ?? null) : null;
+  const initialRating = body.rating ?? null;
+  if (body.review !== undefined && !isValidReview(body.review)) {
+    return c.json(
+      { error: `review must be a string of at most ${REVIEW_MAX_LENGTH} characters, or null` },
+      400,
+    );
+  }
+  const initialReview = normalizeReview(body.review ?? null);
 
   const userId = c.get("userId");
   const db = c.env.DB;
@@ -125,9 +135,9 @@ scans.post("/", async (c) => {
   try {
     result = await db
       .prepare(
-        "INSERT INTO scans (user_id, book_id, status, owning_status, rating) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO scans (user_id, book_id, status, owning_status) VALUES (?, ?, ?, ?)",
       )
-      .bind(userId, book.id, initialStatus, initialOwningStatus, initialRating)
+      .bind(userId, book.id, initialStatus, initialOwningStatus)
       .run();
   } catch (e) {
     if (isUniqueConstraintError(e)) {
@@ -135,6 +145,29 @@ scans.post("/", async (c) => {
     }
     console.error("[POST /api/scans] scan INSERT failed:", e);
     return c.json({ error: "Failed to save scan" }, 500);
+  }
+
+  // Seed, never overwrite: the values arriving here are replays from another point in time — the
+  // scanner's offline queue draining, or a guest's local scans syncing on register — so they must
+  // not stomp a rating the user has since set from another edition of the same work.
+  //
+  // A rating can never fail the scan itself: `allowEmpty` above exists so a drained offline scan
+  // always succeeds, and an unlinked book (no work to hang the rating on) must not undo that.
+  if ((initialRating != null || initialReview != null) && book.work_id) {
+    await db.batch(
+      upsertWorkRating(
+        db,
+        userId,
+        book.work_id,
+        { rating: initialRating, review: initialReview },
+        "seed",
+      ),
+    );
+  } else if (initialRating != null || initialReview != null) {
+    console.error(
+      "[POST /api/scans] rating/review dropped, book has no work link, isbn:",
+      isbn,
+    );
   }
 
   if (book.work_id)
@@ -179,6 +212,7 @@ interface PatchScanBody {
   status?: string;
   owning_status?: string;
   rating?: number | null;
+  review?: string | null;
 }
 
 function validatePatchBody(
@@ -186,9 +220,10 @@ function validatePatchBody(
   hasStatus: boolean,
   hasOwningStatus: boolean,
   hasRating: boolean,
+  hasReview: boolean,
 ): string | null {
-  if (!hasStatus && !hasOwningStatus && !hasRating) {
-    return "status, owning_status, or rating is required";
+  if (!hasStatus && !hasOwningStatus && !hasRating && !hasReview) {
+    return "status, owning_status, rating, or review is required";
   }
   if (
     hasStatus &&
@@ -207,24 +242,10 @@ function validatePatchBody(
   if (hasRating && body.rating !== null && !isValidRating(body.rating)) {
     return "rating must be an integer 0-10 or null";
   }
+  if (hasReview && !isValidReview(body.review)) {
+    return `review must be a string of at most ${REVIEW_MAX_LENGTH} characters, or null`;
+  }
   return null;
-}
-
-// Resolves the status a scan will have after this PATCH is applied — either the incoming
-// value, or (when this request doesn't touch status) the scan's current stored status.
-async function resolveEffectiveStatus(
-  db: D1Database,
-  scanId: string,
-  userId: number,
-  hasStatus: boolean,
-  bodyStatus?: string,
-): Promise<string | undefined> {
-  if (hasStatus) return bodyStatus;
-  const row = await db
-    .prepare("SELECT status FROM scans WHERE id = ? AND user_id = ?")
-    .bind(scanId, userId)
-    .first<{ status: string }>();
-  return row?.status;
 }
 
 scans.patch("/:id", async (c) => {
@@ -236,62 +257,93 @@ scans.patch("/:id", async (c) => {
   const hasStatus = "status" in body;
   const hasOwningStatus = "owning_status" in body;
   const hasRating = "rating" in body;
+  const hasReview = "review" in body;
 
   const validationError = validatePatchBody(
     body,
     hasStatus,
     hasOwningStatus,
     hasRating,
+    hasReview,
   );
   if (validationError) return c.json({ error: validationError }, 400);
 
   const userId = c.get("userId");
+  const db = c.env.DB;
   const scanId = c.req.param("id");
 
-  // Only resolved when this update could touch rating: hasStatus resolves for free (no DB
-  // read — see resolveEffectiveStatus), hasRating without hasStatus needs the current status.
-  let effectiveStatus: string | undefined;
-  if (hasStatus || hasRating) {
-    effectiveStatus = await resolveEffectiveStatus(
-      c.env.DB,
-      scanId,
-      userId,
-      hasStatus,
-      body.status,
-    );
+  // One lookup does three jobs: the 404 check (the scan UPDATE can no longer supply it — a
+  // rating-only PATCH touches no scan column at all), the book row `linkWork` needs, and the
+  // work id every rating write is keyed on. Selects `b.*` alone, never `s.id` alongside it:
+  // both columns are named `id`, and `linkWork` writes `UPDATE books SET work_id = ? WHERE
+  // id = ?` — if the duplicate ever resolved to the scan's id it would stamp the work onto an
+  // unrelated book. The scan's own id is already in hand as `scanId`.
+  const book = await db
+    .prepare(
+      `SELECT b.* FROM scans s JOIN books b ON b.id = s.book_id
+        WHERE s.id = ? AND s.user_id = ?`,
+    )
+    .bind(scanId, userId)
+    .first<BookRow>();
+  if (!book) return c.json({ error: "Book not found" }, 404);
+
+  const writesRating = hasRating || hasReview;
+  let workId = book.work_id;
+  if (writesRating && !workId) {
+    // Effectively always succeeds — linkWork falls back to an `isbn:<isbn>` match key even for a
+    // title-less book — and it writes work_id back onto the row in place.
+    await linkWork(db, book);
+    workId = book.work_id;
+    if (!workId) {
+      return c.json(
+        { error: "This book isn't linked to a work yet", code: "work_unresolved" },
+        409,
+      );
+    }
   }
 
-  // Rating only makes sense for a book marked "read" — enforce that invariant here so it
-  // holds regardless of caller (frontend gates the rating UI on status==='read', but a
-  // direct API call must not be able to leave a rating on a non-read scan).
-  if (hasRating && body.rating != null && effectiveStatus !== "read") {
-    return c.json(
-      { error: "rating can only be set on a book marked as read" },
-      400,
-    );
-  }
-
-  const { sets, binds, resolvedRating } = buildScanUpdate({
+  const { sets, binds } = buildScanUpdate({
     status: hasStatus ? body.status! : undefined,
     owningStatus: hasOwningStatus ? body.owning_status! : undefined,
-    ratingInput: { hasStatus, effectiveStatus, hasRating, rating: body.rating },
   });
 
-  const result = await c.env.DB.prepare(
-    `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
-  )
-    .bind(...binds, scanId, userId)
-    .run();
+  const resolvedReview = hasReview ? normalizeReview(body.review ?? null) : undefined;
 
-  if (!result.meta.changes) {
-    return c.json({ error: "Book not found" }, 404);
-  }
+  // One batch so a status+rating PATCH can't half-apply across the two tables.
+  const statements = [
+    ...(sets.length
+      ? [
+          db
+            .prepare(
+              `UPDATE scans SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`,
+            )
+            .bind(...binds, scanId, userId),
+        ]
+      : []),
+    ...(writesRating
+      ? upsertWorkRating(
+          db,
+          userId,
+          workId!,
+          {
+            ...(hasRating ? { rating: body.rating ?? null } : {}),
+            ...(hasReview ? { review: resolvedReview } : {}),
+          },
+          "overwrite",
+        )
+      : []),
+  ];
+  if (statements.length) await db.batch(statements);
 
   return c.json({
     id: Number(scanId),
+    // The client fans a rating/review change out across every owned edition of this work, so it
+    // needs the work id from the server rather than trusting its own possibly-stale copy.
+    work_id: book.work_id,
     ...(hasStatus ? { status: body.status } : {}),
     ...(hasOwningStatus ? { owning_status: body.owning_status } : {}),
-    ...(resolvedRating !== undefined ? { rating: resolvedRating } : {}),
+    ...(hasRating ? { rating: body.rating ?? null } : {}),
+    ...(hasReview ? { review: resolvedReview ?? null } : {}),
   });
 });
 
@@ -409,6 +461,9 @@ scans.delete("/:id", async (c) => {
 
   if (!scan) return c.json({ error: "Book not found" }, 404);
 
+  // work_ratings is deliberately NOT cleaned up here: the user's rating and review of a work
+  // outlive their copy of it, so removing a book and re-adding it later restores both. The row
+  // dies with the user, via work_ratings' ON DELETE CASCADE on user_id.
   await c.env.DB.batch([
     c.env.DB.prepare(
       "DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?",

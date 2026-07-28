@@ -90,9 +90,9 @@
             {{ owningLabels[book.owning_status] }}
           </span>
 
-          <!-- rating (read only — rating a book you haven't finished doesn't make sense) -->
+          <!-- rating — belongs to the work, so it's offered (and shown) at any reading status -->
           <button
-            v-if="!readonly && book.status === 'read'"
+            v-if="!readonly"
             class="flex items-center"
             :aria-label="$t('detail.rate_book')"
             @click="$emit('open-rating')"
@@ -100,9 +100,9 @@
             <RatingStars :rating="book.rating" size="md" />
           </button>
           <span
-            v-else-if="readonly && book.status === 'read'"
+            v-else-if="book.rating != null"
             class="flex items-center"
-            :aria-label="`${$t('detail.rating')}: ${book.rating ?? 0}${$t('detail.of_ten')}`"
+            :aria-label="`${$t('detail.rating')}: ${book.rating}${$t('detail.of_ten')}`"
           >
             <RatingStars :rating="book.rating" size="md" />
           </span>

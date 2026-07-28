@@ -13,6 +13,7 @@ function load(): Book[] {
     for (const scan of scans) {
       scan.owning_status ??= "owned";
       scan.rating ??= null;
+      scan.review ??= null;
     }
     return scans;
   } catch {
@@ -33,7 +34,10 @@ export const useGuestStore = defineStore("guest", () => {
   const isAtLimit = computed(() => scans.value.length >= MAX_GUEST_SCANS);
 
   function addScan(
-    book: Omit<Book, "id" | "status" | "owning_status" | "rating" | "created_at">,
+    book: Omit<
+      Book,
+      "id" | "status" | "owning_status" | "rating" | "review" | "created_at"
+    >,
     status: ReadStatus = "unread",
     owningStatus: OwningStatus = "owned",
     rating: number | null = null,
@@ -48,6 +52,7 @@ export const useGuestStore = defineStore("guest", () => {
       status,
       owning_status: owningStatus,
       rating,
+      review: null,
       created_at: new Date().toISOString(),
     });
     persist();
@@ -63,9 +68,6 @@ export const useGuestStore = defineStore("guest", () => {
     const scan = scans.value.find((s) => s.isbn === isbn);
     if (!scan) return;
     scan.status = NEXT_STATUS[scan.status];
-    // Rating only makes sense for a "read" book — clear it once status moves off "read"
-    // so it can't surface under "group by rating" for a book no longer marked as read.
-    if (scan.status !== "read") scan.rating = null;
     persist();
   }
 
@@ -73,7 +75,6 @@ export const useGuestStore = defineStore("guest", () => {
     const scan = scans.value.find((s) => s.isbn === isbn);
     if (!scan) return;
     scan.status = status;
-    if (status !== "read") scan.rating = null;
     persist();
   }
 
@@ -88,6 +89,13 @@ export const useGuestStore = defineStore("guest", () => {
     const scan = scans.value.find((s) => s.isbn === isbn);
     if (!scan) return;
     scan.rating = rating;
+    persist();
+  }
+
+  function setReview(isbn: string, review: string | null) {
+    const scan = scans.value.find((s) => s.isbn === isbn);
+    if (!scan) return;
+    scan.review = review;
     persist();
   }
 
@@ -107,6 +115,7 @@ export const useGuestStore = defineStore("guest", () => {
             status: scan.status,
             owning_status: scan.owning_status,
             rating: scan.rating,
+            review: scan.review ?? null,
           }),
         });
         // 409 duplicate → already in account, fine
@@ -135,6 +144,7 @@ export const useGuestStore = defineStore("guest", () => {
     setStatus,
     setOwningStatus,
     setRating,
+    setReview,
     syncToAccount,
     clear,
   };

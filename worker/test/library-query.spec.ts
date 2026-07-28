@@ -4,7 +4,11 @@ import {
   titleCase,
   parseIntOr,
   parseAuthorsJson,
-  resolveRatingForUpdate,
+  buildScanUpdate,
+  upsertWorkRating,
+  isValidReview,
+  normalizeReview,
+  REVIEW_MAX_LENGTH,
 } from "../src/library-query";
 
 describe("parseTagArray", () => {
@@ -88,67 +92,150 @@ describe("titleCase", () => {
   });
 });
 
-describe("resolveRatingForUpdate", () => {
-  it("writes an explicit rating when the effective status is read", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: false,
-        effectiveStatus: "read",
-        hasRating: true,
-        rating: 8,
-      }),
-    ).toBe(8);
+describe("isValidReview", () => {
+  it("accepts null (an explicit clear)", () => {
+    expect(isValidReview(null)).toBe(true);
   });
 
-  it("drops an explicit rating when the effective status is not read", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: true,
-        effectiveStatus: "unread",
-        hasRating: true,
-        rating: 8,
-      }),
-    ).toBeNull();
+  it("accepts an ordinary string", () => {
+    expect(isValidReview("# Loved it\n\nSee **chapter 4**.")).toBe(true);
   });
 
-  it("treats an explicit null rating as a clear regardless of status", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: false,
-        effectiveStatus: "read",
-        hasRating: true,
-        rating: null,
-      }),
-    ).toBeNull();
+  it("accepts a string right at the storage cap", () => {
+    expect(isValidReview("x".repeat(REVIEW_MAX_LENGTH))).toBe(true);
   });
 
-  it("clears an existing rating when status moves away from read with no explicit rating", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: true,
-        effectiveStatus: "unread",
-        hasRating: false,
-      }),
-    ).toBeNull();
+  it("rejects a string past the storage cap", () => {
+    expect(isValidReview("x".repeat(REVIEW_MAX_LENGTH + 1))).toBe(false);
   });
 
-  it("leaves rating untouched when status changes but stays read", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: true,
-        effectiveStatus: "read",
-        hasRating: false,
-      }),
-    ).toBeUndefined();
+  it("rejects non-string, non-null values", () => {
+    expect(isValidReview(42)).toBe(false);
+    expect(isValidReview(undefined)).toBe(false);
+    expect(isValidReview({ text: "hi" })).toBe(false);
+  });
+});
+
+describe("normalizeReview", () => {
+  it("collapses a whitespace-only review to null", () => {
+    expect(normalizeReview("   \n\t ")).toBeNull();
   });
 
-  it("leaves rating untouched when neither status nor rating is part of the update", () => {
-    expect(
-      resolveRatingForUpdate({
-        hasStatus: false,
-        hasRating: false,
-      }),
-    ).toBeUndefined();
+  it("collapses an empty string to null", () => {
+    expect(normalizeReview("")).toBeNull();
+  });
+
+  it("passes null through", () => {
+    expect(normalizeReview(null)).toBeNull();
+  });
+
+  it("trims surrounding whitespace but preserves inner markdown", () => {
+    expect(normalizeReview("\n  # Title\n\n- a\n- b\n  ")).toBe(
+      "# Title\n\n- a\n- b",
+    );
+  });
+});
+
+describe("buildScanUpdate", () => {
+  it("emits only the columns it was given", () => {
+    const { sets, binds } = buildScanUpdate({
+      status: "reading",
+      owningStatus: "lent_out",
+    });
+    expect(sets).toEqual(["status = ?", "owning_status = ?"]);
+    expect(binds).toEqual(["reading", "lent_out"]);
+  });
+
+  it("never emits a rating or review column — those live on work_ratings", () => {
+    const { sets } = buildScanUpdate({ status: "dnf" });
+    expect(sets).toEqual(["status = ?"]);
+  });
+
+  // A rating-only PATCH touches no scan column at all. A caller that interpolates `sets`
+  // unconditionally would emit `UPDATE scans SET  WHERE …`, which is a syntax error — so the
+  // empty case has to stay visible.
+  it("returns empty sets when nothing scan-level is being changed", () => {
+    const { sets, binds } = buildScanUpdate({});
+    expect(sets).toEqual([]);
+    expect(binds).toEqual([]);
+  });
+});
+
+// Records the SQL/binds handed to D1 instead of executing them — upsertWorkRating only builds
+// statements, so its whole contract is observable this way.
+function fakeDb() {
+  const calls: { sql: string; binds: unknown[] }[] = [];
+  const db = {
+    prepare(sql: string) {
+      const call = { sql, binds: [] as unknown[] };
+      calls.push(call);
+      return {
+        bind: (...binds: unknown[]) => {
+          call.binds = binds;
+          return call;
+        },
+      };
+    },
+  } as unknown as D1Database;
+  return { db, calls };
+}
+
+describe("upsertWorkRating", () => {
+  it("does nothing when neither field is supplied", () => {
+    const { db, calls } = fakeDb();
+    expect(upsertWorkRating(db, 1, 7, {}, "overwrite")).toEqual([]);
+    expect(calls).toEqual([]);
+  });
+
+  it("overwrites a supplied field outright", () => {
+    const { db, calls } = fakeDb();
+    upsertWorkRating(db, 1, 7, { rating: 8 }, "overwrite");
+    expect(calls[0].sql).toContain("rating = excluded.rating");
+    expect(calls[0].binds).toEqual([1, 7, 8, null]);
+  });
+
+  it("only fills a gap in seed mode, so a replayed value can't stomp a newer edit", () => {
+    const { db, calls } = fakeDb();
+    upsertWorkRating(db, 1, 7, { rating: 8 }, "seed");
+    expect(calls[0].sql).toContain(
+      "rating = COALESCE(work_ratings.rating, excluded.rating)",
+    );
+  });
+
+  it("leaves an omitted field at its stored value in either mode", () => {
+    for (const mode of ["seed", "overwrite"] as const) {
+      const { db, calls } = fakeDb();
+      upsertWorkRating(db, 1, 7, { rating: 8 }, mode);
+      expect(calls[0].sql).toContain("review = work_ratings.review");
+    }
+  });
+
+  it("normalizes a blank review to NULL", () => {
+    const { db, calls } = fakeDb();
+    upsertWorkRating(db, 1, 7, { review: "   \n " }, "overwrite");
+    expect(calls[0].binds).toEqual([1, 7, null, null]);
+  });
+
+  it("always refreshes updated_at — mergeWorks resolves conflicts by comparing it", () => {
+    const { db, calls } = fakeDb();
+    upsertWorkRating(db, 1, 7, { rating: 8 }, "overwrite");
+    expect(calls[0].sql).toContain("updated_at = CURRENT_TIMESTAMP");
+  });
+
+  it("follows every write with a delete so a fully-cleared entry leaves no tombstone", () => {
+    const { db, calls } = fakeDb();
+    const statements = upsertWorkRating(
+      db,
+      1,
+      7,
+      { rating: null, review: null },
+      "overwrite",
+    );
+    expect(statements).toHaveLength(2);
+    expect(calls[1].sql).toContain(
+      "DELETE FROM work_ratings WHERE user_id = ? AND work_id = ? AND rating IS NULL AND review IS NULL",
+    );
+    expect(calls[1].binds).toEqual([1, 7]);
   });
 });
 

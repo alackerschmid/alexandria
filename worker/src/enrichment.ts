@@ -517,6 +517,34 @@ async function mergeWorks(
       )
       .bind(into, from),
     db.prepare("DELETE FROM work_edition_isbns WHERE work_id = ?").bind(from),
+    // work_ratings holds user data, so unlike the tables above a collision here is lossy rather
+    // than redundant — the user may have rated the English edition's work and reviewed the
+    // German one's before enrichment discovered they're the same book. Merge field by field:
+    // a field the survivor lacks is taken from the loser either way, and a genuine conflict
+    // (both non-NULL) goes to whichever row was written more recently.
+    //
+    // The SELECT must keep its trailing WHERE — without it SQLite can't tell ON CONFLICT from a
+    // join and the statement is a parse error. MAX(a, b) here is the two-argument scalar form;
+    // CURRENT_TIMESTAMP text ("YYYY-MM-DD HH:MM:SS", UTC) compares correctly lexicographically.
+    db
+      .prepare(
+        `INSERT INTO work_ratings (user_id, work_id, rating, review, updated_at)
+         SELECT user_id, ?, rating, review, updated_at FROM work_ratings WHERE work_id = ?
+         ON CONFLICT(user_id, work_id) DO UPDATE SET
+           rating = CASE WHEN excluded.updated_at > work_ratings.updated_at
+                         THEN COALESCE(excluded.rating, work_ratings.rating)
+                         ELSE COALESCE(work_ratings.rating, excluded.rating) END,
+           review = CASE WHEN excluded.updated_at > work_ratings.updated_at
+                         THEN COALESCE(excluded.review, work_ratings.review)
+                         ELSE COALESCE(work_ratings.review, excluded.review) END,
+           updated_at = MAX(work_ratings.updated_at, excluded.updated_at)`,
+      )
+      .bind(into, from),
+    db.prepare("DELETE FROM work_ratings WHERE work_id = ?").bind(from),
+    // Must come last. work_ratings.work_id is REFERENCES works(id) with NO ON DELETE clause,
+    // deliberately: a cascade would let this DELETE silently destroy the losing work's ratings.
+    // Instead D1's FK enforcement fails the whole batch if the repoint above is ever removed or
+    // reordered after it — a loud tripwire rather than silent data loss.
     db.prepare("DELETE FROM works WHERE id = ?").bind(from),
   ]);
 }

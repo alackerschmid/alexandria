@@ -24,7 +24,15 @@ export interface Book {
   cover_url: string | null;
   status: ReadStatus;
   owning_status: OwningStatus;
+  /** 0-10, or null when unrated. Stored per user × per **work** (`work_ratings`), not per scan:
+   *  every owned edition of the same work reports the same value, and it is independent of the
+   *  reading status — nothing clears it implicitly. */
   rating: number | null;
+  /** Free-text markdown review / notes. Same per-work scope and status-independence as
+   *  `rating`; notes on an unread or abandoned book are legitimate. Required, not optional —
+   *  it rides the same `work_ratings` LEFT JOIN as `rating` and is always present on an API
+   *  row, so making it optional would only push a `?? null` onto every reader. */
+  review: string | null;
   created_at: string;
   language?: string | null;
   publish_date?: string | null;

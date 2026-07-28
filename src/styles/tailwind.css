@@ -133,6 +133,50 @@
   padding: 8px 12px;
 }
 
+/* The OS scrollbar — chunky, grey, with stepper arrows — is the one piece of chrome that never
+   matched the editorial look, and it shows up in every scroll container (the detail dialog body,
+   the review textarea, the resolve drawer, the editions list). Restyle it globally: thin, square,
+   no arrows, drawn in the same control-border tone as segmented toggles and secondary buttons —
+   a scrollbar thumb is an interactive control, so that token is the semantically right one and
+   it already follows both the theme and the user's paper preset.
+
+   The two syntaxes are deliberately kept apart rather than both applied everywhere. Chromium
+   121+ discards every ::-webkit-scrollbar rule the moment `scrollbar-color` is set on an
+   element — and its `scrollbar-width: thin` still draws stepper arrows, so declaring both would
+   silently resurrect the arrows the -webkit- block hides. The @supports guard hands the standard
+   properties to Firefox only (it has no ::-webkit-scrollbar, and never draws arrows anyway) and
+   leaves Chromium and Safari on the pseudo-elements, where the buttons can actually be removed. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-control-border);
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}
+/* The stepper arrows; hidden rather than restyled — nothing else in the UI steps a value one
+   notch at a time, and they're what makes the native bar read as foreign. */
+::-webkit-scrollbar-button {
+  display: none;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  /* Declared on `*` rather than :root deliberately: the color is a var, and an inherited
+     *resolved* value would carry the light-theme color into a `.force-dark` subtree (the same
+     trap documented above the dark block). Matching every element re-resolves it in scope. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-control-border) transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

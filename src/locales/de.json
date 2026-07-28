@@ -287,6 +287,13 @@
     "of_ten": "/10",
     "rate_book": "Buch bewerten",
     "clear_rating": "Bewertung löschen",
+    "review": "Rezension / Notizen",
+    "review_add": "Hinzufügen",
+    "review_edit": "Bearbeiten",
+    "review_write": "Schreiben",
+    "review_preview": "Vorschau",
+    "review_placeholder": "Was hältst du davon? Notizen, Zitate, alles…",
+    "review_markdown_hint": "Markdown unterstützt — **fett**, *kursiv*, # Überschriften, - Listen, [Links](url)",
     "done": "Fertig",
     "edition_name": "Ausgabenname",
     "physical_dimensions": "Abmessungen",
@@ -333,15 +340,15 @@
       "password_saved": "Passwort aktualisiert",
       "hide_password_form": "Abbrechen"
     },
-    "accent": {
-      "heading": "Akzentfarbe",
-      "description": "Wird für Hervorhebungen, aktive Zustände und den Scan-Button in der ganzen App verwendet.",
-      "custom": "Eigene Farbe"
-    },
     "appearance": {
       "heading": "Erscheinungsbild",
-      "description": "Akzent, Hintergrund und Schriftart. Jede Auswahl gilt für den hellen und den dunklen Modus.",
+      "description": "Das Aussehen der App. Akzent, Hintergrund und Schriftart gelten für den hellen und den dunklen Modus.",
+      "theme": "Modus",
+      "theme_light": "Hell",
+      "theme_dark": "Dunkel",
+      "theme_auto": "Auto",
       "accent": "Akzentfarbe",
+      "accent_custom": "Eigene Farbe",
       "paper": "Hintergrund",
       "paper_warm": "Warm",
       "paper_neutral": "Neutral",
@@ -382,10 +389,6 @@
       "heading": "Bibliotheksstandards",
       "description": "Wird bei jeder neuen Sitzung angewendet.",
       "language": "Sprache",
-      "theme": "Design",
-      "theme_light": "Hell",
-      "theme_dark": "Dunkel",
-      "theme_auto": "Auto",
       "view": "Standardansicht",
       "view_list": "Liste",
       "view_tile": "Kacheln",
@@ -474,9 +477,6 @@
       "rating_source": "Bewertung (aus Goodreads)",
       "status": "Status",
       "owning": "Besitz"
-    },
-    "row": {
-      "rating_needs_read": "Zum Bewerten als gelesen markieren"
     },
     "review": {
       "none": "Alle Bücher wurden zugeordnet — nichts zu prüfen.",

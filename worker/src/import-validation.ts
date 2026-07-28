@@ -6,7 +6,6 @@ import {
   VALID_OWNING_STATUSES,
   isValidRating,
   dedupeTrimmed,
-  resolveRatingForUpdate,
 } from "./library-query";
 
 export interface ImportRowInput {
@@ -39,14 +38,10 @@ export interface ValidatedImportRow {
   // Always concrete — IMPORT_DEFAULT_OWNING_STATUS when the caller supplied nothing usable, so
   // the create path can bind it unconditionally and report back exactly what it wrote.
   owning_status: string;
-  // Gated on status === "read", for the create-new-scan path (mirrors the PATCH /api/scans/:id
-  // invariant: a rating only persists on a "read" scan).
+  // Ungated by status: Goodreads either has a rating for this book or it doesn't, independent of
+  // which shelf the row is on, and a rating no longer requires a "read" scan. Written to
+  // work_ratings (keyed by work), not to the scan row.
   rating: number | null;
-  // The same rating, ungated by status — Goodreads either has a rating for this book or it
-  // doesn't, independent of which shelf the row is on. Used by the update-on-duplicate path
-  // (routes/import.ts) via resolveRatingForUpdate, which applies the status gate itself against
-  // the *existing* scan's status rather than this row's.
-  rawRating: number | null;
   created_at: string | null;
   title: string | null;
   author: string | null;
@@ -146,19 +141,9 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
   ).includes(input.owning_status ?? "")
     ? (input.owning_status as string)
     : IMPORT_DEFAULT_OWNING_STATUS;
-  const rawRating = isValidRating(input.rating ?? null)
+  const rating = isValidRating(input.rating ?? null)
     ? (input.rating as number)
     : null;
-  // Rating only persists on a "read" scan — delegate to the shared invariant rather than
-  // re-deriving it, so this create path and the update paths stay in lock-step. `?? null` fills
-  // the "no rating to write" case (undefined) since a create always inserts a concrete value.
-  const rating =
-    resolveRatingForUpdate({
-      hasStatus: true,
-      effectiveStatus: status,
-      hasRating: rawRating != null,
-      rating: rawRating,
-    }) ?? null;
 
   return {
     ok: true,
@@ -168,7 +153,6 @@ export function validateImportRow(input: ImportRowInput): ValidationResult {
       status,
       owning_status,
       rating,
-      rawRating,
       created_at: normalizeCreatedAt(input.created_at),
       title: normalizeText(input.title),
       author: normalizeText(input.author),
@@ -191,9 +175,7 @@ export interface ValidatedMatchRow {
   title: string;
   author: string;
   status: string;
-  // Ungated by status — see rawRating above. The /match route never creates a scan (only
-  // updates or reports no_match), so there's no status-gated `rating` counterpart to compute.
-  rawRating: number | null;
+  rating: number | null;
 }
 
 // Unlike validateImportRow, there's no ISBN and thus no hard failure mode beyond a blank title —
@@ -207,7 +189,7 @@ export function validateMatchRow(input: MatchRowInput): ValidatedMatchRow | null
   )
     ? (input.status as string)
     : "unread";
-  const rawRating = isValidRating(input.rating ?? null)
+  const rating = isValidRating(input.rating ?? null)
     ? (input.rating as number)
     : null;
 
@@ -215,6 +197,6 @@ export function validateMatchRow(input: MatchRowInput): ValidatedMatchRow | null
     title,
     author: normalizeText(input.author) ?? "",
     status,
-    rawRating,
+    rating,
   };
 }
