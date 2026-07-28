@@ -2,11 +2,11 @@
   <div>
     <div class="flex flex-col md:flex-row gap-10 md:gap-16 items-start">
       <div class="flex-1 min-w-0 w-full">
-        <div class="pane-label mb-3.5">{{ $t("detail.this_edition") }}</div>
+        <div class="micro-label mb-3.5">{{ $t("detail.this_edition") }}</div>
         <EditionDetails :book="book" />
       </div>
       <div v-if="workFacts" class="flex-1 min-w-0 w-full">
-        <div class="pane-label mb-3.5">{{ $t("detail.the_work") }}</div>
+        <div class="micro-label mb-3.5">{{ $t("detail.the_work") }}</div>
         <WorkFacts
           :book="book"
           @filter="(field, value) => $emit('filter', field, value)"
@@ -70,13 +70,3 @@ const refreshClass = computed(() => {
   return "text-text-secondary hover:text-text-primary";
 });
 </script>
-
-<style scoped>
-.pane-label {
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  opacity: 0.75;
-}
-</style>

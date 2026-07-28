@@ -115,7 +115,7 @@
       </div>
       <CustomFieldsPanel
         v-model:values="customValues"
-        @refreshed="$emit('tag-deleted')"
+        @tag-deleted="(defId, value) => $emit('tag-deleted', defId, value)"
       />
     </div>
 
@@ -164,7 +164,7 @@ defineProps<{
 defineEmits<{
   /** A tag was deleted from every book in the library — an immediate server action, not part of
    *  this form's draft, so the parent has to reconcile the book it holds. */
-  "tag-deleted": [];
+  "tag-deleted": [defId: number, value: string];
 }>();
 
 const fieldDefsStore = useFieldDefsStore();

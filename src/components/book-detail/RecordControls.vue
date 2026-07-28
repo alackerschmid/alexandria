@@ -101,15 +101,10 @@
       <div v-if="inline" class="record-label mb-2.5">
         {{ $t("detail.your_record") }}
       </div>
-      <button
-        type="button"
-        class="flex items-center justify-center gap-2 border border-control-border text-[10px] tracking-[0.13em] uppercase text-text-primary hover:border-orange-neon transition-colors"
-        :class="inline ? 'px-3.5 py-2.5' : 'w-full h-[46px]'"
+      <EditFieldsButton
+        :block="!inline"
         @click="$emit('edit')"
-      >
-        <v-icon icon="mdi-pencil-outline" size="13" />
-        {{ $t("detail.edit_fields") }}
-      </button>
+      />
     </div>
   </div>
 </template>
@@ -128,6 +123,7 @@ import {
 } from "@/composables/useOwningStatus";
 import AppSelect from "@/components/AppSelect.vue";
 import RatingStars from "@/components/RatingStars.vue";
+import EditFieldsButton from "@/components/book-detail/EditFieldsButton.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 // The four things the user sets about a book, in one component rendered twice: `inline` in the

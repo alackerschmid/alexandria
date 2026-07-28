@@ -67,9 +67,9 @@ export interface TabContext {
   book: Book;
   /** `series.vue` renders editions the user doesn't own — nothing there is theirs to set. */
   readonly?: boolean;
-  guest?: boolean;
   /** Custom field definitions the user has created; 0 means the Record pane has nothing to show
-   *  beyond the controls, which on desktop already live in the masthead. */
+   *  beyond the controls, which on desktop already live in the masthead. Guest mode passes 0 —
+   *  guests have no custom fields — which is the whole of guest's effect on the tab set. */
   customFieldCount: number;
   /** Owned + discoverable editions of this work, once known. */
   editionCount?: number;
