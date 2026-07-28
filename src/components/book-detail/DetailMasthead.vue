@@ -3,8 +3,15 @@
        so it reads as belonging to the title rather than to the cover. The mockup sat the cluster
        beside the title, which only fits at its 1360px card width — on the app's ⅔ measure it would
        leave the title barely 90px. -->
-  <div class="grid grid-cols-[auto_1fr] gap-x-4 md:gap-x-8 gap-y-7">
-    <div class="shrink-0 w-21 h-32 md:w-28 md:h-42 shadow-2xl self-end">
+  <div class="grid grid-cols-[auto_1fr] gap-x-4 md:gap-x-8 gap-y-7 items-start">
+    <!-- The cover spans both rows and stretches to their combined height, so its top edge lines up
+         with the eyebrow and its bottom with the record controls. It falls back to a fixed
+         book-proportioned height wherever there is no second row to match: below `md` (the controls
+         live in the Record pane there) and in readonly mode (there are none at all). -->
+    <div
+      class="w-21 h-32 md:w-28 shadow-2xl"
+      :class="readonly ? 'md:h-42' : 'md:h-auto md:row-span-2 md:self-stretch'"
+    >
       <CoverImage
         :cover-url="book.cover_url"
         :title="book.title || book.isbn"
@@ -15,7 +22,7 @@
       />
     </div>
 
-    <div class="min-w-0 self-end">
+    <div class="min-w-0">
         <!-- eyebrow: series / standalone · form · year -->
         <div
           class="flex flex-wrap items-baseline gap-x-1.5 text-[9px] md:text-[10px] tracking-[0.18em] md:tracking-[0.2em] uppercase text-text-secondary/70 mb-2 md:mb-3"
