@@ -161,10 +161,22 @@
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @set-owning-status="(s) => setDetailOwningStatus(s)"
-    @set-rating="(r) => setDetailRating(r)"
+    @open-rating="ratingPromptOpen = true"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
     @switch-edition="onSwitchEdition"
+  />
+
+  <!-- Rating & review prompt. Unlike the library page there are no cards to change status from
+       here, so it always targets the open detail and needs no separate book slot. -->
+  <RatingDialog
+    v-if="detailBook && !detailReadonly"
+    v-model="ratingPromptOpen"
+    with-review
+    :rating="detailBook.rating"
+    :review="detailBook.review"
+    @set-rating="(r) => setDetailRating(r)"
+    @set-review="(v) => setDetailReview(v)"
   />
 
   <!-- Delete confirmation -->
@@ -198,6 +210,7 @@ import { useLocaleStore } from "@/stores/locale";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
+import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { BookWithOverrides } from "@/components/BookDetail.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -225,8 +238,11 @@ const { apiFetch } = useApi();
 const localeStore = useLocaleStore();
 const { detailEditionIsbn, detailScanId, openDetail, closeDetail } =
   useDetailRoute();
-const { setOwningStatus: applyOwningStatus, setRating: applyRating } =
-  useScanStatus();
+const {
+  setOwningStatus: applyOwningStatus,
+  setRating: applyRating,
+  setReview: applyReview,
+} = useScanStatus();
 
 const loading = ref(true);
 const series = ref<SeriesResponse | null>(null);
@@ -252,6 +268,7 @@ const displayedEntries = computed(() =>
 
 const detailBook = ref<BookWithOverrides | null>(null);
 const detailReadonly = ref(false);
+const ratingPromptOpen = ref(false);
 
 const {
   deleteDialog,
@@ -303,7 +320,9 @@ async function loadDetailByIsbn(
     // This is a reference edition the user hasn't scanned — "unowned" reflects that
     // honestly (the picker itself never renders here since detailReadonly is true).
     owning_status: "unowned",
+    // Not in the library, so there's no scan to carry a rating or review of it.
     rating: null,
+    review: null,
     created_at: raw.fetched_at ?? "",
     language: raw.language,
     publish_date: raw.publish_date,
@@ -323,6 +342,11 @@ watch(
   [detailEditionIsbn, entries],
   ([isbn]) => {
     if (!isbn) {
+      // Close the rating prompt *before* dropping the book. RatingDialog flushes its review
+      // draft on the modelValue false transition and can't do that once unmounted, and this
+      // path unmounts it — `v-if="detailBook"`. Leaving the flag set would also spring the
+      // dialog open again over whichever book is opened next.
+      ratingPromptOpen.value = false;
       detailBook.value = null;
       return;
     }
@@ -345,23 +369,18 @@ function onDetailRefreshed(updated: Partial<BookWithOverrides>) {
 async function updateDetailStatus(newStatus: ReadStatus) {
   if (!detailBook.value || detailReadonly.value) return;
   const prev = detailBook.value.status;
-  const prevRating = detailBook.value.rating;
-  // The backend clears rating whenever status moves off "read" — mirror that locally so
-  // the detail view doesn't show a stale rating until the next refetch.
-  detailBook.value = {
-    ...detailBook.value,
-    status: newStatus,
-    rating: newStatus === "read" ? detailBook.value.rating : null,
-  };
+  detailBook.value = { ...detailBook.value, status: newStatus };
   try {
     const res = await apiFetch(`/api/scans/${detailBook.value.id}`, {
       method: "PATCH",
       body: JSON.stringify({ status: newStatus }),
     });
     if (!res.ok) throw new Error();
+    // Marking a book read is the moment to capture a rating and a review.
+    if (newStatus === "read" && prev !== "read") ratingPromptOpen.value = true;
   } catch {
     if (detailBook.value)
-      detailBook.value = { ...detailBook.value, status: prev, rating: prevRating };
+      detailBook.value = { ...detailBook.value, status: prev };
   }
 }
 
@@ -382,6 +401,11 @@ function setDetailOwningStatus(newStatus: OwningStatus) {
 function setDetailRating(rating: number | null) {
   if (!detailBook.value || detailReadonly.value) return;
   return applyRating(detailBook.value, rating).catch(() => {});
+}
+
+function setDetailReview(review: string | null) {
+  if (!detailBook.value || detailReadonly.value) return;
+  return applyReview(detailBook.value, review).catch(() => {});
 }
 
 async function load() {

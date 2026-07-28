@@ -3,12 +3,20 @@ import { useApi } from "@/composables/useApi";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
+import { workSiblings } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
+
+export interface ScanStatusOptions {
+  /** The page's full book list, so a rating/review write can fan out across every owned edition
+   *  of the same work (they share one stored value — see `workSiblings`). Omit when the page
+   *  holds a single book. */
+  books?: () => Book[];
+}
 
 // Centralises the optimistic reading-status mutation that the library list performs.
 // Guest scans are updated in localStorage; authenticated scans PATCH the API and roll
 // back the optimistic change on failure, re-throwing so the caller can surface a toast.
-export function useScanStatus() {
+export function useScanStatus(options: ScanStatusOptions = {}) {
   const { apiFetch } = useApi();
   const authStore = useAuthStore();
   const guestStore = useGuestStore();
@@ -21,11 +29,7 @@ export function useScanStatus() {
       return;
     }
     const prev = book.status;
-    const prevRating = book.rating;
     book.status = next;
-    // The backend clears rating whenever status moves off "read" — mirror that locally so
-    // the UI doesn't show a stale rating until the next refetch.
-    if (next !== "read") book.rating = null;
     try {
       const res = await apiFetch(`/api/scans/${book.id}`, {
         method: "PATCH",
@@ -34,7 +38,6 @@ export function useScanStatus() {
       if (!res.ok) throw new Error();
     } catch (e) {
       book.status = prev;
-      book.rating = prevRating;
       throw e;
     }
   }
@@ -72,25 +75,53 @@ export function useScanStatus() {
     }
   }
 
+  // Shared by setRating/setReview: rating and review are stored per work, not per scan, so one
+  // value is shared by every owned edition. Writing only to the Book instance the caller handed
+  // us would leave the siblings stale, and the collapsed work-card (useEditionGrouping picks one
+  // representative) would disagree with the edition carousel until the next refetch. Each sibling
+  // rolls back individually, skipping any a newer write has superseded — the same guard
+  // setOwningStatus uses.
+  async function setWorkField<K extends "rating" | "review">(
+    book: Book,
+    field: K,
+    next: Book[K],
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const siblings = workSiblings(book, options.books?.());
+    const previous = siblings.map((b) => b[field] ?? null);
+    for (const sibling of siblings) sibling[field] = next;
+    try {
+      const res = await apiFetch(`/api/scans/${book.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error();
+    } catch (e) {
+      siblings.forEach((sibling, i) => {
+        if (sibling[field] === next) sibling[field] = previous[i] as Book[K];
+      });
+      throw e;
+    }
+  }
+
   async function setRating(book: Book, next: number | null): Promise<void> {
     if (book.rating === next) return;
     if (isGuest.value) {
       guestStore.setRating(book.isbn, next);
       return;
     }
-    const prev = book.rating;
-    book.rating = next;
-    try {
-      const res = await apiFetch(`/api/scans/${book.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ rating: next }),
-      });
-      if (!res.ok) throw new Error();
-    } catch (e) {
-      if (book.rating === next) book.rating = prev;
-      throw e;
-    }
+    return setWorkField(book, "rating", next, { rating: next });
   }
 
-  return { setStatus, cycleStatus, setOwningStatus, setRating };
+  async function setReview(book: Book, next: string | null): Promise<void> {
+    const normalized = next?.trim() || null;
+    if ((book.review ?? null) === normalized) return;
+    if (isGuest.value) {
+      guestStore.setReview(book.isbn, normalized);
+      return;
+    }
+    return setWorkField(book, "review", normalized, { review: normalized });
+  }
+
+  return { setStatus, cycleStatus, setOwningStatus, setRating, setReview };
 }

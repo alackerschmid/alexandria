@@ -625,13 +625,25 @@
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
       @set-owning-status="(s) => setOwningStatus(selectedBook!, s)"
-      @set-rating="(r) => setRating(selectedBook!, r)"
+      @open-rating="openPrompt(resolveBook(selectedBook!))"
       @delete="
         closeDetail();
         openDeleteDialog(selectedBook!);
       "
       @refreshed="handleRefreshed"
       @switch-edition="onSwitchEdition"
+    />
+
+    <!-- Rating & review prompt — raised by the detail view and by any status change to "read",
+         including from a library card with no detail open (see useRatingPrompt). -->
+    <RatingDialog
+      v-if="promptBook"
+      v-model="promptOpen"
+      with-review
+      :rating="promptBook.rating"
+      :review="promptBook.review"
+      @set-rating="(r) => setRating(promptBook!, r)"
+      @set-review="(v) => setReview(promptBook!, v)"
     />
 
     <!-- Delete confirmation -->
@@ -671,6 +683,7 @@ import { useGuestStore } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
+import { useRatingPrompt } from "@/composables/useRatingPrompt";
 import { useToast } from "@/composables/useToast";
 import { useLibraryData } from "@/composables/useLibraryData";
 import { useLibrarySearch } from "@/composables/useLibrarySearch";
@@ -702,6 +715,7 @@ import LibraryDisplaySettings from "@/components/LibraryDisplaySettings.vue";
 import LibraryGroupTabs from "@/components/LibraryGroupTabs.vue";
 import AppSelect from "@/components/AppSelect.vue";
 import BookDetail from "@/components/BookDetail.vue";
+import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import AppPagination from "@/components/AppPagination.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
@@ -714,12 +728,17 @@ const router = useRouter();
 const authStore = useAuthStore();
 const guestStore = useGuestStore();
 const localeStore = useLocaleStore();
+// `books` lets a rating/review write fan out across every owned edition of the same work — they
+// share one stored value, so the collapsed card and the edition carousel must move together.
+// allBooks is the whole library, not a page: useLibraryData pages until the server runs short.
 const {
   setStatus: applyStatus,
   cycleStatus: applyCycle,
   setOwningStatus: applyOwningStatus,
   setRating: applyRating,
-} = useScanStatus();
+  setReview: applyReview,
+} = useScanStatus({ books: () => allBooks.value });
+const { promptBook, promptOpen, openPrompt, promptIfRead } = useRatingPrompt();
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
 const {
@@ -1030,14 +1049,20 @@ function resolveBook(book: Book): Book {
 
 const cycleStatus = (book: Book) => {
   const target = resolveBook(book);
+  const prev = target.status;
   pinStatus(target);
-  return applyCycle(target).catch(notifyStatusError);
+  return applyCycle(target)
+    .then(() => promptIfRead(target, prev))
+    .catch(notifyStatusError);
 };
 
 const setStatus = (book: Book, newStatus: ReadStatus) => {
   const target = resolveBook(book);
+  const prev = target.status;
   pinStatus(target);
-  return applyStatus(target, newStatus).catch(notifyStatusError);
+  return applyStatus(target, newStatus)
+    .then(() => promptIfRead(target, prev))
+    .catch(notifyStatusError);
 };
 
 const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
@@ -1046,6 +1071,10 @@ const setOwningStatus = (book: Book, newStatus: OwningStatus) => {
 
 const setRating = (book: Book, rating: number | null) => {
   return applyRating(resolveBook(book), rating).catch(notifyStatusError);
+};
+
+const setReview = (book: Book, review: string | null) => {
+  return applyReview(resolveBook(book), review).catch(notifyStatusError);
 };
 
 // ── Detail & delete ───────────────────────────────────────────────────────────

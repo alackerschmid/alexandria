@@ -14,6 +14,7 @@ import {
   getExistingScan,
   isUniqueConstraintError,
   buildScanUpdate,
+  upsertWorkRating,
   type ExistingScan,
 } from "../library-query";
 import { pickBestMatchPrepared, prepareCandidates } from "../title-match";
@@ -74,6 +75,61 @@ interface ImportRowResult {
   previous?: ScanStateSummary;
 }
 
+/**
+ * Decides whether this import row gets to write the work's rating, and what the row should
+ * report either way. Ratings live on `work_ratings` (per user × per work), so within one
+ * concurrently-processed batch several rows can target the same work — see `ratedWorkIds`.
+ *
+ * `value` is what the work's rating actually *is* afterwards, which the client renders straight
+ * onto the summary card — so every branch that declines to write has to report `prior`, not the
+ * incoming value. It writes nothing when: the book has no work to hang a rating on, the CSV row
+ * carries no rating (Goodreads leaves unrated books at 0 — "no opinion", not "clear my rating"),
+ * another row in this batch already claimed the work, or `seed` mode found the field already set.
+ */
+function applyImportRating(
+  db: D1Database,
+  userId: number,
+  workId: number | null,
+  incoming: number | null,
+  prior: number | null,
+  ratedWorkIds: Map<number, number | null>,
+  mode: "seed" | "overwrite" = "overwrite",
+): { statements: D1PreparedStatement[]; value: number | null } {
+  if (workId == null) return { statements: [], value: prior };
+  if (ratedWorkIds.has(workId)) {
+    return { statements: [], value: ratedWorkIds.get(workId) ?? null };
+  }
+  // Seed mode's COALESCE would keep the stored value anyway; skipping the write keeps `value`
+  // honest instead of reporting a rating that was never applied.
+  if (incoming == null || (mode === "seed" && prior != null)) {
+    if (prior != null) ratedWorkIds.set(workId, prior);
+    return { statements: [], value: prior };
+  }
+  // Claim and return without awaiting anything, so of two concurrent rows targeting one work
+  // exactly one can reach this line — the other finds the claim above and reports its value.
+  ratedWorkIds.set(workId, incoming);
+  return {
+    statements: upsertWorkRating(db, userId, workId, { rating: incoming }, mode),
+    value: incoming,
+  };
+}
+
+// The work's stored rating for this user, if any. The create path needs it because a rating
+// outlives the scan: a book removed from the library and re-added still carries the rating the
+// user gave it, and the summary card must show that rather than "unrated".
+async function existingWorkRating(
+  db: D1Database,
+  userId: number,
+  workId: number | null,
+): Promise<number | null> {
+  if (workId == null) return null;
+  const row = await db
+    .prepare("SELECT rating FROM work_ratings WHERE user_id = ? AND work_id = ?")
+    .bind(userId, workId)
+    .first<{ rating: number | null }>();
+  return row?.rating ?? null;
+}
+
 function bookSummary(book: BookRow): ImportedBook {
   return {
     isbn: book.isbn,
@@ -103,6 +159,12 @@ async function importRow(
   // Claiming the scan id here (synchronously, before any await) makes the second row a plain
   // "duplicate" instead, matching how an in-DB duplicate is already handled.
   claimedScanIds: Set<number>,
+  // The same race one level up. A rating is keyed by *work*, so two rows resolving to two
+  // different editions of one work — distinct scans, so claimedScanIds lets both through —
+  // would each read the work's pre-update rating and each write, leaving Undo restoring the
+  // wrong value. The first row to claim a work id owns the rating write; later rows report the
+  // claimed value instead of their own, hence a Map rather than a Set.
+  ratedWorkIds: Map<number, number | null>,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
@@ -114,7 +176,6 @@ async function importRow(
     status,
     owning_status,
     rating,
-    rawRating,
     created_at,
     title,
     author,
@@ -164,19 +225,21 @@ async function importRow(
         claimedScanIds.add(matchedScan.id);
 
         if (!matchedBook.work_id) await linkWork(db, matchedBook);
-        const { sets, binds, resolvedRating } = buildScanUpdate({
-          status,
-          ratingInput: {
-            hasStatus: true,
-            effectiveStatus: status,
-            hasRating: rawRating != null,
-            rating: rawRating,
-          },
-        });
-        await db
-          .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
-          .bind(...binds, matchedScan.id)
-          .run();
+        const { sets, binds } = buildScanUpdate({ status });
+        const resolvedRating = applyImportRating(
+          db,
+          userId,
+          matchedBook.work_id,
+          rating,
+          matchedScan.rating,
+          ratedWorkIds,
+        );
+        await db.batch([
+          db
+            .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+            .bind(...binds, matchedScan.id),
+          ...resolvedRating.statements,
+        ]);
 
         return {
           isbn: isbn13,
@@ -185,10 +248,10 @@ async function importRow(
           book: bookSummary(matchedBook),
           resolved: {
             // status is always written; owning_status is never touched on an update; rating is
-            // whatever buildScanUpdate resolved, or the untouched prior value if it left the
-            // column alone (resolvedRating === undefined).
+            // what applyImportRating settled on — this row's value, or the prior one when the
+            // CSV row carries none or another row already claimed the work.
             status,
-            rating: resolvedRating !== undefined ? resolvedRating : matchedScan.rating,
+            rating: resolvedRating.value,
             owning_status: matchedScan.owning_status,
           },
           previous: {
@@ -222,13 +285,12 @@ async function importRow(
       return { isbn: isbn13, outcome: "failed" };
     }
 
-    const columns = ["user_id", "book_id", "status", "owning_status", "rating"];
+    const columns = ["user_id", "book_id", "status", "owning_status"];
     const binds: (string | number | null)[] = [
       userId,
       book.id,
       status,
       owning_status,
-      rating,
     ];
     if (created_at) {
       columns.push("created_at");
@@ -241,6 +303,23 @@ async function importRow(
       )
       .bind(...binds)
       .run();
+
+    // Seed rather than overwrite: creating a scan must not clobber a rating the user already has
+    // on this work — from another edition they own, or from before they removed this very book
+    // from their library (work_ratings rows outlive the scan). The read is hoisted out of the
+    // call so the claim inside applyImportRating is plainly the first thing that happens after
+    // it; a sibling row that lands here meanwhile finds the claim and reports the winner.
+    const priorRating = await existingWorkRating(db, userId, book.work_id);
+    const createdRating = applyImportRating(
+      db,
+      userId,
+      book.work_id,
+      rating,
+      priorRating,
+      ratedWorkIds,
+      "seed",
+    );
+    if (createdRating.statements.length) await db.batch(createdRating.statements);
 
     if (shelvesFieldDefId != null && shelves.length > 0) {
       await db
@@ -258,10 +337,10 @@ async function importRow(
       outcome: "imported",
       scan_id: result.meta.last_row_id,
       book: bookSummary(book),
-      // The exact values just inserted — validateImportRow already gated rating on status and
-      // resolved owning_status ("unknown" unless the caller explicitly supplied one), so these
-      // are the same bindings the INSERT above used rather than a re-derivation of them.
-      resolved: { status, rating, owning_status },
+      // The exact values just written — validateImportRow already resolved owning_status
+      // ("unknown" unless the caller explicitly supplied one), so status/owning_status are the
+      // same bindings the INSERT used; rating is whatever the work-level seed settled on.
+      resolved: { status, rating: createdRating.value, owning_status },
     };
   } catch (e) {
     if (isUniqueConstraintError(e)) {
@@ -329,8 +408,18 @@ importRoutes.post("/goodreads", async (c) => {
   // benign. An update-on-duplicate write has no such guard, so importRow claims the target scan
   // id itself (see claimedScanIds) instead of racing another row's UPDATE against it.
   const claimedScanIds = new Set<number>();
+  const ratedWorkIds = new Map<number, number | null>();
   const results = await mapWithConcurrency(rows, ROW_CONCURRENCY, (row) =>
-    importRow(db, userId, apiKey, row, update, shelvesFieldDefId, claimedScanIds),
+    importRow(
+      db,
+      userId,
+      apiKey,
+      row,
+      update,
+      shelvesFieldDefId,
+      claimedScanIds,
+      ratedWorkIds,
+    ),
   );
 
   return c.json({ results });
@@ -424,7 +513,7 @@ importRoutes.post("/match", async (c) => {
 
   const { results: library } = await db
     .prepare(
-      `SELECT s.id AS scan_id, s.status, s.rating, s.owning_status,
+      `SELECT s.id AS scan_id, s.status, wr.rating, s.owning_status,
               b.id AS book_id, b.work_id, b.isbn,
               COALESCE(o.title, b.title) AS title, b.author,
               wk.canonical_title AS canonical_title,
@@ -433,6 +522,7 @@ importRoutes.post("/match", async (c) => {
        JOIN books b ON b.id = s.book_id
        LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
        LEFT JOIN works wk ON wk.id = b.work_id
+       LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
        WHERE s.user_id = ?`,
     )
     .bind(userId)
@@ -455,6 +545,9 @@ importRoutes.post("/match", async (c) => {
   // entries). The first claims it and is "updated"; a later row matching an already-claimed scan
   // is reported "duplicate" so the client doesn't render two cards — and two Undos — for one scan.
   const claimedScanIds = new Set<number>();
+  // Same claim one level up, keyed by work — see applyImportRating. Two rows can match two
+  // different owned editions of one work, which claimedScanIds lets through.
+  const ratedWorkIds = new Map<number, number | null>();
 
   const results: MatchRowResult[] = [];
   for (const row of rows) {
@@ -485,19 +578,21 @@ importRoutes.post("/match", async (c) => {
     }
     claimedScanIds.add(matched.scan_id);
 
-    const { sets, binds, resolvedRating } = buildScanUpdate({
-      status: validated.status,
-      ratingInput: {
-        hasStatus: true,
-        effectiveStatus: validated.status,
-        hasRating: validated.rawRating != null,
-        rating: validated.rawRating,
-      },
-    });
-    await db
-      .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
-      .bind(...binds, matched.scan_id)
-      .run();
+    const { sets, binds } = buildScanUpdate({ status: validated.status });
+    const resolvedRating = applyImportRating(
+      db,
+      userId,
+      matched.work_id,
+      validated.rating,
+      matched.rating,
+      ratedWorkIds,
+    );
+    await db.batch([
+      db
+        .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
+        .bind(...binds, matched.scan_id),
+      ...resolvedRating.statements,
+    ]);
 
     results.push({
       outcome: "updated",
@@ -513,7 +608,7 @@ importRoutes.post("/match", async (c) => {
       },
       resolved: {
         status: validated.status,
-        rating: resolvedRating !== undefined ? resolvedRating : matched.rating,
+        rating: resolvedRating.value,
         owning_status: matched.owning_status,
       },
       previous: {

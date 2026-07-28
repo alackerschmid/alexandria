@@ -42,10 +42,6 @@ const owningOptions = computed(() =>
   })),
 );
 
-// The server drops a rating on any scan that isn't "read" (worker/src/import-validation.ts),
-// so the rating control is replaced by an explanation until the book is marked read.
-const canRate = computed(() => props.item.status === "read");
-
 // Dismiss the edition popover on an outside click or Escape. Listeners are only attached while
 // it's open, and `pointerdown` (not `click`) so a click that lands on another row's toggle
 // closes this one before that row opens its own.
@@ -252,7 +248,6 @@ const editionLabel = computed(() => {
           {{ t("import.table.rating") }}
         </p>
         <button
-          v-if="canRate"
           type="button"
           class="flex items-center gap-2 hover:opacity-80 transition-opacity"
           @click="emit('open-rating')"
@@ -263,9 +258,6 @@ const editionLabel = computed(() => {
           </span>
           <span class="text-[9px] text-text-secondary/50">▾</span>
         </button>
-        <p v-else class="text-[10.5px] text-text-secondary/60 leading-snug">
-          {{ t("import.row.rating_needs_read") }}
-        </p>
       </div>
 
       <!-- status / owning -->

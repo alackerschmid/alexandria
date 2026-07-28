@@ -55,7 +55,7 @@
           </div>
 
           <!-- ── ACCOUNT ──────────────────────────────────────────────────── -->
-          <section id="account" ref="sectionRefs.account">
+          <section id="account">
             <SectionHeading
               :title="$t('settings.account.heading')"
               :description="$t('settings.account.description')"
@@ -186,17 +186,42 @@
           </section>
 
           <!-- ── APPEARANCE ───────────────────────────────────────────────── -->
-          <section id="accent" ref="sectionRefs.accent">
+          <section id="appearance">
             <SectionHeading
               :title="$t('settings.appearance.heading')"
               :description="$t('settings.appearance.description')"
             />
 
             <div class="flex flex-col">
-              <DefaultRow
-                :label="$t('settings.appearance.accent')"
-                :first="true"
-              >
+              <DefaultRow :label="$t('settings.appearance.theme')" :first="true">
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                  <button
+                    v-for="mode in THEME_MODES"
+                    :key="mode.value"
+                    class="inline-flex items-center gap-2 border px-3 py-[7px] transition-colors hover:border-orange-neon"
+                    :style="{
+                      borderColor:
+                        themeStore.mode === mode.value
+                          ? 'rgb(var(--v-theme-on-background))'
+                          : 'var(--color-charcoal-border)',
+                    }"
+                    @click="themeStore.setMode(mode.value)"
+                  >
+                    <v-icon
+                      :icon="mode.icon"
+                      size="18"
+                      class="text-text-primary flex-none"
+                    />
+                    <span
+                      class="font-mono text-[12px] text-text-primary uppercase tracking-[0.04em]"
+                    >
+                      {{ $t(`settings.appearance.theme_${mode.value}`) }}
+                    </span>
+                  </button>
+                </div>
+              </DefaultRow>
+
+              <DefaultRow :label="$t('settings.appearance.accent')">
                 <div class="flex items-center gap-3 flex-wrap justify-end">
                   <button
                     v-for="preset in ACCENT_PRESETS"
@@ -233,7 +258,7 @@
                       {{
                         isPreset(accentStore.color)
                           ? accentStore.color
-                          : $t("settings.accent.custom")
+                          : $t("settings.appearance.accent_custom")
                       }}
                     </span>
                     <input
@@ -315,7 +340,7 @@
           </section>
 
           <!-- ── CUSTOM FIELDS ────────────────────────────────────────────── -->
-          <section id="fields" ref="sectionRefs.fields">
+          <section id="fields">
             <SectionHeading
               :title="$t('settings.fields.heading')"
               :description="$t('settings.fields.description')"
@@ -477,7 +502,7 @@
           </section>
 
           <!-- ── IMPORT & EXPORT ──────────────────────────────────────────── -->
-          <section id="export" ref="sectionRefs.export">
+          <section id="export">
             <SectionHeading :title="$t('settings.export.heading')" />
 
             <div
@@ -531,7 +556,7 @@
           </section>
 
           <!-- ── DEFAULTS ─────────────────────────────────────────────────── -->
-          <section id="defaults" ref="sectionRefs.defaults">
+          <section id="defaults">
             <SectionHeading
               :title="$t('settings.defaults.heading')"
               :description="$t('settings.defaults.description')"
@@ -549,26 +574,6 @@
                   ]"
                   :model-value="localeStore.locale"
                   @update:model-value="localeStore.set($event as 'en' | 'de')"
-                />
-              </DefaultRow>
-              <DefaultRow :label="$t('settings.defaults.theme')">
-                <AppSegmented
-                  :options="[
-                    {
-                      value: 'light',
-                      label: $t('settings.defaults.theme_light'),
-                    },
-                    {
-                      value: 'dark',
-                      label: $t('settings.defaults.theme_dark'),
-                    },
-                    {
-                      value: 'auto',
-                      label: $t('settings.defaults.theme_auto'),
-                    },
-                  ]"
-                  :model-value="themeStore.mode"
-                  @update:model-value="themeStore.setMode($event as ThemeMode)"
                 />
               </DefaultRow>
               <DefaultRow :label="$t('settings.defaults.view')">
@@ -600,7 +605,7 @@
           </section>
 
           <!-- ── DANGER ───────────────────────────────────────────────────── -->
-          <section id="danger" ref="sectionRefs.danger" class="pb-16">
+          <section id="danger" class="pb-16">
             <div class="flex items-baseline gap-4 mb-[18px]">
               <span
                 class="font-heading font-bold text-[22px] leading-none"
@@ -752,9 +757,9 @@ const NAV_SECTIONS = [
     },
   },
   {
-    id: "accent",
+    id: "appearance",
     get label() {
-      return t("settings.accent.heading");
+      return t("settings.appearance.heading");
     },
   },
   {
@@ -824,6 +829,15 @@ const ACCENT_PRESETS: Set<string> = new Set([
   "#9b4dca",
 ]);
 const isPreset = (c: string) => ACCENT_PRESETS.has(c);
+
+// ── Theme modes ───────────────────────────────────────────────────────────────
+
+/** Sun/moon icons match the light/dark toggle in the header and on login. */
+const THEME_MODES: { value: ThemeMode; icon: string }[] = [
+  { value: "light", icon: "mdi-weather-sunny" },
+  { value: "dark", icon: "mdi-weather-night" },
+  { value: "auto", icon: "mdi-theme-light-dark" },
+];
 
 // ── Paper swatches ────────────────────────────────────────────────────────────
 

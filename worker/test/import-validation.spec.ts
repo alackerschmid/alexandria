@@ -99,20 +99,6 @@ describe("validateImportRow", () => {
     expect(wrongType.ok && wrongType.row.shelves).toEqual([]);
   });
 
-  it("drops the rating when status is not read", () => {
-    const result = validateImportRow({
-      isbn: "9780306406157",
-      status: "to-read" as any,
-      rating: 10,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("expected ok");
-    // "to-read" isn't a valid VALID_STATUSES value so it falls back to unread — either way
-    // it is not "read", so rating must be dropped.
-    expect(result.row.status).toBe("unread");
-    expect(result.row.rating).toBeNull();
-  });
-
   it("keeps a valid rating when status is read", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
@@ -124,7 +110,22 @@ describe("validateImportRow", () => {
     expect(result.row.rating).toBe(6);
   });
 
-  it("drops an out-of-range rating even when status is read", () => {
+  // A rating is stored on the work, not the scan, so the row's shelf no longer gates it —
+  // Goodreads either has a score for this book or it doesn't.
+  it("keeps the rating when the status is not read", () => {
+    const result = validateImportRow({
+      isbn: "9780306406157",
+      status: "to-read" as any,
+      rating: 8,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    // "to-read" isn't a VALID_STATUSES value, so status still falls back to unread.
+    expect(result.row.status).toBe("unread");
+    expect(result.row.rating).toBe(8);
+  });
+
+  it("drops an out-of-range rating", () => {
     const result = validateImportRow({
       isbn: "9780306406157",
       status: "read",
@@ -140,29 +141,6 @@ describe("validateImportRow", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
     expect(result.row.rating).toBeNull();
-  });
-
-  it("keeps rawRating populated even when status isn't read (unlike the status-gated rating)", () => {
-    const result = validateImportRow({
-      isbn: "9780306406157",
-      status: "to-read" as any,
-      rating: 8,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("expected ok");
-    expect(result.row.rating).toBeNull();
-    expect(result.row.rawRating).toBe(8);
-  });
-
-  it("drops an out-of-range rawRating regardless of status", () => {
-    const result = validateImportRow({
-      isbn: "9780306406157",
-      status: "read",
-      rating: 11,
-    });
-    expect(result.ok).toBe(true);
-    if (!result.ok) throw new Error("expected ok");
-    expect(result.row.rawRating).toBeNull();
   });
 
   it("normalizes title/author/publisher/publish_date/number_of_pages, trimming and capping length", () => {
@@ -250,7 +228,7 @@ describe("validateMatchRow", () => {
       title: "Dune",
       author: "",
       status: "unread",
-      rawRating: null,
+      rating: null,
     });
   });
 
@@ -259,18 +237,18 @@ describe("validateMatchRow", () => {
     expect(result?.status).toBe("unread");
   });
 
-  it("keeps rawRating regardless of status (ungated, unlike ValidatedImportRow.rating)", () => {
+  it("keeps the rating regardless of status", () => {
     const result = validateMatchRow({
       title: "Dune",
       status: "to-read" as any,
       rating: 8,
     });
     expect(result?.status).toBe("unread");
-    expect(result?.rawRating).toBe(8);
+    expect(result?.rating).toBe(8);
   });
 
   it("drops an out-of-range rating", () => {
     const result = validateMatchRow({ title: "Dune", rating: 11 });
-    expect(result?.rawRating).toBeNull();
+    expect(result?.rating).toBeNull();
   });
 });

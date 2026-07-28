@@ -35,13 +35,18 @@ export interface ExistingScan {
   id: number;
   status: string;
   rating: number | null;
+  review: string | null;
   owning_status: string;
+  /** The scan's work, via its book. NULL until the book is linked (see `linkWork`). */
+  work_id: number | null;
 }
 
-// Like findExistingScan, but returns the scan's id and current status/rating/owning_status
+// Like findExistingScan, but returns the scan's id and current status/rating/review/owning_status
 // rather than a boolean — used by the Goodreads-import update-on-duplicate path, which needs to
 // both capture the pre-update state (for its Undo, and to show the client the scan's real
 // owning_status even though the update never touches it) and know which scan row to write to.
+// rating/review come from the work, not the scan, so they arrive via the same join the library
+// query uses; `work_id` rides along because every rating write needs it.
 export async function getExistingScan(
   db: D1Database,
   userId: number,
@@ -49,7 +54,11 @@ export async function getExistingScan(
 ): Promise<ExistingScan | null> {
   return db
     .prepare(
-      "SELECT id, status, rating, owning_status FROM scans WHERE user_id = ? AND book_id = ?",
+      `SELECT s.id, s.status, s.owning_status, b.work_id, wr.rating, wr.review
+         FROM scans s
+         JOIN books b ON b.id = s.book_id
+    LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
+        WHERE s.user_id = ? AND s.book_id = ?`,
     )
     .bind(userId, bookId)
     .first<ExistingScan>();
@@ -102,7 +111,7 @@ export const AUTHORS_JSON_SUBQUERY = `
 export function buildScanSelect(locale: string): string {
   const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : "en";
   return `
-  SELECT s.id, s.status, s.owning_status, s.rating, s.created_at,
+  SELECT s.id, s.status, s.owning_status, wr.rating, wr.review, s.created_at,
          b.id   AS book_id,
          b.isbn,
          b.work_id                                           AS work_id,
@@ -166,6 +175,10 @@ export function buildScanSelect(locale: string): string {
   JOIN books b ON s.book_id = b.id
   LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
   LEFT JOIN works wk ON wk.id = b.work_id
+  -- rating/review are per-user × per-WORK, not per-scan: every owned edition of a work reports
+  -- the same values, so the collapsed work-card and the edition carousel can't disagree.
+  -- An unlinked book (b.work_id IS NULL) yields NULLs, which is the honest answer.
+  LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
   LEFT JOIN work_series ws ON ws.rowid = (
     SELECT w2.rowid FROM work_series w2
     WHERE w2.work_id = b.work_id
@@ -305,47 +318,35 @@ export function isValidRating(v: unknown): v is number {
   return Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10;
 }
 
-export interface ScanRatingUpdateInput {
-  /** True if this update includes a new status value (vs. leaving status untouched). */
-  hasStatus: boolean;
-  /** The status this update would result in — the incoming value if hasStatus, else the scan's
-   *  current stored status. Unused when neither hasStatus nor hasRating is set. */
-  effectiveStatus?: string;
-  /** True if this update includes an explicit rating value (a number, or null to clear it). */
-  hasRating: boolean;
-  rating?: number | null;
+// There is deliberately no user-facing length limit on a review — this cap exists purely so a
+// single scan row can't be pushed past what D1 will physically store (2 MB per row), which would
+// surface as an opaque 500 instead of a validation error. 100k characters is ~50 printed pages.
+export const REVIEW_MAX_LENGTH = 100_000;
+
+export function isValidReview(v: unknown): v is string | null {
+  return v === null || (typeof v === "string" && v.length <= REVIEW_MAX_LENGTH);
 }
 
-// Centralizes the status/rating invariant shared by PATCH /api/scans/:id and the Goodreads-
-// import update-on-duplicate path: a rating can only be non-null while the *effective* status is
-// "read", and changing status away from "read" without an explicit new rating silently clears
-// any existing rating (so a book no longer marked read can't still surface under "group by
-// rating"). Returns the rating value to write, or `undefined` if the rating column shouldn't be
-// touched by this update at all.
-export function resolveRatingForUpdate(
-  input: ScanRatingUpdateInput,
-): number | null | undefined {
-  const { hasStatus, effectiveStatus, hasRating, rating } = input;
-  if (hasRating) {
-    return effectiveStatus === "read" ? (rating ?? null) : null;
-  }
-  if (hasStatus && effectiveStatus !== "read") return null;
-  return undefined;
+// Collapses a blank review to NULL so "no review" has exactly one representation in the column
+// (the frontend sends "" when the user clears the textarea, not null).
+export function normalizeReview(v: string | null): string | null {
+  return v == null ? null : v.trim() || null;
 }
 
-// Builds the SET clause + bind values for a scan status/owning/rating UPDATE, applying the shared
-// rating invariant (resolveRatingForUpdate) in one place so every write path — PATCH /api/scans/:id
-// and both Goodreads-import update paths — emits the same SQL. A column is included only when its
-// value is provided; `rating` is included whenever resolveRatingForUpdate yields a concrete value
-// (a new rating, or an explicit clear). Callers append their own WHERE binds after `binds`.
+// Builds the SET clause + bind values for a scan status/owning UPDATE, so every write path —
+// PATCH /api/scans/:id and both Goodreads-import update paths — emits the same SQL. A column is
+// included only when its value is provided. Callers append their own WHERE binds after `binds`.
+//
+// rating/review are NOT here: they live on `work_ratings`, keyed by work rather than by scan, and
+// are written through `upsertWorkRating`. That means **`sets` can legitimately come back empty**
+// (a rating-only PATCH touches no scan column) — a caller that interpolates it unconditionally
+// emits `UPDATE scans SET  WHERE …`, which is a syntax error. Skip the UPDATE when it's empty.
 export function buildScanUpdate(args: {
   status?: string;
   owningStatus?: string;
-  ratingInput: ScanRatingUpdateInput;
 }): {
   sets: string[];
   binds: (string | number | null)[];
-  resolvedRating: number | null | undefined;
 } {
   const sets: string[] = [];
   const binds: (string | number | null)[] = [];
@@ -357,10 +358,68 @@ export function buildScanUpdate(args: {
     sets.push("owning_status = ?");
     binds.push(args.owningStatus);
   }
-  const resolvedRating = resolveRatingForUpdate(args.ratingInput);
-  if (resolvedRating !== undefined) {
-    sets.push("rating = ?");
-    binds.push(resolvedRating);
-  }
-  return { sets, binds, resolvedRating };
+  return { sets, binds };
+}
+
+export interface WorkRatingInput {
+  /** Omit to leave the column alone; `null` clears it. */
+  rating?: number | null;
+  /** Omit to leave the column alone; `null` or blank clears it. */
+  review?: string | null;
+}
+
+/**
+ * Statements that write a user's rating/review for a work, for `db.batch`.
+ *
+ * `mode` decides what happens when a row already exists:
+ * - `"overwrite"` — an ordinary user edit. The supplied fields win.
+ * - `"seed"` — a value replayed from elsewhere in time (the scanner's offline queue draining, a
+ *   guest scan syncing on register, a Goodreads row creating a scan). It fills only what is still
+ *   empty, so a queue that drains hours later can't stomp a rating the user has since changed.
+ *
+ * `updated_at` is set explicitly on every write: the column DEFAULT only fires on INSERT, and
+ * mergeWorks resolves genuine conflicts by comparing it.
+ *
+ * A write that leaves both columns NULL deletes the row rather than keeping a tombstone.
+ */
+export function upsertWorkRating(
+  db: D1Database,
+  userId: number,
+  workId: number,
+  input: WorkRatingInput,
+  mode: "seed" | "overwrite",
+): D1PreparedStatement[] {
+  const hasRating = input.rating !== undefined;
+  const hasReview = input.review !== undefined;
+  if (!hasRating && !hasReview) return [];
+
+  const rating = hasRating ? (input.rating ?? null) : null;
+  const review = hasReview ? normalizeReview(input.review ?? null) : null;
+
+  // An omitted field must not overwrite a stored one, so it falls back to the existing value in
+  // both modes; a supplied field wins outright in "overwrite" and only fills a gap in "seed".
+  const assign = (col: string, supplied: boolean) => {
+    if (!supplied) return `${col} = work_ratings.${col}`;
+    return mode === "seed"
+      ? `${col} = COALESCE(work_ratings.${col}, excluded.${col})`
+      : `${col} = excluded.${col}`;
+  };
+
+  return [
+    db
+      .prepare(
+        `INSERT INTO work_ratings (user_id, work_id, rating, review)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(user_id, work_id) DO UPDATE SET
+           ${assign("rating", hasRating)},
+           ${assign("review", hasReview)},
+           updated_at = CURRENT_TIMESTAMP`,
+      )
+      .bind(userId, workId, rating, review),
+    db
+      .prepare(
+        "DELETE FROM work_ratings WHERE user_id = ? AND work_id = ? AND rating IS NULL AND review IS NULL",
+      )
+      .bind(userId, workId),
+  ];
 }

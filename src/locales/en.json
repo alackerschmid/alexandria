@@ -287,6 +287,13 @@
     "of_ten": "/10",
     "rate_book": "Rate this book",
     "clear_rating": "Clear rating",
+    "review": "Review / Notes",
+    "review_add": "Add",
+    "review_edit": "Edit",
+    "review_write": "Write",
+    "review_preview": "Preview",
+    "review_placeholder": "What did you think? Notes, quotes, anything…",
+    "review_markdown_hint": "Markdown supported — **bold**, *italic*, # headings, - lists, [links](url)",
     "done": "Done",
     "edition_name": "Edition name",
     "physical_dimensions": "Dimensions",
@@ -333,15 +340,15 @@
       "password_saved": "Password updated",
       "hide_password_form": "Cancel"
     },
-    "accent": {
-      "heading": "Accent color",
-      "description": "Used for highlights, active states and the scan button across the app.",
-      "custom": "Custom"
-    },
     "appearance": {
       "heading": "Appearance",
-      "description": "Accent, background and typeface. Each choice applies to both light and dark mode.",
+      "description": "How the app looks. Accent, background and typeface apply to both light and dark mode.",
+      "theme": "Mode",
+      "theme_light": "Light",
+      "theme_dark": "Dark",
+      "theme_auto": "Auto",
       "accent": "Accent color",
+      "accent_custom": "Custom",
       "paper": "Background",
       "paper_warm": "Warm",
       "paper_neutral": "Neutral",
@@ -382,10 +389,6 @@
       "heading": "Library defaults",
       "description": "Applied on every fresh session.",
       "language": "Language",
-      "theme": "Theme",
-      "theme_light": "Light",
-      "theme_dark": "Dark",
-      "theme_auto": "Auto",
       "view": "Default view",
       "view_list": "List",
       "view_tile": "Tile",
@@ -474,9 +477,6 @@
       "rating_source": "Rating (from Goodreads)",
       "status": "Status",
       "owning": "Owning"
-    },
-    "row": {
-      "rating_needs_read": "Mark as read to rate"
     },
     "review": {
       "none": "Every book matched — nothing to review.",

@@ -802,22 +802,21 @@
                 </button>
               </div>
 
-              <!-- Rating picker (read only — rating a book you haven't finished doesn't make sense) -->
-              <template v-if="selectedStatus === 'read'">
-                <p
-                  class="text-[10px] text-text-secondary tracking-[0.24em] uppercase mb-2.5"
-                >
-                  {{ $t("scanner.rate_as") }}
-                </p>
-                <div class="mb-6">
-                  <RatingStars
-                    :rating="selectedRating"
-                    size="lg"
-                    interactive
-                    @update:rating="selectedRating = $event"
-                  />
-                </div>
-              </template>
+              <!-- Rating picker — shown at any status; a rating belongs to the work, not to
+                   having finished this copy -->
+              <p
+                class="text-[10px] text-text-secondary tracking-[0.24em] uppercase mb-2.5"
+              >
+                {{ $t("scanner.rate_as") }}
+              </p>
+              <div class="mb-6">
+                <RatingStars
+                  :rating="selectedRating"
+                  size="lg"
+                  interactive
+                  @update:rating="selectedRating = $event"
+                />
+              </div>
 
               <AppButton
                 variant="primary"
@@ -1192,12 +1191,6 @@ const detectedBook = ref<BookPreview | null>(null);
 const selectedStatus = ref<ReadStatus>("read");
 const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
 const selectedRating = ref<number | null>(null);
-
-// The picker is hidden for any non-"read" status — drop a pending selection so it can't be
-// silently saved against a status where it no longer makes sense.
-watch(selectedStatus, (status) => {
-  if (status !== "read") selectedRating.value = null;
-});
 const flash = ref(false);
 
 // Metadata chips for the detected-book sheet (year · pages · language · publisher).
