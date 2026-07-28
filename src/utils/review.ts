@@ -1,7 +1,3 @@
-/** Below this the review's metadata line (written date, word count, "markdown") is suppressed —
- *  a word count under a one-line note is noise rather than information. */
-export const REVIEW_META_MIN_WORDS = 80;
-
 /**
  * Words in a markdown review, for the detail view's metadata line and the All view's section
  * summary. Markdown syntax that carries no prose — fence markers, list bullets, heading hashes,

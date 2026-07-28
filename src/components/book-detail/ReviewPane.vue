@@ -60,7 +60,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLocaleStore } from "@/stores/locale";
 import { BCP47 } from "@/plugins/i18n";
-import { reviewWordCount, REVIEW_META_MIN_WORDS } from "@/utils/review";
+import { reviewWordCount } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
 import RatingStars from "@/components/RatingStars.vue";
 import MarkdownText from "@/components/MarkdownText.vue";
@@ -90,20 +90,17 @@ const writtenOn = computed(() => {
   });
 });
 
-// Word count and date only appear once the review is long enough for them to mean anything —
-// "3 words" under a one-line note is noise, not metadata.
+// Shown for every review, however short. Each part still drops out when there's nothing to say:
+// no rating, or a review written before `work_ratings.updated_at` was carried on the row.
 const metaLine = computed(() => {
   const words = reviewWordCount(props.book.review);
-  const long = words >= REVIEW_META_MIN_WORDS;
   return [
     props.book.rating == null
       ? null
       : `${props.book.rating}${t("detail.of_ten")}`,
-    long && writtenOn.value
-      ? t("detail.review_written", { date: writtenOn.value })
-      : null,
-    long ? t("detail.review_words", { n: words }, words) : null,
-    long ? t("detail.review_markdown") : null,
+    writtenOn.value ? t("detail.review_written", { date: writtenOn.value }) : null,
+    t("detail.review_words", { n: words }, words),
+    t("detail.review_markdown"),
   ]
     .filter(Boolean)
     .join(" · ");

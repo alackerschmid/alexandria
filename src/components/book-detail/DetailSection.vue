@@ -25,7 +25,16 @@
       >
     </button>
 
-    <div v-show="!rule || !collapsed" :id="`detail-body-${sectionKey}`" :class="rule ? 'pt-6' : ''">
+    <!-- The body is inset a little from the measure the rule spans, so a pane's content sits
+         *inside* its header rather than flush against the same edges. The inset is constant
+         whether or not the rule is drawn, so switching from All to a single tab doesn't shift
+         the content sideways. -->
+    <div
+      v-show="!rule || !collapsed"
+      :id="`detail-body-${sectionKey}`"
+      class="px-4 md:px-5"
+      :class="rule ? 'pt-6' : ''"
+    >
       <slot />
     </div>
   </section>

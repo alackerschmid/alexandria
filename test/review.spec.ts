@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reviewWordCount, REVIEW_META_MIN_WORDS } from "@/utils/review";
+import { reviewWordCount } from "@/utils/review";
 
 describe("reviewWordCount", () => {
   it("is zero for no review", () => {
@@ -43,7 +43,7 @@ describe("reviewWordCount", () => {
     expect(reviewWordCount("built to be **re-read** and _re-read_")).toBe(6);
   });
 
-  it("sits below the metadata-line threshold for a one-line review", () => {
-    expect(reviewWordCount("Loved it.")).toBeLessThan(REVIEW_META_MIN_WORDS);
+  it("counts a one-line review, which still gets a metadata line", () => {
+    expect(reviewWordCount("Loved it.")).toBe(2);
   });
 });

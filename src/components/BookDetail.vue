@@ -278,7 +278,7 @@ import {
   customFieldValues as toCustomFieldValues,
   type CustomFieldModel,
 } from "@/utils/custom-fields";
-import { reviewWordCount, REVIEW_META_MIN_WORDS } from "@/utils/review";
+import { reviewWordCount } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
 import BookDetailCard from "@/components/book-detail/BookDetailCard.vue";
 import DetailMeasure from "@/components/book-detail/DetailMeasure.vue";
@@ -420,11 +420,9 @@ const recordSummary = computed(() => {
 });
 
 const reviewSummary = computed(() => {
-  const words = reviewWordCount(props.book.review);
   if (!props.book.review) return t("detail.review_add");
-  return words >= REVIEW_META_MIN_WORDS
-    ? t("detail.review_words", { n: words }, words)
-    : "";
+  const words = reviewWordCount(props.book.review);
+  return t("detail.review_words", { n: words }, words);
 });
 
 // ── Computed helpers ──────────────────────────────────────────────────────────
