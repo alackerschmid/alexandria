@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[45rem]">
+  <div>
     <template v-if="book.review">
       <div
         class="flex items-center justify-between gap-4 mb-7 flex-wrap md:flex-nowrap"
@@ -35,7 +35,7 @@
       >
         {{ $t("detail.review_empty_title") }}
       </h2>
-      <p class="text-sm md:text-[15px] leading-[1.8] text-text-secondary mb-7 max-w-[34rem]">
+      <p class="text-sm md:text-[15px] leading-[1.8] text-text-secondary mb-7">
         {{ $t("detail.review_empty_body") }}
       </p>
       <div class="flex flex-wrap gap-3">

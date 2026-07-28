@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="flex flex-col md:flex-row gap-10 md:gap-16 items-start">
-      <div class="flex-1 min-w-0 w-full max-w-[28rem]">
+      <div class="flex-1 min-w-0 w-full">
         <div class="pane-label mb-3.5">{{ $t("detail.this_edition") }}</div>
         <EditionDetails :book="book" />
       </div>
-      <div v-if="workFacts" class="flex-1 min-w-0 w-full max-w-[28rem]">
+      <div v-if="workFacts" class="flex-1 min-w-0 w-full">
         <div class="pane-label mb-3.5">{{ $t("detail.the_work") }}</div>
         <WorkFacts
           :book="book"

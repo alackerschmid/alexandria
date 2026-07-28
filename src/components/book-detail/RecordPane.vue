@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-[28rem]">
+  <div>
     <!-- On desktop these same controls live in the masthead beside the title; here they are the
          only copy, so every target is a full-width row clearing 44px. -->
     <RecordControls

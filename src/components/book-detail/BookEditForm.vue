@@ -1,8 +1,8 @@
 <template>
-  <!-- On the detail's own measure, with the fields themselves capped at a comfortable form width
-       so a wide screen doesn't stretch a text input across the page. -->
+  <!-- On the detail's own measure, like every other pane — the two-column field grid is what keeps
+       an individual input from stretching the whole width. -->
   <DetailMeasure class="py-10 pb-16">
-    <div class="max-w-lg">
+    <div>
     <!-- title -->
     <input
       v-model="form.title"

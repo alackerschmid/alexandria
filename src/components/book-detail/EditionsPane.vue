@@ -1,9 +1,8 @@
 <template>
   <div>
-    <!-- Fixed columns inside a capped container rather than `auto-fill`: auto-fill counts tracks
-         from the track's *max*, so a definite max collapses to one column on a narrow screen.
-         2-up at 390px and 4-up capped at ~170px tiles on desktop, as the mockup draws it. -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5 max-w-[46rem]">
+    <!-- Fixed columns rather than `auto-fill`, which counts tracks from the track's *max* and so
+         collapses to one column on a narrow screen. 2-up at 390px, 4-up across the measure. -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-5">
       <button
         v-for="ed in visible"
         :key="ed.isbn"

@@ -1,5 +1,7 @@
 <template>
-  <div class="max-w-[44rem]">
+  <!-- No reading cap of its own: a pane narrower than the section rule above it leaves the rule
+       overhanging to the right and the whole page reading left-heavy. The measure is the measure. -->
+  <div>
     <!-- The publisher blurb may be clamped; the user's own review never is. It is the one long
          block here that isn't theirs, so it must not push everything else off screen. -->
     <div v-if="book.description" class="mb-8">

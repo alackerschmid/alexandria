@@ -23,216 +23,225 @@
 
     <!-- ── FULL MODE ──────────────────────────────────────────────────────── -->
     <template v-else>
-      <div class="bg-charcoal flex flex-col h-dvh">
-        <!-- Back and close only. Editing folded into the record row, delete moved to the footer
+      <!-- One scroll container for everything, with the top bar and edit footer stuck to its
+           edges rather than sitting outside it. A separate non-scrolling header would centre on
+           the full viewport while the body centres inside its own scrollbar-narrowed content box,
+           so the two would disagree by the scrollbar's width — visible as the header's "back"
+           label not lining up with the content beneath it. -->
+      <div ref="bodyEl" class="bg-charcoal h-dvh overflow-y-auto">
+        <!-- `min-h-full` + a `flex-1` content region so the sticky edit footer still lands at the
+             bottom of the viewport when the form is shorter than the screen, instead of floating
+             directly under it. -->
+        <div class="min-h-full flex flex-col">
+          <!-- Back and close only. Editing folded into the record row, delete moved to the footer
              where it can't be hit by accident, refresh down beside the facts it repopulates. -->
-        <div
-          class="shrink-0 border-b border-charcoal-border bg-charcoal z-10"
-        >
-          <DetailMeasure class="flex items-center justify-between py-4">
-            <button
-              class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
-              @click="mode = 'card'"
-            >
-              <v-icon icon="mdi-arrow-left" size="16" />
-              <span class="text-[10px] tracking-[0.18em] uppercase">{{
-                $t("detail.back_to_card")
-              }}</span>
-            </button>
-            <div class="flex items-center gap-2">
+          <div
+            class="sticky top-0 z-10 border-b border-charcoal-border bg-charcoal"
+          >
+            <DetailMeasure class="flex items-center justify-between py-4">
               <button
-                v-if="editing"
-                class="text-text-secondary/50 hover:text-text-secondary transition-colors"
-                :aria-label="$t('detail.edit_cancel')"
-                @click="editing = false"
+                class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
+                @click="mode = 'card'"
               >
-                <v-icon icon="mdi-close" size="18" />
+                <v-icon icon="mdi-arrow-left" size="16" />
+                <span class="text-[10px] tracking-[0.18em] uppercase">{{
+                  $t("detail.back_to_card")
+                }}</span>
               </button>
-              <button
-                class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
-                :aria-label="$t('detail.close')"
-                @click="$emit('update:modelValue', false)"
-              >
-                <v-icon icon="mdi-close" size="20" />
-              </button>
-            </div>
-          </DetailMeasure>
-        </div>
-
-        <!-- scrollable body -->
-        <div ref="bodyEl" class="flex-1 overflow-y-auto">
-          <template v-if="!editing">
-            <!-- Bands are full-bleed; only their contents sit on the measure. -->
-            <div class="bg-charcoal-light border-b border-charcoal-border">
-              <DetailMeasure class="py-6 md:py-9">
-                <DetailMasthead
-                  :book="book"
-                  :poll-timed-out="pollTimedOut"
-                  :guest="guest"
-                  :readonly="readonly"
-                  @set-status="$emit('set-status', $event)"
-                  @set-owning-status="$emit('set-owning-status', $event)"
-                  @set-rating="$emit('set-rating', $event)"
-                  @edit="enterEdit"
-                  @go-series="goToSeries"
-                  @filter="filterBy"
-                />
-              </DetailMeasure>
-            </div>
-
-            <DetailTabs
-              v-if="tabs.length > 1"
-              v-model="activeTab"
-              :tabs="tabItems"
-            />
-
-            <DetailMeasure class="py-8 md:py-10 pb-24 flex flex-col gap-13">
-              <DetailSection
-                v-if="showPane('overview')"
-                section-key="overview"
-                :title="$t('detail.tab_overview')"
-                :rule="showRules"
-                :collapsed="collapsed.has('overview')"
-                @toggle="toggleSection('overview')"
-              >
-                <OverviewPane
-                  v-model:expanded="descriptionExpanded"
-                  :book="book"
-                  @filter="filterBy"
-                />
-              </DetailSection>
-
-              <DetailSection
-                v-if="showPane('record')"
-                section-key="record"
-                :title="$t('detail.your_record')"
-                :rule="showRules"
-                :collapsed="collapsed.has('record')"
-                :summary="recordSummary"
-                @toggle="toggleSection('record')"
-              >
-                <RecordPane
-                  :book="book"
-                  :guest="guest"
-                  @set-status="$emit('set-status', $event)"
-                  @set-owning-status="$emit('set-owning-status', $event)"
-                  @set-rating="$emit('set-rating', $event)"
-                  @edit="enterEdit"
-                />
-              </DetailSection>
-
-              <DetailSection
-                v-if="showPane('details')"
-                section-key="details"
-                :title="$t('detail.tab_details')"
-                :rule="showRules"
-                :collapsed="collapsed.has('details')"
-                :summary="
-                  $t('detail.section_fields', { n: fieldCount }, fieldCount)
-                "
-                @toggle="toggleSection('details')"
-              >
-                <DetailsPane
-                  :book="book"
-                  :refreshing="refreshing"
-                  :guest="guest"
-                  :readonly="readonly"
-                  @filter="filterBy"
-                  @refresh="refresh"
-                />
-              </DetailSection>
-
-              <DetailSection
-                v-if="showPane('review')"
-                section-key="review"
-                :title="$t('detail.tab_review')"
-                :rule="showRules"
-                :collapsed="collapsed.has('review')"
-                :summary="reviewSummary"
-                @toggle="toggleSection('review')"
-              >
-                <ReviewPane
-                  :book="book"
-                  @open-rating="$emit('open-rating')"
-                  @focus-rating="focusRating"
-                />
-              </DetailSection>
-
-              <DetailSection
-                v-if="showPane('editions')"
-                section-key="editions"
-                :title="$t('detail.tab_editions')"
-                :rule="showRules"
-                :collapsed="collapsed.has('editions')"
-                :summary="
-                  $t(
-                    'detail.editions_total',
-                    { n: editions.length },
-                    editions.length,
-                  )
-                "
-                @toggle="toggleSection('editions')"
-              >
-                <EditionsPane
-                  :editions="editions"
-                  :active-isbn="book.isbn"
-                  @show-all="editionsDialogOpen = true"
-                />
-              </DetailSection>
-
-              <!-- Remove sits at the very bottom, opposite the acquisition date: a one-way action
-                   that should take a deliberate scroll to reach, not a top-bar icon. -->
-              <div
-                class="flex items-center justify-between gap-5 pt-4 border-t border-charcoal-border"
-              >
+              <div class="flex items-center gap-2">
                 <button
-                  v-if="!readonly"
-                  class="text-[10px] tracking-[0.16em] uppercase text-error/80 hover:text-error transition-colors"
-                  @click="$emit('delete')"
+                  v-if="editing"
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                  :aria-label="$t('detail.edit_cancel')"
+                  @click="editing = false"
                 >
-                  {{ $t("detail.remove_from_library") }}
+                  <v-icon icon="mdi-close" size="18" />
                 </button>
-                <span v-else />
-                <span class="font-mono text-[10.5px] text-text-secondary">
-                  {{ $t("detail.added") }} {{ formattedAdded }}
-                </span>
+                <button
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
+                  :aria-label="$t('detail.close')"
+                  @click="$emit('update:modelValue', false)"
+                >
+                  <v-icon icon="mdi-close" size="20" />
+                </button>
               </div>
             </DetailMeasure>
+          </div>
 
-            <EditionsDialog
-              v-model="editionsDialogOpen"
+          <div class="flex-1">
+            <template v-if="!editing">
+              <!-- Bands are full-bleed; only their contents sit on the measure. -->
+              <div class="bg-charcoal-light border-b border-charcoal-border">
+                <DetailMeasure class="py-6 md:py-9">
+                  <DetailMasthead
+                    :book="book"
+                    :poll-timed-out="pollTimedOut"
+                    :guest="guest"
+                    :readonly="readonly"
+                    @set-status="$emit('set-status', $event)"
+                    @set-owning-status="$emit('set-owning-status', $event)"
+                    @set-rating="$emit('set-rating', $event)"
+                    @edit="enterEdit"
+                    @go-series="goToSeries"
+                    @filter="filterBy"
+                  />
+                </DetailMeasure>
+              </div>
+
+              <DetailTabs
+                v-if="tabs.length > 1"
+                v-model="activeTab"
+                :tabs="tabItems"
+              />
+
+              <DetailMeasure class="py-8 md:py-10 pb-24 flex flex-col gap-13">
+                <DetailSection
+                  v-if="showPane('overview')"
+                  section-key="overview"
+                  :title="$t('detail.tab_overview')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('overview')"
+                  @toggle="toggleSection('overview')"
+                >
+                  <OverviewPane
+                    v-model:expanded="descriptionExpanded"
+                    :book="book"
+                    @filter="filterBy"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('record')"
+                  section-key="record"
+                  :title="$t('detail.your_record')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('record')"
+                  :summary="recordSummary"
+                  @toggle="toggleSection('record')"
+                >
+                  <RecordPane
+                    :book="book"
+                    :guest="guest"
+                    @set-status="$emit('set-status', $event)"
+                    @set-owning-status="$emit('set-owning-status', $event)"
+                    @set-rating="$emit('set-rating', $event)"
+                    @edit="enterEdit"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('details')"
+                  section-key="details"
+                  :title="$t('detail.tab_details')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('details')"
+                  :summary="
+                    $t('detail.section_fields', { n: fieldCount }, fieldCount)
+                  "
+                  @toggle="toggleSection('details')"
+                >
+                  <DetailsPane
+                    :book="book"
+                    :refreshing="refreshing"
+                    :guest="guest"
+                    :readonly="readonly"
+                    @filter="filterBy"
+                    @refresh="refresh"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('review')"
+                  section-key="review"
+                  :title="$t('detail.tab_review')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('review')"
+                  :summary="reviewSummary"
+                  @toggle="toggleSection('review')"
+                >
+                  <ReviewPane
+                    :book="book"
+                    @open-rating="$emit('open-rating')"
+                    @focus-rating="focusRating"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('editions')"
+                  section-key="editions"
+                  :title="$t('detail.tab_editions')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('editions')"
+                  :summary="
+                    $t(
+                      'detail.editions_total',
+                      { n: editions.length },
+                      editions.length,
+                    )
+                  "
+                  @toggle="toggleSection('editions')"
+                >
+                  <EditionsPane
+                    :editions="editions"
+                    :active-isbn="book.isbn"
+                    @show-all="editionsDialogOpen = true"
+                  />
+                </DetailSection>
+
+                <!-- Remove sits at the very bottom, opposite the acquisition date: a one-way action
+                   that should take a deliberate scroll to reach, not a top-bar icon. -->
+                <div
+                  class="flex items-center justify-between gap-5 pt-4 border-t border-charcoal-border"
+                >
+                  <button
+                    v-if="!readonly"
+                    class="text-[10px] tracking-[0.16em] uppercase text-error/80 hover:text-error transition-colors"
+                    @click="$emit('delete')"
+                  >
+                    {{ $t("detail.remove_from_library") }}
+                  </button>
+                  <span v-else />
+                  <span class="font-mono text-[10.5px] text-text-secondary">
+                    {{ $t("detail.added") }} {{ formattedAdded }}
+                  </span>
+                </div>
+              </DetailMeasure>
+
+              <EditionsDialog
+                v-model="editionsDialogOpen"
+                :book="book"
+                :guest="guest"
+                :readonly="readonly"
+                @refreshed="onEditionsRefreshed"
+              />
+            </template>
+
+            <!-- edit mode: every editable field on one screen -->
+            <BookEditForm
+              v-else
+              v-model:form="form"
+              v-model:custom-values="customValues"
               :book="book"
               :guest="guest"
-              :readonly="readonly"
-              @refreshed="onEditionsRefreshed"
+              :save-error="saveError"
+              @tag-deleted="onTagDeleted"
             />
-          </template>
+          </div>
 
-          <!-- edit mode: every editable field on one screen -->
-          <BookEditForm
-            v-else
-            v-model:form="form"
-            v-model:custom-values="customValues"
-            :book="book"
-            :guest="guest"
-            :save-error="saveError"
-            @tag-deleted="onTagDeleted"
-          />
-        </div>
-
-        <!-- edit mode footer -->
-        <div
-          v-if="editing"
-          class="shrink-0 border-t border-charcoal-border bg-charcoal"
-        >
-          <DetailMeasure class="flex justify-between items-center py-3">
-            <AppButton variant="ghost" size="sm" @click="editing = false">
-              {{ $t("detail.edit_cancel") }}
-            </AppButton>
-            <AppButton size="sm" :loading="saving" @click="save">
-              {{ $t("detail.edit_save") }}
-            </AppButton>
-          </DetailMeasure>
+          <!-- edit mode footer -->
+          <div
+            v-if="editing"
+            class="sticky bottom-0 z-10 border-t border-charcoal-border bg-charcoal"
+          >
+            <DetailMeasure class="flex justify-between items-center py-3">
+              <AppButton variant="ghost" size="sm" @click="editing = false">
+                {{ $t("detail.edit_cancel") }}
+              </AppButton>
+              <AppButton size="sm" :loading="saving" @click="save">
+                {{ $t("detail.edit_save") }}
+              </AppButton>
+            </DetailMeasure>
+          </div>
         </div>
       </div>
     </template>
@@ -285,11 +294,7 @@ import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
 import BookEditForm, {
   type EditForm,
 } from "@/components/book-detail/BookEditForm.vue";
-import type {
-  BookWithOverrides,
-  OwningStatus,
-  ReadStatus,
-} from "@/types/book";
+import type { BookWithOverrides, OwningStatus, ReadStatus } from "@/types/book";
 
 // The book detail dialog: a compact card that expands into a full-screen masthead-plus-panes view.
 //
@@ -379,7 +384,9 @@ const tabItems = computed(() =>
 );
 
 /** The All view is the only place section rules are drawn — a single tab already names its pane. */
-const showRules = computed(() => activeTab.value === "all" && tabs.value.length > 1);
+const showRules = computed(
+  () => activeTab.value === "all" && tabs.value.length > 1,
+);
 
 function showPane(key: TabKey): boolean {
   if (!tabs.value.some((tab) => tab.key === key)) return false;
@@ -459,15 +466,17 @@ const customValues = ref<CustomFieldModel>({});
 // must not be emitted as a `refreshed` patch.
 const pollTimedOut = ref(false);
 
-const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll({
-  isOpen: () => props.modelValue,
-  scanId: () => props.book.id,
-  status: () => props.book.enrichment_status,
-  guest: () => !!props.guest,
-  readonly: () => !!props.readonly,
-  onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
-  onExhausted: () => (pollTimedOut.value = true),
-});
+const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll(
+  {
+    isOpen: () => props.modelValue,
+    scanId: () => props.book.id,
+    status: () => props.book.enrichment_status,
+    guest: () => !!props.guest,
+    readonly: () => !!props.readonly,
+    onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
+    onExhausted: () => (pollTimedOut.value = true),
+  },
+);
 
 function startEnrichmentPoll() {
   pollTimedOut.value = false;
