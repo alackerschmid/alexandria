@@ -1,55 +1,61 @@
 <template>
-  <div class="relative border-b border-charcoal-border">
-    <div
-      ref="scroller"
-      role="tablist"
-      :aria-label="$t('detail.tabs_label')"
-      class="flex gap-6 md:gap-9 px-6 md:px-11 pt-4 md:pt-5 overflow-x-auto no-scrollbar scroll-px-6 md:scroll-px-11"
-      @keydown.left.prevent="step(-1)"
-      @keydown.right.prevent="step(1)"
-      @keydown.home.prevent="jump(0)"
-      @keydown.end.prevent="jump(tabs.length - 1)"
-    >
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        :ref="(el) => setTabRef(tab.key, el as Element | null)"
-        type="button"
-        role="tab"
-        :id="`detail-tab-${tab.key}`"
-        :aria-selected="tab.key === modelValue"
-        :aria-controls="`detail-panel-${tab.key}`"
-        :tabindex="tab.key === modelValue ? 0 : -1"
-        class="shrink-0 flex items-center gap-1.5 pb-3 -mb-px border-b-2 whitespace-nowrap text-[11px] tracking-[0.14em] uppercase transition-colors"
-        :class="
-          tab.key === modelValue
-            ? 'font-bold text-text-primary border-orange-neon'
-            : 'text-text-secondary hover:text-text-primary border-transparent'
-        "
-        @click="pick(tab.key)"
+  <div class="border-b border-charcoal-border">
+    <DetailMeasure class="relative">
+      <div
+        ref="scroller"
+        role="tablist"
+        :aria-label="$t('detail.tabs_label')"
+        class="flex gap-6 md:gap-9 pt-4 md:pt-5 overflow-x-auto no-scrollbar"
+        @keydown.left.prevent="step(-1)"
+        @keydown.right.prevent="step(1)"
+        @keydown.home.prevent="jump(0)"
+        @keydown.end.prevent="jump(tabs.length - 1)"
       >
-        {{ tab.label }}
-        <span v-if="tab.badge != null" class="font-mono normal-case tracking-normal opacity-60">
-          · {{ tab.badge }}
-        </span>
-        <span
-          v-if="tab.dot"
-          class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0"
-          aria-hidden="true"
-        />
-      </button>
-    </div>
-    <!-- Fade only on the left: "All" is the last tab and the default, so the row opens scrolled
-         to its end and it is the start of the list that runs off-screen. -->
-    <div
-      class="md:hidden pointer-events-none absolute left-0 top-0 bottom-0 w-10 bg-gradient-to-r from-charcoal to-transparent"
-      aria-hidden="true"
-    />
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          :id="`detail-tab-${tab.key}`"
+          :ref="(el) => setTabRef(tab.key, el as Element | null)"
+          type="button"
+          role="tab"
+          :aria-selected="tab.key === modelValue"
+          :aria-controls="`detail-panel-${tab.key}`"
+          :tabindex="tab.key === modelValue ? 0 : -1"
+          class="shrink-0 flex items-center gap-1.5 pb-3 -mb-px border-b-2 whitespace-nowrap text-[11px] tracking-[0.14em] uppercase transition-colors"
+          :class="
+            tab.key === modelValue
+              ? 'font-bold text-text-primary border-orange-neon'
+              : 'text-text-secondary hover:text-text-primary border-transparent'
+          "
+          @click="pick(tab.key)"
+        >
+          {{ tab.label }}
+          <span
+            v-if="tab.badge != null"
+            class="font-mono normal-case tracking-normal opacity-60"
+          >
+            · {{ tab.badge }}
+          </span>
+          <span
+            v-if="tab.dot"
+            class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+      <!-- Fade only on the left: "All" is the last tab and the default, so the row opens scrolled
+           to its end and it is the start of the list that runs off-screen. -->
+      <div
+        class="md:hidden pointer-events-none absolute left-6 top-0 bottom-0 w-10 bg-gradient-to-r from-charcoal to-transparent"
+        aria-hidden="true"
+      />
+    </DetailMeasure>
   </div>
 </template>
 
 <script lang="ts" setup>
 import { nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import DetailMeasure from "@/components/book-detail/DetailMeasure.vue";
 
 export interface DetailTab {
   key: string;

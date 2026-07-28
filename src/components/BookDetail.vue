@@ -27,51 +27,58 @@
         <!-- Back and close only. Editing folded into the record row, delete moved to the footer
              where it can't be hit by accident, refresh down beside the facts it repopulates. -->
         <div
-          class="shrink-0 flex items-center justify-between px-6 md:px-11 py-4 border-b border-charcoal-border bg-charcoal z-10"
+          class="shrink-0 border-b border-charcoal-border bg-charcoal z-10"
         >
-          <button
-            class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
-            @click="mode = 'card'"
-          >
-            <v-icon icon="mdi-arrow-left" size="16" />
-            <span class="text-[10px] tracking-[0.18em] uppercase">{{
-              $t("detail.back_to_card")
-            }}</span>
-          </button>
-          <div class="flex items-center gap-2">
+          <DetailMeasure class="flex items-center justify-between py-4">
             <button
-              v-if="editing"
-              class="text-text-secondary/50 hover:text-text-secondary transition-colors"
-              :aria-label="$t('detail.edit_cancel')"
-              @click="editing = false"
+              class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
+              @click="mode = 'card'"
             >
-              <v-icon icon="mdi-close" size="18" />
+              <v-icon icon="mdi-arrow-left" size="16" />
+              <span class="text-[10px] tracking-[0.18em] uppercase">{{
+                $t("detail.back_to_card")
+              }}</span>
             </button>
-            <button
-              class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
-              :aria-label="$t('detail.close')"
-              @click="$emit('update:modelValue', false)"
-            >
-              <v-icon icon="mdi-close" size="20" />
-            </button>
-          </div>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="editing"
+                class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                :aria-label="$t('detail.edit_cancel')"
+                @click="editing = false"
+              >
+                <v-icon icon="mdi-close" size="18" />
+              </button>
+              <button
+                class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
+                :aria-label="$t('detail.close')"
+                @click="$emit('update:modelValue', false)"
+              >
+                <v-icon icon="mdi-close" size="20" />
+              </button>
+            </div>
+          </DetailMeasure>
         </div>
 
         <!-- scrollable body -->
         <div ref="bodyEl" class="flex-1 overflow-y-auto">
           <template v-if="!editing">
-            <DetailMasthead
-              :book="book"
-              :poll-timed-out="pollTimedOut"
-              :guest="guest"
-              :readonly="readonly"
-              @set-status="$emit('set-status', $event)"
-              @set-owning-status="$emit('set-owning-status', $event)"
-              @set-rating="$emit('set-rating', $event)"
-              @edit="enterEdit"
-              @go-series="goToSeries"
-              @filter="filterBy"
-            />
+            <!-- Bands are full-bleed; only their contents sit on the measure. -->
+            <div class="bg-charcoal-light border-b border-charcoal-border">
+              <DetailMeasure class="py-6 md:py-9">
+                <DetailMasthead
+                  :book="book"
+                  :poll-timed-out="pollTimedOut"
+                  :guest="guest"
+                  :readonly="readonly"
+                  @set-status="$emit('set-status', $event)"
+                  @set-owning-status="$emit('set-owning-status', $event)"
+                  @set-rating="$emit('set-rating', $event)"
+                  @edit="enterEdit"
+                  @go-series="goToSeries"
+                  @filter="filterBy"
+                />
+              </DetailMeasure>
+            </div>
 
             <DetailTabs
               v-if="tabs.length > 1"
@@ -79,7 +86,7 @@
               :tabs="tabItems"
             />
 
-            <div class="px-6 md:px-11 py-8 md:py-10 pb-24 flex flex-col gap-13">
+            <DetailMeasure class="py-8 md:py-10 pb-24 flex flex-col gap-13">
               <DetailSection
                 v-if="showPane('overview')"
                 section-key="overview"
@@ -190,7 +197,7 @@
                   {{ $t("detail.added") }} {{ formattedAdded }}
                 </span>
               </div>
-            </div>
+            </DetailMeasure>
 
             <EditionsDialog
               v-model="editionsDialogOpen"
@@ -216,14 +223,16 @@
         <!-- edit mode footer -->
         <div
           v-if="editing"
-          class="shrink-0 border-t border-charcoal-border flex justify-between items-center px-6 md:px-11 py-3 bg-charcoal"
+          class="shrink-0 border-t border-charcoal-border bg-charcoal"
         >
-          <AppButton variant="ghost" size="sm" @click="editing = false">
-            {{ $t("detail.edit_cancel") }}
-          </AppButton>
-          <AppButton size="sm" :loading="saving" @click="save">
-            {{ $t("detail.edit_save") }}
-          </AppButton>
+          <DetailMeasure class="flex justify-between items-center py-3">
+            <AppButton variant="ghost" size="sm" @click="editing = false">
+              {{ $t("detail.edit_cancel") }}
+            </AppButton>
+            <AppButton size="sm" :loading="saving" @click="save">
+              {{ $t("detail.edit_save") }}
+            </AppButton>
+          </DetailMeasure>
         </div>
       </div>
     </template>
@@ -263,6 +272,7 @@ import {
 import { reviewWordCount, REVIEW_META_MIN_WORDS } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
 import BookDetailCard from "@/components/book-detail/BookDetailCard.vue";
+import DetailMeasure from "@/components/book-detail/DetailMeasure.vue";
 import DetailMasthead from "@/components/book-detail/DetailMasthead.vue";
 import DetailTabs from "@/components/book-detail/DetailTabs.vue";
 import DetailSection from "@/components/book-detail/DetailSection.vue";

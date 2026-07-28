@@ -1,20 +1,21 @@
 <template>
-  <div
-    class="bg-charcoal-light border-b border-charcoal-border px-6 md:px-11 py-6 md:py-9"
-  >
-    <div class="flex items-end gap-4 md:gap-8">
-      <div class="shrink-0 w-21 h-32 md:w-28 md:h-42 shadow-2xl">
-        <CoverImage
-          :cover-url="book.cover_url"
-          :title="book.title || book.isbn"
-          :alt="book.title || book.isbn"
-          text-class="text-2xl"
-          :icon-size="20"
-          class="w-full h-full object-cover"
-        />
-      </div>
+  <!-- Two grid rows: cover + identity, then the record cluster indented under the identity column
+       so it reads as belonging to the title rather than to the cover. The mockup sat the cluster
+       beside the title, which only fits at its 1360px card width — on the app's ⅔ measure it would
+       leave the title barely 90px. -->
+  <div class="grid grid-cols-[auto_1fr] gap-x-4 md:gap-x-8 gap-y-7">
+    <div class="shrink-0 w-21 h-32 md:w-28 md:h-42 shadow-2xl self-end">
+      <CoverImage
+        :cover-url="book.cover_url"
+        :title="book.title || book.isbn"
+        :alt="book.title || book.isbn"
+        text-class="text-2xl"
+        :icon-size="20"
+        class="w-full h-full object-cover"
+      />
+    </div>
 
-      <div class="flex-1 min-w-0">
+    <div class="min-w-0 self-end">
         <!-- eyebrow: series / standalone · form · year -->
         <div
           class="flex flex-wrap items-baseline gap-x-1.5 text-[9px] md:text-[10px] tracking-[0.18em] md:tracking-[0.2em] uppercase text-text-secondary/70 mb-2 md:mb-3"
@@ -58,30 +59,29 @@
           @select="$emit('filter', 'author', $event)"
         />
 
-        <EnrichmentBadge
-          class="mt-2"
-          :status="book.enrichment_status"
-          :timed-out="pollTimedOut"
-          :guest="guest"
-          :readonly="readonly"
-          :icon-size="11"
-        />
-      </div>
-
-      <!-- The record cluster only fits beside the title on desktop; on mobile it becomes the
-           Record pane's stacked rows, from the same component. -->
-      <RecordControls
-        v-if="!readonly"
-        inline
-        class="hidden md:flex shrink-0 pb-1"
-        :book="book"
+      <EnrichmentBadge
+        class="mt-2"
+        :status="book.enrichment_status"
+        :timed-out="pollTimedOut"
         :guest="guest"
-        @set-status="$emit('set-status', $event)"
-        @set-owning-status="$emit('set-owning-status', $event)"
-        @set-rating="$emit('set-rating', $event)"
-        @edit="$emit('edit')"
+        :readonly="readonly"
+        :icon-size="11"
       />
     </div>
+
+    <!-- Row 2, second column only — on mobile these same controls are the Record pane's stacked
+         rows, rendered from this one component so the two layouts can't drift apart. -->
+    <RecordControls
+      v-if="!readonly"
+      inline
+      class="hidden md:flex col-start-2"
+      :book="book"
+      :guest="guest"
+      @set-status="$emit('set-status', $event)"
+      @set-owning-status="$emit('set-owning-status', $event)"
+      @set-rating="$emit('set-rating', $event)"
+      @edit="$emit('edit')"
+    />
   </div>
 </template>
 

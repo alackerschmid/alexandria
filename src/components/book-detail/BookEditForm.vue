@@ -1,5 +1,8 @@
 <template>
-  <div class="max-w-lg mx-auto px-6 py-10 pb-16">
+  <!-- On the detail's own measure, with the fields themselves capped at a comfortable form width
+       so a wide screen doesn't stretch a text input across the page. -->
+  <DetailMeasure class="py-10 pb-16">
+    <div class="max-w-lg">
     <!-- title -->
     <input
       v-model="form.title"
@@ -116,13 +119,14 @@
       />
     </div>
 
-    <p
-      v-if="saveError"
-      class="text-[10px] text-error tracking-widest uppercase mt-6"
-    >
-      {{ $t("detail.edit_error") }}
-    </p>
-  </div>
+      <p
+        v-if="saveError"
+        class="text-[10px] text-error tracking-widest uppercase mt-6"
+      >
+        {{ $t("detail.edit_error") }}
+      </p>
+    </div>
+  </DetailMeasure>
 </template>
 
 <script setup lang="ts">
@@ -131,6 +135,7 @@ import type { CustomFieldModel } from "@/utils/custom-fields";
 import { authorDisplayName } from "@/utils/book-display";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
+import DetailMeasure from "@/components/book-detail/DetailMeasure.vue";
 
 // **One screen with every editable field**: the per-user metadata overrides and the user's own
 // custom fields. Both models are owned by the parent, which performs the two saves and the
