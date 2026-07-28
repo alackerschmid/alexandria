@@ -237,19 +237,8 @@ import { computed, ref, watch } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
-import type { Book } from "@/types/book";
+import type { Book, WorkEdition } from "@/types/book";
 import CoverImage from "@/components/CoverImage.vue";
-
-interface WorkEdition {
-  isbn: string;
-  title: string | null;
-  language: string | null;
-  cover_url: string | null;
-  publish_date: string | null;
-  publisher: string | null;
-  scan_id: number | null;
-  materialized: boolean;
-}
 
 interface LanguageGroup {
   code: string;

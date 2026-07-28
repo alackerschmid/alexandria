@@ -37,9 +37,8 @@ export function useEditionGrouping(
 
     return order.map((key) => {
       const bucket = buckets.get(key)!;
-      // Setting editionCount to 1 here (rather than leaving it undefined) lets consumers like
-      // EditionCarousel tell "known single edition" apart from "grouping wasn't run" and skip
-      // work accordingly.
+      // Setting editionCount to 1 here (rather than leaving it undefined) lets consumers tell
+      // "known single edition" apart from "grouping wasn't run" and skip work accordingly.
       if (bucket.length === 1) return { ...bucket[0], editionCount: 1 };
 
       const representative = pickRepresentativeEdition(bucket);

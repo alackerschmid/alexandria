@@ -33,6 +33,10 @@ export interface Book {
    *  it rides the same `work_ratings` LEFT JOIN as `rating` and is always present on an API
    *  row, so making it optional would only push a `?? null` onto every reader. */
   review: string | null;
+  /** When the `work_ratings` row was last written (rating *or* review). Same per-work scope as
+   *  the two fields above, so it dates whichever was touched last — the review pane presents it
+   *  as the review's "written" date, which is what it is in practice for a book with a review. */
+  review_updated_at?: string | null;
   created_at: string;
   language?: string | null;
   publish_date?: string | null;
@@ -70,8 +74,39 @@ export interface Book {
   physical_format?: string | null;
   edition_name?: string | null;
   physical_dimensions?: string | null;
-  custom_field_values?: Array<{
-    field_def_id: number;
-    value: string | null;
-  }> | null;
+  custom_field_values?: CustomFieldValue[] | null;
+}
+
+export interface CustomFieldValue {
+  field_def_id: number;
+  value: string | null;
+}
+
+/** One row of `GET /api/works/:workId/editions` — another edition of the same work. `scan_id` is
+ *  non-null for the editions the user owns; `materialized` marks the ones that already have a full
+ *  `books` row rather than only a discovered ISBN. */
+export interface WorkEdition {
+  isbn: string;
+  title: string | null;
+  language: string | null;
+  cover_url: string | null;
+  publish_date: string | null;
+  publisher: string | null;
+  scan_id: number | null;
+  materialized: boolean;
+  status?: ReadStatus | null;
+}
+
+/** A `Book` as the detail view sees it: the same row plus the per-field "this was manually
+ *  overridden" flags `GET /api/scans` reports (0/1 integers, not booleans — D1 has no boolean).
+ *  Lives here rather than in `BookDetail.vue` because the panes, the edit form and `series.vue`
+ *  all need it, and importing a type from a component is a cycle waiting to happen. */
+export interface BookWithOverrides extends Book {
+  title_overridden?: number;
+  cover_url_overridden?: number;
+  language_overridden?: number;
+  publish_date_overridden?: number;
+  pages_overridden?: number;
+  description_overridden?: number;
+  publisher_overridden?: number;
 }

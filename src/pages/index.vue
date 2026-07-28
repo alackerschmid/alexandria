@@ -625,6 +625,7 @@
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
       @set-owning-status="(s) => setOwningStatus(selectedBook!, s)"
+      @set-rating="(r) => setRating(selectedBook!, r)"
       @open-rating="openPrompt(resolveBook(selectedBook!))"
       @delete="
         closeDetail();

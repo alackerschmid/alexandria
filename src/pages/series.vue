@@ -161,6 +161,7 @@
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @set-owning-status="(s) => setDetailOwningStatus(s)"
+    @set-rating="(r) => setDetailRating(r)"
     @open-rating="ratingPromptOpen = true"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
@@ -212,8 +213,12 @@ import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
-import type { BookWithOverrides } from "@/components/BookDetail.vue";
-import type { Book, OwningStatus, ReadStatus } from "@/types/book";
+import type {
+  Book,
+  BookWithOverrides,
+  OwningStatus,
+  ReadStatus,
+} from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
 import CoverImage from "@/components/CoverImage.vue";
 
