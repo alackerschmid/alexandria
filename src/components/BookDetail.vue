@@ -88,17 +88,15 @@
                 </DetailMeasure>
               </div>
 
-              <DetailTabs v-if="hasTabs" v-model="activeTab" :tabs="tabItems" />
+              <DetailTabs v-model="activeTab" :tabs="tabItems" />
 
               <!-- In the All view the selected tab is "All", so *this container* is its panel —
                    the individual sections are just sections. With a single tab selected the
                    container is anonymous and that pane carries the role instead. -->
               <DetailMeasure
                 id="detail-panel-all"
-                :role="hasTabs && activeTab === 'all' ? 'tabpanel' : undefined"
-                :aria-labelledby="
-                  hasTabs && activeTab === 'all' ? 'detail-tab-all' : undefined
-                "
+                :role="isAllView ? 'tabpanel' : undefined"
+                :aria-labelledby="isAllView ? 'detail-tab-all' : undefined"
                 class="py-8 md:py-10 pb-24 flex flex-col gap-13"
               >
                 <DetailSection
@@ -106,7 +104,7 @@
                   section-key="overview"
                   :panel="isPanel('overview')"
                   :title="$t('detail.tab_overview')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('overview')"
                   @toggle="toggleSection('overview')"
                 >
@@ -122,9 +120,8 @@
                   section-key="record"
                   :panel="isPanel('record')"
                   :title="$t('detail.your_record')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('record')"
-                  :summary="recordSummary"
                   @toggle="toggleSection('record')"
                 >
                   <RecordPane
@@ -142,7 +139,7 @@
                   section-key="details"
                   :panel="isPanel('details')"
                   :title="$t('detail.tab_details')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('details')"
                   :summary="
                     $t('detail.section_fields', { n: fieldCount }, fieldCount)
@@ -164,7 +161,7 @@
                   section-key="review"
                   :panel="isPanel('review')"
                   :title="$t('detail.tab_review')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('review')"
                   :summary="reviewSummary"
                   @toggle="toggleSection('review')"
@@ -181,20 +178,16 @@
                   section-key="editions"
                   :panel="isPanel('editions')"
                   :title="$t('detail.tab_editions')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('editions')"
-                  :summary="
-                    $t(
-                      'detail.editions_total',
-                      { n: editions.length },
-                      editions.length,
-                    )
-                  "
+                  :summary="editionsSummary"
                   @toggle="toggleSection('editions')"
                 >
                   <EditionsPane
                     :editions="editions"
                     :active-isbn="book.isbn"
+                    :loading="editionsLoading"
+                    :work-linked="book.work_id != null"
                     @show-all="editionsDialogOpen = true"
                     @select="onSelectEdition"
                   />
@@ -273,6 +266,7 @@ import {
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
+import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useLocaleStore } from "@/stores/locale";
 import { formatDateTime } from "@/utils/book-display";
@@ -282,6 +276,7 @@ import {
   buildTabs,
   detailsFieldCount,
   resolveActiveTab,
+  DEFAULT_TAB,
   type TabKey,
 } from "@/utils/detail-tabs";
 import {
@@ -313,13 +308,15 @@ import type { BookWithOverrides, OwningStatus, ReadStatus } from "@/types/book";
 // The book detail dialog: a compact card that expands into a full-screen masthead-plus-panes view.
 //
 // The full view is a **masthead** (identity + the four things you set) over a **tabbed body**.
-// "All" is the last tab and the default: it stacks every pane in one scroll under mono section
-// rules that double as disclosures, so the tabs read as a filter rather than a wall. Which tabs
-// exist is derived from the book — see `utils/detail-tabs.ts`; a pane that would be empty never
-// becomes a tab, and Review is the one exception (always offered, dotted until it's written).
+// "All" is the last tab: it stacks every pane in one scroll under mono section rules that double
+// as disclosures, so the tabs read as a filter rather than a wall. Overview is what a book opens
+// on. The tab set is the same for every book — see `utils/detail-tabs.ts` — so an empty pane says
+// so rather than vanishing; only `readonly` (Record/Review) and the breakpoint (Record) drop one.
 //
-// `mode` is deliberately component-local rather than routed, matching the pre-existing behaviour:
-// the URL identifies the *book* (`useDetailRoute`), not how far into it you are.
+// `mode` is component-local state mirrored into the URL by `useDetailRoute` (`?view=full`), so a
+// reload or a shared link lands back in the view the reader was actually in rather than snapping
+// down to the card. The URL stays the single source of truth across a page load; within a session
+// the ref leads and the query follows it.
 const props = defineProps<{
   modelValue: boolean;
   book: BookWithOverrides;
@@ -350,7 +347,12 @@ const router = useRouter();
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
-const mode = ref<"card" | "full">("card");
+const { detailView, setDetailView } = useDetailRoute();
+
+// Seeded from the route so a deep link that mounts already-open starts full; the `modelValue`
+// watcher below repeats this for the ordinary cold-load path, where the book resolves a tick
+// after mount and the dialog opens only then.
+const mode = ref<"card" | "full">(props.modelValue ? detailView.value : "card");
 const editionsDialogOpen = ref(false);
 const bodyEl = useTemplateRef<HTMLElement>("bodyEl");
 
@@ -358,9 +360,19 @@ function expand() {
   mode.value = "full";
 }
 
+// One writer for every path into and out of full mode — the masthead's back button, the
+// switch-edition reset and the close reset all just assign `mode`. Guarded on `modelValue` so the
+// reset that runs *as* the dialog closes doesn't race `closeDetail`, which strips `view` itself.
+watch(mode, (value) => {
+  if (props.modelValue) setDetailView(value);
+});
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const activeTab = ref<TabKey>("all");
+// `DEFAULT_TAB` comes from `detail-tabs` (one literal): `resolveActiveTab` only ever *replaces* a
+// tab that no longer exists, so a freshly-opened book has to be seeded with it here, and reset to
+// it on close.
+const activeTab = ref<TabKey>(DEFAULT_TAB);
 const collapsed = ref(new Set<TabKey>());
 
 // Whether the Record tab has to exist, i.e. whether the masthead's control cluster is hidden.
@@ -377,17 +389,18 @@ const onBreakpointChange = (e: MediaQueryListEvent) => {
   isMobile.value = !e.matches;
 };
 
-const { editions } = useWorkEditions({
+const { editions, loading: editionsLoading } = useWorkEditions({
   workId: () => props.book.work_id,
   enabled: () => props.modelValue && mode.value === "full",
   knownCount: () => props.book.editionCount,
 });
 
+// Deliberately not a function of `props.book`: the tab set no longer gates on content, so keeping
+// it off the book means a status/rating/review write doesn't rebuild the row and re-run
+// `resolveActiveTab` for a set that cannot have changed.
 const tabs = computed(() =>
   buildTabs({
-    book: props.book,
     readonly: props.readonly,
-    customFieldCount: props.guest ? 0 : fieldDefsStore.defs.length,
     editionCount: editions.value.length,
     mobile: isMobile.value,
   }),
@@ -398,26 +411,23 @@ const tabItems = computed(() =>
     key: tab.key,
     label: t(`detail.tab_${tab.key}`),
     badge: tab.badge,
-    dot: tab.dot,
   })),
 );
 
-/** False when a book yields a single pane — then there is no tab row and no "All". */
-const hasTabs = computed(() => tabs.value.length > 1);
-
-/** The All view is the only place section rules are drawn — a single tab already names its pane.
- *  `all` only ever exists alongside other tabs, so this needs no separate `hasTabs` test. */
-const showRules = computed(() => activeTab.value === "all");
+/** One definition of "every pane is stacked". It decides both the section rules (the All view is
+ *  the only place they're drawn — a single tab already names its pane) and which element carries
+ *  `role="tabpanel"`. */
+const isAllView = computed(() => activeTab.value === "all");
 
 /** Whether this pane is the selected tab's panel — false in the All view, where the container
- *  holds that role instead, and false when there is no tab row to be a panel of. */
+ *  holds that role instead. */
 function isPanel(key: TabKey): boolean {
-  return hasTabs.value && activeTab.value === key;
+  return activeTab.value === key;
 }
 
 function showPane(key: TabKey): boolean {
   if (!tabs.value.some((tab) => tab.key === key)) return false;
-  return activeTab.value === "all" || activeTab.value === key;
+  return isAllView.value || activeTab.value === key;
 }
 
 function toggleSection(key: TabKey) {
@@ -427,8 +437,8 @@ function toggleSection(key: TabKey) {
   collapsed.value = next;
 }
 
-// Keep the active tab valid as the set changes — switching to a book with no description while
-// Overview was selected must not leave a dead tab and a blank body.
+// Keep the active tab valid as the set changes — moving from an owned book to a readonly edition
+// while Record or Review was selected must not leave a dead tab and a blank body.
 watch(
   tabs,
   (list) => {
@@ -439,11 +449,22 @@ watch(
 
 // ── Section summaries (shown on a collapsed rule) ─────────────────────────────
 
-const fieldCount = computed(() => detailsFieldCount(props.book));
+// Custom fields are rows of the Details pane now, so they count towards its summary — every
+// definition shows, valued or not, exactly as the two catalogue columns do. Gated on the same
+// condition `DetailsPane` renders the column on, or a readonly edition's collapsed rule advertises
+// rows the pane never draws.
+const customFieldCount = computed(() =>
+  props.guest || props.readonly ? 0 : fieldDefsStore.defs.length,
+);
 
-const recordSummary = computed(() => {
-  const n = props.guest ? 0 : fieldDefsStore.defs.length;
-  return n ? t("detail.section_fields", { n }, n) : "";
+const fieldCount = computed(
+  () => detailsFieldCount(props.book) + customFieldCount.value,
+);
+
+// No count until the lookup returns something — an empty rule reads better than "0 editions".
+const editionsSummary = computed(() => {
+  const n = editions.value.length;
+  return n ? t("detail.editions_total", { n }, n) : undefined;
 });
 
 const reviewSummary = computed(() => {
@@ -561,7 +582,12 @@ watch(
     const sameWork =
       props.book.work_id != null && props.book.work_id === lastWorkId;
     lastWorkId = props.book.work_id;
-    if (!sameWork) mode.value = "card";
+    // The tab goes back to the default with `mode`, and for the same reason: switching editions of
+    // one work is a step inside a browse loop the user is already in, so it keeps their place.
+    if (!sameWork) {
+      mode.value = "card";
+      activeTab.value = DEFAULT_TAB;
+    }
     resetViewState();
     if (props.modelValue) startEnrichmentPoll();
   },
@@ -572,16 +598,33 @@ watch(
   (val) => {
     if (!val) {
       mode.value = "card";
+      activeTab.value = DEFAULT_TAB;
       resetViewState();
       clearPoll();
     } else {
+      // A reload restores `?view=full` before the book has loaded, so the view has to be taken
+      // from the route at the moment the dialog actually opens, not only at mount.
+      mode.value = detailView.value;
       startEnrichmentPoll();
     }
   },
 );
 
+// The custom-field definitions, loaded as soon as this detail is showing a record that *has* them.
+// Deliberately a watcher rather than an `onMounted` call: `series.vue` flips `readonly` on the same
+// mounted `BookDetail` as the user moves between an edition they don't own and one they do, so a
+// once-at-mount load leaves `defs` empty for the whole visit — `DetailsPane` would then assert "no
+// custom fields yet" and `customFieldCount` would under-count the collapsed Details summary. The
+// store early-returns once loaded, so re-entering the condition costs nothing.
+watch(
+  () => !props.guest && !props.readonly,
+  (ownRecord) => {
+    if (ownRecord) fieldDefsStore.load();
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
-  if (!props.guest && !props.readonly) fieldDefsStore.load();
   desktop.addEventListener("change", onBreakpointChange);
 });
 

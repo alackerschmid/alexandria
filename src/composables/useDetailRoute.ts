@@ -17,10 +17,21 @@ export function useDetailRoute() {
   const detailScanId = computed(() =>
     typeof route.query.scan === "string" ? Number(route.query.scan) : null,
   );
+  // Card vs full is view state rather than identity, but it still has to survive the URL: a
+  // reload (or a shared link) otherwise drops the reader back into the card they had already
+  // expanded past. `full` is the only value ever written — anything else reads as card.
+  const detailView = computed<"card" | "full">(() =>
+    route.query.view === "full" ? "full" : "card",
+  );
 
   // workId is optional — an edition not yet linked to a work has no id to encode, so the
   // isbn alone still identifies it. Callers resolve the actual Book from `edition`; `work`
   // is carried along only for a more descriptive/shareable URL.
+  //
+  // `view` deliberately rides along in the query spread rather than being reset: switching to
+  // another edition of the same work must stay in full mode. Opening an *unrelated* book from
+  // full mode carries it too, and `BookDetail`'s work-change watcher is what puts that back to
+  // card — which is also the only path that spends a second `replace`.
   function openDetail(
     workId: number | null | undefined,
     isbn: string,
@@ -46,6 +57,18 @@ export function useDetailRoute() {
     delete q.work;
     delete q.edition;
     delete q.scan;
+    delete q.view;
+    router.replace({ query: q });
+  }
+
+  // `replace`, not `push`: expanding a card isn't a step the browser Back button should have to
+  // undo one at a time — Back still leaves the detail entirely, exactly as it did before the
+  // view was routed.
+  function setDetailView(view: "card" | "full") {
+    if (detailView.value === view) return;
+    const q = { ...route.query };
+    if (view === "full") q.view = "full";
+    else delete q.view;
     router.replace({ query: q });
   }
 
@@ -53,7 +76,9 @@ export function useDetailRoute() {
     detailWorkId,
     detailEditionIsbn,
     detailScanId,
+    detailView,
     openDetail,
     closeDetail,
+    setDetailView,
   };
 }

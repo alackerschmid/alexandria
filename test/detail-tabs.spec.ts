@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   buildTabs,
   detailsFieldCount,
-  hasOverview,
   resolveActiveTab,
   workFactCount,
+  DEFAULT_TAB,
   type TabContext,
 } from "@/utils/detail-tabs";
 import type { Book } from "@/types/book";
@@ -27,110 +27,67 @@ function book(extra: Partial<Book> = {}): Book {
 }
 
 function ctx(extra: Partial<TabContext> = {}): TabContext {
-  return {
-    book: book(),
-    customFieldCount: 0,
-    mobile: false,
-    ...extra,
-  };
+  return { mobile: false, ...extra };
 }
 
 const keys = (c: TabContext) => buildTabs(c).map((t) => t.key);
 
-describe("hasOverview", () => {
-  it("is false when the book has no prose and no genres", () => {
-    expect(hasOverview(book())).toBe(false);
-  });
-
-  it.each([
-    ["description", { description: "A collection of essays." }],
-    ["first_line", { first_line: "We tell ourselves stories in order to live." }],
-    ["epigraph", { epigraph: "..." }],
-    ["genres", { genres: ["Essay"] }],
-  ])("is true from %s alone", (_label, extra) => {
-    expect(hasOverview(book(extra))).toBe(true);
-  });
-
-  it("ignores an empty genre array", () => {
-    expect(hasOverview(book({ genres: [] }))).toBe(false);
-  });
-});
-
 describe("buildTabs", () => {
-  it("drops Overview entirely when there is nothing to show, so the page opens on Details", () => {
-    expect(keys(ctx())).not.toContain("overview");
-    expect(resolveActiveTab(buildTabs(ctx()), null)).toBe("all");
+  it("offers every tab for a book with nothing in it — the row is the same for every book", () => {
+    expect(keys(ctx({ mobile: true }))).toEqual([
+      "overview",
+      "record",
+      "details",
+      "review",
+      "editions",
+      "all",
+    ]);
   });
 
-  it("always offers Review for an owned book, dotted until one is written", () => {
-    const unwritten = buildTabs(ctx()).find((t) => t.key === "review");
-    expect(unwritten?.dot).toBe(true);
-    const written = buildTabs(ctx({ book: book({ review: "Good." }) })).find(
-      (t) => t.key === "review",
-    );
-    expect(written?.dot).toBe(false);
+  it("drops Record on desktop, where the masthead already holds the same controls", () => {
+    expect(keys(ctx({ mobile: false }))).not.toContain("record");
+    expect(keys(ctx({ mobile: false }))).toContain("review");
   });
 
   it("drops Record and Review when readonly — nothing there is the user's to set", () => {
-    const readonly = keys(ctx({ readonly: true, mobile: true }));
+    const readonly = keys(ctx({ readonly: true }));
     expect(readonly).not.toContain("record");
     expect(readonly).not.toContain("review");
   });
 
-  it("offers Record on mobile even with no custom fields, since it holds the only controls", () => {
-    expect(keys(ctx({ mobile: true }))).toContain("record");
-  });
-
-  it("offers Record on desktop only once there are custom fields to show there", () => {
-    expect(keys(ctx({ mobile: false }))).not.toContain("record");
-    expect(keys(ctx({ mobile: false, customFieldCount: 2 }))).toContain(
-      "record",
-    );
-  });
-
-  it("offers Editions only for a work with more than one known edition", () => {
-    expect(keys(ctx({ editionCount: 1 }))).not.toContain("editions");
-    expect(keys(ctx({ editionCount: 4 }))).toContain("editions");
-    expect(
-      keys(ctx({ book: book({ work_id: null }), editionCount: 4 })),
-    ).not.toContain("editions");
-  });
-
-  it("carries the edition count as the tab badge", () => {
-    const tab = buildTabs(ctx({ editionCount: 4 })).find(
-      (t) => t.key === "editions",
-    );
-    expect(tab?.badge).toBe(4);
+  it("offers Editions whatever the edition count, badged only once there is a count", () => {
+    const badge = (c: TabContext) =>
+      buildTabs(c).find((t) => t.key === "editions")?.badge;
+    expect(keys(ctx({ editionCount: 1 }))).toContain("editions");
+    expect(badge(ctx({ editionCount: 4 }))).toBe(4);
+    expect(badge(ctx())).toBeUndefined();
+    expect(badge(ctx({ editionCount: 0 }))).toBeUndefined();
   });
 
   it("puts All last", () => {
-    expect(keys(ctx({ mobile: true, editionCount: 3 })).at(-1)).toBe("all");
-  });
-
-  it("omits All when only one pane survives — there is nothing to stack", () => {
-    expect(keys(ctx({ readonly: true }))).toEqual(["details"]);
+    expect(keys(ctx({ editionCount: 3 })).at(-1)).toBe("all");
   });
 });
 
 describe("resolveActiveTab", () => {
-  it("defaults to All", () => {
-    expect(resolveActiveTab(buildTabs(ctx({ mobile: true })), null)).toBe("all");
+  it("defaults to Overview", () => {
+    expect(resolveActiveTab(buildTabs(ctx()), null)).toBe("overview");
   });
 
   it("keeps the current tab when it still exists", () => {
-    const tabs = buildTabs(ctx({ mobile: true }));
+    const tabs = buildTabs(ctx());
     expect(resolveActiveTab(tabs, "details")).toBe("details");
   });
 
   it("falls back rather than leaving a dead tab selected when the set shrinks", () => {
-    // Overview was active; the next book has no description, so that tab is gone.
-    const tabs = buildTabs(ctx({ mobile: true }));
-    expect(tabs.map((t) => t.key)).not.toContain("overview");
-    expect(resolveActiveTab(tabs, "overview")).toBe("all");
+    // Record was active; the next book is a readonly edition, so that tab is gone.
+    const tabs = buildTabs(ctx({ readonly: true }));
+    expect(tabs.map((t) => t.key)).not.toContain("record");
+    expect(resolveActiveTab(tabs, "record")).toBe("overview");
   });
 
   it("never returns undefined for an empty set", () => {
-    expect(resolveActiveTab([], null)).toBe("details");
+    expect(resolveActiveTab([], null)).toBe(DEFAULT_TAB);
   });
 });
 

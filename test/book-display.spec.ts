@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { workSiblings, pickRepresentativeEdition } from "@/utils/book-display";
+import {
+  workSiblings,
+  pickRepresentativeEdition,
+  publishYear,
+  bookYear,
+} from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 
 function book(
@@ -77,5 +82,36 @@ describe("pickRepresentativeEdition", () => {
     const rated = book(1, 10, { status: "read", rating: 9, created_at: "2024-01-01" });
     const unrated = book(2, 10, { status: "read", created_at: "2025-06-01" });
     expect(pickRepresentativeEdition([rated, unrated])).toBe(unrated);
+  });
+});
+
+describe("publishYear", () => {
+  it.each([
+    ["2004", "2004"],
+    ["2004-01", "2004"],
+    ["2004-01-15", "2004"],
+    // `publish_date` is not guaranteed ISO — OpenLibrary passes through free-form edition
+    // records, and a leading 4-character slice turned this one into "Janu" on the card.
+    ["January 1, 2004", "2004"],
+    ["1 Jan 2004", "2004"],
+    ["c. 1979", "1979"],
+  ])("reads the year out of %s", (input, expected) => {
+    expect(publishYear(input)).toBe(expected);
+  });
+
+  it.each([null, undefined, "", "n.d.", "12345"])(
+    "is empty when there is no 4-digit year (%s)",
+    (input) => {
+      expect(publishYear(input)).toBe("");
+    },
+  );
+
+  it("prefers the edition's own date over the work's original one", () => {
+    const b = book(1, 10, {
+      publish_date: "January 1, 2004",
+      original_pub_date: "1936",
+    });
+    expect(bookYear(b)).toBe("2004");
+    expect(bookYear({ ...b, publish_date: null })).toBe("1936");
   });
 });
