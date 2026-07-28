@@ -6,6 +6,7 @@
          block here that isn't theirs, so it must not push everything else off screen. -->
     <div v-if="book.description" class="mb-8">
       <p
+        ref="blurbEl"
         class="text-[15px] md:text-base leading-[1.8] text-text-secondary text-pretty"
         :class="expanded ? '' : 'line-clamp-7'"
       >
@@ -25,7 +26,7 @@
     </div>
 
     <div v-if="book.first_line" class="mb-8">
-      <div class="pane-label mb-3">{{ $t("detail.first_line") }}</div>
+      <div class="micro-label mb-3">{{ $t("detail.first_line") }}</div>
       <p
         class="text-sm md:text-[15px] leading-[1.8] text-text-secondary italic border-l-2 border-charcoal-border pl-4"
       >
@@ -34,7 +35,7 @@
     </div>
 
     <div v-if="book.epigraph" class="mb-8">
-      <div class="pane-label mb-3">{{ $t("detail.epigraph") }}</div>
+      <div class="micro-label mb-3">{{ $t("detail.epigraph") }}</div>
       <p
         class="text-sm md:text-[15px] leading-[1.8] text-text-secondary italic border-l-2 border-charcoal-border pl-4"
       >
@@ -58,7 +59,14 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from "vue";
+import {
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  useTemplateRef,
+  watch,
+} from "vue";
 import OverrideDot from "@/components/OverrideDot.vue";
 import type { BookWithOverrides } from "@/types/book";
 
@@ -75,21 +83,33 @@ defineEmits<{
   filter: [field: "genre", value: string];
 }>();
 
-// Rough character budget for seven lines at this measure — cheap enough to compute per render and
-// avoids the layout thrash of measuring scrollHeight just to decide whether to offer "More".
-const CLAMP_CHARS = 520;
+// Whether the blurb is actually being cut off, measured rather than guessed from its length: how
+// many characters fit in seven lines depends on the column width, and a character budget tuned for
+// the desktop measure silently withholds "Show more" on mobile, where the same text wraps to far
+// more lines — leaving the tail unreachable. Comparing scrollHeight to clientHeight asks the
+// question the clamp actually answers, at whatever width the pane happens to be.
+const blurbEl = useTemplateRef<HTMLElement>("blurbEl");
+const clampable = ref(false);
 
-const clampable = computed(
-  () => (props.book.description?.length ?? 0) > CLAMP_CHARS,
+function measureClamp() {
+  const el = blurbEl.value;
+  // Only meaningful while the clamp is applied; once expanded the element is its full height and
+  // would measure as not-overflowing, which would pull the "Show less" button out from under it.
+  if (!el || props.expanded) return;
+  clampable.value = el.scrollHeight - el.clientHeight > 1;
+}
+
+let observer: ResizeObserver | null = null;
+onMounted(() => {
+  observer = new ResizeObserver(measureClamp);
+  if (blurbEl.value) observer.observe(blurbEl.value);
+  measureClamp();
+});
+onUnmounted(() => observer?.disconnect());
+
+// A new book re-renders the same <p>, so the observer may not fire — re-measure explicitly.
+watch(
+  () => props.book.description,
+  () => nextTick(measureClamp),
 );
 </script>
-
-<style scoped>
-.pane-label {
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  opacity: 0.75;
-}
-</style>

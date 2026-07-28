@@ -94,7 +94,6 @@ export interface WorkEdition {
   publisher: string | null;
   scan_id: number | null;
   materialized: boolean;
-  status?: ReadStatus | null;
 }
 
 /** A `Book` as the detail view sees it: the same row plus the per-field "this was manually

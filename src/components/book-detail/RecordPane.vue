@@ -13,7 +13,7 @@
     />
 
     <div v-if="!guest && fieldDefsStore.defs.length">
-      <div class="pane-label mb-3.5">{{ $t("detail.custom_fields") }}</div>
+      <div class="micro-label mb-3.5">{{ $t("detail.custom_fields") }}</div>
       <div
         v-for="def in fieldDefsStore.defs"
         :key="def.id"
@@ -30,13 +30,8 @@
           {{ displayValue(def) || "—" }}
         </span>
       </div>
-      <button
-        class="hidden md:flex mt-5 items-center gap-2 border border-control-border px-3.5 py-2.5 text-[10px] tracking-[0.13em] uppercase text-text-primary hover:border-orange-neon transition-colors"
-        @click="$emit('edit')"
-      >
-        <v-icon icon="mdi-pencil-outline" size="13" />
-        {{ $t("detail.edit_fields") }}
-      </button>
+      <!-- Desktop only: on mobile the same control is already in the RecordControls stack above. -->
+      <EditFieldsButton class="hidden md:flex mt-5" @click="$emit('edit')" />
     </div>
   </div>
 </template>
@@ -46,6 +41,7 @@ import { useFieldDefsStore, type FieldDef } from "@/stores/fieldDefs";
 import { bookCustomValue } from "@/utils/custom-fields";
 import { parseTagList } from "@/utils/tags";
 import RecordControls from "@/components/book-detail/RecordControls.vue";
+import EditFieldsButton from "@/components/book-detail/EditFieldsButton.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 // Everything about this book that is *yours*: the four controls (on mobile, where the masthead
@@ -71,13 +67,3 @@ function displayValue(def: FieldDef): string {
   return raw ?? "";
 }
 </script>
-
-<style scoped>
-.pane-label {
-  font-size: 10px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--color-text-secondary);
-  opacity: 0.75;
-}
-</style>

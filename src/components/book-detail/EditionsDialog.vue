@@ -237,6 +237,7 @@ import { computed, ref, watch } from "vue";
 import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
+import { editionBorderClass, editionYear } from "@/utils/book-display";
 import type { Book, WorkEdition } from "@/types/book";
 import CoverImage from "@/components/CoverImage.vue";
 
@@ -257,6 +258,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [value: boolean];
   refreshed: [updated: Partial<Book>];
+  /** Open a *different owned scan* of this work — navigation, not an edition switch. */
+  select: [isbn: string, scanId: number];
 }>();
 
 const { apiFetch } = useApi();
@@ -300,12 +303,27 @@ const visibleGroups = computed(() =>
     : languageGroups.value.filter((g) => g.code === activeLanguage.value),
 );
 
+/** An edition the user already owns is a *different scan*, reachable on its own — opening it is
+ *  navigation, not a mutation, so it needs no confirm step and works in readonly/guest mode too. */
+function isOwnedSibling(ed: WorkEdition) {
+  return ed.scan_id != null && ed.isbn !== props.book.isbn;
+}
+
 function isClickable(ed: WorkEdition) {
-  return canSwitch.value && ed.isbn !== props.book.isbn;
+  if (ed.isbn === props.book.isbn) return false;
+  return isOwnedSibling(ed) || canSwitch.value;
 }
 
 function onCardClick(ed: WorkEdition) {
   if (!isClickable(ed)) return;
+  // Switching *to an edition you already own* is what `PATCH /api/scans/:id/edition` rejects with
+  // a 409 — you'd end up with two scans of the same book. Go to that scan's own detail instead,
+  // which is what the user meant by clicking it.
+  if (isOwnedSibling(ed)) {
+    emit("select", ed.isbn, ed.scan_id!);
+    emit("update:modelValue", false);
+    return;
+  }
   if (pendingSwitchIsbn.value !== ed.isbn) {
     pendingSwitchIsbn.value = ed.isbn;
     return;
@@ -314,14 +332,8 @@ function onCardClick(ed: WorkEdition) {
   switchTo(ed.isbn);
 }
 
-function editionYear(ed: WorkEdition) {
-  return ed.publish_date?.slice(0, 4) ?? "";
-}
-
 function cardBorderClass(ed: WorkEdition) {
-  if (ed.isbn === props.book.isbn) return "border-2 border-orange-neon";
-  if (ed.scan_id) return "border border-orange-neon/50";
-  return "border border-charcoal-border";
+  return editionBorderClass(ed, props.book.isbn);
 }
 
 async function load() {

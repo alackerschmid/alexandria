@@ -59,7 +59,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLocaleStore } from "@/stores/locale";
-import { BCP47 } from "@/plugins/i18n";
+import { formatDateTime } from "@/utils/book-display";
 import { reviewWordCount } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
 import RatingStars from "@/components/RatingStars.vue";
@@ -80,15 +80,9 @@ defineEmits<{
 const { t } = useI18n();
 const localeStore = useLocaleStore();
 
-const writtenOn = computed(() => {
-  if (!props.book.review_updated_at) return null;
-  const loc = BCP47[localeStore.locale] ?? "en-GB";
-  return new Date(props.book.review_updated_at).toLocaleDateString(loc, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-});
+const writtenOn = computed(() =>
+  formatDateTime(props.book.review_updated_at, localeStore.locale),
+);
 
 // Shown for every review, however short. Each part still drops out when there's nothing to say:
 // no rating, or a review written before `work_ratings.updated_at` was carried on the row.

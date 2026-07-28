@@ -88,16 +88,23 @@
                 </DetailMeasure>
               </div>
 
-              <DetailTabs
-                v-if="tabs.length > 1"
-                v-model="activeTab"
-                :tabs="tabItems"
-              />
+              <DetailTabs v-if="hasTabs" v-model="activeTab" :tabs="tabItems" />
 
-              <DetailMeasure class="py-8 md:py-10 pb-24 flex flex-col gap-13">
+              <!-- In the All view the selected tab is "All", so *this container* is its panel —
+                   the individual sections are just sections. With a single tab selected the
+                   container is anonymous and that pane carries the role instead. -->
+              <DetailMeasure
+                id="detail-panel-all"
+                :role="hasTabs && activeTab === 'all' ? 'tabpanel' : undefined"
+                :aria-labelledby="
+                  hasTabs && activeTab === 'all' ? 'detail-tab-all' : undefined
+                "
+                class="py-8 md:py-10 pb-24 flex flex-col gap-13"
+              >
                 <DetailSection
                   v-if="showPane('overview')"
                   section-key="overview"
+                  :panel="isPanel('overview')"
                   :title="$t('detail.tab_overview')"
                   :rule="showRules"
                   :collapsed="collapsed.has('overview')"
@@ -113,6 +120,7 @@
                 <DetailSection
                   v-if="showPane('record')"
                   section-key="record"
+                  :panel="isPanel('record')"
                   :title="$t('detail.your_record')"
                   :rule="showRules"
                   :collapsed="collapsed.has('record')"
@@ -132,6 +140,7 @@
                 <DetailSection
                   v-if="showPane('details')"
                   section-key="details"
+                  :panel="isPanel('details')"
                   :title="$t('detail.tab_details')"
                   :rule="showRules"
                   :collapsed="collapsed.has('details')"
@@ -153,6 +162,7 @@
                 <DetailSection
                   v-if="showPane('review')"
                   section-key="review"
+                  :panel="isPanel('review')"
                   :title="$t('detail.tab_review')"
                   :rule="showRules"
                   :collapsed="collapsed.has('review')"
@@ -169,6 +179,7 @@
                 <DetailSection
                   v-if="showPane('editions')"
                   section-key="editions"
+                  :panel="isPanel('editions')"
                   :title="$t('detail.tab_editions')"
                   :rule="showRules"
                   :collapsed="collapsed.has('editions')"
@@ -185,6 +196,7 @@
                     :editions="editions"
                     :active-isbn="book.isbn"
                     @show-all="editionsDialogOpen = true"
+                    @select="onSelectEdition"
                   />
                 </DetailSection>
 
@@ -213,6 +225,7 @@
                 :guest="guest"
                 :readonly="readonly"
                 @refreshed="onEditionsRefreshed"
+                @select="onSelectEdition"
               />
             </template>
 
@@ -262,7 +275,7 @@ import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useLocaleStore } from "@/stores/locale";
-import { BCP47 } from "@/plugins/i18n";
+import { formatDateTime } from "@/utils/book-display";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
 import { useWorkEditions } from "@/composables/useWorkEditions";
 import {
@@ -278,6 +291,7 @@ import {
   customFieldValues as toCustomFieldValues,
   type CustomFieldModel,
 } from "@/utils/custom-fields";
+import { stripTagValue } from "@/utils/tags";
 import { reviewWordCount } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
 import BookDetailCard from "@/components/book-detail/BookDetailCard.vue";
@@ -349,25 +363,30 @@ function expand() {
 const activeTab = ref<TabKey>("all");
 const collapsed = ref(new Set<TabKey>());
 
-// Matches Tailwind's `md` (840px), the app's mobile/desktop threshold. Read once per resize rather
-// than via useDisplay() so the whole detail keeps deciding layout in one place.
-const isMobile = ref(
-  typeof window !== "undefined" ? window.innerWidth < 840 : false,
-);
-function onResize() {
-  isMobile.value = window.innerWidth < 840;
-}
+// Whether the Record tab has to exist, i.e. whether the masthead's control cluster is hidden.
+//
+// This *must* be the same test the CSS makes, not an equivalent-looking one: the cluster's
+// visibility is `hidden md:flex`, so asking `window.innerWidth < 840` instead would be a second,
+// independently-rounded answer to the same question. `innerWidth` is an integer while the media
+// query compares the fractional layout width, so at some zoom levels the two disagree — and when
+// they do, the user gets no Record tab *and* no masthead controls: no way to set status, ownership
+// or rating at all. `matchMedia` with the identical query can't drift.
+const desktop = window.matchMedia("(min-width: 840px)");
+const isMobile = ref(!desktop.matches);
+const onBreakpointChange = (e: MediaQueryListEvent) => {
+  isMobile.value = !e.matches;
+};
 
-const { editions } = useWorkEditions(
-  () => props.book.work_id,
-  () => props.modelValue && mode.value === "full",
-);
+const { editions } = useWorkEditions({
+  workId: () => props.book.work_id,
+  enabled: () => props.modelValue && mode.value === "full",
+  knownCount: () => props.book.editionCount,
+});
 
 const tabs = computed(() =>
   buildTabs({
     book: props.book,
     readonly: props.readonly,
-    guest: props.guest,
     customFieldCount: props.guest ? 0 : fieldDefsStore.defs.length,
     editionCount: editions.value.length,
     mobile: isMobile.value,
@@ -383,10 +402,18 @@ const tabItems = computed(() =>
   })),
 );
 
-/** The All view is the only place section rules are drawn — a single tab already names its pane. */
-const showRules = computed(
-  () => activeTab.value === "all" && tabs.value.length > 1,
-);
+/** False when a book yields a single pane — then there is no tab row and no "All". */
+const hasTabs = computed(() => tabs.value.length > 1);
+
+/** The All view is the only place section rules are drawn — a single tab already names its pane.
+ *  `all` only ever exists alongside other tabs, so this needs no separate `hasTabs` test. */
+const showRules = computed(() => activeTab.value === "all");
+
+/** Whether this pane is the selected tab's panel — false in the All view, where the container
+ *  holds that role instead, and false when there is no tab row to be a panel of. */
+function isPanel(key: TabKey): boolean {
+  return hasTabs.value && activeTab.value === key;
+}
 
 function showPane(key: TabKey): boolean {
   if (!tabs.value.some((tab) => tab.key === key)) return false;
@@ -427,15 +454,9 @@ const reviewSummary = computed(() => {
 
 // ── Computed helpers ──────────────────────────────────────────────────────────
 
-const formattedAdded = computed(() => {
-  if (!props.book.created_at) return "—";
-  const loc = BCP47[localeStore.locale] ?? "en-GB";
-  return new Date(props.book.created_at).toLocaleDateString(loc, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-});
+const formattedAdded = computed(
+  () => formatDateTime(props.book.created_at, localeStore.locale) ?? "—",
+);
 
 // ── Edit state ────────────────────────────────────────────────────────────────
 
@@ -516,6 +537,13 @@ function onEditionsRefreshed(updated: Partial<BookWithOverrides>) {
   emit("refreshed", updated);
 }
 
+/** Another owned edition of this work was picked — ask the host to open that scan's detail. Same
+ *  work, so the `lastWorkId` watcher below keeps the view in full mode rather than snapping back
+ *  to the card. */
+function onSelectEdition(isbn: string, scanId: number) {
+  emit("switch-edition", { isbn, scanId });
+}
+
 // ── Watchers ──────────────────────────────────────────────────────────────────
 
 function resetViewState() {
@@ -554,11 +582,10 @@ watch(
 
 onMounted(() => {
   if (!props.guest && !props.readonly) fieldDefsStore.load();
-  window.addEventListener("resize", onResize, { passive: true });
-  onResize();
+  desktop.addEventListener("change", onBreakpointChange);
 });
 
-onUnmounted(() => window.removeEventListener("resize", onResize));
+onUnmounted(() => desktop.removeEventListener("change", onBreakpointChange));
 
 function enterEdit() {
   form.value.title = props.book.title ?? "";
@@ -573,13 +600,22 @@ function enterEdit() {
   editing.value = true;
 }
 
-/** A tag global-delete already hit the server and stripped the value from every book — reseed the
- *  draft from the definitions so the form isn't holding a value that no longer exists anywhere. */
-function onTagDeleted() {
+/**
+ * A tag global-delete already hit the server and stripped the value from every book, so the book
+ * this component was handed is now stale by exactly that one value.
+ *
+ * Only that value is removed — the patch is built from the book's *saved* `custom_field_values`,
+ * never from the edit draft. Sending the draft would commit whatever else the user has typed but
+ * not saved, so a subsequent Cancel would leave those edits showing until the next refetch.
+ */
+function onTagDeleted(defId: number, value: string) {
+  const saved = props.book.custom_field_values;
+  if (!saved) return;
   emit("refreshed", {
-    custom_field_values: toCustomFieldValues(
-      customValues.value,
-      fieldDefsStore.defs,
+    custom_field_values: saved.map((v) =>
+      v.field_def_id === defId
+        ? { ...v, value: stripTagValue(v.value, value) }
+        : v,
     ),
   });
 }

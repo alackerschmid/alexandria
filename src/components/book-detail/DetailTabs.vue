@@ -98,14 +98,28 @@ function step(delta: number) {
   jump(Math.min(props.tabs.length - 1, Math.max(0, i + delta)));
 }
 
-// The active tab has to be brought into view rather than assumed visible: "All" is the default
-// and sits last, so on a narrow screen the row starts scrolled past its own beginning. `inline:
-// "nearest"` keeps an already-visible tab still — this must not yank the row on every click.
+// The active tab has to be brought into view rather than assumed visible: "All" is the default and
+// sits last, so on a narrow screen the row starts scrolled past its own beginning.
+//
+// Deliberately not `scrollIntoView` — it can't be limited to one axis, so with the tab row scrolled
+// above the fold it also scrolls the detail's *body* back up to reveal it. Since a ResizeObserver
+// drives this, any window resize while the user was reading further down would throw their place
+// away. Writing `scrollLeft` touches only the axis that needs it, and leaves an already-visible tab
+// exactly where it is.
 async function revealActive() {
   await nextTick();
-  tabEls
-    .get(props.modelValue)
-    ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  const row = scroller.value;
+  const tab = tabEls.get(props.modelValue);
+  if (!row || !tab) return;
+  const left = tab.offsetLeft - row.clientWidth / 2 + tab.offsetWidth / 2;
+  const max = row.scrollWidth - row.clientWidth;
+  const target = Math.max(0, Math.min(max, left));
+  // Don't fight a row that already shows the tab — only scroll when it is actually out of view.
+  const start = row.scrollLeft;
+  const visible =
+    tab.offsetLeft >= start &&
+    tab.offsetLeft + tab.offsetWidth <= start + row.clientWidth;
+  if (!visible) row.scrollLeft = target;
 }
 
 watch(() => props.modelValue, revealActive, { immediate: true });

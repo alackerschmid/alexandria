@@ -1,8 +1,11 @@
 <template>
+  <!-- Only the pane that *is* the selected tab carries tabpanel semantics. In the All view five
+       panes are on screen at once and none of them is the selected tab — "All" is — so the
+       tabpanel role belongs to the container around them (see BookDetail), not to each one. -->
   <section
     :id="`detail-panel-${sectionKey}`"
-    role="tabpanel"
-    :aria-labelledby="`detail-tab-${sectionKey}`"
+    :role="panel ? 'tabpanel' : undefined"
+    :aria-labelledby="panel ? `detail-tab-${sectionKey}` : undefined"
   >
     <!-- The rule exists only in the All view. With a single tab active the tab itself already
          names the section, so a header repeating it would be noise. -->
@@ -52,6 +55,9 @@
 defineProps<{
   sectionKey: string;
   title: string;
+  /** True when this pane is the currently selected tab, and so is the view's `tabpanel`. False in
+   *  the All view and when there is no tab row at all. */
+  panel: boolean;
   /** Whether to draw the section rule at all — true only in the All view. */
   rule: boolean;
   collapsed: boolean;

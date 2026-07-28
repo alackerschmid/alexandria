@@ -157,8 +157,10 @@ import TagInput from "@/components/book-detail/TagInput.vue";
 const model = defineModel<CustomFieldModel>("values", { required: true });
 
 const emit = defineEmits<{
-  /** The tag global-delete stripped a value from every book, including this one. */
-  refreshed: [];
+  /** The tag global-delete stripped this value from every book in the library, including this
+   *  one. Carries the field and value so the parent can apply just that change rather than
+   *  committing the whole in-progress draft. */
+  "tag-deleted": [defId: number, value: string];
 }>();
 
 const { t } = useI18n();
@@ -307,8 +309,9 @@ async function confirmDeleteTag(id: number, value: string) {
     cfError.value = true;
     return;
   }
-  // Server stripped the tag from every book (including this one) — reflect it locally, then let
-  // the parent re-sync: the delete already hit the server, so this is not part of the form draft.
+  // Server stripped the tag from every book (including this one) — drop it from the draft too,
+  // and tell the parent exactly *which* value went, so it can apply that one change to the saved
+  // book. Handing over the whole draft here would commit unsaved edits the user could still cancel.
   const current = model.value[id];
   if (Array.isArray(current) && current.includes(value)) {
     model.value = {
@@ -316,6 +319,6 @@ async function confirmDeleteTag(id: number, value: string) {
       [id]: current.filter((v) => v !== value),
     };
   }
-  emit("refreshed");
+  emit("tag-deleted", id, value);
 }
 </script>

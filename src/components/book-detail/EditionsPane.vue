@@ -7,7 +7,7 @@
         v-for="ed in visible"
         :key="ed.isbn"
         class="text-left group"
-        @click="onPick()"
+        @click="onPick(ed)"
       >
         <div
           class="aspect-[2/3] overflow-hidden transition-colors"
@@ -51,6 +51,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
+import { editionBorderClass, editionYear } from "@/utils/book-display";
 import CoverImage from "@/components/CoverImage.vue";
 import type { WorkEdition } from "@/types/book";
 
@@ -69,7 +70,11 @@ const props = withDefaults(
   { limit: 8 },
 );
 
-const emit = defineEmits<{ "show-all": [] }>();
+const emit = defineEmits<{
+  "show-all": [];
+  /** Open a different owned scan of this work. */
+  select: [isbn: string, scanId: number];
+}>();
 
 const { t } = useI18n();
 const localeStore = useLocaleStore();
@@ -84,20 +89,23 @@ const ordered = computed(() =>
 
 const visible = computed(() => ordered.value.slice(0, props.limit));
 
-// Every tile opens the dialog rather than switching in place: moving a scan to a different edition
-// is a real mutation, and it keeps its click-twice confirm step there.
-function onPick() {
+// A tile for an edition you already own goes straight to that scan's detail — it's another copy in
+// your library, and opening it is navigation. Everything else opens the dialog, because moving a
+// scan *to* a different edition is a real mutation that keeps its click-twice confirm step there.
+function onPick(ed: WorkEdition) {
+  if (ed.scan_id != null && ed.isbn !== props.activeIsbn) {
+    emit("select", ed.isbn, ed.scan_id);
+    return;
+  }
   emit("show-all");
 }
 
 function borderClass(ed: WorkEdition) {
-  if (ed.isbn === props.activeIsbn) return "border-2 border-orange-neon";
-  if (ed.scan_id) return "border border-orange-neon/50";
-  return "border border-charcoal-border group-hover:border-control-border";
+  return editionBorderClass(ed, props.activeIsbn);
 }
 
 function caption(ed: WorkEdition) {
-  const year = ed.publish_date?.slice(0, 4) ?? "";
+  const year = editionYear(ed);
   if (ed.isbn === props.activeIsbn) {
     return [t("detail.your_copy"), year].filter(Boolean).join(" · ");
   }
