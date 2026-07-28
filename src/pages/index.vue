@@ -625,6 +625,7 @@
       @cycle-status="cycleStatus(selectedBook!)"
       @set-status="(s) => setStatus(selectedBook!, s)"
       @set-owning-status="(s) => setOwningStatus(selectedBook!, s)"
+      @set-rating="(r) => setRating(selectedBook!, r)"
       @open-rating="openPrompt(resolveBook(selectedBook!))"
       @delete="
         closeDetail();
@@ -1094,8 +1095,14 @@ function onSwitchEdition(payload: { isbn: string; scanId: number }) {
 // Resolve selectedBook from the URL (handles Back/Forward and deep links)
 watch(
   [detailEditionIsbn, allBooks],
-  ([isbn]) => {
+  ([isbn], [prevIsbn]) => {
     if (!isbn) {
+      // Only when the detail actually *closed* — this watcher also re-runs whenever `allBooks`
+      // recomputes (an optimistic status write does that), and a card-raised prompt has no detail
+      // open, so closing unconditionally would shut the dialog the user just triggered from a card.
+      // RatingDialog stays mounted here (`promptBook` is untouched), so it sees the close and
+      // flushes its review draft normally.
+      if (prevIsbn) promptOpen.value = false;
       selectedBook.value = null;
       return;
     }

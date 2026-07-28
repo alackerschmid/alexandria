@@ -35,7 +35,11 @@
           </button>
         </div>
 
-        <AuthorChips :book="book" @select="$emit('filter', 'author', $event)" />
+        <AuthorChips
+          :book="book"
+          class="mb-3"
+          @select="$emit('filter', 'author', $event)"
+        />
 
         <!-- series label -->
         <button
@@ -225,7 +229,7 @@ import AuthorChips from "@/components/book-detail/AuthorChips.vue";
 import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
 import CoverImage from "@/components/CoverImage.vue";
 import OverrideDot from "@/components/OverrideDot.vue";
-import type { BookWithOverrides } from "@/components/BookDetail.vue";
+import type { BookWithOverrides } from "@/types/book";
 
 // The structured-filter fields the card can trigger (author chip, genre fact).
 type FilterField = "author" | "genre";

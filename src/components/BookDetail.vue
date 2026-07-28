@@ -23,744 +23,303 @@
 
     <!-- ── FULL MODE ──────────────────────────────────────────────────────── -->
     <template v-else>
-      <div class="bg-charcoal flex flex-col h-dvh">
-        <!-- sticky top bar -->
-        <div
-          class="shrink-0 flex items-center justify-between px-6 md:px-10 py-4 border-b border-charcoal-border bg-charcoal z-10"
-        >
-          <button
-            class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
-            @click="mode = 'card'"
+      <!-- One scroll container for everything, with the top bar and edit footer stuck to its
+           edges rather than sitting outside it. A separate non-scrolling header would centre on
+           the full viewport while the body centres inside its own scrollbar-narrowed content box,
+           so the two would disagree by the scrollbar's width — visible as the header's "back"
+           label not lining up with the content beneath it. -->
+      <div ref="bodyEl" class="bg-charcoal h-dvh overflow-y-auto">
+        <!-- `min-h-full` + a `flex-1` content region so the sticky edit footer still lands at the
+             bottom of the viewport when the form is shorter than the screen, instead of floating
+             directly under it. -->
+        <div class="min-h-full flex flex-col">
+          <!-- Back and close only. Editing folded into the record row, delete moved to the footer
+             where it can't be hit by accident, refresh down beside the facts it repopulates. -->
+          <div
+            class="sticky top-0 z-10 border-b border-charcoal-border bg-charcoal"
           >
-            <v-icon icon="mdi-arrow-left" size="16" />
-            <span class="text-[10px] tracking-[0.18em] uppercase">{{
-              $t("detail.back_to_card")
-            }}</span>
-          </button>
-          <div class="flex items-center gap-2">
-            <template v-if="!editing">
+            <DetailMeasure class="flex items-center justify-between py-4">
               <button
-                v-if="!guest && !readonly"
-                class="text-text-secondary/50 hover:text-text-secondary transition-colors"
-                :aria-label="$t('detail.edit')"
-                @click="enterEdit"
+                class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
+                @click="mode = 'card'"
               >
-                <v-icon icon="mdi-pencil-outline" size="18" />
+                <v-icon icon="mdi-arrow-left" size="16" />
+                <span class="text-[10px] tracking-[0.18em] uppercase">{{
+                  $t("detail.back_to_card")
+                }}</span>
               </button>
-              <button
-                v-if="!guest && !readonly"
-                class="transition-colors disabled:opacity-30"
-                :class="enrichmentButtonClass"
-                :disabled="refreshing"
-                :aria-label="
-                  refreshing ? $t('detail.loading') : $t('detail.refresh')
-                "
-                @click="refresh"
-              >
-                <v-icon
-                  icon="mdi-refresh"
-                  size="18"
-                  :class="refreshing ? 'animate-spin' : ''"
-                />
-              </button>
-              <button
-                v-if="!readonly"
-                class="text-error/60 hover:text-error transition-colors"
-                :aria-label="$t('detail.remove')"
-                @click="$emit('delete')"
-              >
-                <v-icon icon="mdi-delete-outline" size="18" />
-              </button>
-            </template>
-            <template v-else>
-              <button
-                class="text-text-secondary/50 hover:text-text-secondary transition-colors"
-                :aria-label="$t('detail.edit_cancel')"
-                @click="editing = false"
-              >
-                <v-icon icon="mdi-close" size="18" />
-              </button>
-            </template>
-            <button
-              class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
-              :aria-label="$t('detail.close')"
-              @click="$emit('update:modelValue', false)"
-            >
-              <v-icon icon="mdi-close" size="20" />
-            </button>
-          </div>
-        </div>
-
-        <!-- scrollable body -->
-        <div class="flex-1 overflow-y-auto">
-          <!-- view mode -->
-          <template v-if="!editing">
-            <div
-              v-if="book.work_id"
-              class="w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10 pt-8"
-            >
-              <EditionCarousel
-                :work-id="book.work_id"
-                :active-isbn="book.isbn"
-                :edition-count="book.editionCount"
-                @select="onSelectEdition"
-              />
-            </div>
-            <div
-              class="w-full md:max-w-[66.6667%] mx-auto px-6 md:px-10 py-10 md:py-14 flex flex-col md:flex-row items-start gap-10 lg:gap-14"
-            >
-              <!-- cover column (desktop only) -->
-              <div
-                class="hidden md:flex md:w-56 lg:w-64 shrink-0 flex-col items-center pt-2"
-              >
-                <div class="w-48 h-72 relative">
-                  <CoverImage
-                    :cover-url="book.cover_url"
-                    :title="book.title || book.isbn"
-                    :alt="book.title || book.isbn"
-                    text-class="text-5xl"
-                    :icon-size="28"
-                    class="w-full h-full object-cover shadow-2xl"
-                  />
-                </div>
-
-                <!-- edition details (desktop) -->
-                <EditionDetails :book="book" class="w-full mt-6" />
-
-                <!-- other editions -->
+              <div class="flex items-center gap-2">
                 <button
-                  v-if="book.work_id"
-                  class="flex items-center gap-2 text-[10px] tracking-[0.2em] uppercase text-text-secondary hover:text-text-primary transition-colors"
-                  @click="editionsDialogOpen = true"
+                  v-if="editing"
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                  :aria-label="$t('detail.edit_cancel')"
+                  @click="editing = false"
                 >
-                  <v-icon icon="mdi-book-multiple-outline" size="14" />
-                  {{ $t("detail.view_editions") }}
+                  <v-icon icon="mdi-close" size="18" />
+                </button>
+                <button
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
+                  :aria-label="$t('detail.close')"
+                  @click="$emit('update:modelValue', false)"
+                >
+                  <v-icon icon="mdi-close" size="20" />
                 </button>
               </div>
+            </DetailMeasure>
+          </div>
 
-              <!-- main column + sidebar -->
-              <div
-                class="flex-1 min-w-0 w-full flex flex-col lg:flex-row items-start gap-10 lg:gap-14"
-              >
-                <!-- main column -->
-                <div class="flex-1 min-w-0 w-full">
-                  <!-- title -->
-                  <h1
-                    class="font-heading font-bold text-3xl md:text-5xl text-text-primary leading-tight tracking-tight mb-3 flex items-start gap-2"
-                  >
-                    {{ book.title || book.isbn }}
-                    <OverrideDot
-                      v-if="book.title_overridden"
-                      class="w-2 h-2 shrink-0 mt-2"
-                    />
-                  </h1>
-
-                  <!-- series (moved between title and author) -->
-                  <button
-                    v-if="book.series_id"
-                    class="flex items-center gap-1.5 text-[11px] tracking-[0.14em] uppercase text-text-secondary/70 hover:text-orange-neon transition-colors mb-3"
-                    @click="goToSeries"
-                  >
-                    <v-icon icon="mdi-bookshelf" size="12" />
-                    {{ book.series_name || $t("detail.series")
-                    }}{{
-                      book.series_ordinal != null
-                        ? ` · ${$t("detail.series_position", { n: book.series_ordinal })}`
-                        : ""
-                    }}
-                  </button>
-                  <span
-                    v-else-if="book.enrichment_status === 'done'"
-                    class="flex items-center text-[11px] tracking-[0.14em] uppercase text-text-secondary/40 mb-3"
-                  >
-                    {{ $t("detail.standalone") }}
-                  </span>
-
-                  <!-- author -->
-                  <AuthorChips
+          <div class="flex-1">
+            <template v-if="!editing">
+              <!-- Bands are full-bleed; only their contents sit on the measure. -->
+              <div class="bg-charcoal-light border-b border-charcoal-border">
+                <DetailMeasure class="py-6 md:py-9">
+                  <DetailMasthead
                     :book="book"
-                    size="expanded"
-                    @select="filterBy('author', $event)"
-                  />
-
-                  <!-- enrichment status (full view) -->
-                  <EnrichmentBadge
-                    class="mb-6 -mt-4"
-                    :status="book.enrichment_status"
-                    :timed-out="pollTimedOut"
+                    :poll-timed-out="pollTimedOut"
                     :guest="guest"
                     :readonly="readonly"
-                    :icon-size="11"
+                    @set-status="$emit('set-status', $event)"
+                    @set-owning-status="$emit('set-owning-status', $event)"
+                    @set-rating="$emit('set-rating', $event)"
+                    @edit="enterEdit"
+                    @go-series="goToSeries"
+                    @filter="filterBy"
                   />
-
-                  <!-- synopsis -->
-                  <div v-if="book.description" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3 flex items-center gap-1.5"
-                    >
-                      {{ $t("detail.description") }}
-                      <OverrideDot
-                        v-if="book.description_overridden"
-                        class="w-1.5 h-1.5"
-                      />
-                    </div>
-                    <p class="text-[15px] leading-relaxed text-text-secondary">
-                      {{ book.description }}
-                    </p>
-                  </div>
-
-                  <!-- review / notes (the user's own, rendered from markdown) -->
-                  <div v-if="book.review" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("detail.review") }}
-                    </div>
-                    <MarkdownText :source="book.review" />
-                  </div>
-
-                  <!-- genres (moved below description) -->
-                  <div v-if="book.genres?.length" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("detail.genres") }}
-                    </div>
-                    <div class="flex flex-wrap gap-x-4 gap-y-2">
-                      <button
-                        v-for="genre in book.genres"
-                        :key="genre"
-                        class="text-[10px] tracking-[0.3em] uppercase font-bold text-orange-neon hover:opacity-70 transition-opacity"
-                        @click="filterBy('genre', genre)"
-                      >
-                        {{ genre }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- first line -->
-                  <div v-if="book.first_line" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("detail.first_line") }}
-                    </div>
-                    <p
-                      class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4"
-                    >
-                      {{ book.first_line }}
-                    </p>
-                  </div>
-
-                  <!-- epigraph -->
-                  <div v-if="book.epigraph" class="mb-10">
-                    <div
-                      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("detail.epigraph") }}
-                    </div>
-                    <p
-                      class="text-[14px] leading-relaxed text-text-secondary italic border-l-2 border-charcoal-border pl-4"
-                    >
-                      {{ book.epigraph }}
-                    </p>
-                  </div>
-
-                  <!-- edition details (mobile only; desktop shows this under the cover) -->
-                  <EditionDetails :book="book" class="md:hidden" />
-
-                  <EditionsDialog
-                    v-model="editionsDialogOpen"
-                    :book="book"
-                    :guest="guest"
-                    :readonly="readonly"
-                    @refreshed="$emit('refreshed', $event)"
-                  />
-                </div>
-
-                <!-- sidebar: your record -->
-                <div
-                  class="w-full lg:w-80 shrink-0 border border-charcoal-border p-7"
-                >
-                  <div
-                    class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-5"
-                  >
-                    {{ $t("detail.your_record") }}
-                  </div>
-
-                  <!-- status picker -->
-                  <div
-                    v-if="!readonly"
-                    class="pb-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("library.filter_status") }}
-                    </div>
-                    <div
-                      class="relative flex w-full rounded-full p-1"
-                      style="background: rgba(255, 255, 255, 0.045)"
-                      role="radiogroup"
-                      :aria-label="$t('library.filter_status')"
-                    >
-                      <div
-                        class="absolute top-1 bottom-1 rounded-full transition-[left] duration-200 ease-out"
-                        :style="statusThumbStyle"
-                      />
-                      <button
-                        v-for="s in STATUS_ORDER"
-                        :key="s"
-                        type="button"
-                        role="radio"
-                        :aria-checked="book.status === s"
-                        class="relative z-10 flex-1 py-2 text-[10px] tracking-[0.13em] uppercase font-semibold transition-colors"
-                        :class="
-                          book.status !== s
-                            ? 'text-text-secondary/60 hover:text-text-secondary'
-                            : ''
-                        "
-                        :style="
-                          book.status === s
-                            ? { color: STATUS_META[s].color }
-                            : ''
-                        "
-                        @click="$emit('set-status', s)"
-                      >
-                        {{ statusLabels[s] }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- owning status picker -->
-                  <div
-                    v-if="!readonly"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-3"
-                    >
-                      {{ $t("owning.label") }}
-                    </div>
-                    <div
-                      class="relative flex w-full rounded-full p-1"
-                      style="background: rgba(255, 255, 255, 0.045)"
-                      role="radiogroup"
-                      :aria-label="$t('owning.label')"
-                    >
-                      <div
-                        class="absolute top-1 bottom-1 rounded-full transition-[left] duration-200 ease-out"
-                        :style="owningThumbStyle"
-                      />
-                      <button
-                        v-for="s in OWNING_ORDER"
-                        :key="s"
-                        type="button"
-                        role="radio"
-                        :aria-checked="book.owning_status === s"
-                        class="relative z-10 flex-1 py-2 text-[10px] tracking-[0.13em] uppercase font-semibold transition-colors"
-                        :class="
-                          book.owning_status !== s
-                            ? 'text-text-secondary/60 hover:text-text-secondary'
-                            : ''
-                        "
-                        :style="
-                          book.owning_status === s
-                            ? { color: OWNING_META[s].color }
-                            : ''
-                        "
-                        @click="$emit('set-owning-status', s)"
-                      >
-                        {{ owningLabels[s] }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- rating — offered at any status; it belongs to the work, not to this copy
-                       or to having finished it -->
-                  <div
-                    v-if="!readonly"
-                    class="py-4 border-b border-charcoal-border/50 flex items-center justify-between cursor-pointer"
-                    @click="$emit('open-rating')"
-                  >
-                    <span
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
-                    >
-                      {{ $t("detail.rating") }}
-                    </span>
-                    <span class="flex items-center gap-2">
-                      <RatingStars :rating="book.rating" size="sm" />
-                      <span class="font-mono text-[13px] text-text-primary">
-                        {{ book.rating ?? "–" }}{{ $t("detail.of_ten") }}
-                      </span>
-                      <span class="text-[9px] text-text-secondary/50">▾</span>
-                    </span>
-                  </div>
-
-                  <!-- review / notes — unlike rating, offered at any reading status -->
-                  <div
-                    v-if="!readonly"
-                    class="py-4 border-b border-charcoal-border/50 flex items-center justify-between cursor-pointer"
-                    @click="$emit('open-rating')"
-                  >
-                    <span
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
-                    >
-                      {{ $t("detail.review") }}
-                    </span>
-                    <span
-                      class="flex items-center gap-2 text-[11px] text-text-primary"
-                    >
-                      {{
-                        book.review
-                          ? $t("detail.review_edit")
-                          : $t("detail.review_add")
-                      }}
-                      <span class="text-[9px] text-text-secondary/50">▾</span>
-                    </span>
-                  </div>
-
-                  <div class="pb-4 border-b border-charcoal-border/50">
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.added") }}
-                    </div>
-                    <div class="text-sm text-text-primary">
-                      {{ formattedAdded }}
-                    </div>
-                  </div>
-
-                  <!-- wikidata work metadata -->
-                  <div
-                    v-if="book.form_of_work"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.form_of_work") }}
-                    </div>
-                    <button
-                      class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
-                      :aria-label="
-                        $t('detail.filter_by', {
-                          field: $t('detail.form_of_work'),
-                          value: book.form_of_work,
-                        })
-                      "
-                      @click="filterBy('form', book.form_of_work!)"
-                    >
-                      {{ book.form_of_work }}
-                    </button>
-                  </div>
-                  <div
-                    v-if="book.language_of_work"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.language_of_work") }}
-                    </div>
-                    <button
-                      class="text-sm text-text-primary hover:text-orange-neon transition-colors text-left"
-                      :aria-label="
-                        $t('detail.filter_by', {
-                          field: $t('detail.language_of_work'),
-                          value: book.language_of_work,
-                        })
-                      "
-                      @click="
-                        filterBy('original_language', book.language_of_work!)
-                      "
-                    >
-                      {{ book.language_of_work }}
-                    </button>
-                  </div>
-                  <div
-                    v-if="book.main_subject"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.main_subject") }}
-                    </div>
-                    <div class="text-sm text-text-primary">
-                      {{ book.main_subject }}
-                    </div>
-                  </div>
-                  <div
-                    v-if="book.narrative_locations?.length"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.narrative_locations") }}
-                    </div>
-                    <div
-                      class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5"
-                    >
-                      <template
-                        v-for="(loc, i) in book.narrative_locations"
-                        :key="loc"
-                      >
-                        <button
-                          class="hover:text-orange-neon transition-colors"
-                          :aria-label="
-                            $t('detail.filter_by', {
-                              field: $t('detail.narrative_locations'),
-                              value: loc,
-                            })
-                          "
-                          @click="filterBy('location', loc)"
-                        >
-                          {{ loc }}</button
-                        ><span
-                          v-if="i < book.narrative_locations!.length - 1"
-                          class="text-text-secondary/40"
-                          >·</span
-                        >
-                      </template>
-                    </div>
-                  </div>
-                  <div
-                    v-if="book.countries_of_origin?.length"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <div
-                      class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                    >
-                      {{ $t("detail.countries_of_origin") }}
-                    </div>
-                    <div
-                      class="text-sm text-text-primary flex flex-wrap items-baseline gap-x-1.5"
-                    >
-                      <template
-                        v-for="(c, i) in book.countries_of_origin"
-                        :key="c"
-                      >
-                        <button
-                          class="hover:text-orange-neon transition-colors"
-                          :aria-label="
-                            $t('detail.filter_by', {
-                              field: $t('detail.countries_of_origin'),
-                              value: c,
-                            })
-                          "
-                          @click="filterBy('country', c)"
-                        >
-                          {{ c }}</button
-                        ><span
-                          v-if="i < book.countries_of_origin!.length - 1"
-                          class="text-text-secondary/40"
-                          >·</span
-                        >
-                      </template>
-                    </div>
-                  </div>
-
-                  <!-- awards & nominations (collapsed behind a count) -->
-                  <div
-                    v-if="book.awards?.length || book.nominations?.length"
-                    class="py-4 border-b border-charcoal-border/50"
-                  >
-                    <button
-                      class="w-full flex items-center justify-between gap-2 text-left"
-                      :aria-expanded="recognitionExpanded"
-                      @click="recognitionExpanded = !recognitionExpanded"
-                    >
-                      <span
-                        class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60"
-                      >
-                        {{ $t("detail.recognition") }}
-                      </span>
-                      <span
-                        class="flex items-center gap-1 text-[11px] font-mono text-text-secondary/60"
-                      >
-                        {{
-                          (book.awards?.length ?? 0) +
-                          (book.nominations?.length ?? 0)
-                        }}
-                        <v-icon
-                          :icon="
-                            recognitionExpanded
-                              ? 'mdi-chevron-up'
-                              : 'mdi-chevron-down'
-                          "
-                          size="14"
-                        />
-                      </span>
-                    </button>
-                    <div
-                      v-if="recognitionExpanded"
-                      class="mt-3 flex flex-col gap-3"
-                    >
-                      <div v-if="book.awards?.length">
-                        <div
-                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                        >
-                          {{ $t("detail.awards") }}
-                        </div>
-                        <div
-                          class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5"
-                        >
-                          <template v-for="(a, i) in book.awards" :key="a">
-                            <button
-                              class="hover:text-orange-neon transition-colors text-left"
-                              :aria-label="
-                                $t('detail.filter_by', {
-                                  field: $t('detail.awards'),
-                                  value: a,
-                                })
-                              "
-                              @click="filterBy('award', a)"
-                            >
-                              {{ a }}</button
-                            ><span
-                              v-if="i < book.awards!.length - 1"
-                              class="text-text-secondary/40"
-                              >·</span
-                            >
-                          </template>
-                        </div>
-                      </div>
-                      <div v-if="book.nominations?.length">
-                        <div
-                          class="text-[10px] tracking-[0.1em] uppercase text-text-secondary/60 mb-1.5"
-                        >
-                          {{ $t("detail.nominations") }}
-                        </div>
-                        <div
-                          class="text-sm text-text-primary leading-relaxed flex flex-wrap items-baseline gap-x-1.5"
-                        >
-                          <template v-for="(a, i) in book.nominations" :key="a">
-                            <button
-                              class="hover:text-orange-neon transition-colors text-left"
-                              :aria-label="
-                                $t('detail.filter_by', {
-                                  field: $t('detail.nominations'),
-                                  value: a,
-                                })
-                              "
-                              @click="filterBy('award', a)"
-                            >
-                              {{ a }}</button
-                            ><span
-                              v-if="i < book.nominations!.length - 1"
-                              class="text-text-secondary/40"
-                              >·</span
-                            >
-                          </template>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- custom fields (always editable) -->
-                  <CustomFieldsPanel
-                    v-if="!readonly && !guest"
-                    :book="book"
-                    :guest="guest"
-                    :readonly="readonly"
-                    @refreshed="$emit('refreshed', $event)"
-                  />
-                </div>
+                </DetailMeasure>
               </div>
-            </div>
-          </template>
 
-          <!-- edit mode -->
-          <BookEditForm
-            v-else
-            v-model:form="form"
-            :book="book"
-            :save-error="saveError"
-          />
-        </div>
+              <DetailTabs v-if="hasTabs" v-model="activeTab" :tabs="tabItems" />
 
-        <!-- edit mode footer -->
-        <div
-          v-if="editing"
-          class="shrink-0 border-t border-charcoal-border flex justify-between items-center px-4 py-3 bg-charcoal"
-        >
-          <v-btn
-            variant="text"
-            size="small"
-            class="text-[10px] tracking-[0.2em] uppercase text-text-secondary"
-            @click="editing = false"
+              <!-- In the All view the selected tab is "All", so *this container* is its panel —
+                   the individual sections are just sections. With a single tab selected the
+                   container is anonymous and that pane carries the role instead. -->
+              <DetailMeasure
+                id="detail-panel-all"
+                :role="hasTabs && activeTab === 'all' ? 'tabpanel' : undefined"
+                :aria-labelledby="
+                  hasTabs && activeTab === 'all' ? 'detail-tab-all' : undefined
+                "
+                class="py-8 md:py-10 pb-24 flex flex-col gap-13"
+              >
+                <DetailSection
+                  v-if="showPane('overview')"
+                  section-key="overview"
+                  :panel="isPanel('overview')"
+                  :title="$t('detail.tab_overview')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('overview')"
+                  @toggle="toggleSection('overview')"
+                >
+                  <OverviewPane
+                    v-model:expanded="descriptionExpanded"
+                    :book="book"
+                    @filter="filterBy"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('record')"
+                  section-key="record"
+                  :panel="isPanel('record')"
+                  :title="$t('detail.your_record')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('record')"
+                  :summary="recordSummary"
+                  @toggle="toggleSection('record')"
+                >
+                  <RecordPane
+                    :book="book"
+                    :guest="guest"
+                    @set-status="$emit('set-status', $event)"
+                    @set-owning-status="$emit('set-owning-status', $event)"
+                    @set-rating="$emit('set-rating', $event)"
+                    @edit="enterEdit"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('details')"
+                  section-key="details"
+                  :panel="isPanel('details')"
+                  :title="$t('detail.tab_details')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('details')"
+                  :summary="
+                    $t('detail.section_fields', { n: fieldCount }, fieldCount)
+                  "
+                  @toggle="toggleSection('details')"
+                >
+                  <DetailsPane
+                    :book="book"
+                    :refreshing="refreshing"
+                    :guest="guest"
+                    :readonly="readonly"
+                    @filter="filterBy"
+                    @refresh="refresh"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('review')"
+                  section-key="review"
+                  :panel="isPanel('review')"
+                  :title="$t('detail.tab_review')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('review')"
+                  :summary="reviewSummary"
+                  @toggle="toggleSection('review')"
+                >
+                  <ReviewPane
+                    :book="book"
+                    @open-rating="$emit('open-rating')"
+                    @focus-rating="focusRating"
+                  />
+                </DetailSection>
+
+                <DetailSection
+                  v-if="showPane('editions')"
+                  section-key="editions"
+                  :panel="isPanel('editions')"
+                  :title="$t('detail.tab_editions')"
+                  :rule="showRules"
+                  :collapsed="collapsed.has('editions')"
+                  :summary="
+                    $t(
+                      'detail.editions_total',
+                      { n: editions.length },
+                      editions.length,
+                    )
+                  "
+                  @toggle="toggleSection('editions')"
+                >
+                  <EditionsPane
+                    :editions="editions"
+                    :active-isbn="book.isbn"
+                    @show-all="editionsDialogOpen = true"
+                    @select="onSelectEdition"
+                  />
+                </DetailSection>
+
+                <!-- Remove sits at the very bottom, opposite the acquisition date: a one-way action
+                   that should take a deliberate scroll to reach, not a top-bar icon. -->
+                <div
+                  class="flex items-center justify-between gap-5 pt-4 border-t border-charcoal-border"
+                >
+                  <button
+                    v-if="!readonly"
+                    class="text-[10px] tracking-[0.16em] uppercase text-error/80 hover:text-error transition-colors"
+                    @click="$emit('delete')"
+                  >
+                    {{ $t("detail.remove_from_library") }}
+                  </button>
+                  <span v-else />
+                  <span class="font-mono text-[10.5px] text-text-secondary">
+                    {{ $t("detail.added") }} {{ formattedAdded }}
+                  </span>
+                </div>
+              </DetailMeasure>
+
+              <EditionsDialog
+                v-model="editionsDialogOpen"
+                :book="book"
+                :guest="guest"
+                :readonly="readonly"
+                @refreshed="onEditionsRefreshed"
+                @select="onSelectEdition"
+              />
+            </template>
+
+            <!-- edit mode: every editable field on one screen -->
+            <BookEditForm
+              v-else
+              v-model:form="form"
+              v-model:custom-values="customValues"
+              :book="book"
+              :guest="guest"
+              :save-error="saveError"
+              @tag-deleted="onTagDeleted"
+            />
+          </div>
+
+          <!-- edit mode footer -->
+          <div
+            v-if="editing"
+            class="sticky bottom-0 z-10 border-t border-charcoal-border bg-charcoal"
           >
-            {{ $t("detail.edit_cancel") }}
-          </v-btn>
-          <v-btn
-            variant="text"
-            size="small"
-            color="primary"
-            class="text-[10px] tracking-[0.2em] uppercase"
-            :loading="saving"
-            @click="save"
-          >
-            {{ $t("detail.edit_save") }}
-          </v-btn>
+            <DetailMeasure class="flex justify-between items-center py-3">
+              <AppButton variant="ghost" size="sm" @click="editing = false">
+                {{ $t("detail.edit_cancel") }}
+              </AppButton>
+              <AppButton size="sm" :loading="saving" @click="save">
+                {{ $t("detail.edit_save") }}
+              </AppButton>
+            </DetailMeasure>
+          </div>
         </div>
       </div>
     </template>
-
   </v-dialog>
 </template>
 
 <script lang="ts" setup>
-import { ref, watch, computed, onMounted } from "vue";
+import {
+  ref,
+  watch,
+  computed,
+  onMounted,
+  onUnmounted,
+  useTemplateRef,
+} from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useLocaleStore } from "@/stores/locale";
-import { BCP47 } from "@/plugins/i18n";
-import {
-  useBookStatus,
-  STATUS_ORDER,
-  STATUS_META,
-} from "@/composables/useBookStatus";
-import {
-  useOwningStatus,
-  OWNING_ORDER,
-  OWNING_META,
-} from "@/composables/useOwningStatus";
+import { formatDateTime } from "@/utils/book-display";
 import { useEnrichmentPoll } from "@/composables/useEnrichmentPoll";
+import { useWorkEditions } from "@/composables/useWorkEditions";
+import {
+  buildTabs,
+  detailsFieldCount,
+  resolveActiveTab,
+  type TabKey,
+} from "@/utils/detail-tabs";
+import {
+  customFieldModel,
+  customFieldsChanged,
+  customFieldsPayload,
+  customFieldValues as toCustomFieldValues,
+  type CustomFieldModel,
+} from "@/utils/custom-fields";
+import { stripTagValue } from "@/utils/tags";
+import { reviewWordCount } from "@/utils/review";
+import AppButton from "@/components/AppButton.vue";
 import BookDetailCard from "@/components/book-detail/BookDetailCard.vue";
-import AuthorChips from "@/components/book-detail/AuthorChips.vue";
-import EnrichmentBadge from "@/components/book-detail/EnrichmentBadge.vue";
+import DetailMeasure from "@/components/book-detail/DetailMeasure.vue";
+import DetailMasthead from "@/components/book-detail/DetailMasthead.vue";
+import DetailTabs from "@/components/book-detail/DetailTabs.vue";
+import DetailSection from "@/components/book-detail/DetailSection.vue";
+import OverviewPane from "@/components/book-detail/OverviewPane.vue";
+import RecordPane from "@/components/book-detail/RecordPane.vue";
+import DetailsPane from "@/components/book-detail/DetailsPane.vue";
+import ReviewPane from "@/components/book-detail/ReviewPane.vue";
+import EditionsPane from "@/components/book-detail/EditionsPane.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
-import RatingStars from "@/components/RatingStars.vue";
-import MarkdownText from "@/components/MarkdownText.vue";
-import EditionDetails from "@/components/book-detail/EditionDetails.vue";
-import EditionCarousel from "@/components/book-detail/EditionCarousel.vue";
-import CustomFieldsPanel from "@/components/book-detail/CustomFieldsPanel.vue";
-import CoverImage from "@/components/CoverImage.vue";
 import BookEditForm, {
   type EditForm,
 } from "@/components/book-detail/BookEditForm.vue";
-import OverrideDot from "@/components/OverrideDot.vue";
-import type { Book, OwningStatus, ReadStatus } from "@/types/book";
+import type { BookWithOverrides, OwningStatus, ReadStatus } from "@/types/book";
 
-export interface CustomFieldValue {
-  field_def_id: number;
-  value: string | null;
-}
-
-export interface BookWithOverrides extends Book {
-  title_overridden?: number;
-  cover_url_overridden?: number;
-  language_overridden?: number;
-  publish_date_overridden?: number;
-  pages_overridden?: number;
-  description_overridden?: number;
-  publisher_overridden?: number;
-  custom_field_values?: CustomFieldValue[] | null;
-}
-
+// The book detail dialog: a compact card that expands into a full-screen masthead-plus-panes view.
+//
+// The full view is a **masthead** (identity + the four things you set) over a **tabbed body**.
+// "All" is the last tab and the default: it stacks every pane in one scroll under mono section
+// rules that double as disclosures, so the tabs read as a filter rather than a wall. Which tabs
+// exist is derived from the book — see `utils/detail-tabs.ts`; a pane that would be empty never
+// becomes a tab, and Review is the one exception (always offered, dotted until it's written).
+//
+// `mode` is deliberately component-local rather than routed, matching the pre-existing behaviour:
+// the URL identifies the *book* (`useDetailRoute`), not how far into it you are.
 const props = defineProps<{
   modelValue: boolean;
   book: BookWithOverrides;
@@ -773,6 +332,8 @@ const emit = defineEmits<{
   "cycle-status": [];
   "set-status": [status: ReadStatus];
   "set-owning-status": [status: OwningStatus];
+  /** A rating set straight from the masthead stars — the host owns the per-work fan-out. */
+  "set-rating": [rating: number | null];
   /** Ask the host page to raise the rating/review prompt for this book — the dialog is owned
    *  there, so a status change from a library card can raise the same one (useRatingPrompt). */
   "open-rating": [];
@@ -782,8 +343,7 @@ const emit = defineEmits<{
 }>();
 
 const { apiFetch } = useApi();
-const { statusLabels } = useBookStatus();
-const { owningLabels } = useOwningStatus();
+const { t } = useI18n();
 const fieldDefsStore = useFieldDefsStore();
 const localeStore = useLocaleStore();
 const router = useRouter();
@@ -792,59 +352,116 @@ const router = useRouter();
 
 const mode = ref<"card" | "full">("card");
 const editionsDialogOpen = ref(false);
+const bodyEl = useTemplateRef<HTMLElement>("bodyEl");
 
 function expand() {
   mode.value = "full";
 }
 
-// ── Computed helpers ──────────────────────────────────────────────────────────
+// ── Tabs ──────────────────────────────────────────────────────────────────────
 
-// Shared geometry for the segmented-picker thumb (reading status + owning status).
-function segmentedThumbStyle(index: number, n: number, tint: string, color: string) {
-  return {
-    left: `calc(4px + ${index} * (100% - 8px) / ${n})`,
-    width: `calc((100% - 8px) / ${n})`,
-    background: tint,
-    border: `1px solid ${color}`,
-  };
+const activeTab = ref<TabKey>("all");
+const collapsed = ref(new Set<TabKey>());
+
+// Whether the Record tab has to exist, i.e. whether the masthead's control cluster is hidden.
+//
+// This *must* be the same test the CSS makes, not an equivalent-looking one: the cluster's
+// visibility is `hidden md:flex`, so asking `window.innerWidth < 840` instead would be a second,
+// independently-rounded answer to the same question. `innerWidth` is an integer while the media
+// query compares the fractional layout width, so at some zoom levels the two disagree — and when
+// they do, the user gets no Record tab *and* no masthead controls: no way to set status, ownership
+// or rating at all. `matchMedia` with the identical query can't drift.
+const desktop = window.matchMedia("(min-width: 840px)");
+const isMobile = ref(!desktop.matches);
+const onBreakpointChange = (e: MediaQueryListEvent) => {
+  isMobile.value = !e.matches;
+};
+
+const { editions } = useWorkEditions({
+  workId: () => props.book.work_id,
+  enabled: () => props.modelValue && mode.value === "full",
+  knownCount: () => props.book.editionCount,
+});
+
+const tabs = computed(() =>
+  buildTabs({
+    book: props.book,
+    readonly: props.readonly,
+    customFieldCount: props.guest ? 0 : fieldDefsStore.defs.length,
+    editionCount: editions.value.length,
+    mobile: isMobile.value,
+  }),
+);
+
+const tabItems = computed(() =>
+  tabs.value.map((tab) => ({
+    key: tab.key,
+    label: t(`detail.tab_${tab.key}`),
+    badge: tab.badge,
+    dot: tab.dot,
+  })),
+);
+
+/** False when a book yields a single pane — then there is no tab row and no "All". */
+const hasTabs = computed(() => tabs.value.length > 1);
+
+/** The All view is the only place section rules are drawn — a single tab already names its pane.
+ *  `all` only ever exists alongside other tabs, so this needs no separate `hasTabs` test. */
+const showRules = computed(() => activeTab.value === "all");
+
+/** Whether this pane is the selected tab's panel — false in the All view, where the container
+ *  holds that role instead, and false when there is no tab row to be a panel of. */
+function isPanel(key: TabKey): boolean {
+  return hasTabs.value && activeTab.value === key;
 }
 
-const statusThumbStyle = computed(() => {
-  const meta = STATUS_META[props.book.status];
-  return segmentedThumbStyle(
-    STATUS_ORDER.indexOf(props.book.status),
-    STATUS_ORDER.length,
-    meta.tint,
-    meta.color,
-  );
+function showPane(key: TabKey): boolean {
+  if (!tabs.value.some((tab) => tab.key === key)) return false;
+  return activeTab.value === "all" || activeTab.value === key;
+}
+
+function toggleSection(key: TabKey) {
+  const next = new Set(collapsed.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  collapsed.value = next;
+}
+
+// Keep the active tab valid as the set changes — switching to a book with no description while
+// Overview was selected must not leave a dead tab and a blank body.
+watch(
+  tabs,
+  (list) => {
+    activeTab.value = resolveActiveTab(list, activeTab.value);
+  },
+  { immediate: true },
+);
+
+// ── Section summaries (shown on a collapsed rule) ─────────────────────────────
+
+const fieldCount = computed(() => detailsFieldCount(props.book));
+
+const recordSummary = computed(() => {
+  const n = props.guest ? 0 : fieldDefsStore.defs.length;
+  return n ? t("detail.section_fields", { n }, n) : "";
 });
 
-const owningThumbStyle = computed(() => {
-  const status = props.book.owning_status ?? "owned";
-  const meta = OWNING_META[status];
-  return segmentedThumbStyle(
-    OWNING_ORDER.indexOf(status),
-    OWNING_ORDER.length,
-    meta.tint,
-    meta.color,
-  );
+const reviewSummary = computed(() => {
+  if (!props.book.review) return t("detail.review_add");
+  const words = reviewWordCount(props.book.review);
+  return t("detail.review_words", { n: words }, words);
 });
 
-const formattedAdded = computed(() => {
-  if (!props.book.created_at) return "—";
-  const loc = BCP47[localeStore.locale] ?? "en-GB";
-  return new Date(props.book.created_at).toLocaleDateString(loc, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-});
+// ── Computed helpers ──────────────────────────────────────────────────────────
+
+const formattedAdded = computed(
+  () => formatDateTime(props.book.created_at, localeStore.locale) ?? "—",
+);
 
 // ── Edit state ────────────────────────────────────────────────────────────────
 
 const descriptionExpanded = ref(false);
 const refreshing = ref(false);
-const recognitionExpanded = ref(false);
 const editing = ref(false);
 const saving = ref(false);
 const saveError = ref(false);
@@ -859,6 +476,8 @@ const form = ref<EditForm>({
   publisher: "",
 });
 
+const customValues = ref<CustomFieldModel>({});
+
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
 // The poll ran its full schedule and the row was still pending — the work is queued behind the
@@ -866,15 +485,17 @@ const form = ref<EditForm>({
 // must not be emitted as a `refreshed` patch.
 const pollTimedOut = ref(false);
 
-const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll({
-  isOpen: () => props.modelValue,
-  scanId: () => props.book.id,
-  status: () => props.book.enrichment_status,
-  guest: () => !!props.guest,
-  readonly: () => !!props.readonly,
-  onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
-  onExhausted: () => (pollTimedOut.value = true),
-});
+const { startEnrichmentPoll: runEnrichmentPoll, clearPoll } = useEnrichmentPoll(
+  {
+    isOpen: () => props.modelValue,
+    scanId: () => props.book.id,
+    status: () => props.book.enrichment_status,
+    guest: () => !!props.guest,
+    readonly: () => !!props.readonly,
+    onResolved: (data) => emit("refreshed", data as Partial<BookWithOverrides>),
+    onExhausted: () => (pollTimedOut.value = true),
+  },
+);
 
 function startEnrichmentPoll() {
   pollTimedOut.value = false;
@@ -886,10 +507,6 @@ function startEnrichmentPoll() {
 function goToSeries() {
   if (props.book.series_id == null) return;
   router.push(`/series/${props.book.series_id}`);
-}
-
-function onSelectEdition(isbn: string, scanId: number) {
-  emit("switch-edition", { isbn, scanId });
 }
 
 function filterBy(
@@ -906,20 +523,46 @@ function filterBy(
   router.push(`/library?q=${encodeURIComponent(`${field}:"${value}"`)}`);
 }
 
+/** "Rate it first" from the empty review pane — the stars live in the masthead (or, on mobile, the
+ *  Record pane), so send the user there rather than opening a dialog they didn't ask for. */
+function focusRating() {
+  if (isMobile.value && tabs.value.some((tab) => tab.key === "record")) {
+    activeTab.value = "record";
+    return;
+  }
+  bodyEl.value?.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function onEditionsRefreshed(updated: Partial<BookWithOverrides>) {
+  emit("refreshed", updated);
+}
+
+/** Another owned edition of this work was picked — ask the host to open that scan's detail. Same
+ *  work, so the `lastWorkId` watcher below keeps the view in full mode rather than snapping back
+ *  to the card. */
+function onSelectEdition(isbn: string, scanId: number) {
+  emit("switch-edition", { isbn, scanId });
+}
+
 // ── Watchers ──────────────────────────────────────────────────────────────────
 
-// Tracks the previous book's work_id so switching editions of the *same* work (via the
-// carousel) doesn't snap the view back to card mode — only opening an unrelated book should.
+function resetViewState() {
+  descriptionExpanded.value = false;
+  collapsed.value = new Set();
+  editing.value = false;
+}
+
+// Tracks the previous book's work_id so switching editions of the *same* work doesn't snap the
+// view back to card mode — only opening an unrelated book should.
 let lastWorkId = props.book.work_id;
 watch(
   () => props.book.isbn,
   () => {
-    const sameWork = props.book.work_id != null && props.book.work_id === lastWorkId;
+    const sameWork =
+      props.book.work_id != null && props.book.work_id === lastWorkId;
     lastWorkId = props.book.work_id;
     if (!sameWork) mode.value = "card";
-    descriptionExpanded.value = false;
-    recognitionExpanded.value = false;
-    editing.value = false;
+    resetViewState();
     if (props.modelValue) startEnrichmentPoll();
   },
 );
@@ -929,7 +572,7 @@ watch(
   (val) => {
     if (!val) {
       mode.value = "card";
-      editing.value = false;
+      resetViewState();
       clearPoll();
     } else {
       startEnrichmentPoll();
@@ -939,7 +582,10 @@ watch(
 
 onMounted(() => {
   if (!props.guest && !props.readonly) fieldDefsStore.load();
+  desktop.addEventListener("change", onBreakpointChange);
 });
+
+onUnmounted(() => desktop.removeEventListener("change", onBreakpointChange));
 
 function enterEdit() {
   form.value.title = props.book.title ?? "";
@@ -949,8 +595,29 @@ function enterEdit() {
   form.value.number_of_pages_median = props.book.number_of_pages_median ?? null;
   form.value.description = props.book.description ?? "";
   form.value.publisher = props.book.publisher ?? "";
+  customValues.value = customFieldModel(props.book, fieldDefsStore.defs);
   saveError.value = false;
   editing.value = true;
+}
+
+/**
+ * A tag global-delete already hit the server and stripped the value from every book, so the book
+ * this component was handed is now stale by exactly that one value.
+ *
+ * Only that value is removed — the patch is built from the book's *saved* `custom_field_values`,
+ * never from the edit draft. Sending the draft would commit whatever else the user has typed but
+ * not saved, so a subsequent Cancel would leave those edits showing until the next refetch.
+ */
+function onTagDeleted(defId: number, value: string) {
+  const saved = props.book.custom_field_values;
+  if (!saved) return;
+  emit("refreshed", {
+    custom_field_values: saved.map((v) =>
+      v.field_def_id === defId
+        ? { ...v, value: stripTagValue(v.value, value) }
+        : v,
+    ),
+  });
 }
 
 async function save() {
@@ -979,7 +646,11 @@ async function save() {
   if (newPages !== on(props.book.number_of_pages_median))
     changes.number_of_pages_median = newPages;
 
-  if (!Object.keys(changes).length) {
+  const defs = fieldDefsStore.defs;
+  const customChanged =
+    !props.guest && customFieldsChanged(customValues.value, defs, props.book);
+
+  if (!Object.keys(changes).length && !customChanged) {
     editing.value = false;
     return;
   }
@@ -987,29 +658,50 @@ async function save() {
   saveError.value = false;
   saving.value = true;
   try {
-    const res = await apiFetch("/api/books/override", {
-      method: "PATCH",
-      body: JSON.stringify({ isbn: props.book.isbn, changes }),
-    });
-    if (!res.ok) throw new Error();
+    const updated: Partial<BookWithOverrides> = {};
 
-    const updated: Partial<BookWithOverrides> = {
-      ...changes,
-    } as Partial<BookWithOverrides>;
-    if ("title" in changes)
-      updated.title_overridden = changes.title != null ? 1 : 0;
-    if ("cover_url" in changes)
-      updated.cover_url_overridden = changes.cover_url != null ? 1 : 0;
-    if ("language" in changes)
-      updated.language_overridden = changes.language != null ? 1 : 0;
-    if ("publish_date" in changes)
-      updated.publish_date_overridden = changes.publish_date != null ? 1 : 0;
-    if ("number_of_pages_median" in changes)
-      updated.pages_overridden = changes.number_of_pages_median != null ? 1 : 0;
-    if ("description" in changes)
-      updated.description_overridden = changes.description != null ? 1 : 0;
-    if ("publisher" in changes)
-      updated.publisher_overridden = changes.publisher != null ? 1 : 0;
+    // Two endpoints, one Save: metadata overrides and custom field values are separate resources
+    // server-side, but the user filled in one form and must not end up with half of it applied.
+    // Sequential rather than parallel so a failing first request doesn't leave the second landing
+    // silently after the error is already shown.
+    if (Object.keys(changes).length) {
+      const res = await apiFetch("/api/books/override", {
+        method: "PATCH",
+        body: JSON.stringify({ isbn: props.book.isbn, changes }),
+      });
+      if (!res.ok) throw new Error();
+      Object.assign(updated, changes as Partial<BookWithOverrides>);
+      if ("title" in changes)
+        updated.title_overridden = changes.title != null ? 1 : 0;
+      if ("cover_url" in changes)
+        updated.cover_url_overridden = changes.cover_url != null ? 1 : 0;
+      if ("language" in changes)
+        updated.language_overridden = changes.language != null ? 1 : 0;
+      if ("publish_date" in changes)
+        updated.publish_date_overridden = changes.publish_date != null ? 1 : 0;
+      if ("number_of_pages_median" in changes)
+        updated.pages_overridden =
+          changes.number_of_pages_median != null ? 1 : 0;
+      if ("description" in changes)
+        updated.description_overridden = changes.description != null ? 1 : 0;
+      if ("publisher" in changes)
+        updated.publisher_overridden = changes.publisher != null ? 1 : 0;
+    }
+
+    if (customChanged) {
+      const res = await apiFetch("/api/books/custom-fields", {
+        method: "PATCH",
+        body: JSON.stringify({
+          isbn: props.book.isbn,
+          values: customFieldsPayload(customValues.value, defs),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      updated.custom_field_values = toCustomFieldValues(
+        customValues.value,
+        defs,
+      );
+    }
 
     emit("refreshed", updated);
     editing.value = false;
@@ -1021,14 +713,6 @@ async function save() {
 }
 
 // ── Enrichment refresh ────────────────────────────────────────────────────────
-
-const enrichmentButtonClass = computed(() => {
-  if (props.book.enrichment_status === "failed")
-    return "text-error/70 hover:text-error";
-  if (props.book.enrichment_status === "pending")
-    return "text-orange-neon/40 hover:text-orange-neon/70";
-  return "text-text-secondary/50 hover:text-text-secondary";
-});
 
 const refresh = async () => {
   refreshing.value = true;

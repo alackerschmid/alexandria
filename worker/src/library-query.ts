@@ -111,7 +111,9 @@ export const AUTHORS_JSON_SUBQUERY = `
 export function buildScanSelect(locale: string): string {
   const safeLocale = /^[a-z]{2,3}$/.test(locale) ? locale : "en";
   return `
-  SELECT s.id, s.status, s.owning_status, wr.rating, wr.review, s.created_at,
+  SELECT s.id, s.status, s.owning_status, wr.rating, wr.review,
+         wr.updated_at                                       AS review_updated_at,
+         s.created_at,
          b.id   AS book_id,
          b.isbn,
          b.work_id                                           AS work_id,

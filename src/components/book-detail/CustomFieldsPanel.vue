@@ -1,14 +1,5 @@
 <template>
-  <div
-    v-if="fieldDefsStore.defs.length"
-    class="mb-8 pt-8 border-t border-charcoal-border"
-  >
-    <div
-      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
-    >
-      {{ $t("detail.custom_fields") }}
-    </div>
-
+  <div v-if="fieldDefsStore.defs.length">
     <div class="flex flex-col gap-4 max-w-md">
       <div v-for="def in fieldDefsStore.defs" :key="def.id">
         <label
@@ -58,7 +49,6 @@
           :value="(customFieldValues[def.id] as string) ?? ''"
           class="w-full bg-charcoal border border-charcoal-border text-xs text-text-primary px-3 py-2 focus-ring-none focus:border-orange-neon"
           @input="onIntegerInput(def.id, $event)"
-          @blur="saveCustomFields"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
         />
 
@@ -132,7 +122,6 @@
           @input="
             setLocalValue(def.id, ($event.target as HTMLInputElement).value)
           "
-          @blur="saveCustomFields"
           @keyup.enter="($event.target as HTMLInputElement).blur()"
         />
       </div>
@@ -148,31 +137,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { useApi } from "@/composables/useApi";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import { parseTagList } from "@/utils/tags";
-import type { Book } from "@/types/book";
-import type { CustomFieldValue } from "@/components/BookDetail.vue";
+import type { CustomFieldModel } from "@/utils/custom-fields";
 import TagInput from "@/components/book-detail/TagInput.vue";
 
-const props = defineProps<{
-  book: Book;
-  guest?: boolean;
-  readonly?: boolean;
-}>();
+// The per-type value editors for the user's custom fields. **Controlled** — the parent owns the
+// model and the save; this component never calls the API for a value change. That is what lets the
+// unified edit screen put custom fields and the metadata overrides behind one Cancel/Save, instead
+// of the older behaviour where a blur silently committed half the form.
+//
+// The one exception is the tag *global* delete, which removes a value from every book in the
+// library: that is a destructive cross-library action rather than a field edit, so it stays
+// immediate and reports through `refreshed`.
+//
+// Deliberately plain Tailwind HTML rather than Vuetify controls (see src/CLAUDE.md) — a book can
+// have several fields of different types and they must read as one uniform stack.
+const model = defineModel<CustomFieldModel>("values", { required: true });
 
 const emit = defineEmits<{
-  refreshed: [updated: { custom_field_values: CustomFieldValue[] }];
+  /** The tag global-delete stripped this value from every book in the library, including this
+   *  one. Carries the field and value so the parent can apply just that change rather than
+   *  committing the whole in-progress draft. */
+  "tag-deleted": [defId: number, value: string];
 }>();
 
 const { t } = useI18n();
-const { apiFetch } = useApi();
 const fieldDefsStore = useFieldDefsStore();
 
 // Per-field model: a string for text/integer/select/date, a string[] for tag.
-const customFieldValues = ref<Record<number, string | string[]>>({});
+const customFieldValues = computed(() => model.value);
 const cfError = ref(false);
 const confirmingTag = ref<string | null>(null); // `${defId}:${value}` awaiting delete-confirm
 
@@ -259,44 +254,8 @@ function chooseHighlighted(def: { id: number; options?: string[] }) {
   }
 }
 
-function valueFromBook(def: { id: number; type: string }): string | string[] {
-  const raw =
-    props.book.custom_field_values?.find((v) => v.field_def_id === def.id)
-      ?.value ?? null;
-  return def.type === "tag" ? parseTagList(raw) : (raw ?? "");
-}
-
-// Reconcile the local editor model with the current schema, preserving values the
-// user may be editing. Existing in-shape entries are kept; only new/removed fields
-// (or a field whose type changed) are (re)derived from the saved book values.
-function reconcileCustomFields() {
-  const next: Record<number, string | string[]> = {};
-  for (const def of fieldDefsStore.defs) {
-    const existing = customFieldValues.value[def.id];
-    const inShape =
-      def.type === "tag"
-        ? Array.isArray(existing)
-        : typeof existing === "string";
-    next[def.id] = inShape ? existing : valueFromBook(def);
-  }
-  customFieldValues.value = next;
-}
-
-// Full reset only when the book identity changes — so an external refresh of the
-// *same* book (e.g. enrichment poll) can't clobber unsaved in-progress edits.
-watch(
-  () => props.book.isbn,
-  () => {
-    customFieldValues.value = {};
-    reconcileCustomFields();
-  },
-  { immediate: true },
-);
-// Schema changes (definitions loaded / field added / removed) only add or drop keys.
-watch(() => fieldDefsStore.defs, reconcileCustomFields, { deep: true });
-
 function setLocalValue(id: number, value: string) {
-  customFieldValues.value = { ...customFieldValues.value, [id]: value };
+  model.value = { ...model.value, [id]: value };
 }
 
 // Strips everything but digits and a leading minus sign, keeping "integer" fields
@@ -317,7 +276,6 @@ function onIntegerInput(id: number, e: Event) {
 
 function onValueChange(id: number, value: string) {
   setLocalValue(id, value);
-  saveCustomFields();
 }
 
 function onTagChange(id: number, value: unknown) {
@@ -325,9 +283,8 @@ function onTagChange(id: number, value: unknown) {
     .map((v) => String(v).trim())
     .filter(Boolean);
   const unique = [...new Set(arr)];
-  customFieldValues.value = { ...customFieldValues.value, [id]: unique };
+  model.value = { ...model.value, [id]: unique };
   for (const tag of unique) fieldDefsStore.addTagValueLocal(id, tag);
-  saveCustomFields();
 }
 
 function onTagOpen(id: number) {
@@ -352,67 +309,16 @@ async function confirmDeleteTag(id: number, value: string) {
     cfError.value = true;
     return;
   }
-  // Server stripped the tag from every book (including this one) — reflect it locally.
-  const current = customFieldValues.value[id];
+  // Server stripped the tag from every book (including this one) — drop it from the draft too,
+  // and tell the parent exactly *which* value went, so it can apply that one change to the saved
+  // book. Handing over the whole draft here would commit unsaved edits the user could still cancel.
+  const current = model.value[id];
   if (Array.isArray(current) && current.includes(value)) {
-    customFieldValues.value = {
-      ...customFieldValues.value,
+    model.value = {
+      ...model.value,
       [id]: current.filter((v) => v !== value),
     };
-    emitCustomFieldsRefreshed();
   }
-}
-
-// Serialize the local model into the API value list (tag arrays → JSON; empty → "").
-function customFieldsPayload() {
-  return fieldDefsStore.defs.map((def) => {
-    const v = customFieldValues.value[def.id];
-    let value = "";
-    if (def.type === "tag") {
-      const arr = (Array.isArray(v) ? v : [])
-        .map((s) => String(s).trim())
-        .filter(Boolean);
-      value = arr.length ? JSON.stringify(arr) : "";
-    } else if (typeof v === "string") {
-      value = v;
-    }
-    return { field_def_id: def.id, value };
-  });
-}
-
-function emitCustomFieldsRefreshed() {
-  const custom_field_values = customFieldsPayload().map((v) => ({
-    field_def_id: v.field_def_id,
-    value: v.value || null,
-  }));
-  emit("refreshed", { custom_field_values });
-}
-
-// Auto-saves are chained so they apply in call order. The endpoint replaces all
-// values at once, so overlapping requests arriving out of order could otherwise
-// drop a field; each queued save also rebuilds its payload from the latest model.
-let saveQueue: Promise<void> = Promise.resolve();
-
-function saveCustomFields() {
-  saveQueue = saveQueue.then(doSaveCustomFields);
-  return saveQueue;
-}
-
-async function doSaveCustomFields() {
-  if (props.readonly || props.guest) return;
-  cfError.value = false;
-  try {
-    const res = await apiFetch("/api/books/custom-fields", {
-      method: "PATCH",
-      body: JSON.stringify({
-        isbn: props.book.isbn,
-        values: customFieldsPayload(),
-      }),
-    });
-    if (!res.ok) throw new Error();
-    emitCustomFieldsRefreshed();
-  } catch {
-    cfError.value = true;
-  }
+  emit("tag-deleted", id, value);
 }
 </script>

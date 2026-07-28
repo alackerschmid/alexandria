@@ -34,9 +34,9 @@ defineEmits<{
 
 const names = computed(() => authorNames(props.book));
 
+// Type scale only — positioning (margins) is the parent's, the same convention EnrichmentBadge
+// follows, so the masthead can sit the authors tight under the title without fighting a default.
 const wrapperClass = computed(() =>
-  props.size === "expanded"
-    ? "gap-x-1.5 text-base mb-8"
-    : "gap-x-1 text-sm mb-3",
+  props.size === "expanded" ? "gap-x-1.5 text-sm md:text-base" : "gap-x-1 text-sm",
 );
 </script>

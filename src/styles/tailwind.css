@@ -196,6 +196,18 @@
 /*
   note: adopt and extend values from TailwindCSS
 */
+/* The uppercase letter-spaced micro-label that heads a block of facts throughout the book detail
+   ("This edition", "The work", "Custom fields", "First line"). It was copied into four scoped
+   style blocks, one of which had already drifted to a different size — a shared utility is the
+   only way that stays one decision. */
+@utility micro-label {
+  font-size: 10px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  opacity: 0.75;
+}
+
 @utility rounded-pill {
   border-radius: 9999px;
 }

@@ -1,10 +1,7 @@
 <template>
-  <div class="pt-8 border-t border-charcoal-border mb-10">
-    <div
-      class="text-[10px] tracking-[0.24em] uppercase text-text-secondary/60 mb-4"
-    >
-      {{ $t("detail.edition") }}
-    </div>
+  <!-- The "This edition" ledger column of the Details pane. The pane supplies the heading; this is
+       only the rows, so it can sit beside WorkFacts as a matched pair. -->
+  <div>
     <div
       v-if="book.publisher"
       class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
@@ -125,18 +122,8 @@
         </button>
       </span>
     </div>
-    <div
-      v-if="book.original_pub_date"
-      class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
-    >
-      <span
-        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-        >{{ $t("detail.original_pub_date") }}</span
-      >
-      <span class="font-mono text-xs text-text-primary">{{
-        book.original_pub_date
-      }}</span>
-    </div>
+    <!-- `original_pub_date` is a work fact, not an edition one — it lives in the WorkFacts column
+         beside this, so it isn't repeated here. -->
     <div
       v-if="book.edition_name"
       class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
@@ -170,7 +157,7 @@ import { useRouter } from "vue-router";
 import { useLocaleStore } from "@/stores/locale";
 import { languageDisplayFormatter } from "@/utils/language";
 import { formatPublishDate as formatDate } from "@/utils/book-display";
-import type { BookWithOverrides } from "@/components/BookDetail.vue";
+import type { BookWithOverrides } from "@/types/book";
 import OverrideDot from "@/components/OverrideDot.vue";
 
 const props = defineProps<{

@@ -161,6 +161,7 @@
     @cycle-status="cycleDetailStatus"
     @set-status="(s) => setDetailStatus(s)"
     @set-owning-status="(s) => setDetailOwningStatus(s)"
+    @set-rating="(r) => setDetailRating(r)"
     @open-rating="ratingPromptOpen = true"
     @delete="openDeleteDialog(detailBook!)"
     @refreshed="onDetailRefreshed"
@@ -200,7 +201,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, nextTick, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
@@ -212,8 +213,12 @@ import AppFooter from "@/components/AppFooter.vue";
 import BookDetail from "@/components/BookDetail.vue";
 import RatingDialog from "@/components/book-detail/RatingDialog.vue";
 import ConfirmDialog from "@/components/ConfirmDialog.vue";
-import type { BookWithOverrides } from "@/components/BookDetail.vue";
-import type { Book, OwningStatus, ReadStatus } from "@/types/book";
+import type {
+  Book,
+  BookWithOverrides,
+  OwningStatus,
+  ReadStatus,
+} from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
 import CoverImage from "@/components/CoverImage.vue";
 
@@ -340,13 +345,17 @@ async function loadDetailByIsbn(
 // reload/deep link, not just an in-session switch.
 watch(
   [detailEditionIsbn, entries],
-  ([isbn]) => {
+  async ([isbn]) => {
     if (!isbn) {
-      // Close the rating prompt *before* dropping the book. RatingDialog flushes its review
-      // draft on the modelValue false transition and can't do that once unmounted, and this
-      // path unmounts it — `v-if="detailBook"`. Leaving the flag set would also spring the
+      // Close the rating prompt *before* dropping the book, and let the close actually reach the
+      // dialog before it goes away. RatingDialog flushes its review draft on the modelValue
+      // true→false transition, but the prop only changes when this component re-renders — so
+      // clearing both refs in one tick would batch into a single render in which `v-if="detailBook"`
+      // is already false, unmounting the dialog with the draft still in it. Awaiting a tick lets
+      // the dialog observe the close and flush first. Leaving the flag set would also spring the
       // dialog open again over whichever book is opened next.
       ratingPromptOpen.value = false;
+      await nextTick();
       detailBook.value = null;
       return;
     }

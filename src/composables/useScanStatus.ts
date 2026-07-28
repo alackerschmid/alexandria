@@ -96,6 +96,24 @@ export function useScanStatus(options: ScanStatusOptions = {}) {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error();
+
+      // The response carries what only the server knows: the row's new `updated_at` (which the
+      // detail view shows as the review's "written" date — without this it keeps showing the
+      // previous one, and a first-ever review shows none at all) and the authoritative `work_id`,
+      // which the route may have just created via `linkWork` for a book the client still has as
+      // unlinked. Applying it means the *next* write fans out across the full sibling set.
+      const saved = (await res.json()) as {
+        work_id?: number | null;
+        review_updated_at?: string | null;
+      };
+      for (const sibling of siblings) {
+        if (saved.review_updated_at !== undefined) {
+          sibling.review_updated_at = saved.review_updated_at;
+        }
+        if (saved.work_id != null && sibling.work_id == null) {
+          sibling.work_id = saved.work_id;
+        }
+      }
     } catch (e) {
       siblings.forEach((sibling, i) => {
         if (sibling[field] === next) sibling[field] = previous[i] as Book[K];

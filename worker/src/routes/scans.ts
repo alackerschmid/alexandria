@@ -335,6 +335,21 @@ scans.patch("/:id", async (c) => {
   ];
   if (statements.length) await db.batch(statements);
 
+  // `updated_at` is set by the upsert to CURRENT_TIMESTAMP, and the detail view shows it as the
+  // review's "written" date — so read back the value that was actually stored rather than letting
+  // the client guess or keep displaying the previous one. Only for writes that touched the row:
+  // a status-only PATCH leaves the rating untouched and has nothing to report.
+  const reviewUpdatedAt = writesRating
+    ? ((
+        await db
+          .prepare(
+            "SELECT updated_at FROM work_ratings WHERE user_id = ? AND work_id = ?",
+          )
+          .bind(userId, workId!)
+          .first<{ updated_at: string }>()
+      )?.updated_at ?? null)
+    : undefined;
+
   return c.json({
     id: Number(scanId),
     // The client fans a rating/review change out across every owned edition of this work, so it
@@ -344,6 +359,7 @@ scans.patch("/:id", async (c) => {
     ...(hasOwningStatus ? { owning_status: body.owning_status } : {}),
     ...(hasRating ? { rating: body.rating ?? null } : {}),
     ...(hasReview ? { review: resolvedReview ?? null } : {}),
+    ...(writesRating ? { review_updated_at: reviewUpdatedAt } : {}),
   });
 });
 
