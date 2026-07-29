@@ -7,7 +7,9 @@ import CoverImage from "@/components/CoverImage.vue";
 import { STATUS_ORDER, STATUS_META } from "@/composables/useBookStatus";
 import { OWNING_ORDER, OWNING_META } from "@/composables/useOwningStatus";
 import { languageDisplayFormatter } from "@/utils/language";
+import { editionYear } from "@/utils/book-display";
 import { MATCHED_GRID, MATCHED_ROW_PADDING } from "./matched-grid";
+import { useImportStore } from "@/stores/import";
 import type { ImportedItem } from "@/stores/import";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
@@ -25,6 +27,10 @@ const emit = defineEmits<{
 }>();
 
 const { t, locale } = useI18n();
+// The one piece of state this row can't read off its own item: whether the sibling edition the
+// server named is a copy that predates the import, or one this very run added a row or a batch
+// earlier (see isSessionCreatedEdition).
+const importStore = useImportStore();
 const langName = computed(() => languageDisplayFormatter(locale.value));
 
 const statusOptions = computed(() =>
@@ -79,6 +85,31 @@ function onRemoveOrUndo() {
   else emit("remove");
 }
 
+// This row added a second edition of a work already on the shelf — a real new scan (the import
+// dedupes per ISBN), but one carrying no ownership claim next to a copy that may well be marked
+// owned. Name the edition it landed beside so the user can reconcile the two.
+const otherEditionNote = computed(() => {
+  const other = props.item.otherEdition;
+  // "Already on the shelf" is the whole point of the note, so stay silent when the copy it names
+  // is another row of this same import rather than something the user had before it.
+  if (!other || importStore.isSessionCreatedEdition(other.isbn)) return null;
+  // Publisher and year together, because one publisher's reissue and original share everything
+  // else — "Farrar, Straus and Giroux" alone reads as though the import flagged the same book.
+  // The ISBN only stands in when neither is known; it identifies the copy but doesn't describe it.
+  const named = [other.publisher, editionYear(other)].filter(Boolean).join(" · ");
+  return t("import.summary.card.other_edition", {
+    details: `${named || other.isbn} · ${t(`owning.${other.owning_status}`)}`,
+  });
+});
+
+// A preexisting row updated a scan that already had a reading status; the pill shows the value
+// the import just wrote, so name the one it replaced. Ownership needs no equivalent — the import
+// never touches it, so the pill is already the scan's unchanged current value.
+const previousStatusLabel = computed(() => {
+  const prev = props.item.previous?.status;
+  return prev && prev !== props.item.status ? t(`book.${prev}`) : null;
+});
+
 const editionLabel = computed(() => {
   const publisher =
     props.item.publisher || t("import.summary.card.unknown_publisher");
@@ -127,6 +158,13 @@ const editionLabel = computed(() => {
           class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
         >
           {{ t("import.summary.card.already_in_library") }}
+        </p>
+        <p
+          v-else-if="otherEditionNote"
+          class="text-[9.5px] text-warning truncate mt-0.5"
+          :title="otherEditionNote"
+        >
+          {{ otherEditionNote }}
         </p>
       </div>
 
@@ -274,6 +312,12 @@ const editionLabel = computed(() => {
           :disabled="item.busy"
           @update:model-value="(v) => emit('set-status', v as ReadStatus)"
         />
+        <p
+          v-if="previousStatusLabel"
+          class="text-[9.5px] text-text-secondary/70 italic truncate mt-1"
+        >
+          {{ t("import.summary.card.was_status", { status: previousStatusLabel }) }}
+        </p>
       </div>
       <div class="col-span-2 lg:col-span-1">
         <p

@@ -30,7 +30,9 @@ Pieces in `src/components/import/`:
 
 - `ImportHeaderBar` — review-screen file name/counts + cancel/finalize
 - `MatchedRow` — one editable card in the Matched tab: cover, edition picker, status/owning
-  `CyclePill`s, rating, remove/undo
+  `CyclePill`s, rating, remove/undo. On an updated (preexisting) row the status pill shows the
+  value the import just wrote and a "was X" caption names the one it replaced, read from
+  `previous`; ownership needs no such caption, since the import never changes it
 - `AttentionRow` — one review-queue row
 - `ResolveDrawer` — manual title/ISBN search side panel for a review-queue row.
   `useFocusTrap`'d, always-mounted with a nullable `item` prop so its focus-trap state
@@ -40,7 +42,16 @@ Pieces in `src/components/import/`:
   `owning_status`, only `status`; imported scans land on `owning_status` `unknown` and the
   user sets ownership per book afterwards
 - `ImportProgressChip` — global fixed-position indicator hosted in `App.vue`, hidden on
-  `/import` itself; shows running/paused/complete state and routes to `/import` on click
+  `/import` itself; shows running/paused/complete state and routes to `/import` on click.
+  On desktop `AppHeader` additionally shows an **Import** nav entry while `store.sessionActive`
+  (sending, paused, or awaiting review — not the upload/confirm steps), with the same
+  running/paused/complete dot. It is written into `AppHeader` directly rather than added to
+  `useNavLinks`, because `MobileTabBar` slices its two side slots out of that list and a fifth
+  entry would silently push one off the bar; mobile keeps the chip as its only indicator. Both
+  indicators are additionally gated on `authStore.isAuthenticated`: the session lives in
+  `localStorage` and rehydrates on boot, so it outlives a logout, and an ungated one would both
+  link somewhere the `requiresAuth` guard bounces and tell the next person on that browser that
+  an import was in progress
 - `matched-grid.ts` — shared grid-column geometry for the Matched table's header + rows
 
 `src/utils/goodreads.ts` does the CSV row parsing, shelf mapping and import-payload building.
@@ -51,7 +62,7 @@ Unit-tested (`test/goodreads.spec.ts`).
 Batch-import scans from a parsed Goodreads CSV export; body
 `{ rows: [{ isbn, status?, owning_status?, rating?, created_at?, title?, author?, publisher?, publish_date?, number_of_pages?, shelves? }], update?: boolean, shelves_field_def_id? }`
 (1-10 rows); returns
-`{ results: [{ isbn, outcome: "imported"|"updated"|"duplicate"|"invalid_isbn"|"failed", scan_id?, book?, resolved?, previous? }] }`.
+`{ results: [{ isbn, outcome: "imported"|"updated"|"duplicate"|"invalid_isbn"|"failed", scan_id?, book?, resolved?, previous?, other_edition? }] }`.
 
 `resolved: { status, rating, owning_status }` (on `imported`/`updated`) is the scan state **as
 actually written** — the client renders the summary card straight from it instead of
@@ -67,6 +78,21 @@ and not a re-derivation of the schema default. A row's `owning_status` is only h
 the caller explicitly supplies a valid one; the one caller that does is the edition-swap path
 in `stores/import.ts` (`changeImportedEdition`), which re-creates a scan under a different
 ISBN and passes the item's current `owning_status` through so the swap doesn't reset it.
+
+`other_edition: { isbn, publisher, publish_date, owning_status }` (on `imported` only) is a **different edition
+of a work the user already has a scan for**. Dedupe is per ISBN (both forms), and `scans` is
+unique on `(user_id, book_id)` rather than on the work, so a Goodreads row carrying another
+edition's ISBN is a legitimate new scan — but it lands at `owning_status = 'unknown'` beside a
+copy the user may have marked `owned`, and only the server can see that. `findOtherEdition` runs
+**before** the INSERT so the row can't match the scan it is about to create, but it can still
+match a scan **this same import run** created — a sibling row of the concurrent batch that
+inserted first, or any row of an earlier batch. That is a fact about the DB rather than about
+what the user had before importing, and the route has no session identity to filter on, so the
+client drops those: `isSessionCreatedEdition` in `stores/import.ts` (the normalized ISBNs of the
+session's own non-preexisting items, so it holds regardless of the order rows resolve in)
+suppresses the note. `MatchedRow` renders the surviving ones as a warning-coloured note; the
+edition-swap path in `changeImportedEdition` deliberately **discards** the field, because there
+the sibling it finds is the item's own prior scan, which that path then deletes.
 
 Rate-limited to ~600 rows/min per user (`import:<userId>`, same `rate_limits` table, charged
 via `checkRateLimit`'s `cost` param as `rows.length` rather than 1 per request).
