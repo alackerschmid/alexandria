@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    :max-width="withReview ? 560 : 320"
+    :max-width="withReview ? 800 : 320"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <!-- Rating and actions stay put; the review is the only region that scrolls, and only once it
@@ -19,7 +19,8 @@
         <div
           class="font-mono text-[28px] mb-4"
           :style="{
-            color: rating != null ? RATING_COLOR : 'var(--color-text-secondary)',
+            color:
+              rating != null ? RATING_COLOR : 'var(--color-text-secondary)',
           }"
         >
           {{ rating ?? 0
@@ -51,7 +52,11 @@
             class="text-[10px] tracking-[0.08em] uppercase text-text-secondary/60 hover:text-text-secondary transition-colors"
             @click="previewing = !previewing"
           >
-            {{ previewing ? $t("detail.review_write") : $t("detail.review_preview") }}
+            {{
+              previewing
+                ? $t("detail.review_write")
+                : $t("detail.review_preview")
+            }}
           </button>
         </div>
         <MarkdownText
@@ -134,27 +139,36 @@ function autoGrow() {
   el.style.height = `${el.scrollHeight + border}px`;
 }
 
-// The single place the draft is seeded and flushed, so every close routes through it whoever
-// initiated it — DONE, Esc, click-away, or the host page closing us (series.vue does that when
-// the detail route unwinds on Back). `flush: "sync"` is what makes that last case work: the host
-// clears the flag and tears the dialog down in the same tick, and a pre-flush watcher would be
-// cancelled by the unmount before it ever ran, silently dropping the review.
+// Close → flush. Every close routes through here whoever initiated it — DONE, Esc, click-away, or
+// the host page closing us (series.vue does that when the detail route unwinds on Back).
+// `flush: "sync"` is what makes that last case work: the host clears the flag and tears the dialog
+// down in the same tick, and a pre-flush watcher would be cancelled by the unmount before it ever
+// ran, silently dropping the review.
+watch(
+  () => props.modelValue,
+  (open, wasOpen) => {
+    if (!open && wasOpen) flush();
+  },
+  { flush: "sync" },
+);
+
+// Open → seed, and deliberately **not** sync. A sync watcher runs *during* the parent's prop
+// patch, which assigns props in template-attribute order — `v-model` before `:review` — so it
+// would read the previous book's review and reopen the dialog with the last entry still in it.
+// Post-flush is after every prop has landed.
 //
 // Seeding is open-only: the parent applies our own flushed value back into `review`, and
 // re-seeding on that would fight the user if they reopened and kept typing.
 watch(
   () => props.modelValue,
-  async (open, wasOpen) => {
-    if (!open) {
-      if (wasOpen) flush();
-      return;
-    }
+  async (open) => {
+    if (!open) return;
     draft.value = props.review ?? "";
     previewing.value = false;
     await nextTick();
     autoGrow();
   },
-  { immediate: true, flush: "sync" },
+  { immediate: true, flush: "post" },
 );
 
 // The textarea is v-if'd out in preview mode, so it returns at its CSS height and has to be

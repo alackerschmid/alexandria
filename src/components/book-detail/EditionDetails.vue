@@ -129,9 +129,11 @@
       class="flex items-baseline justify-between gap-4 py-3 border-b border-charcoal-border/50"
     >
       <span
-        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 shrink-0"
-        >{{ $t("detail.edition_name") }}</span
+        class="text-[11px] tracking-[0.1em] uppercase text-text-secondary/60 flex items-center gap-1 shrink-0"
       >
+        {{ $t("detail.edition_name") }}
+        <OverrideDot v-if="book.edition_name_overridden" class="w-1 h-1" />
+      </span>
       <span class="font-mono text-xs text-text-primary text-right">{{
         book.edition_name
       }}</span>

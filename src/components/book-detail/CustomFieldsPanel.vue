@@ -5,8 +5,13 @@
         <label
           :id="`custom-field-label-${def.id}`"
           class="text-[10px] text-text-secondary/60 tracking-[0.1em] uppercase mb-1.5 block"
-          >{{ def.name }}</label
         >
+          {{ def.name }}
+          <template v-if="def.required">
+            <span aria-hidden="true" class="text-orange-neon">*</span>
+            <span class="sr-only">{{ $t("detail.edit_required") }}</span>
+          </template>
+        </label>
 
         <!-- tag: multi-value input with global-delete suggestions -->
         <TagInput
@@ -73,7 +78,7 @@
             @keydown.up.prevent="moveHighlight(def, -1)"
             @keydown.enter.prevent="chooseHighlighted(def)"
             @keydown.space.prevent="chooseHighlighted(def)"
-            @keydown.escape="closeSelect"
+            @keydown.escape="onSelectEscape"
           >
             <span class="truncate">{{ selectedLabel(def) }}</span>
             <span
@@ -124,6 +129,14 @@
           "
           @keyup.enter="($event.target as HTMLInputElement).blur()"
         />
+
+        <p
+          v-if="missingRequired.includes(def.id)"
+          class="text-[10px] text-error tracking-wide mt-1"
+          role="alert"
+        >
+          {{ $t("detail.edit_err_required") }}
+        </p>
       </div>
     </div>
 
@@ -155,6 +168,15 @@ import TagInput from "@/components/book-detail/TagInput.vue";
 // Deliberately plain Tailwind HTML rather than Vuetify controls (see src/CLAUDE.md) — a book can
 // have several fields of different types and they must read as one uniform stack.
 const model = defineModel<CustomFieldModel>("values", { required: true });
+
+withDefaults(
+  defineProps<{
+    /** Ids of `required` definitions the last save attempt found empty. Client-side only — see
+     *  `missingRequiredFields` in `utils/custom-fields.ts` for why the server doesn't enforce it. */
+    missingRequired?: number[];
+  }>(),
+  { missingRequired: () => [] },
+);
 
 const emit = defineEmits<{
   /** The tag global-delete stripped this value from every book in the library, including this
@@ -216,6 +238,18 @@ function openSelect(def: { id: number; options?: string[] }) {
 
 function closeSelect() {
   openSelectId.value = null;
+}
+
+/**
+ * Escape closes the option list — but only when one is open. Propagation is stopped in exactly
+ * that case: this panel lives inside the book detail's `v-dialog`, so an Escape that bubbles
+ * closes the whole dialog and discards the unsaved edit draft. Stopping it unconditionally would
+ * instead make Escape dead in a closed select, which is the only key that dismisses the dialog.
+ */
+function onSelectEscape(e: KeyboardEvent) {
+  if (openSelectId.value === null) return;
+  e.stopPropagation();
+  closeSelect();
 }
 
 function toggleSelect(def: { id: number; options?: string[] }) {

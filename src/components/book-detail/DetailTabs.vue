@@ -6,6 +6,7 @@
         role="tablist"
         :aria-label="$t('detail.tabs_label')"
         class="flex gap-6 md:gap-9 pt-4 md:pt-5 overflow-x-auto no-scrollbar"
+        @scroll="updateFades"
         @keydown.left.prevent="step(-1)"
         @keydown.right.prevent="step(1)"
         @keydown.home.prevent="jump(0)"
@@ -36,17 +37,21 @@
           >
             · {{ tab.badge }}
           </span>
-          <span
-            v-if="tab.dot"
-            class="w-1.5 h-1.5 rounded-full bg-orange-neon shrink-0"
-            aria-hidden="true"
-          />
         </button>
       </div>
-      <!-- Fade only on the left: "All" is the last tab and the default, so the row opens scrolled
-           to its end and it is the start of the list that runs off-screen. -->
+      <!-- A fade on whichever side actually runs off-screen, rather than a fixed one. The row used
+           to open at its *end* (the default tab was "All", the last one), so a left-only fade was
+           right by construction; with `overview` — the first tab — as the default it opens at
+           `scrollLeft: 0`, where that same fade would sit over the selected label and leave the
+           real overflow on the right unmarked. -->
       <div
+        v-if="fadeLeft"
         class="md:hidden pointer-events-none absolute left-6 top-0 bottom-0 w-10 bg-gradient-to-r from-charcoal to-transparent"
+        aria-hidden="true"
+      />
+      <div
+        v-if="fadeRight"
+        class="md:hidden pointer-events-none absolute right-6 top-0 bottom-0 w-10 bg-gradient-to-l from-charcoal to-transparent"
         aria-hidden="true"
       />
     </DetailMeasure>
@@ -62,8 +67,6 @@ export interface DetailTab {
   label: string;
   /** Trailing count, e.g. the edition count on the Editions tab. */
   badge?: number;
-  /** Attention marker — the Review tab carries one until a review is written. */
-  dot?: boolean;
 }
 
 const props = defineProps<{
@@ -98,8 +101,23 @@ function step(delta: number) {
   jump(Math.min(props.tabs.length - 1, Math.max(0, i + delta)));
 }
 
-// The active tab has to be brought into view rather than assumed visible: "All" is the default and
-// sits last, so on a narrow screen the row starts scrolled past its own beginning.
+// Which edges still have row behind them. Recomputed on scroll, after a programmatic reveal and on
+// resize — none of the three implies the others, and the tab row is short enough that a book with
+// no overflow at all must end up with neither fade drawn.
+const fadeLeft = ref(false);
+const fadeRight = ref(false);
+
+function updateFades() {
+  const row = scroller.value;
+  if (!row) return;
+  const max = row.scrollWidth - row.clientWidth;
+  // A pixel of slack: sub-pixel layout widths leave `scrollLeft` a hair short of `max` at the end.
+  fadeLeft.value = row.scrollLeft > 1;
+  fadeRight.value = row.scrollLeft < max - 1;
+}
+
+// The active tab has to be brought into view rather than assumed visible: the row is wider than a
+// narrow screen, and the selected tab is not always one of the ones that fit.
 //
 // Deliberately not `scrollIntoView` — it can't be limited to one axis, so with the tab row scrolled
 // above the fold it also scrolls the detail's *body* back up to reveal it. Since a ResizeObserver
@@ -109,25 +127,27 @@ function step(delta: number) {
 async function revealActive() {
   await nextTick();
   const row = scroller.value;
+  if (!row) return;
   const tab = tabEls.get(props.modelValue);
-  if (!row || !tab) return;
-  const left = tab.offsetLeft - row.clientWidth / 2 + tab.offsetWidth / 2;
-  const max = row.scrollWidth - row.clientWidth;
-  const target = Math.max(0, Math.min(max, left));
-  // Don't fight a row that already shows the tab — only scroll when it is actually out of view.
-  const start = row.scrollLeft;
-  const visible =
-    tab.offsetLeft >= start &&
-    tab.offsetLeft + tab.offsetWidth <= start + row.clientWidth;
-  if (!visible) row.scrollLeft = target;
+  if (tab) {
+    const left = tab.offsetLeft - row.clientWidth / 2 + tab.offsetWidth / 2;
+    const max = row.scrollWidth - row.clientWidth;
+    const target = Math.max(0, Math.min(max, left));
+    // Don't fight a row that already shows the tab — only scroll when it is actually out of view.
+    const start = row.scrollLeft;
+    const visible =
+      tab.offsetLeft >= start &&
+      tab.offsetLeft + tab.offsetWidth <= start + row.clientWidth;
+    if (!visible) row.scrollLeft = target;
+  }
+  updateFades();
 }
 
 watch(() => props.modelValue, revealActive, { immediate: true });
 watch(() => props.tabs.map((t) => t.key).join(","), revealActive);
 
-// A viewport change can push the active tab out of view without the tab or the set changing at
-// all — going from desktop to mobile is exactly that, and it would leave "All" selected but
-// off-screen with the row parked at its start.
+// A viewport change can push the active tab out of view — and change which edges overflow —
+// without the tab or the set changing at all; going from desktop to mobile is exactly that.
 let observer: ResizeObserver | null = null;
 onMounted(() => {
   if (!scroller.value) return;

@@ -3,7 +3,7 @@
     :model-value="modelValue"
     :fullscreen="mode === 'full'"
     :max-width="mode === 'card' ? 560 : undefined"
-    @update:model-value="$emit('update:modelValue', $event)"
+    @update:model-value="onDialogModel"
   >
     <!-- ── CARD MODE ─────────────────────────────────────────────────────── -->
     <template v-if="mode === 'card'">
@@ -39,7 +39,10 @@
             class="sticky top-0 z-10 border-b border-charcoal-border bg-charcoal"
           >
             <DetailMeasure class="flex items-center justify-between py-4">
+              <!-- Hidden while editing: collapsing to the card would leave the draft alive but
+                   off-screen, with no way back to it and no prompt that it exists. -->
               <button
+                v-if="!editing"
                 class="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors"
                 @click="mode = 'card'"
               >
@@ -48,19 +51,22 @@
                   $t("detail.back_to_card")
                 }}</span>
               </button>
+              <span v-else />
               <div class="flex items-center gap-2">
                 <button
                   v-if="editing"
-                  class="text-text-secondary/50 hover:text-text-secondary transition-colors"
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors disabled:opacity-40"
                   :aria-label="$t('detail.edit_cancel')"
-                  @click="editing = false"
+                  :disabled="saving"
+                  @click="requestExit(() => (editing = false))"
                 >
                   <v-icon icon="mdi-close" size="18" />
                 </button>
                 <button
-                  class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1"
+                  class="text-text-secondary/50 hover:text-text-secondary transition-colors ml-1 disabled:opacity-40"
                   :aria-label="$t('detail.close')"
-                  @click="$emit('update:modelValue', false)"
+                  :disabled="saving"
+                  @click="requestExit(() => $emit('update:modelValue', false))"
                 >
                   <v-icon icon="mdi-close" size="20" />
                 </button>
@@ -81,24 +87,21 @@
                     @set-status="$emit('set-status', $event)"
                     @set-owning-status="$emit('set-owning-status', $event)"
                     @set-rating="$emit('set-rating', $event)"
-                    @edit="enterEdit"
                     @go-series="goToSeries"
                     @filter="filterBy"
                   />
                 </DetailMeasure>
               </div>
 
-              <DetailTabs v-if="hasTabs" v-model="activeTab" :tabs="tabItems" />
+              <DetailTabs v-model="activeTab" :tabs="tabItems" />
 
               <!-- In the All view the selected tab is "All", so *this container* is its panel —
                    the individual sections are just sections. With a single tab selected the
                    container is anonymous and that pane carries the role instead. -->
               <DetailMeasure
                 id="detail-panel-all"
-                :role="hasTabs && activeTab === 'all' ? 'tabpanel' : undefined"
-                :aria-labelledby="
-                  hasTabs && activeTab === 'all' ? 'detail-tab-all' : undefined
-                "
+                :role="isAllView ? 'tabpanel' : undefined"
+                :aria-labelledby="isAllView ? 'detail-tab-all' : undefined"
                 class="py-8 md:py-10 pb-24 flex flex-col gap-13"
               >
                 <DetailSection
@@ -106,7 +109,7 @@
                   section-key="overview"
                   :panel="isPanel('overview')"
                   :title="$t('detail.tab_overview')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('overview')"
                   @toggle="toggleSection('overview')"
                 >
@@ -122,18 +125,15 @@
                   section-key="record"
                   :panel="isPanel('record')"
                   :title="$t('detail.your_record')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('record')"
-                  :summary="recordSummary"
                   @toggle="toggleSection('record')"
                 >
                   <RecordPane
                     :book="book"
-                    :guest="guest"
                     @set-status="$emit('set-status', $event)"
                     @set-owning-status="$emit('set-owning-status', $event)"
                     @set-rating="$emit('set-rating', $event)"
-                    @edit="enterEdit"
                   />
                 </DetailSection>
 
@@ -142,7 +142,7 @@
                   section-key="details"
                   :panel="isPanel('details')"
                   :title="$t('detail.tab_details')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('details')"
                   :summary="
                     $t('detail.section_fields', { n: fieldCount }, fieldCount)
@@ -156,6 +156,7 @@
                     :readonly="readonly"
                     @filter="filterBy"
                     @refresh="refresh"
+                    @edit="enterEdit"
                   />
                 </DetailSection>
 
@@ -164,7 +165,7 @@
                   section-key="review"
                   :panel="isPanel('review')"
                   :title="$t('detail.tab_review')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('review')"
                   :summary="reviewSummary"
                   @toggle="toggleSection('review')"
@@ -181,20 +182,16 @@
                   section-key="editions"
                   :panel="isPanel('editions')"
                   :title="$t('detail.tab_editions')"
-                  :rule="showRules"
+                  :rule="isAllView"
                   :collapsed="collapsed.has('editions')"
-                  :summary="
-                    $t(
-                      'detail.editions_total',
-                      { n: editions.length },
-                      editions.length,
-                    )
-                  "
+                  :summary="editionsSummary"
                   @toggle="toggleSection('editions')"
                 >
                   <EditionsPane
                     :editions="editions"
                     :active-isbn="book.isbn"
+                    :loading="editionsLoading"
+                    :work-linked="book.work_id != null"
                     @show-all="editionsDialogOpen = true"
                     @select="onSelectEdition"
                   />
@@ -232,11 +229,15 @@
             <!-- edit mode: every editable field on one screen -->
             <BookEditForm
               v-else
-              v-model:form="form"
+              v-model:draft="draft"
               v-model:custom-values="customValues"
               :book="book"
               :guest="guest"
+              :saving="saving"
               :save-error="saveError"
+              :field-errors="fieldErrors"
+              :missing-required="missingRequired"
+              @submit="save"
               @tag-deleted="onTagDeleted"
             />
           </div>
@@ -247,16 +248,45 @@
             class="sticky bottom-0 z-10 border-t border-charcoal-border bg-charcoal"
           >
             <DetailMeasure class="flex justify-between items-center py-3">
-              <AppButton variant="ghost" size="sm" @click="editing = false">
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="saving"
+                @click="requestExit(() => (editing = false))"
+              >
                 {{ $t("detail.edit_cancel") }}
               </AppButton>
-              <AppButton size="sm" :loading="saving" @click="save">
+              <!-- Outside the <form> element, so it submits by id rather than by position. -->
+              <AppButton
+                type="submit"
+                form="book-edit-form"
+                size="sm"
+                :loading="saving"
+                :disabled="!dirty"
+                :aria-describedby="dirty ? undefined : 'edit-no-changes'"
+              >
                 {{ $t("detail.edit_save") }}
               </AppButton>
+              <span id="edit-no-changes" class="sr-only">{{
+                $t("detail.edit_no_changes")
+              }}</span>
             </DetailMeasure>
           </div>
         </div>
       </div>
+
+      <!-- Not `v-model`: Escape on this nested dialog closes it directly, which has to drop the
+           pending exit too, or the *next* Cancel would fire the one this dismissed. -->
+      <ConfirmDialog
+        :model-value="confirmDiscardOpen"
+        danger
+        :title="$t('detail.edit_discard_title')"
+        :body="$t('detail.edit_discard_body')"
+        :confirm-label="$t('detail.edit_discard_confirm')"
+        :cancel-label="$t('detail.edit_keep_editing')"
+        @update:model-value="$event || cancelDiscard()"
+        @confirm="confirmDiscard"
+      />
     </template>
   </v-dialog>
 </template>
@@ -270,9 +300,10 @@ import {
   onUnmounted,
   useTemplateRef,
 } from "vue";
-import { useRouter } from "vue-router";
+import { onBeforeRouteUpdate, useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
+import { useDetailRoute } from "@/composables/useDetailRoute";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useLocaleStore } from "@/stores/locale";
 import { formatDateTime } from "@/utils/book-display";
@@ -282,15 +313,23 @@ import {
   buildTabs,
   detailsFieldCount,
   resolveActiveTab,
+  DEFAULT_TAB,
   type TabKey,
 } from "@/utils/detail-tabs";
 import {
   customFieldModel,
   customFieldsChanged,
   customFieldsPayload,
-  customFieldValues as toCustomFieldValues,
+  missingRequiredFields,
   type CustomFieldModel,
 } from "@/utils/custom-fields";
+import {
+  draftFromBook,
+  overrideChanges,
+  validateOverrides,
+  type EditDraft,
+  type OverrideErrors,
+} from "@/utils/book-edit";
 import { stripTagValue } from "@/utils/tags";
 import { reviewWordCount } from "@/utils/review";
 import AppButton from "@/components/AppButton.vue";
@@ -305,21 +344,22 @@ import DetailsPane from "@/components/book-detail/DetailsPane.vue";
 import ReviewPane from "@/components/book-detail/ReviewPane.vue";
 import EditionsPane from "@/components/book-detail/EditionsPane.vue";
 import EditionsDialog from "@/components/book-detail/EditionsDialog.vue";
-import BookEditForm, {
-  type EditForm,
-} from "@/components/book-detail/BookEditForm.vue";
+import BookEditForm from "@/components/book-detail/BookEditForm.vue";
+import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import type { BookWithOverrides, OwningStatus, ReadStatus } from "@/types/book";
 
 // The book detail dialog: a compact card that expands into a full-screen masthead-plus-panes view.
 //
 // The full view is a **masthead** (identity + the four things you set) over a **tabbed body**.
-// "All" is the last tab and the default: it stacks every pane in one scroll under mono section
-// rules that double as disclosures, so the tabs read as a filter rather than a wall. Which tabs
-// exist is derived from the book — see `utils/detail-tabs.ts`; a pane that would be empty never
-// becomes a tab, and Review is the one exception (always offered, dotted until it's written).
+// "All" is the last tab: it stacks every pane in one scroll under mono section rules that double
+// as disclosures, so the tabs read as a filter rather than a wall. Overview is what a book opens
+// on. The tab set is the same for every book — see `utils/detail-tabs.ts` — so an empty pane says
+// so rather than vanishing; only `readonly` (Record/Review) and the breakpoint (Record) drop one.
 //
-// `mode` is deliberately component-local rather than routed, matching the pre-existing behaviour:
-// the URL identifies the *book* (`useDetailRoute`), not how far into it you are.
+// `mode` is component-local state mirrored into the URL by `useDetailRoute` (`?view=full`), so a
+// reload or a shared link lands back in the view the reader was actually in rather than snapping
+// down to the card. The URL stays the single source of truth across a page load; within a session
+// the ref leads and the query follows it.
 const props = defineProps<{
   modelValue: boolean;
   book: BookWithOverrides;
@@ -350,7 +390,12 @@ const router = useRouter();
 
 // ── Mode ──────────────────────────────────────────────────────────────────────
 
-const mode = ref<"card" | "full">("card");
+const { detailView, setDetailView } = useDetailRoute();
+
+// Seeded from the route so a deep link that mounts already-open starts full; the `modelValue`
+// watcher below repeats this for the ordinary cold-load path, where the book resolves a tick
+// after mount and the dialog opens only then.
+const mode = ref<"card" | "full">(props.modelValue ? detailView.value : "card");
 const editionsDialogOpen = ref(false);
 const bodyEl = useTemplateRef<HTMLElement>("bodyEl");
 
@@ -358,9 +403,19 @@ function expand() {
   mode.value = "full";
 }
 
+// One writer for every path into and out of full mode — the masthead's back button, the
+// switch-edition reset and the close reset all just assign `mode`. Guarded on `modelValue` so the
+// reset that runs *as* the dialog closes doesn't race `closeDetail`, which strips `view` itself.
+watch(mode, (value) => {
+  if (props.modelValue) setDetailView(value);
+});
+
 // ── Tabs ──────────────────────────────────────────────────────────────────────
 
-const activeTab = ref<TabKey>("all");
+// `DEFAULT_TAB` comes from `detail-tabs` (one literal): `resolveActiveTab` only ever *replaces* a
+// tab that no longer exists, so a freshly-opened book has to be seeded with it here, and reset to
+// it on close.
+const activeTab = ref<TabKey>(DEFAULT_TAB);
 const collapsed = ref(new Set<TabKey>());
 
 // Whether the Record tab has to exist, i.e. whether the masthead's control cluster is hidden.
@@ -377,17 +432,18 @@ const onBreakpointChange = (e: MediaQueryListEvent) => {
   isMobile.value = !e.matches;
 };
 
-const { editions } = useWorkEditions({
+const { editions, loading: editionsLoading } = useWorkEditions({
   workId: () => props.book.work_id,
   enabled: () => props.modelValue && mode.value === "full",
   knownCount: () => props.book.editionCount,
 });
 
+// Deliberately not a function of `props.book`: the tab set no longer gates on content, so keeping
+// it off the book means a status/rating/review write doesn't rebuild the row and re-run
+// `resolveActiveTab` for a set that cannot have changed.
 const tabs = computed(() =>
   buildTabs({
-    book: props.book,
     readonly: props.readonly,
-    customFieldCount: props.guest ? 0 : fieldDefsStore.defs.length,
     editionCount: editions.value.length,
     mobile: isMobile.value,
   }),
@@ -398,26 +454,23 @@ const tabItems = computed(() =>
     key: tab.key,
     label: t(`detail.tab_${tab.key}`),
     badge: tab.badge,
-    dot: tab.dot,
   })),
 );
 
-/** False when a book yields a single pane — then there is no tab row and no "All". */
-const hasTabs = computed(() => tabs.value.length > 1);
-
-/** The All view is the only place section rules are drawn — a single tab already names its pane.
- *  `all` only ever exists alongside other tabs, so this needs no separate `hasTabs` test. */
-const showRules = computed(() => activeTab.value === "all");
+/** One definition of "every pane is stacked". It decides both the section rules (the All view is
+ *  the only place they're drawn — a single tab already names its pane) and which element carries
+ *  `role="tabpanel"`. */
+const isAllView = computed(() => activeTab.value === "all");
 
 /** Whether this pane is the selected tab's panel — false in the All view, where the container
- *  holds that role instead, and false when there is no tab row to be a panel of. */
+ *  holds that role instead. */
 function isPanel(key: TabKey): boolean {
-  return hasTabs.value && activeTab.value === key;
+  return activeTab.value === key;
 }
 
 function showPane(key: TabKey): boolean {
   if (!tabs.value.some((tab) => tab.key === key)) return false;
-  return activeTab.value === "all" || activeTab.value === key;
+  return isAllView.value || activeTab.value === key;
 }
 
 function toggleSection(key: TabKey) {
@@ -427,8 +480,8 @@ function toggleSection(key: TabKey) {
   collapsed.value = next;
 }
 
-// Keep the active tab valid as the set changes — switching to a book with no description while
-// Overview was selected must not leave a dead tab and a blank body.
+// Keep the active tab valid as the set changes — moving from an owned book to a readonly edition
+// while Record or Review was selected must not leave a dead tab and a blank body.
 watch(
   tabs,
   (list) => {
@@ -439,11 +492,22 @@ watch(
 
 // ── Section summaries (shown on a collapsed rule) ─────────────────────────────
 
-const fieldCount = computed(() => detailsFieldCount(props.book));
+// Custom fields are rows of the Details pane now, so they count towards its summary — every
+// definition shows, valued or not, exactly as the two catalogue columns do. Gated on the same
+// condition `DetailsPane` renders the column on, or a readonly edition's collapsed rule advertises
+// rows the pane never draws.
+const customFieldCount = computed(() =>
+  props.guest || props.readonly ? 0 : fieldDefsStore.defs.length,
+);
 
-const recordSummary = computed(() => {
-  const n = props.guest ? 0 : fieldDefsStore.defs.length;
-  return n ? t("detail.section_fields", { n }, n) : "";
+const fieldCount = computed(
+  () => detailsFieldCount(props.book) + customFieldCount.value,
+);
+
+// No count until the lookup returns something — an empty rule reads better than "0 editions".
+const editionsSummary = computed(() => {
+  const n = editions.value.length;
+  return n ? t("detail.editions_total", { n }, n) : undefined;
 });
 
 const reviewSummary = computed(() => {
@@ -464,19 +528,27 @@ const descriptionExpanded = ref(false);
 const refreshing = ref(false);
 const editing = ref(false);
 const saving = ref(false);
-const saveError = ref(false);
+/** The i18n key for a save failure the mask can't pin on a field (network, 5xx), or null. */
+const saveError = ref<string | null>(null);
+const fieldErrors = ref<OverrideErrors>({});
+/** Custom field definition ids left empty despite `required`. */
+const missingRequired = ref<number[]>([]);
 
-const form = ref<EditForm>({
-  title: "",
-  cover_url: "",
-  language: "",
-  publish_date: "",
-  number_of_pages_median: null,
-  description: "",
-  publisher: "",
-});
-
+const draft = ref<EditDraft>(draftFromBook(props.book));
 const customValues = ref<CustomFieldModel>({});
+
+// The diff is a pure function of draft + book rather than something `save()` builds on the way
+// out, so "is there anything to save" and "what do we send" can never give different answers —
+// which is what let Save stay enabled on an unchanged form and exit silently when pressed.
+const metadataChanges = computed(() => overrideChanges(draft.value, props.book));
+const customChanged = computed(
+  () =>
+    !props.guest &&
+    customFieldsChanged(customValues.value, fieldDefsStore.defs, props.book),
+);
+const dirty = computed(
+  () => Object.keys(metadataChanges.value).length > 0 || customChanged.value,
+);
 
 // ── Enrichment polling ────────────────────────────────────────────────────────
 
@@ -561,7 +633,12 @@ watch(
     const sameWork =
       props.book.work_id != null && props.book.work_id === lastWorkId;
     lastWorkId = props.book.work_id;
-    if (!sameWork) mode.value = "card";
+    // The tab goes back to the default with `mode`, and for the same reason: switching editions of
+    // one work is a step inside a browse loop the user is already in, so it keeps their place.
+    if (!sameWork) {
+      mode.value = "card";
+      activeTab.value = DEFAULT_TAB;
+    }
     resetViewState();
     if (props.modelValue) startEnrichmentPoll();
   },
@@ -572,32 +649,117 @@ watch(
   (val) => {
     if (!val) {
       mode.value = "card";
+      activeTab.value = DEFAULT_TAB;
       resetViewState();
       clearPoll();
     } else {
+      // A reload restores `?view=full` before the book has loaded, so the view has to be taken
+      // from the route at the moment the dialog actually opens, not only at mount.
+      mode.value = detailView.value;
       startEnrichmentPoll();
     }
   },
 );
 
+// The custom-field definitions, loaded as soon as this detail is showing a record that *has* them.
+// Deliberately a watcher rather than an `onMounted` call: `series.vue` flips `readonly` on the same
+// mounted `BookDetail` as the user moves between an edition they don't own and one they do, so a
+// once-at-mount load leaves `defs` empty for the whole visit — `DetailsPane` would then assert "no
+// custom fields yet" and `customFieldCount` would under-count the collapsed Details summary. The
+// store early-returns once loaded, so re-entering the condition costs nothing.
+watch(
+  () => !props.guest && !props.readonly,
+  (ownRecord) => {
+    if (ownRecord) fieldDefsStore.load();
+  },
+  { immediate: true },
+);
+
 onMounted(() => {
-  if (!props.guest && !props.readonly) fieldDefsStore.load();
   desktop.addEventListener("change", onBreakpointChange);
+  window.addEventListener("beforeunload", onBeforeUnload);
 });
 
-onUnmounted(() => desktop.removeEventListener("change", onBreakpointChange));
+onUnmounted(() => {
+  desktop.removeEventListener("change", onBreakpointChange);
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
 
 function enterEdit() {
-  form.value.title = props.book.title ?? "";
-  form.value.cover_url = props.book.cover_url ?? "";
-  form.value.language = props.book.language ?? "";
-  form.value.publish_date = props.book.publish_date ?? "";
-  form.value.number_of_pages_median = props.book.number_of_pages_median ?? null;
-  form.value.description = props.book.description ?? "";
-  form.value.publisher = props.book.publisher ?? "";
+  draft.value = draftFromBook(props.book);
   customValues.value = customFieldModel(props.book, fieldDefsStore.defs);
-  saveError.value = false;
+  fieldErrors.value = {};
+  missingRequired.value = [];
+  saveError.value = null;
   editing.value = true;
+}
+
+// ── Leaving the edit screen ───────────────────────────────────────────────────
+
+const confirmDiscardOpen = ref(false);
+let pendingExit: (() => void) | null = null;
+
+/**
+ * Every way out of the edit screen goes through here: Cancel, both top-bar X buttons, Escape,
+ * a scrim click, and browser Back. Without it the draft is thrown away silently — and there is
+ * no autosave to fall back on, since the whole point of this screen is one deliberate Save.
+ */
+function requestExit(after: () => void) {
+  // A save in flight has already changed the server; unmounting now would drop the `refreshed`
+  // patch and leave the list showing stale values until the next full refetch.
+  if (saving.value) return;
+  if (!editing.value || !dirty.value) {
+    after();
+    return;
+  }
+  pendingExit = after;
+  confirmDiscardOpen.value = true;
+}
+
+function confirmDiscard() {
+  confirmDiscardOpen.value = false;
+  const exit = pendingExit;
+  pendingExit = null;
+  editing.value = false;
+  exit?.();
+}
+
+function cancelDiscard() {
+  confirmDiscardOpen.value = false;
+  pendingExit = null;
+}
+
+/**
+ * The dialog's own close paths — Escape and a scrim click both arrive as `false` here. Not
+ * forwarding it is what keeps the dialog open, since `modelValue` is the host's prop; `persistent`
+ * would block the same keypress but with a shake and no explanation of why.
+ */
+function onDialogModel(value: boolean) {
+  if (value) {
+    emit("update:modelValue", true);
+    return;
+  }
+  requestExit(() => emit("update:modelValue", false));
+}
+
+// Browser Back leaves the detail by dropping `edition` from the query — the same route, so this
+// is an *update*, not a leave, and `onBeforeRouteLeave` never sees it.
+onBeforeRouteUpdate((to, from) => {
+  if (to.query.edition === from.query.edition) return true;
+  // Same rule as `requestExit`, which every other exit goes through: a save in flight has already
+  // changed the server, so navigating now unmounts the component and drops the `refreshed` patch.
+  // Refused outright rather than prompted — there is no draft left to discard, only a reply to wait for.
+  if (saving.value) return false;
+  if (!editing.value || !dirty.value) return true;
+  pendingExit = () => router.replace(to.fullPath);
+  confirmDiscardOpen.value = true;
+  return false;
+});
+
+// A reload or tab close can't be intercepted with our own dialog, only with the browser's.
+function onBeforeUnload(e: BeforeUnloadEvent) {
+  if (!editing.value || !dirty.value) return;
+  e.preventDefault();
 }
 
 /**
@@ -621,95 +783,97 @@ function onTagDeleted(defId: number, value: string) {
 }
 
 async function save() {
-  const s = (v: string) => v.trim() || null;
-  const o = (v: string | null | undefined) => v ?? null;
-  const on = (v: number | null | undefined) => v ?? null;
+  if (saving.value) return;
 
-  const changes: Record<string, string | number | null> = {};
-  if (s(form.value.title) !== o(props.book.title))
-    changes.title = s(form.value.title);
-  if (s(form.value.cover_url) !== o(props.book.cover_url))
-    changes.cover_url = s(form.value.cover_url);
-  if (s(form.value.language) !== o(props.book.language))
-    changes.language = s(form.value.language);
-  if (s(form.value.publish_date) !== o(props.book.publish_date))
-    changes.publish_date = s(form.value.publish_date);
-  if (s(form.value.description) !== o(props.book.description))
-    changes.description = s(form.value.description);
-  if (s(form.value.publisher) !== o(props.book.publisher))
-    changes.publisher = s(form.value.publisher);
-
-  const newPages =
-    form.value.number_of_pages_median && form.value.number_of_pages_median > 0
-      ? form.value.number_of_pages_median
-      : null;
-  if (newPages !== on(props.book.number_of_pages_median))
-    changes.number_of_pages_median = newPages;
-
+  const changes = metadataChanges.value;
   const defs = fieldDefsStore.defs;
-  const customChanged =
-    !props.guest && customFieldsChanged(customValues.value, defs, props.book);
+  const custom = customChanged.value;
 
-  if (!Object.keys(changes).length && !customChanged) {
+  fieldErrors.value = validateOverrides(changes);
+  missingRequired.value = props.guest
+    ? []
+    : missingRequiredFields(customValues.value, defs);
+  saveError.value = null;
+  if (
+    Object.keys(fieldErrors.value).length ||
+    missingRequired.value.length
+  )
+    return;
+
+  if (!Object.keys(changes).length && !custom) {
     editing.value = false;
     return;
   }
 
-  saveError.value = false;
   saving.value = true;
+  // Whatever the *first* request applied, even if the second one fails: the server has already
+  // changed, so swallowing this would leave the screen disagreeing with the database.
+  let applied: Partial<BookWithOverrides> | null = null;
   try {
-    const updated: Partial<BookWithOverrides> = {};
-
     // Two endpoints, one Save: metadata overrides and custom field values are separate resources
     // server-side, but the user filled in one form and must not end up with half of it applied.
     // Sequential rather than parallel so a failing first request doesn't leave the second landing
     // silently after the error is already shown.
     if (Object.keys(changes).length) {
-      const res = await apiFetch("/api/books/override", {
+      // `locale` because the reply is a merged scan row: `series_name` is locale-joined, so
+      // omitting it echoes back English and the host spreads that over the displayed book.
+      const res = await apiFetch(`/api/books/override?locale=${localeStore.locale}`, {
         method: "PATCH",
         body: JSON.stringify({ isbn: props.book.isbn, changes }),
       });
-      if (!res.ok) throw new Error();
-      Object.assign(updated, changes as Partial<BookWithOverrides>);
-      if ("title" in changes)
-        updated.title_overridden = changes.title != null ? 1 : 0;
-      if ("cover_url" in changes)
-        updated.cover_url_overridden = changes.cover_url != null ? 1 : 0;
-      if ("language" in changes)
-        updated.language_overridden = changes.language != null ? 1 : 0;
-      if ("publish_date" in changes)
-        updated.publish_date_overridden = changes.publish_date != null ? 1 : 0;
-      if ("number_of_pages_median" in changes)
-        updated.pages_overridden =
-          changes.number_of_pages_median != null ? 1 : 0;
-      if ("description" in changes)
-        updated.description_overridden = changes.description != null ? 1 : 0;
-      if ("publisher" in changes)
-        updated.publisher_overridden = changes.publisher != null ? 1 : 0;
+      // Both routes answer with the merged scan row, so the override flags and any value the
+      // server resolved (a cleared override falling back to the catalogue, or to a sibling
+      // edition's description) come from the one place that knows them.
+      applied = await readSavedRow(res);
     }
 
-    if (customChanged) {
-      const res = await apiFetch("/api/books/custom-fields", {
+    if (custom) {
+      const res = await apiFetch(`/api/books/custom-fields?locale=${localeStore.locale}`, {
         method: "PATCH",
         body: JSON.stringify({
           isbn: props.book.isbn,
           values: customFieldsPayload(customValues.value, defs),
         }),
       });
-      if (!res.ok) throw new Error();
-      updated.custom_field_values = toCustomFieldValues(
-        customValues.value,
-        defs,
-      );
+      applied = { ...applied, ...(await readSavedRow(res)) };
     }
 
-    emit("refreshed", updated);
+    if (applied) emit("refreshed", applied);
     editing.value = false;
-  } catch {
-    saveError.value = true;
+  } catch (err) {
+    if (applied) emit("refreshed", applied);
+    if (err instanceof OverrideValidationError) {
+      fieldErrors.value = err.fields;
+      saveError.value = "detail.edit_error";
+    } else {
+      saveError.value =
+        err instanceof SaveFailed ? "detail.edit_error" : "detail.edit_error_network";
+    }
   } finally {
     saving.value = false;
   }
+}
+
+class SaveFailed extends Error {}
+class OverrideValidationError extends Error {
+  constructor(readonly fields: OverrideErrors) {
+    super("validation_failed");
+  }
+}
+
+/** Unwrap a save response into the merged scan row, turning a rejection into the error the mask
+ *  knows how to present. A 400 carries per-field codes; anything else is a bare failure. */
+async function readSavedRow(res: Response): Promise<Partial<BookWithOverrides>> {
+  if (res.ok) return (await res.json()) as Partial<BookWithOverrides>;
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => null)) as {
+      error?: string;
+      fields?: OverrideErrors;
+    } | null;
+    if (body?.error === "validation_failed" && body.fields)
+      throw new OverrideValidationError(body.fields);
+  }
+  throw new SaveFailed();
 }
 
 // ── Enrichment refresh ────────────────────────────────────────────────────────

@@ -16,3 +16,28 @@ export function languageDisplayFormatter(
     }
   };
 }
+
+/**
+ * The localised name for a language code, or `null` when it isn't one.
+ *
+ * `languageDisplayFormatter` can't answer that question — it echoes an unrecognised code back, so
+ * "German" would read as a valid tag named "German". `Intl.DisplayNames.of` throws a RangeError
+ * only on a *structurally* invalid tag ("12"); a well-formed but unknown one comes back canonically
+ * cased ("German" → "german", "xx" → "xx"), which is why the echo test has to ignore case.
+ */
+export function resolveLanguageName(
+  code: string,
+  locale: string,
+): string | null {
+  const tag = code.trim();
+  if (!tag) return null;
+  try {
+    const name = new Intl.DisplayNames([locale, "en"], {
+      type: "language",
+    }).of(tag);
+    if (!name || name.toLowerCase() === tag.toLowerCase()) return null;
+    return name;
+  } catch {
+    return null;
+  }
+}

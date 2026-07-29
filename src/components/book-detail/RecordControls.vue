@@ -95,17 +95,6 @@
         </span>
       </div>
     </div>
-
-    <!-- the whole edit surface: metadata overrides + custom fields, one form -->
-    <div v-if="!guest" :class="inline ? '' : 'w-full'">
-      <div v-if="inline" class="record-label mb-2.5">
-        {{ $t("detail.your_record") }}
-      </div>
-      <EditFieldsButton
-        :block="!inline"
-        @click="$emit('edit')"
-      />
-    </div>
   </div>
 </template>
 
@@ -123,12 +112,15 @@ import {
 } from "@/composables/useOwningStatus";
 import AppSelect from "@/components/AppSelect.vue";
 import RatingStars from "@/components/RatingStars.vue";
-import EditFieldsButton from "@/components/book-detail/EditFieldsButton.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
-// The four things the user sets about a book, in one component rendered twice: `inline` in the
+// The three things the user *sets* about a book, in one component rendered twice: `inline` in the
 // desktop masthead (labelled cluster) and stacked in the mobile Record pane (full-width rows, every
 // target ≥ 44px). One component rather than two so the behaviour can't drift between breakpoints.
+//
+// "Edit fields" used to be a fourth control here. It isn't a per-book setting like these three —
+// it opens a form over the metadata and custom fields the *Details* pane displays, so it lives
+// beside Refresh at the foot of that pane, next to the values it changes.
 //
 // The status control is deliberately not `AppSegmented`: that primitive can't colour an option by
 // its value, and reading status is colour-carried everywhere else in the app.
@@ -137,16 +129,14 @@ const props = withDefaults(
     book: Book;
     /** Masthead layout when true, stacked mobile layout when false. */
     inline?: boolean;
-    guest?: boolean;
   }>(),
-  { inline: false, guest: false },
+  { inline: false },
 );
 
 defineEmits<{
   "set-status": [status: ReadStatus];
   "set-owning-status": [status: OwningStatus];
   "set-rating": [rating: number | null];
-  edit: [];
 }>();
 
 const { statusLabels } = useBookStatus();

@@ -83,11 +83,9 @@
       inline
       class="hidden md:flex col-start-2"
       :book="book"
-      :guest="guest"
       @set-status="$emit('set-status', $event)"
       @set-owning-status="$emit('set-owning-status', $event)"
       @set-rating="$emit('set-rating', $event)"
-      @edit="$emit('edit')"
     />
   </div>
 </template>
