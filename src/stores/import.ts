@@ -42,6 +42,17 @@ interface ScanStateSummary {
   owning_status: OwningStatus;
 }
 
+// An edition of the same work already in the library, reported alongside a newly created scan.
+// The import dedupes per ISBN, so a row carrying a different edition's ISBN than the copy the
+// user scanned is a legitimate second scan — but it lands at owning_status "unknown" next to a
+// book the user may well have marked owned, which is worth saying out loud on the card.
+export interface OtherEdition {
+  isbn: string;
+  publisher: string | null;
+  publish_date: string | null;
+  owning_status: OwningStatus;
+}
+
 interface ImportRowResult {
   isbn: string;
   outcome: "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
@@ -53,6 +64,8 @@ interface ImportRowResult {
   resolved?: ScanStateSummary;
   // Present only for "updated" rows — the scan's state before this update (drives Undo).
   previous?: ScanStateSummary;
+  // Present only for "imported" rows that added a second edition of an already-owned work.
+  other_edition?: OtherEdition | null;
 }
 
 // Response shape of POST /api/import/match — the title/author matching pass for rows with no
@@ -113,6 +126,10 @@ export interface ImportedItem {
   matchedByTitle: boolean;
   /** The title-match confidence (0-1) — only set when matchedByTitle. */
   matchConfidence: number | null;
+  /** Set when this row created a *second* edition of a work already in the library — the copy
+   *  that was already there. The new scan is real and wanted in the ISBN sense, but it carries no
+   *  ownership claim, so the card names the edition it sits beside. */
+  otherEdition: OtherEdition | null;
   editingEdition: boolean;
   candidates: EditionCandidate[];
   candidatesLoaded: boolean;
@@ -233,9 +250,18 @@ interface PersistedSession {
   importedItems: PersistedImportedItem[];
 }
 
-function reviveImportedItem(p: PersistedImportedItem): ImportedItem {
+// A session in localStorage may have been written by an older build — loadPersistedSession is a
+// bare `as` cast, so PersistedImportedItem's guarantees don't hold for fields added since.
+type StoredImportedItem = Omit<PersistedImportedItem, "otherEdition"> &
+  Partial<Pick<PersistedImportedItem, "otherEdition">>;
+
+// Defaulting those newer fields matters more than it looks: anything the review screen reads
+// *through* while rendering (`item.x.y`) throws mid-render on an older session and paints an
+// empty page rather than degrading.
+function reviveImportedItem(p: StoredImportedItem): ImportedItem {
   return {
     ...p,
+    otherEdition: p.otherEdition ?? null,
     candidates: [],
     candidatesLoaded: false,
     loadingCandidates: false,
@@ -303,6 +329,14 @@ export const useImportStore = defineStore("import", () => {
   // The completion chip stays visible until dismissed or the user visits /import — set back to
   // false whenever a new session starts.
   const chipDismissed = ref(false);
+
+  // An import worth navigating back to: sending, paused mid-run, or waiting in the review screen
+  // to be finalized. Deliberately not the upload/confirm steps — nothing is in flight there and
+  // walking away costs the user nothing. Drives the header's Import nav entry; the chip needs to
+  // tell those three apart (and honours its own dismissal), so it keeps its finer-grained state.
+  const sessionActive = computed(
+    () => isRunning.value || sessionPaused.value || step.value === "review",
+  );
 
   function cancelImporting(): void {
     cancelRequested.value = true;
@@ -469,6 +503,7 @@ export const useImportStore = defineStore("import", () => {
     // card shows real state rather than re-deriving the shelf-mapping/rating rules client-side —
     // always present for the "imported"/"updated" outcomes reaching here.
     const resolved = result.resolved!;
+    const previous = preexisting ? (result.previous ?? null) : null;
     return {
       rowId: row.id,
       scanId: result.scan_id!,
@@ -484,9 +519,10 @@ export const useImportStore = defineStore("import", () => {
       createdAt: row.createdAt,
       workId: book?.work_id ?? null,
       preexisting,
-      previous: preexisting ? (result.previous ?? null) : null,
+      previous,
       matchedByTitle: matchConfidence != null,
       matchConfidence,
+      otherEdition: result.other_edition ?? null,
       editingEdition: false,
       candidates: [],
       candidatesLoaded: false,
@@ -528,6 +564,27 @@ export const useImportStore = defineStore("import", () => {
       .length,
     total: rows.value.length,
   }));
+
+  // The ISBNs of the scans this session itself created (updated rows are excluded — those scans
+  // predate the import).
+  const sessionCreatedIsbnKeys = computed(
+    () =>
+      new Set(
+        importedItems.value
+          .filter((item) => !item.preexisting)
+          .map((item) => normalizeIsbnKey(item.isbn)),
+      ),
+  );
+
+  // True when the edition the server reported as "another edition already in your library" is in
+  // fact one this run just added. `findOtherEdition` reads the DB, which by then holds the scans
+  // of earlier batches (and of earlier rows of the same batch), so a CSV listing two editions of
+  // one work would otherwise have its second row warn about a copy that didn't exist before the
+  // import. Only the client knows what the session itself created, so the filter lives here
+  // rather than in the route — same reasoning as changeImportedEdition discarding the field.
+  function isSessionCreatedEdition(isbn: string): boolean {
+    return sessionCreatedIsbnKeys.value.has(normalizeIsbnKey(isbn));
+  }
 
   const isInProgress = computed(
     () => step.value === "importing" || step.value === "review",
@@ -1189,6 +1246,10 @@ export const useImportStore = defineStore("import", () => {
         item.publisher = result.book?.publisher ?? null;
         item.language = result.book?.language ?? null;
         item.workId = result.book?.work_id ?? item.workId;
+        // Don't take result.other_edition here: the server looked for a sibling edition before
+        // this swap's own INSERT, so what it found is the item's *previous* scan — the one the
+        // DELETE below removes. Clear the note rather than restate a copy that's on its way out.
+        item.otherEdition = null;
         item.editingEdition = false;
         // The candidate list just shown belonged to the *previous* work — reopening the picker
         // must re-fetch for the new one, not silently show stale editions of the old book.
@@ -1396,10 +1457,12 @@ export const useImportStore = defineStore("import", () => {
     log,
     notImported,
     importedItems,
+    isSessionCreatedEdition,
     reviewRemaining,
     isInProgress,
     isRunning,
     sessionPaused,
+    sessionActive,
     chipDismissed,
     loadFile,
     setMapping,

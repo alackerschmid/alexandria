@@ -23,6 +23,26 @@
         >
           {{ link.label }}
         </router-link>
+        <!-- Not part of useNavLinks: that list is also what MobileTabBar slices its two side
+             slots out of, and a fifth entry would silently push one off the bar. This is a
+             transient destination anyway, present only while an import is unfinished.
+             Auth-gated like the chip in App.vue: the session outlives a logout (it lives in
+             localStorage and rehydrates on boot), so without this the header on `/` and
+             `/login` would offer a link the route guard bounces — and tell whoever signs in
+             next that someone was mid-import. -->
+        <router-link
+          v-if="authStore.isAuthenticated && importStore.sessionActive"
+          :to="{ name: 'import' }"
+          class="flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase transition-colors"
+          :class="
+            route.name === 'import'
+              ? 'text-text-primary border-b border-text-primary pb-px pointer-events-none'
+              : 'text-text-secondary hover:text-text-primary'
+          "
+        >
+          <span class="w-1.5 h-1.5 rounded-full flex-none" :class="importDotClass" />
+          {{ $t("home.nav_import") }}
+        </router-link>
       </nav>
       <div class="flex items-center gap-1">
         <v-menu location="bottom end" :offset="8">
@@ -143,6 +163,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import { useNavLinks } from "@/composables/useNavLinks";
+import { useImportStore } from "@/stores/import";
 
 const { t } = useI18n();
 const route = useRoute();
@@ -150,7 +171,15 @@ const router = useRouter();
 const authStore = useAuthStore();
 const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
+const importStore = useImportStore();
 const { navLinks } = useNavLinks();
+
+// Same three states the progress chip uses, so the two indicators can't disagree about what an
+// import is doing: sending, interrupted mid-run, or done and awaiting review.
+const importDotClass = computed(() => {
+  if (importStore.isRunning) return "bg-primary animate-pulse";
+  return importStore.sessionPaused ? "bg-warning" : "bg-success";
+});
 
 // "G" for guests; otherwise the first name's initial, falling back to the email.
 const userInitial = computed(() => {

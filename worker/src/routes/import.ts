@@ -57,6 +57,18 @@ interface ScanStateSummary {
   owning_status: string;
 }
 
+// An edition of the same work the user already had a scan for. Only ever reported alongside a
+// newly created scan — the dedupe below is per ISBN, so a Goodreads row carrying a different
+// edition's ISBN than the copy the user scanned is a legitimate second scan, not a duplicate.
+interface OtherEditionSummary {
+  isbn: string;
+  publisher: string | null;
+  // Two printings from one publisher are common enough that the publisher alone doesn't identify
+  // which copy the user already has — the year is what tells a reissue from the original.
+  publish_date: string | null;
+  owning_status: string;
+}
+
 interface ImportRowResult {
   isbn: string;
   outcome: ImportOutcome;
@@ -73,6 +85,10 @@ interface ImportRowResult {
   // Present only for "updated" rows — the scan's state before this update, so the client can
   // offer an Undo that restores exactly this.
   previous?: ScanStateSummary;
+  // Present only for "imported" rows that added a *second* edition of a work the user already
+  // owns — the import wrote owning_status "unknown" on this new scan while another edition sits
+  // in the library at its own ownership, and only the server can see that.
+  other_edition?: OtherEditionSummary | null;
 }
 
 /**
@@ -128,6 +144,28 @@ async function existingWorkRating(
     .bind(userId, workId)
     .first<{ rating: number | null }>();
   return row?.rating ?? null;
+}
+
+// Another edition of this work already on the user's shelf, if any. `scans` is unique on
+// (user_id, book_id), not on the work, so this is a real second copy rather than a duplicate —
+// the caller reports it so the summary card can say so instead of quietly adding an "unknown"-
+// ownership twin of a book the user already marked owned.
+async function findOtherEdition(
+  db: D1Database,
+  userId: number,
+  workId: number | null,
+  bookId: number,
+): Promise<OtherEditionSummary | null> {
+  if (workId == null) return null;
+  return await db
+    .prepare(
+      `SELECT b.isbn, b.publisher, b.publish_date, s.owning_status
+         FROM scans s JOIN books b ON b.id = s.book_id
+        WHERE s.user_id = ? AND b.work_id = ? AND s.book_id != ?
+        LIMIT 1`,
+    )
+    .bind(userId, workId, bookId)
+    .first<OtherEditionSummary>();
 }
 
 function bookSummary(book: BookRow): ImportedBook {
@@ -285,6 +323,13 @@ async function importRow(
       return { isbn: isbn13, outcome: "failed" };
     }
 
+    // Read *before* the INSERT so this row can't match the scan it's about to create. It can
+    // still match a scan *this same import run* created — a sibling row of this batch that
+    // inserted first, or any row of an earlier batch — which is a fact about the DB, not about
+    // what the user had before importing. The route has no session identity to filter on; the
+    // client does, and drops those (`isSessionCreatedEdition` in `stores/import.ts`).
+    const otherEdition = await findOtherEdition(db, userId, book.work_id, book.id);
+
     const columns = ["user_id", "book_id", "status", "owning_status"];
     const binds: (string | number | null)[] = [
       userId,
@@ -341,6 +386,7 @@ async function importRow(
       // ("unknown" unless the caller explicitly supplied one), so status/owning_status are the
       // same bindings the INSERT used; rating is whatever the work-level seed settled on.
       resolved: { status, rating: createdRating.value, owning_status },
+      other_edition: otherEdition,
     };
   } catch (e) {
     if (isUniqueConstraintError(e)) {
