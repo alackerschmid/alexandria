@@ -13,12 +13,15 @@ import {
 } from "../editions";
 import { enrichWork } from "../enrichment";
 import {
+  attachCustomFields,
+  buildScanSelect,
+  fetchCustomFields,
   getBookByIsbn,
-  OVERRIDE_FIELDS,
   parseIntOr,
   parseTagArray,
   type OverrideField,
 } from "../library-query";
+import { validateOverrides } from "../override-validation";
 import { normalizeIsbn, isValidIsbn } from "../isbn";
 import { rateLimitOrReject } from "../rate-limit";
 
@@ -381,15 +384,21 @@ books.patch("/override", async (c) => {
   if (!rawIsbn) return c.json({ error: "ISBN required" }, 400);
   const isbn = normalizeIsbn(rawIsbn);
 
-  const validFields = Object.keys(changes ?? {}).filter((f) =>
-    (OVERRIDE_FIELDS as readonly string[]).includes(f),
-  ) as OverrideField[];
-  if (!validFields.length) return c.json({ ok: true });
+  const { values: validated, errors } = validateOverrides(changes);
+  if (Object.keys(errors).length)
+    return c.json({ error: "validation_failed", fields: errors }, 400);
 
   const book = await getBookByIsbn(c.env.DB, isbn);
   if (!book) return c.json({ error: "Book not found" }, 404);
+  const locale = c.req.query("locale") ?? "en";
 
-  const values = validFields.map((f) => changes[f] ?? null);
+  // Nothing recognised in the payload — still answer with the row, so every success on this route
+  // has one shape for the client to apply.
+  const validFields = Object.keys(validated) as OverrideField[];
+  if (!validFields.length)
+    return c.json(await mergedScanRow(c.env.DB, userId, book.id, locale));
+
+  const values = validFields.map((f) => validated[f] ?? null);
   const cols = validFields.join(", ");
   const placeholders = validFields.map(() => "?").join(", ");
   const setClauses = validFields.map((f) => `${f} = excluded.${f}`).join(", ");
@@ -406,7 +415,7 @@ books.patch("/override", async (c) => {
     .bind(userId, book.id, ...values)
     .run();
 
-  return c.json({ ok: true });
+  return c.json(await mergedScanRow(c.env.DB, userId, book.id, locale));
 });
 
 books.patch("/custom-fields", async (c) => {
@@ -458,7 +467,35 @@ books.patch("/custom-fields", async (c) => {
     ),
   ]);
 
-  return c.json({ ok: true });
+  return c.json(
+    await mergedScanRow(c.env.DB, userId, book.id, c.req.query("locale") ?? "en"),
+  );
 });
+
+/**
+ * The user's scan row for a book as `GET /api/scans` would report it, after a write.
+ *
+ * Both edit endpoints answer with this rather than `{ ok: true }`, because the effect of a save is
+ * only knowable server-side: the `*_overridden` flags, and — when an override is *cleared* — the
+ * catalogue value (or a sibling edition's description) that surfaces underneath it. The client used
+ * to recompute the flags itself and optimistically show `null` for a cleared field, which is a
+ * value the next page load would never agree with.
+ */
+async function mergedScanRow(
+  db: D1Database,
+  userId: number,
+  bookId: number,
+  locale: string,
+) {
+  const row = await db
+    .prepare(`${buildScanSelect(locale)} WHERE s.user_id = ? AND s.book_id = ?`)
+    .bind(userId, bookId)
+    .first<any>();
+  if (!row) return {};
+  const { defs, valuesByBook } = await fetchCustomFields(db, userId, [
+    row.book_id,
+  ]);
+  return attachCustomFields(row, defs, valuesByBook);
+}
 
 export default books;

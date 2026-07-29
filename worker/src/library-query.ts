@@ -79,6 +79,7 @@ export const OVERRIDE_FIELDS = [
   "number_of_pages_median",
   "description",
   "publisher",
+  "edition_name",
 ] as const;
 export type OverrideField = (typeof OVERRIDE_FIELDS)[number];
 
@@ -131,7 +132,7 @@ export function buildScanSelect(locale: string): string {
             ORDER BY b2.id LIMIT 1))                          AS description,
          COALESCE(o.publisher, b.publisher)                  AS publisher,
          b.physical_format                                   AS physical_format,
-         b.edition_name                                      AS edition_name,
+         COALESCE(o.edition_name, b.edition_name)            AS edition_name,
          b.physical_dimensions                               AS physical_dimensions,
          ws.series_id                                        AS series_id,
          COALESCE(sn.name, sr.canonical_name)                AS series_name,
@@ -172,7 +173,8 @@ export function buildScanSelect(locale: string): string {
          (o.publish_date IS NOT NULL)                        AS publish_date_overridden,
          (o.number_of_pages_median IS NOT NULL)              AS pages_overridden,
          (o.description IS NOT NULL)                         AS description_overridden,
-         (o.publisher IS NOT NULL)                           AS publisher_overridden
+         (o.publisher IS NOT NULL)                           AS publisher_overridden,
+         (o.edition_name IS NOT NULL)                        AS edition_name_overridden
   FROM scans s
   JOIN books b ON s.book_id = b.id
   LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
