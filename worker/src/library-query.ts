@@ -318,6 +318,9 @@ export const VALID_OWNING_STATUSES = [
   "unknown",
 ] as const;
 
+/** The "owned" gate as a value, for the checks that run in JS rather than in SQL. */
+export const OWNED_OWNING_STATUSES: readonly string[] = ["owned", "lent_out"];
+
 export function isValidRating(v: unknown): v is number {
   return Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 10;
 }

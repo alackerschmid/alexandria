@@ -32,7 +32,10 @@ Pieces in `src/components/import/`:
 - `MatchedRow` — one editable card in the Matched tab: cover, edition picker, status/owning
   `CyclePill`s, rating, remove/undo. On an updated (preexisting) row the status pill shows the
   value the import just wrote and a "was X" caption names the one it replaced, read from
-  `previous`; ownership needs no such caption, since the import never changes it
+  `previous`; ownership needs no such caption, since the import never changes it. A
+  `matchedViaWork` row additionally says the export named a different edition than the copy shown
+  — with the count when several copies were written; the "was X" caption still names only the
+  primary's prior status, a simplification, since `siblingUpdates` carries each one for Undo
 - `AttentionRow` — one review-queue row
 - `ResolveDrawer` — manual title/ISBN search side panel for a review-queue row.
   `useFocusTrap`'d, always-mounted with a nullable `item` prop so its focus-trap state
@@ -62,7 +65,7 @@ Unit-tested (`test/goodreads.spec.ts`).
 Batch-import scans from a parsed Goodreads CSV export; body
 `{ rows: [{ isbn, status?, owning_status?, rating?, created_at?, title?, author?, publisher?, publish_date?, number_of_pages?, shelves? }], update?: boolean, shelves_field_def_id? }`
 (1-10 rows); returns
-`{ results: [{ isbn, outcome: "imported"|"updated"|"duplicate"|"invalid_isbn"|"failed", scan_id?, book?, resolved?, previous?, other_edition? }] }`.
+`{ results: [{ isbn, outcome: "imported"|"updated"|"duplicate"|"invalid_isbn"|"failed", scan_id?, book?, resolved?, previous?, other_edition?, matched_via_work?, sibling_updates? }] }`.
 
 `resolved: { status, rating, owning_status }` (on `imported`/`updated`) is the scan state **as
 actually written** — the client renders the summary card straight from it instead of
@@ -79,20 +82,30 @@ the caller explicitly supplies a valid one; the one caller that does is the edit
 in `stores/import.ts` (`changeImportedEdition`), which re-creates a scan under a different
 ISBN and passes the item's current `owning_status` through so the swap doesn't reset it.
 
-`other_edition: { isbn, publisher, publish_date, owning_status }` (on `imported` only) is a **different edition
-of a work the user already has a scan for**. Dedupe is per ISBN (both forms), and `scans` is
-unique on `(user_id, book_id)` rather than on the work, so a Goodreads row carrying another
-edition's ISBN is a legitimate new scan — but it lands at `owning_status = 'unknown'` beside a
-copy the user may have marked `owned`, and only the server can see that. `findOtherEdition` runs
-**before** the INSERT so the row can't match the scan it is about to create, but it can still
-match a scan **this same import run** created — a sibling row of the concurrent batch that
-inserted first, or any row of an earlier batch. That is a fact about the DB rather than about
-what the user had before importing, and the route has no session identity to filter on, so the
-client drops those: `isSessionCreatedEdition` in `stores/import.ts` (the normalized ISBNs of the
-session's own non-preexisting items, so it holds regardless of the order rows resolve in)
-suppresses the note. `MatchedRow` renders the surviving ones as a warning-coloured note; the
-edition-swap path in `changeImportedEdition` deliberately **discards** the field, because there
-the sibling it finds is the item's own prior scan, which that path then deletes.
+`findWorkSiblingScans` reads **every other edition of the work the user already has a scan for**,
+oldest first (`LIMIT 20`, a sanity bound on the status fan-out below), with each sibling's scan
+id, status, `owning_status`, the work's `rating` (joined, so the update path needs no second read)
+and the `books` columns `bookSummary` copies. Dedupe is per ISBN (both forms) and `scans` is unique
+on `(user_id, book_id)` rather than on the work, so those siblings are real second copies rather
+than duplicates — which is why a Goodreads row naming one of their sibling ISBNs is still about a
+book the user has already logged. It runs **before** the INSERT so a row can't match the scan it is
+about to create. It drives two things:
+
+`other_edition: { isbn, publisher, publish_date, owning_status }` (on `imported` only, so only
+when nothing was updated — i.e. `update` off) names the copy the new scan landed beside, chosen
+`owned`/`lent_out`-first: the new scan sits at `owning_status = 'unknown'` next to a book the user
+may have marked `owned`, and only the server can see that. The sibling it finds can be one **this
+same import run** created — a row of the concurrent batch that inserted first, or of an earlier
+batch — which is a fact about the DB rather than about what the user had before importing, and the
+route has no session identity to filter on, so the client drops those: `isSessionCreatedEdition`
+in `stores/import.ts` (the normalized ISBNs of the session's own non-preexisting items, so it
+holds regardless of the order rows resolve in) suppresses the note. `MatchedRow` renders the
+surviving ones as a warning-coloured note; the edition-swap path in `changeImportedEdition`
+deliberately **discards** the field, because there the sibling it finds is the item's own prior
+scan, which that path then deletes.
+
+`matched_via_work: true` + `sibling_updates: [{ scan_id, previous_status }]` (on `updated` only)
+mark the **work-level update** path — see below.
 
 Rate-limited to ~600 rows/min per user (`import:<userId>`, same `rate_limits` table, charged
 via `checkRateLimit`'s `cost` param as `rows.length` rather than 1 per request).
@@ -117,9 +130,72 @@ mode — `owning_status` is never touched on an update — returning `outcome: "
 `resolved` (post-update state) and `previous: { status, rating, owning_status }` (pre-update
 state, for Undo) instead of the inert `"duplicate"`.
 
+`update: true` also fires on a **work-level** match, not just an exact-ISBN one: a Goodreads ISBN is
+whichever edition was popular there, not a claim about which copy the user holds, so a row whose
+*work* is already in the library updates that copy instead of adding an `owning_status = 'unknown'`
+twin beside it. Same rules as the ISBN path (status always, rating only when the row has one, in
+`overwrite` mode; `owning_status` untouched) — enforced by construction rather than by hand, since
+**all three update paths go through `applyImportUpdate`**: the ISBN-duplicate branch, this one, and
+`/match`'s title hit. It takes the scans to write with `scans[0]` as the primary by contract, writes
+one `UPDATE … WHERE id IN (…)` plus the rating statements in a single `db.batch`, and assembles the
+whole `"updated"` core (`scan_id`/`book`/`resolved`/`previous`, plus `sibling_updates` when it was
+given more than one scan). `claimScans` is the matching all-or-nothing claim helper. Three specifics:
+
+- **Status goes to every copy of the work, on all three paths.** Reading status is per scan —
+  `useScanStatus` deliberately never fans it out, since progress belongs to a copy — but a work the
+  user has twice is still one book they read, and a CSV row is a statement about the book. Matching by
+  exact ISBN rather than by work doesn't change that, so the ISBN path fans out too (one extra
+  `findWorkSiblingScans` read on a duplicate row); otherwise the same export would update one copy for
+  a row naming a copy's own ISBN and every copy for a row naming a third edition. Each sibling's own
+  prior value rides back in `sibling_updates` (the rating needs no equivalent, being one per-work
+  value), and the client restores each on Undo/cancel via `restorePreImport` → `patchScanStatuses`.
+- **The primary is the scan the row identified** — the ISBN's own scan, or the title match's. Only the
+  work path has no identified scan, and there it is an `owned`/`lent_out` copy first, else the oldest
+  (`pickPrimarySibling`, keyed on `OWNED_OWNING_STATUSES`). The summary card is an editor for that one
+  scan; on the work path its `book` is therefore the edition **in the library**, not the one the CSV
+  named — that one has no scan. `MatchedRow` says so via `updated_other_edition`, appends
+  `also_copies` whenever more than one copy was written, and `setImportedStatus` fans a later tweak
+  across `siblingUpdates` too, or the import would write every copy and the next click on the same
+  card write one.
+- **All-or-nothing claims.** Two rows of one batch that are two editions of the same work would
+  otherwise both write these statuses, each having read a `previous` from before the other's write. A
+  row finding *any* of its scans claimed returns the plain `"duplicate"`.
+
+The ISBN-duplicate branch returns first, so an exact ISBN match always wins over a work match. With
+`update` **off** nothing is written to existing scans at all — that row falls through to the INSERT
+and the `other_edition` note, which is the point of the toggle. `changeImportedEdition` sends
+`update: false` and so never takes this path.
+
+Two rows of one export that are two *different* editions of one book write overlapping sets of copies
+— the client's pre-send dedupe only catches identical ISBNs, and `claimedScanIds` is per request while
+batches are separate requests — so the second row would open a card over a scan the first already
+owns. Two cards over one scan fight: one PATCHes a scan the other's Remove deleted, or the two restore
+it to different values on cancel. `absorbIntoExistingCard` in `stores/import.ts` folds the later row
+into the existing card and logs it `in_file`. Three details matter:
+
+- It compares **whole write sets** (`cardWriteSet` × `scansWritten`), not primary against primary. The
+  two rows can reach one work from different directions — an ISBN row and a work-matched row, or two
+  work-matched rows whose primary differs — so the scan they share is often one card's *sibling*.
+- It **adopts** the copies the card doesn't track yet, rather than dropping the incoming
+  `sibling_updates`. Dropping them left a pre-existing scan on an imported status with no card
+  pointing at it, so neither Undo nor cancel could restore it.
+- A scan the card already knows **keeps its existing entry** — recorded first, so it holds the true
+  pre-import status, whereas the later row's `previous` for it is only what the earlier row wrote.
+
+It runs only for `"updated"` outcomes: a freshly inserted scan's id cannot collide with a card that
+already exists, and skipping the scan keeps a large import off an O(n²) walk of `importedItems`.
+
+The work lookup necessarily runs *after* `resolveEdition`, since `linkWork` is what populates
+`book.work_id` — so a work-level update still pays the ~3 external fetches for an edition it then
+never scans, leaving a scan-less `books` row behind (harmless; `books` is a shared catalogue).
+Probing `works.match_key` from the CSV's own title/author first would skip that, but the
+normalization would have to match `linkWork` exactly and Goodreads titles carry series annotations
+— a false positive there updates the wrong book.
+
 `shelves_field_def_id` (request-level, verified server-side to belong to the caller and be a
 `tag` field) writes each row's `shelves` into `book_custom_fields` — only for newly created
-scans, not updates.
+scans, not updates (a work-level update included: the copy in the library may already carry tags
+the user chose).
 
 ### Concurrency
 
@@ -149,8 +225,8 @@ it ≤ `MAX_BATCH_SIZE`.
 The title/author matching pass for rows with no usable ISBN (a Goodreads export commonly has
 these for hand-added books); body `{ rows: [{ title, author?, status?, rating? }], update?: boolean }`
 (1-50 rows — no external fetches, so a much larger batch than `/goodreads` costs nothing);
-returns `{ results: [{ outcome: "duplicate"|"updated"|"no_match", scan_id?, book?, resolved?, previous?, confidence? }] }`
-(`resolved`/`previous` same shape and purpose as `/goodreads`).
+returns `{ results: [{ outcome: "duplicate"|"updated"|"no_match", scan_id?, book?, resolved?, previous?, sibling_updates?, confidence? }] }`
+(`resolved`/`previous`/`sibling_updates` same shape and purpose as `/goodreads`).
 
 Shares the `/goodreads` rate-limit bucket (`import:<userId>`) so the two passes of one import
 session jointly stay under budget.
@@ -159,8 +235,17 @@ Loads the caller's whole scan list once per request (scan id, book id, effective
 work's canonical title) and scores every row against it in-memory via
 `worker/src/title-match.ts`'s `pickBestMatch` — skipped (every row returns `no_match`) above
 20k scans, a bound realistically unreachable for a personal library. A confident match applies
-the same update rules as `/goodreads`; below the confidence/ambiguity threshold, `no_match`
-sends the row to manual review instead of guessing.
+the same update rules as `/goodreads` — literally, via `applyImportUpdate` — including the status
+fan-out across every copy of the matched work, which costs no query here since the whole library is
+already in memory. Below the confidence/ambiguity threshold, `no_match` sends the row to manual
+review instead of guessing.
+
+Note that the ambiguity guard makes the multi-copy case mostly unreachable from this route: two
+same-titled editions of one work score identically (each candidate is compared against its own title
+*and* the shared work canonical title), so `pickBestMatchPrepared` returns `null` and the row goes to
+review rather than fanning out. It fires only when one copy wins outright — e.g. a per-user title
+override on one edition. Treating a tie *within one work* as unambiguous would be a change to what
+gets auto-matched, not just to what gets written, so it is deliberately not done here.
 
 `title-match.ts` is pure: `titleSimilarity` (Dice-coefficient bigram comparison with a
 prefix-containment shortcut) + `pickBestMatch` (confident-and-unambiguous match against a

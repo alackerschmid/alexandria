@@ -15,6 +15,7 @@ import {
   isUniqueConstraintError,
   buildScanUpdate,
   upsertWorkRating,
+  OWNED_OWNING_STATUSES,
   type ExistingScan,
 } from "../library-query";
 import { pickBestMatchPrepared, prepareCandidates } from "../title-match";
@@ -57,9 +58,10 @@ interface ScanStateSummary {
   owning_status: string;
 }
 
-// An edition of the same work the user already had a scan for. Only ever reported alongside a
-// newly created scan — the dedupe below is per ISBN, so a Goodreads row carrying a different
-// edition's ISBN than the copy the user scanned is a legitimate second scan, not a duplicate.
+// An edition of the same work the user already had a scan for. Only ever reported alongside a newly
+// created scan, which now means only when `update` is off: the dedupe is per ISBN, so a Goodreads row
+// carrying a different edition's ISBN is not a duplicate, and with updates declined the only thing
+// left to do with it is add it as a second scan and say what it landed beside.
 interface OtherEditionSummary {
   isbn: string;
   publisher: string | null;
@@ -67,6 +69,14 @@ interface OtherEditionSummary {
   // which copy the user already has — the year is what tells a reissue from the original.
   publish_date: string | null;
   owning_status: string;
+}
+
+// One scan the user already has on another edition of the work being imported, with everything
+// the update path needs: the scan to write, its pre-update state for Undo, and its edition's
+// details so the summary card can name the copy in the library rather than the CSV's edition.
+interface WorkSiblingScan extends ImportedBook, UpdatableScan {
+  /** Only for the `other_edition` note — the year is what tells a reissue from the original. */
+  publish_date: string | null;
 }
 
 interface ImportRowResult {
@@ -85,6 +95,15 @@ interface ImportRowResult {
   // Present only for "updated" rows — the scan's state before this update, so the client can
   // offer an Undo that restores exactly this.
   previous?: ScanStateSummary;
+  // Present only for "updated" rows matched by *work* rather than by ISBN: the CSV carried a
+  // different edition's ISBN than the copy in the library, and the copy is what got updated. An
+  // explicit flag rather than something the client infers from `isbn` vs `book.isbn`, which would
+  // be wrong for a book stored under the other ISBN form.
+  matched_via_work?: true;
+  // Present only alongside `matched_via_work` — the *other* sibling scans whose status this row
+  // also wrote, each with its own pre-update value. Undo has to restore all of them, not just
+  // `scan_id`; the rating needs no equivalent, being one per-work value.
+  sibling_updates?: { scan_id: number; previous_status: string }[];
   // Present only for "imported" rows that added a *second* edition of a work the user already
   // owns — the import wrote owning_status "unknown" on this new scan while another edition sits
   // in the library at its own ownership, and only the server can see that.
@@ -146,29 +165,150 @@ async function existingWorkRating(
   return row?.rating ?? null;
 }
 
-// Another edition of this work already on the user's shelf, if any. `scans` is unique on
-// (user_id, book_id), not on the work, so this is a real second copy rather than a duplicate —
-// the caller reports it so the summary card can say so instead of quietly adding an "unknown"-
-// ownership twin of a book the user already marked owned.
-async function findOtherEdition(
+// The scan fields every update-in-place path needs: the row to write, its pre-update state for
+// Undo, and the ownership to report back untouched. `ExistingScan` (the ISBN-duplicate path) and
+// `WorkSiblingScan` (the work path) satisfy it as-is; the match route's library index row names the
+// same column `scan_id`, so its call site adapts it.
+interface UpdatableScan {
+  id: number;
+  status: string;
+  rating: number | null;
+  owning_status: string;
+}
+
+// The common core of an "updated" result. Each caller adds its own envelope: /goodreads the row's
+// `isbn` (plus `matched_via_work` on the work path), /match the match `confidence`.
+type ImportUpdateResult = { outcome: "updated" } &
+  Required<Pick<ImportRowResult, "scan_id" | "book" | "resolved" | "previous">> &
+  Pick<ImportRowResult, "sibling_updates">;
+
+// All-or-nothing claim of the scans a row is about to write, synchronously before any await. Two
+// rows of one batch can resolve to the same scan — a duplicate CSV entry, one book under both ISBN
+// forms, or two editions of one work — and without this both would write, each having read a
+// `previous` from before the other's write, leaving Undo restoring the wrong value. The row that
+// loses the claim reports `duplicate` instead.
+function claimScans(claimedScanIds: Set<number>, ids: number[]): boolean {
+  if (ids.some((id) => claimedScanIds.has(id))) return false;
+  for (const id of ids) claimedScanIds.add(id);
+  return true;
+}
+
+// The write every update-in-place row performs and the result it reports, shared by all three paths
+// that have one (ISBN duplicate, work-level match, title match) so they cannot drift: the row's
+// `status` onto every scan given, its `rating` onto the work they share, `owning_status` untouched.
+//
+// `scans[0]` is the primary by contract — the scan the client's card edits, and the one `resolved`
+// and `previous` describe. Anything after it is another copy of the same work, reported in
+// `sibling_updates` with its own prior status so Undo can restore each one individually.
+async function applyImportUpdate(
+  db: D1Database,
+  userId: number,
+  scans: UpdatableScan[],
+  book: ImportedBook,
+  status: string,
+  rating: number | null,
+  ratedWorkIds: Map<number, number | null>,
+): Promise<ImportUpdateResult> {
+  const [primary, ...others] = scans;
+  // `status` is required here and `validateImportRow`/`validateMatchRow` always resolve one, so this
+  // SET list is never empty — unlike PATCH /api/scans/:id, which passes both fields optionally and
+  // has to skip the UPDATE when neither is present.
+  const { sets, binds } = buildScanUpdate({ status });
+  const resolvedRating = applyImportRating(
+    db,
+    userId,
+    book.work_id,
+    rating,
+    primary.rating,
+    ratedWorkIds,
+  );
+  await db.batch([
+    // One statement for the whole set — every scan takes the same SET clause.
+    db
+      .prepare(
+        `UPDATE scans SET ${sets.join(", ")} WHERE id IN (${scans.map(() => "?").join(", ")})`,
+      )
+      .bind(...binds, ...scans.map((s) => s.id)),
+    ...resolvedRating.statements,
+  ]);
+
+  return {
+    outcome: "updated",
+    scan_id: primary.id,
+    book,
+    resolved: {
+      // status is always written; owning_status is never touched on an update; rating is what
+      // applyImportRating settled on — this row's value, or the prior one when the CSV row carries
+      // none or another row already claimed the work.
+      status,
+      rating: resolvedRating.value,
+      owning_status: primary.owning_status,
+    },
+    previous: {
+      status: primary.status,
+      rating: primary.rating,
+      owning_status: primary.owning_status,
+    },
+    ...(others.length > 0
+      ? {
+          sibling_updates: others.map((s) => ({
+            scan_id: s.id,
+            previous_status: s.status,
+          })),
+        }
+      : {}),
+  };
+}
+
+// Every *other* edition of this work the user already has a scan for, oldest first. `scans` is
+// unique on (user_id, book_id) rather than on the work, so these are real second copies rather
+// than duplicates — which is exactly why a Goodreads row naming one of their sibling ISBNs is
+// still about a book the user has already logged.
+//
+// `rating` rides along from the work_ratings join: it is keyed per (user, work), so every sibling
+// reports the same value and the update path gets its `prior` without a second query. The `books`
+// columns are the ones `bookSummary` copies, so a sibling can stand in for the resolved edition
+// on the summary card.
+//
+// The LIMIT is a sanity bound on the status fan-out below, not a real constraint — nobody logs
+// twenty editions of one work.
+async function findWorkSiblingScans(
   db: D1Database,
   userId: number,
   workId: number | null,
   bookId: number,
-): Promise<OtherEditionSummary | null> {
-  if (workId == null) return null;
-  return await db
+): Promise<WorkSiblingScan[]> {
+  if (workId == null) return [];
+  const { results } = await db
     .prepare(
-      `SELECT b.isbn, b.publisher, b.publish_date, s.owning_status
-         FROM scans s JOIN books b ON b.id = s.book_id
+      `SELECT s.id, s.status, s.owning_status, wr.rating,
+              b.isbn, b.title, b.author, b.cover_url, b.publisher, b.publish_date,
+              b.language, b.work_id
+         FROM scans s
+         JOIN books b ON b.id = s.book_id
+    LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
         WHERE s.user_id = ? AND b.work_id = ? AND s.book_id != ?
-        LIMIT 1`,
+        ORDER BY s.created_at, s.id
+        LIMIT 20`,
     )
     .bind(userId, workId, bookId)
-    .first<OtherEditionSummary>();
+    .all<WorkSiblingScan>();
+  return results;
 }
 
-function bookSummary(book: BookRow): ImportedBook {
+// Which sibling the summary card points at: the copy the user actually has, else the oldest (the
+// query orders by created_at). Only the card's identity hangs on this — the status write covers
+// every sibling regardless.
+function pickPrimarySibling(siblings: WorkSiblingScan[]): WorkSiblingScan {
+  return (
+    siblings.find((s) => OWNED_OWNING_STATUSES.includes(s.owning_status)) ??
+    siblings[0]
+  );
+}
+
+// Widened from BookRow to exactly the fields it copies, so a work-sibling row — which selects the
+// same `books` columns — can go through it as well as a freshly resolved edition.
+function bookSummary(book: ImportedBook): ImportedBook {
   return {
     isbn: book.isbn,
     title: book.title,
@@ -257,46 +397,35 @@ async function importRow(
       }
       if (matchedScan && matchedBook) {
         if (!update) return { isbn: isbn13, outcome: "duplicate" };
-        if (claimedScanIds.has(matchedScan.id)) {
-          return { isbn: isbn13, outcome: "duplicate" };
-        }
-        claimedScanIds.add(matchedScan.id);
 
         if (!matchedBook.work_id) await linkWork(db, matchedBook);
-        const { sets, binds } = buildScanUpdate({ status });
-        const resolvedRating = applyImportRating(
-          db,
-          userId,
-          matchedBook.work_id,
-          rating,
-          matchedScan.rating,
-          ratedWorkIds,
-        );
-        await db.batch([
-          db
-            .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
-            .bind(...binds, matchedScan.id),
-          ...resolvedRating.statements,
-        ]);
-
+        // The row named this edition, so it stays the primary — but a reading status is a statement
+        // about the book, so every other copy of the work takes it too, exactly as on the work-match
+        // path below. Without this the same export would update one copy for a row naming the exact
+        // ISBN of a copy, and every copy for a row naming some third edition.
+        const scans = [
+          matchedScan,
+          ...(await findWorkSiblingScans(
+            db,
+            userId,
+            matchedBook.work_id,
+            matchedBook.id,
+          )),
+        ];
+        if (!claimScans(claimedScanIds, scans.map((s) => s.id))) {
+          return { isbn: isbn13, outcome: "duplicate" };
+        }
         return {
           isbn: isbn13,
-          outcome: "updated",
-          scan_id: matchedScan.id,
-          book: bookSummary(matchedBook),
-          resolved: {
-            // status is always written; owning_status is never touched on an update; rating is
-            // what applyImportRating settled on — this row's value, or the prior one when the
-            // CSV row carries none or another row already claimed the work.
+          ...(await applyImportUpdate(
+            db,
+            userId,
+            scans,
+            bookSummary(matchedBook),
             status,
-            rating: resolvedRating.value,
-            owning_status: matchedScan.owning_status,
-          },
-          previous: {
-            status: matchedScan.status,
-            rating: matchedScan.rating,
-            owning_status: matchedScan.owning_status,
-          },
+            rating,
+            ratedWorkIds,
+          )),
         };
       }
       // Neither candidate row has a scan yet — reuse the row already found instead of
@@ -326,9 +455,52 @@ async function importRow(
     // Read *before* the INSERT so this row can't match the scan it's about to create. It can
     // still match a scan *this same import run* created — a sibling row of this batch that
     // inserted first, or any row of an earlier batch — which is a fact about the DB, not about
-    // what the user had before importing. The route has no session identity to filter on; the
-    // client does, and drops those (`isSessionCreatedEdition` in `stores/import.ts`).
-    const otherEdition = await findOtherEdition(db, userId, book.work_id, book.id);
+    // what the user had before importing. That matters for the note below (the client filters
+    // those out via `isSessionCreatedEdition`); for the update path it doesn't, since updating a
+    // scan an earlier row just created is the same thing the user wants either way.
+    const siblings = await findWorkSiblingScans(db, userId, book.work_id, book.id);
+
+    // A Goodreads ISBN is whichever edition was popular there, not a claim about which copy the
+    // user holds — so with `update` on, a row whose *work* is already in the library updates that
+    // copy instead of adding an "unknown"-ownership twin beside it. With `update` off nothing is
+    // written to the existing scans at all; that row falls through to the INSERT and the
+    // `other_edition` note below, which is the whole point of the toggle.
+    if (update && siblings.length > 0) {
+      if (!claimScans(claimedScanIds, siblings.map((s) => s.id))) {
+        return { isbn: isbn13, outcome: "duplicate" };
+      }
+      // Reading status is per scan — the app deliberately never fans it out, since ownership and
+      // progress belong to a copy. But a work the user has twice is still one book they read, and
+      // the CSV row is a statement about the book, so the shelf's status goes to every copy.
+      // `book` is the edition in the library, not the one the CSV named — that one has no scan, and
+      // the card is an editor for a scan.
+      const primary = pickPrimarySibling(siblings);
+      return {
+        isbn: isbn13,
+        matched_via_work: true,
+        ...(await applyImportUpdate(
+          db,
+          userId,
+          [primary, ...siblings.filter((s) => s !== primary)],
+          bookSummary(primary),
+          status,
+          rating,
+          ratedWorkIds,
+        )),
+      };
+    }
+
+    // Only reachable when nothing was updated above: a second scan is going in at
+    // owning_status "unknown" beside a copy the user may well have marked owned, and only the
+    // server can see that. Name the owned copy where there is one — that's the one to reconcile
+    // against.
+    const noted = siblings.length > 0 ? pickPrimarySibling(siblings) : null;
+    const otherEdition: OtherEditionSummary | null = noted && {
+      isbn: noted.isbn,
+      publisher: noted.publisher,
+      publish_date: noted.publish_date,
+      owning_status: noted.owning_status,
+    };
 
     const columns = ["user_id", "book_id", "status", "owning_status"];
     const binds: (string | number | null)[] = [
@@ -354,7 +526,12 @@ async function importRow(
     // from their library (work_ratings rows outlive the scan). The read is hoisted out of the
     // call so the claim inside applyImportRating is plainly the first thing that happens after
     // it; a sibling row that lands here meanwhile finds the claim and reports the winner.
-    const priorRating = await existingWorkRating(db, userId, book.work_id);
+    // The sibling query's work_ratings join already carries this when there was a sibling to join
+    // through; only a work with no other scan needs the dedicated read (a rating outlives the scan,
+    // so "no scan" does not mean "no rating").
+    const priorRating = siblings.length
+      ? siblings[0].rating
+      : await existingWorkRating(db, userId, book.work_id);
     const createdRating = applyImportRating(
       db,
       userId,
@@ -491,10 +668,12 @@ type MatchOutcome = "duplicate" | "updated" | "no_match";
 interface MatchRowResult {
   outcome: MatchOutcome;
   scan_id?: number;
-  // All present only for "updated" rows (see ImportRowResult for the resolved/previous split).
+  // All present only for "updated" rows (see ImportRowResult for the resolved/previous split, and
+  // for what sibling_updates carries).
   book?: ImportedBook;
   resolved?: ScanStateSummary;
   previous?: ScanStateSummary;
+  sibling_updates?: { scan_id: number; previous_status: string }[];
   confidence?: number;
 }
 
@@ -618,50 +797,44 @@ importRoutes.post("/match", async (c) => {
       continue;
     }
 
-    if (!update || claimedScanIds.has(matched.scan_id)) {
+    // Every copy of the matched work, matched scan first. Same rule as the /goodreads work path —
+    // one book the user has twice still takes one reading status — and free here: the whole library
+    // is already in memory, so the siblings cost no query. A work-less scan is its own only copy;
+    // grouping unlinked books together would be wrong (see `workSiblings` on the client).
+    const scans: UpdatableScan[] = [
+      { ...matched, id: matched.scan_id },
+      ...(matched.work_id == null
+        ? []
+        : library
+            .filter(
+              (r) => r.work_id === matched.work_id && r.scan_id !== matched.scan_id,
+            )
+            .map((r) => ({ ...r, id: r.scan_id }))),
+    ];
+
+    if (!update || !claimScans(claimedScanIds, scans.map((s) => s.id))) {
       results.push({ outcome: "duplicate" });
       continue;
     }
-    claimedScanIds.add(matched.scan_id);
-
-    const { sets, binds } = buildScanUpdate({ status: validated.status });
-    const resolvedRating = applyImportRating(
-      db,
-      userId,
-      matched.work_id,
-      validated.rating,
-      matched.rating,
-      ratedWorkIds,
-    );
-    await db.batch([
-      db
-        .prepare(`UPDATE scans SET ${sets.join(", ")} WHERE id = ?`)
-        .bind(...binds, matched.scan_id),
-      ...resolvedRating.statements,
-    ]);
 
     results.push({
-      outcome: "updated",
-      scan_id: matched.scan_id,
-      book: {
-        isbn: matched.isbn,
-        title: matched.title,
-        author: matched.author,
-        cover_url: matched.cover_url,
-        publisher: matched.publisher,
-        language: matched.language,
-        work_id: matched.work_id,
-      },
-      resolved: {
-        status: validated.status,
-        rating: resolvedRating.value,
-        owning_status: matched.owning_status,
-      },
-      previous: {
-        status: matched.status,
-        rating: matched.rating,
-        owning_status: matched.owning_status,
-      },
+      ...(await applyImportUpdate(
+        db,
+        userId,
+        scans,
+        {
+          isbn: matched.isbn,
+          title: matched.title,
+          author: matched.author,
+          cover_url: matched.cover_url,
+          publisher: matched.publisher,
+          language: matched.language,
+          work_id: matched.work_id,
+        },
+        validated.status,
+        validated.rating,
+        ratedWorkIds,
+      )),
       confidence: match.score,
     });
   }
