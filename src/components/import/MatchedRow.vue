@@ -102,6 +102,42 @@ const otherEditionNote = computed(() => {
   });
 });
 
+// The one sentence under the title saying how this row resolved. Precedence lives here rather than
+// in a v-else-if ladder, so it can be read in one place: how the row was *matched* outranks what the
+// match then did, and `warning` is reserved for the case that left something for the user to
+// reconcile (a second copy on the shelf) rather than merely being worth knowing.
+const provenanceNote = computed<{ text: string; warning?: true } | null>(() => {
+  const item = props.item;
+  // The card edits one scan, but a work the user has more than one copy of took the status on all of
+  // them — true of every match kind, so the count rides along with whichever line applies rather
+  // than being spelled into each one.
+  const copies = item.siblingUpdates.length + 1;
+  const withCopies = (text: string) =>
+    copies > 1
+      ? `${text} · ${t("import.summary.card.also_copies", { n: copies })}`
+      : text;
+
+  if (item.matchedByTitle) {
+    return {
+      text: withCopies(
+        t("import.summary.card.matched_by_title", {
+          pct: Math.round((item.matchConfidence ?? 0) * 100),
+        }),
+      ),
+    };
+  }
+  // The export named a different edition than the copy in the library, and the copy is what got
+  // updated — worth saying, since the Edition column shows that copy rather than the CSV's.
+  if (item.matchedViaWork) {
+    return { text: withCopies(t("import.summary.card.updated_other_edition")) };
+  }
+  if (item.preexisting) {
+    return { text: withCopies(t("import.summary.card.already_in_library")) };
+  }
+  const other = otherEditionNote.value;
+  return other ? { text: other, warning: true } : null;
+});
+
 // A preexisting row updated a scan that already had a reading status; the pill shows the value
 // the import just wrote, so name the one it replaced. Ownership needs no equivalent — the import
 // never touches it, so the pill is already the scan's unchanged current value.
@@ -144,27 +180,16 @@ const editionLabel = computed(() => {
           {{ item.author || t("book.unknown_author") }}
         </p>
         <p
-          v-if="item.matchedByTitle"
-          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
+          v-if="provenanceNote"
+          class="text-[9.5px] truncate mt-0.5"
+          :class="
+            provenanceNote.warning
+              ? 'text-warning'
+              : 'text-text-secondary/70 italic'
+          "
+          :title="provenanceNote.text"
         >
-          {{
-            t("import.summary.card.matched_by_title", {
-              pct: Math.round((item.matchConfidence ?? 0) * 100),
-            })
-          }}
-        </p>
-        <p
-          v-else-if="item.preexisting"
-          class="text-[9.5px] text-text-secondary/70 italic truncate mt-0.5"
-        >
-          {{ t("import.summary.card.already_in_library") }}
-        </p>
-        <p
-          v-else-if="otherEditionNote"
-          class="text-[9.5px] text-warning truncate mt-0.5"
-          :title="otherEditionNote"
-        >
-          {{ otherEditionNote }}
+          {{ provenanceNote.text }}
         </p>
       </div>
 

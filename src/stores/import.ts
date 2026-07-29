@@ -14,6 +14,11 @@ import {
   type ShelfMapping,
   type ImportPayloadRow,
 } from "@/utils/goodreads";
+import {
+  findAbsorbTarget,
+  writesToAdopt,
+  type ScanWrite,
+} from "@/utils/import-cards";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 // The custom tag field Goodreads' "Bookshelves" column imports into, when the user opts in.
@@ -42,10 +47,11 @@ interface ScanStateSummary {
   owning_status: OwningStatus;
 }
 
-// An edition of the same work already in the library, reported alongside a newly created scan.
-// The import dedupes per ISBN, so a row carrying a different edition's ISBN than the copy the
-// user scanned is a legitimate second scan — but it lands at owning_status "unknown" next to a
-// book the user may well have marked owned, which is worth saying out loud on the card.
+// An edition of the same work already in the library, reported alongside a newly created scan — so
+// only when `update` is off, since otherwise that copy is updated instead of a second scan being
+// added. The import dedupes per ISBN, so a row carrying a different edition's ISBN is not a
+// duplicate; with updates declined it lands at owning_status "unknown" next to a book the user may
+// well have marked owned, which is worth saying out loud on the card.
 export interface OtherEdition {
   isbn: string;
   publisher: string | null;
@@ -66,6 +72,11 @@ interface ImportRowResult {
   previous?: ScanStateSummary;
   // Present only for "imported" rows that added a second edition of an already-owned work.
   other_edition?: OtherEdition | null;
+  // Present only for "updated" rows the server matched by *work* rather than by ISBN — the CSV
+  // named a different edition than the copy in the library, and the copy is what was updated.
+  matched_via_work?: true;
+  // The other copies of that work whose status was written too, with their pre-update value.
+  sibling_updates?: { scan_id: number; previous_status: ReadStatus }[];
 }
 
 // Response shape of POST /api/import/match — the title/author matching pass for rows with no
@@ -78,6 +89,8 @@ interface MatchRowResult {
   book?: ImportedBook;
   resolved?: ScanStateSummary;
   previous?: ScanStateSummary;
+  // A title match resolves to a work as much as an ISBN one does, so it writes every copy too.
+  sibling_updates?: { scan_id: number; previous_status: ReadStatus }[];
   confidence?: number;
 }
 
@@ -124,6 +137,15 @@ export interface ImportedItem {
    *  by title/author instead — shown as "matched by title" rather than "already in your
    *  library" so the user knows this one was a fuzzy match, not an ISBN-confirmed duplicate. */
   matchedByTitle: boolean;
+  /** True when the CSV row's ISBN named a *different* edition than the copy in the library, and
+   *  that copy was updated instead of a second scan being created. Worth saying on the card: the
+   *  edition shown isn't the one the export listed. */
+  matchedViaWork: boolean;
+  /** The other copies of the same work whose status this row also wrote, with their pre-import
+   *  value — Undo has to restore each of them, not just `scanId`. Non-empty whenever the work has
+   *  more than one copy in the library, on every match kind (ISBN, work or title), and grows when
+   *  `absorbIntoExistingCard` folds a later row's writes into this card. */
+  siblingUpdates: ScanWrite[];
   /** The title-match confidence (0-1) — only set when matchedByTitle. */
   matchConfidence: number | null;
   /** Set when this row created a *second* edition of a work already in the library — the copy
@@ -250,10 +272,13 @@ interface PersistedSession {
   importedItems: PersistedImportedItem[];
 }
 
-// A session in localStorage may have been written by an older build — loadPersistedSession is a
-// bare `as` cast, so PersistedImportedItem's guarantees don't hold for fields added since.
-type StoredImportedItem = Omit<PersistedImportedItem, "otherEdition"> &
-  Partial<Pick<PersistedImportedItem, "otherEdition">>;
+// A session in localStorage may have been written by an older build — loadPersistedSession is a bare
+// `as` cast, so the fields listed here (all added since the persisted shape first shipped) aren't
+// guaranteed to be present.
+type NewerImportedItemFields = "otherEdition" | "matchedViaWork" | "siblingUpdates";
+
+type StoredImportedItem = Omit<PersistedImportedItem, NewerImportedItemFields> &
+  Partial<Pick<PersistedImportedItem, NewerImportedItemFields>>;
 
 // Defaulting those newer fields matters more than it looks: anything the review screen reads
 // *through* while rendering (`item.x.y`) throws mid-render on an older session and paints an
@@ -262,6 +287,8 @@ function reviveImportedItem(p: StoredImportedItem): ImportedItem {
   return {
     ...p,
     otherEdition: p.otherEdition ?? null,
+    matchedViaWork: p.matchedViaWork ?? false,
+    siblingUpdates: p.siblingUpdates ?? [],
     candidates: [],
     candidatesLoaded: false,
     loadingCandidates: false,
@@ -522,6 +549,11 @@ export const useImportStore = defineStore("import", () => {
       previous,
       matchedByTitle: matchConfidence != null,
       matchConfidence,
+      matchedViaWork: result.matched_via_work ?? false,
+      siblingUpdates: (result.sibling_updates ?? []).map((s) => ({
+        scanId: s.scan_id,
+        previousStatus: s.previous_status,
+      })),
       otherEdition: result.other_edition ?? null,
       editingEdition: false,
       candidates: [],
@@ -534,6 +566,47 @@ export const useImportStore = defineStore("import", () => {
       searchTitle: row.title,
       searchAuthor: row.author,
     };
+  }
+
+  // Every scan an "updated" result wrote, each with the status it held beforehand.
+  function scansWritten(result: ImportRowResult): ScanWrite[] {
+    return [
+      ...(result.previous && result.scan_id != null
+        ? [{ scanId: result.scan_id, previousStatus: result.previous.status }]
+        : []),
+      ...(result.sibling_updates ?? []).map((s) => ({
+        scanId: s.scan_id,
+        previousStatus: s.previous_status,
+      })),
+    ];
+  }
+
+  // True when this result wrote a scan an earlier row of the same session already has a card for.
+  // Reachable since an update now resolves by work: two *different* editions of one book in the
+  // export (the file pre-dedupe below only catches identical ISBNs) write overlapping sets of copies,
+  // and two cards over one scan would fight over Remove/Undo — one PATCHing a scan the other's
+  // Remove deleted, or the two restoring it to different values on cancel. Fold the write into the
+  // card that's already there and log the row as an in-file duplicate, which is what it is.
+  function absorbIntoExistingCard(
+    row: ParsedGoodreadsRow,
+    result: ImportRowResult,
+  ): boolean {
+    // An "imported" row's scan_id is a freshly minted rowid and it writes nothing else, so it can
+    // never overlap an existing card — skip the scan of importedItems, which a large import makes
+    // long.
+    if (result.outcome !== "updated" || result.scan_id == null) return false;
+    const written = scansWritten(result);
+    const existing = findAbsorbTarget(importedItems.value, written);
+    if (!existing) return false;
+    // The server applied this row's status/rating on top, so the existing card would otherwise sit
+    // on a stale value.
+    if (result.resolved) {
+      existing.status = result.resolved.status;
+      existing.rating = result.resolved.rating;
+    }
+    existing.siblingUpdates.push(...writesToAdopt(existing, written));
+    pushLog(row, row.isbn, "duplicate", "in_file");
+    return true;
   }
 
   function pushLog(
@@ -577,7 +650,7 @@ export const useImportStore = defineStore("import", () => {
   );
 
   // True when the edition the server reported as "another edition already in your library" is in
-  // fact one this run just added. `findOtherEdition` reads the DB, which by then holds the scans
+  // fact one this run just added. `findWorkSiblingScans` reads the DB, which by then holds the scans
   // of earlier batches (and of earlier rows of the same batch), so a CSV listing two editions of
   // one work would otherwise have its second row warn about a copy that didn't exist before the
   // import. Only the client knows what the session itself created, so the filter lives here
@@ -803,6 +876,7 @@ export const useImportStore = defineStore("import", () => {
       book: result.book,
       resolved: result.resolved,
       previous: result.previous,
+      sibling_updates: result.sibling_updates,
     };
   }
 
@@ -886,7 +960,9 @@ export const useImportStore = defineStore("import", () => {
             queueForReview(row, "invalid_isbn");
           } else {
             if (result.outcome === "imported" || result.outcome === "updated") {
-              importedItems.value.push(buildImportedItem(row, result));
+              if (!absorbIntoExistingCard(row, result)) {
+                importedItems.value.push(buildImportedItem(row, result));
+              }
             } else {
               pushLog(
                 row,
@@ -917,13 +993,14 @@ export const useImportStore = defineStore("import", () => {
         results.forEach((result, i) => {
           const row = batch[i];
           if (result.outcome === "updated") {
-            importedItems.value.push(
-              buildImportedItem(
-                row,
-                matchResultToImportRowResult(result),
-                result.confidence ?? null,
-              ),
-            );
+            // Same aliasing guard as the ISBN pass: this pass scores against the user's whole
+            // library, which by now includes the scans this session created.
+            const asImportResult = matchResultToImportRowResult(result);
+            if (!absorbIntoExistingCard(row, asImportResult)) {
+              importedItems.value.push(
+                buildImportedItem(row, asImportResult, result.confidence ?? null),
+              );
+            }
           } else if (result.outcome === "duplicate") {
             // A confident match was found but updateExisting is off — nothing was written, and
             // unlike "no_match" there's nothing for the user to resolve, so this isn't a review
@@ -1294,19 +1371,60 @@ export const useImportStore = defineStore("import", () => {
     return res.ok;
   }
 
+  // Best-effort status writes for the *other* copies of a work-matched row's work (see
+  // `siblingUpdates`). Deliberately quiet: the card is an editor for `item.scanId`, these scans
+  // have no error surface of their own, and a failure leaves a copy on its previous status rather
+  // than losing anything.
+  async function patchScanStatuses(
+    writes: { scanId: number; status: ReadStatus }[],
+  ): Promise<void> {
+    await Promise.allSettled(
+      writes.map((w) =>
+        apiFetch(`/api/scans/${w.scanId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: w.status }),
+        }),
+      ),
+    );
+  }
+
+  // Puts a preexisting row back the way the import found it: the primary's status and rating, plus
+  // each other copy's *own* prior status — one work-matched update wrote a single value across
+  // copies that may well have had different ones. The rating needs no per-copy equivalent, being one
+  // per-work value. Shared by the per-row Undo and the whole-import cancel, which have to mean
+  // exactly the same thing. The sibling writes don't depend on the primary's response, so they go
+  // out together.
+  async function restorePreImport(item: ImportedItem): Promise<boolean> {
+    if (!item.previous) return false;
+    const [ok] = await Promise.all([
+      patchImported(item, {
+        status: item.previous.status,
+        rating: item.previous.rating,
+      }),
+      patchScanStatuses(
+        item.siblingUpdates.map((s) => ({
+          scanId: s.scanId,
+          status: s.previousStatus,
+        })),
+      ),
+    ]);
+    return ok;
+  }
+
   // busy gates the row's CyclePills (see MatchedRow) so a rapid double-click can't fire a second
   // PATCH before the first one's response lands and land out of order. applyLocal runs only on a
-  // successful PATCH, mutating the item to match what the server now has.
+  // successful PATCH, mutating the item to match what the server now has — and may await a
+  // follow-up write that has to stay inside the same busy window.
   async function patchImportedField(
     item: ImportedItem,
     body: Record<string, unknown>,
-    applyLocal: () => void,
+    applyLocal: () => void | Promise<void>,
   ): Promise<void> {
     if (item.busy) return;
     item.busy = true;
     try {
       if (await patchImported(item, body)) {
-        applyLocal();
+        await applyLocal();
         persistSession();
       }
     } catch {
@@ -1318,8 +1436,14 @@ export const useImportStore = defineStore("import", () => {
   }
 
   function setImportedStatus(item: ImportedItem, status: ReadStatus): Promise<void> {
-    return patchImportedField(item, { status }, () => {
+    return patchImportedField(item, { status }, async () => {
       item.status = status;
+      // A work-matched row's card stands for every copy of that work, because that's what the import
+      // wrote — without this the import touches all of them and the very next tweak on the same card
+      // touches one, and they silently drift apart. A no-op for an ordinary row.
+      await patchScanStatuses(
+        item.siblingUpdates.map((s) => ({ scanId: s.scanId, status })),
+      );
     });
   }
 
@@ -1372,11 +1496,7 @@ export const useImportStore = defineStore("import", () => {
     item.busy = true;
     item.error = "";
     try {
-      const ok = await patchImported(item, {
-        status: item.previous.status,
-        rating: item.previous.rating,
-      });
-      if (ok) {
+      if (await restorePreImport(item)) {
         const idx = importedItems.value.indexOf(item);
         if (idx !== -1) importedItems.value.splice(idx, 1);
         persistSession();
@@ -1398,14 +1518,8 @@ export const useImportStore = defineStore("import", () => {
   async function cancelImport(): Promise<void> {
     await Promise.allSettled(
       importedItems.value.map((item) =>
-        item.preexisting && item.previous
-          ? apiFetch(`/api/scans/${item.scanId}`, {
-              method: "PATCH",
-              body: JSON.stringify({
-                status: item.previous.status,
-                rating: item.previous.rating,
-              }),
-            })
+        item.preexisting
+          ? restorePreImport(item)
           : apiFetch(`/api/scans/${item.scanId}`, { method: "DELETE" }),
       ),
     );
