@@ -68,6 +68,27 @@ export function customFieldValues(
   }));
 }
 
+/**
+ * The ids of `required` definitions the editor model leaves empty.
+ *
+ * Client-side only, and deliberately so: `PATCH /api/books/custom-fields` silently clears values
+ * it can't accept rather than rejecting them, and enforcing `required` server-side would reject
+ * every book saved before the flag was switched on. This is what makes the Settings toggle mean
+ * something at the point of entry without invalidating existing rows.
+ */
+export function missingRequiredFields(
+  model: CustomFieldModel,
+  defs: FieldDef[],
+): number[] {
+  return defs
+    .filter((def) => {
+      if (!def.required) return false;
+      const v = model[def.id];
+      return Array.isArray(v) ? v.length === 0 : !String(v ?? "").trim();
+    })
+    .map((def) => def.id);
+}
+
 /** True when the editor model differs from what the book already has saved — lets the edit form
  *  skip the custom-fields PATCH entirely when only metadata changed. */
 export function customFieldsChanged(

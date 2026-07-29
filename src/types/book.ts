@@ -108,4 +108,5 @@ export interface BookWithOverrides extends Book {
   pages_overridden?: number;
   description_overridden?: number;
   publisher_overridden?: number;
+  edition_name_overridden?: number;
 }

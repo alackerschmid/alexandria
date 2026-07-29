@@ -39,7 +39,7 @@
       @keydown.backspace="onBackspace"
       @keydown.down.prevent="moveHighlight(1)"
       @keydown.up.prevent="moveHighlight(-1)"
-      @keydown.escape="open = false"
+      @keydown.escape="onEscape"
     />
 
     <div
@@ -177,6 +177,19 @@ function onBackspace(e: KeyboardEvent) {
   if (last === undefined) return;
   e.preventDefault();
   removeTag(last);
+}
+
+/**
+ * Escape dismisses the suggestion list — but only when there is one on screen. Propagation is
+ * stopped in exactly that case, because this input lives inside the book detail's `v-dialog`:
+ * an unconditional `.stop` would make Escape do nothing at all when no list is open, and no
+ * `.stop` at all lets the dialog close (destroying the unsaved edit draft) on the keypress the
+ * user meant for the list.
+ */
+function onEscape(e: KeyboardEvent) {
+  if (!open.value || !filteredSuggestions.value.length) return;
+  e.stopPropagation();
+  open.value = false;
 }
 
 function onClickOutside(e: MouseEvent) {
