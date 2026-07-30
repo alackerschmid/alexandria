@@ -33,9 +33,11 @@
       </div>
     </div>
 
-    <!-- Owning and rating share a row when stacked; `contents` dissolves this wrapper in the
-         inline layout so both sit directly in the masthead's own flex row. -->
-    <div :class="inline ? 'contents' : 'flex gap-2.5'">
+    <!-- Owning and rating are each a full-width row when stacked — they shared one until the
+         rating grew a clear button, which no longer fits beside five stars and "10/10" in half a
+         phone width. `contents` dissolves this wrapper in the inline layout so both sit directly
+         in the masthead's own flex row. -->
+    <div :class="inline ? 'contents' : 'flex flex-col gap-2.5'">
       <!-- owning status — a menu, not a segmented control: five states never fit a track -->
       <div v-if="inline">
         <div class="record-label mb-2.5">{{ $t("owning.label") }}</div>
@@ -48,7 +50,7 @@
           "
         />
       </div>
-      <div v-else class="flex-1 flex">
+      <div v-else class="w-full flex">
         <AppSelect
           block
           :model-value="owningStatus"
@@ -61,7 +63,8 @@
       </div>
 
       <!-- rating — five half-stars, always paired with the number, because stars alone can't
-           tell 7 from 8 -->
+           tell 7 from 8. A star click only ever sets a value (see RatingStars), so the ✕ is the
+           only way to unset one here; it is the same affordance as the search field's clear. -->
       <div v-if="inline">
         <div class="record-label mb-2.5">{{ $t("detail.rating") }}</div>
         <div class="flex items-center gap-3 py-2">
@@ -77,11 +80,16 @@
               $t("detail.of_ten")
             }}</span>
           </span>
+          <ClearButton
+            v-if="book.rating != null"
+            :label="$t('detail.clear_rating')"
+            @click="$emit('set-rating', null)"
+          />
         </div>
       </div>
       <div
         v-else
-        class="flex-1 flex items-center justify-center gap-2.5 h-[46px] border border-control-border"
+        class="relative w-full flex items-center justify-center gap-2.5 h-[46px] border border-control-border"
       >
         <RatingStars
           :rating="book.rating"
@@ -93,6 +101,14 @@
           {{ book.rating ?? "–"
           }}<span class="text-text-secondary/70">{{ $t("detail.of_ten") }}</span>
         </span>
+        <!-- absolute, so the stars stay optically centred in the row whether or not a rating is
+             set; inset-y-0 makes the tap target the full 46px of the box. -->
+        <ClearButton
+          v-if="book.rating != null"
+          class="absolute inset-y-0 right-0 flex items-center px-4"
+          :label="$t('detail.clear_rating')"
+          @click="$emit('set-rating', null)"
+        />
       </div>
     </div>
   </div>
@@ -111,6 +127,7 @@ import {
   OWNING_META,
 } from "@/composables/useOwningStatus";
 import AppSelect from "@/components/AppSelect.vue";
+import ClearButton from "@/components/ClearButton.vue";
 import RatingStars from "@/components/RatingStars.vue";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 

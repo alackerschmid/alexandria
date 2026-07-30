@@ -809,12 +809,19 @@
               >
                 {{ $t("scanner.rate_as") }}
               </p>
-              <div class="mb-6">
+              <!-- A star click only ever sets a value (see RatingStars), so the ✕ is the only way
+                   back to "no rating" once one has been picked. -->
+              <div class="mb-6 flex items-center gap-3">
                 <RatingStars
                   :rating="selectedRating"
                   size="lg"
                   interactive
                   @update:rating="selectedRating = $event"
+                />
+                <ClearButton
+                  v-if="selectedRating != null"
+                  :label="$t('detail.clear_rating')"
+                  @click="selectedRating = null"
                 />
               </div>
 
@@ -1134,6 +1141,7 @@ import {
 } from "@/composables/useOwningStatus";
 import { useFocusTrap } from "@/composables/useFocusTrap";
 import RatingStars from "@/components/RatingStars.vue";
+import ClearButton from "@/components/ClearButton.vue";
 import { useBarcodeScanner } from "@/composables/useBarcodeScanner";
 import {
   readQueue,

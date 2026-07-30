@@ -4,6 +4,7 @@ import {
   splitAuthors,
   normalizeStr,
   normalizeAuthorKey,
+  workMatchKey,
 } from "../src/editions";
 import type { BookMetadata } from "../src/types";
 
@@ -164,5 +165,44 @@ describe("normalizeStr", () => {
   it('returns "" for null/undefined', () => {
     expect(normalizeStr(null)).toBe("");
     expect(normalizeStr(undefined)).toBe("");
+  });
+});
+
+describe("workMatchKey", () => {
+  it("keys on normalized title and first-author identity", () => {
+    expect(workMatchKey("Dune", "Frank Herbert", "9780441013593")).toBe(
+      "dune|frankherbert",
+    );
+    expect(workMatchKey("  DUNE  ", "Frank  Herbert", "9780441013593")).toBe(
+      "dune|frankherbert",
+    );
+  });
+
+  it("groups two editions of one book under one key", () => {
+    expect(workMatchKey("The Sun Also Rises", "Ernest Hemingway", "1")).toBe(
+      workMatchKey("The sun also rises", "Ernest Hemingway", "2"),
+    );
+  });
+
+  it("does NOT group same-titled editions that carry no author", () => {
+    // Six German Star Wars volumes were all catalogued as "Star wars - Wächter der Macht" with an
+    // empty author, and a title-only key made them one work — one status, one rating, six books.
+    const a = workMatchKey("Star wars - Wächter der Macht", null, "9783453874008");
+    const b = workMatchKey("Star wars - Wächter der Macht", "", "9783453522343");
+    expect(a).not.toBe(b);
+    expect(a).toBe("isbn:9783453874008|");
+  });
+
+  it("keeps the existing key shape for a titleless edition", () => {
+    // Unchanged from before the author guard, so books already linked under this key still resolve.
+    expect(workMatchKey(null, "Frank Herbert", "9780441013593")).toBe(
+      "isbn:9780441013593|frankherbert",
+    );
+  });
+
+  it("gives an edition with neither title nor author its own key", () => {
+    expect(workMatchKey(null, null, "9780441013593")).toBe(
+      "isbn:9780441013593|",
+    );
   });
 });

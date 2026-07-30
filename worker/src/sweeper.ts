@@ -2,8 +2,12 @@ import type { Bindings, BookRow } from "./types";
 import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
 
-// How many works to enrich per cron tick. Each work costs ~3-6 external calls, so this stays
-// under the Workers free-plan ceiling of 50 subrequests per invocation (7 x 6 = 42).
+// How many works to enrich per cron tick. A typical work costs ~3-6 external calls, which keeps a
+// batch under the Workers free-plan ceiling of 50 subrequests per invocation (7 x 6 = 42). The tail
+// is higher — the paren-stripped title retry, the QID label-verification fallback (only when the
+// en/de labels riding the search query don't decide it) and the edition-backfill chain can stack to
+// ~11 on one work — so the ceiling is a budget, not a guarantee: a batch of pathological works can
+// blow it, failing those fetches for the tick and re-queuing the works through the retry policy.
 // Throughput matters after a bulk import (a Goodreads library adds hundreds of pending works at
 // once, each showing a "series lookup pending" badge until it drains) — but the per-invocation
 // subrequest ceiling caps how far this can go, so the cron interval is the other half of the

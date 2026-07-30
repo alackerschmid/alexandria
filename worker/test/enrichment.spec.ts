@@ -6,6 +6,7 @@ import {
   RETRY_POLICY,
   LONG_COOLDOWN_MINUTES,
   type FailureReason,
+  pickVerifiedQid,
 } from "../src/enrichment";
 
 describe("classifyError", () => {
@@ -68,5 +69,77 @@ describe("scheduleRetry", () => {
     expect(scheduleRetry("rate_limited", 1, 30).nextRetryMinutes).toBe(
       RETRY_POLICY.rate_limited.backoffMinutes,
     );
+  });
+});
+
+describe("pickVerifiedQid", () => {
+  const labels = (entries: [string, string[]][]) => new Map(entries);
+
+  it("accepts a hit whose label is the searched title", () => {
+    expect(
+      pickVerifiedQid("Infinite Jest", ["Q1077445"], labels([["Q1077445", ["Infinite Jest"]]])),
+    ).toBe("Q1077445");
+  });
+
+  it("accepts a translated edition via the item's label in another language", () => {
+    // The whole reason labels are fetched in every language: this is the *good* merge, the one that
+    // pairs the German edition with the English work.
+    expect(
+      pickVerifiedQid(
+        "Unendlicher Spaß",
+        ["Q1077445"],
+        labels([["Q1077445", ["Infinite Jest", "Unendlicher Spaß"]]]),
+      ),
+    ).toBe("Q1077445");
+  });
+
+  it("accepts a subtitled edition of the same work", () => {
+    expect(
+      pickVerifiedQid(
+        "Infinite Jest (30th Anniversary Edition)",
+        ["Q1077445"],
+        labels([["Q1077445", ["Infinite Jest"]]]),
+      ),
+    ).toBe("Q1077445");
+  });
+
+  it("rejects the sequel the text search ranked first", () => {
+    // "The Monster Baru Cormorant" scored 0.720 against "The Traitor Baru Cormorant" and was merged
+    // into it, so the two books shared one status write and one rating.
+    expect(
+      pickVerifiedQid(
+        "The Monster Baru Cormorant",
+        ["Q21934324"],
+        labels([["Q21934324", ["The Traitor Baru Cormorant"]]]),
+      ),
+    ).toBeNull();
+  });
+
+  it("rejects a same-series book with a similar German title", () => {
+    // Dune Messiah's German title against Dune's German label: 0.732.
+    expect(
+      pickVerifiedQid(
+        "Der Herr des Wüstenplaneten",
+        ["Q190192"],
+        labels([["Q190192", ["Dune", "Der Wüstenplanet"]]]),
+      ),
+    ).toBeNull();
+  });
+
+  it("falls through to a lower-ranked candidate that does match", () => {
+    expect(
+      pickVerifiedQid(
+        "Olympos",
+        ["Q692326", "Q1348195"],
+        labels([
+          ["Q692326", ["Ilium/Olympos"]],
+          ["Q1348195", ["Olympos"]],
+        ]),
+      ),
+    ).toBe("Q1348195");
+  });
+
+  it("returns null when a candidate has no labels at all", () => {
+    expect(pickVerifiedQid("Dune", ["Q190192"], labels([]))).toBeNull();
   });
 });

@@ -65,9 +65,23 @@ export function titleSimilarity(a: string, b: string): number {
   return diceScore(normalizeTitle(a), normalizeTitle(b));
 }
 
+/**
+ * `titleSimilarity` with the left-hand title prepared once — for a caller scoring one title against
+ * many strings (enrichment's Wikidata labels, which run into the hundreds per work). The one-shot
+ * form re-does the NFKD normalize and bigram build on both sides of every call, which is exactly what
+ * `prepareCandidates` exists to avoid on the library path.
+ */
+export function titleScorer(title: string): (other: string) => number {
+  const prepared = normalizeTitle(title);
+  return (other) => diceScore(prepared, normalizeTitle(other));
+}
+
 export interface TitleMatchCandidate {
   scanId: number;
   bookId: number;
+  /** The work this copy belongs to — two candidates sharing one are the same answer twice, not two
+   *  competing answers (see the ambiguity check in pickBestMatchPrepared). NULL for an unlinked scan. */
+  workId: number | null;
   title: string | null;
   canonicalTitle: string | null;
   author: string | null;
@@ -78,6 +92,7 @@ export interface TitleMatchCandidate {
 export interface PreparedCandidate {
   scanId: number;
   bookId: number;
+  workId: number | null;
   authorKey: string;
   title: NormalizedTitle | null;
   canonicalTitle: NormalizedTitle | null;
@@ -89,16 +104,26 @@ export function prepareCandidates(
   return candidates.map((c) => ({
     scanId: c.scanId,
     bookId: c.bookId,
+    workId: c.workId,
     authorKey: normalizeAuthorKey(c.author),
     title: normalizeTitle(c.title),
     canonicalTitle: normalizeTitle(c.canonicalTitle),
   }));
 }
 
-export interface TitleMatchResult {
+// One candidate with its score, before the ambiguity rules below have had their say.
+interface ScoredCandidate {
   scanId: number;
   bookId: number;
+  workId: number | null;
   score: number;
+}
+
+export interface TitleMatchResult extends ScoredCandidate {
+  /** True when this copy won outright — the row identified a specific scan. False when the top score
+   *  is a tie among copies of one work: the row identified the *book*, and which copy the caller
+   *  should treat as primary is its call (an owned one, by the same rule the ISBN work path uses). */
+  identifiedCopy: boolean;
 }
 
 // Author keys agreeing (see normalizeAuthorKey) is strong corroborating evidence, so a looser
@@ -110,10 +135,18 @@ const TITLE_ONLY_THRESHOLD = 0.92;
 // and resolved as "no match" rather than guessed.
 const AMBIGUITY_MARGIN = 0.08;
 
+// Two candidates that are copies of one work are the same answer twice, not a question the matcher
+// can't answer — so ambiguity is judged between *works*. An unlinked scan (work_id NULL) is its own
+// work and never groups with another, mirroring `workSiblings` on the client: grouping books that
+// merely both lack a work link would be wrong.
+function sameWork(a: ScoredCandidate, b: ScoredCandidate): boolean {
+  return a.workId != null && a.workId === b.workId;
+}
+
 // Scores `query` against every candidate (against both its stored title and its work's canonical
 // title, taking the better of the two — covers a scan stored under a translated title) and
-// returns the best match, or null if nothing clears its threshold or the top two are too close
-// to call.
+// returns the best match, or null if nothing clears its threshold or the two best *works* are too
+// close to call.
 export function pickBestMatchPrepared(
   query: { title: string; author: string },
   candidates: PreparedCandidate[],
@@ -121,7 +154,7 @@ export function pickBestMatchPrepared(
   const queryAuthorKey = normalizeAuthorKey(query.author);
   const queryTitle = normalizeTitle(query.title);
 
-  const qualifying: TitleMatchResult[] = [];
+  const qualifying: ScoredCandidate[] = [];
   for (const c of candidates) {
     const authorMatched =
       queryAuthorKey !== "" && c.authorKey === queryAuthorKey;
@@ -133,15 +166,30 @@ export function pickBestMatchPrepared(
       ? AUTHOR_MATCH_TITLE_THRESHOLD
       : TITLE_ONLY_THRESHOLD;
     if (score >= threshold) {
-      qualifying.push({ scanId: c.scanId, bookId: c.bookId, score });
+      qualifying.push({
+        scanId: c.scanId,
+        bookId: c.bookId,
+        workId: c.workId,
+        score,
+      });
     }
   }
 
   if (qualifying.length === 0) return null;
   qualifying.sort((a, b) => b.score - a.score);
-  const [best, runnerUp] = qualifying;
+  const [best, ...rivals] = qualifying;
+  // The runner-up that has to be beaten is the best-scoring candidate of a *different* work. Two
+  // editions of one book score identically here (each is compared against the shared canonical title
+  // as well as its own), so treating them as rivals sent every multi-copy row to manual review —
+  // exactly the case the ISBN path resolves by work rather than declining to answer.
+  const runnerUp = rivals.find((c) => !sameWork(c, best));
   if (runnerUp && best.score - runnerUp.score < AMBIGUITY_MARGIN) return null;
-  return best;
+  // Within the winning work, one copy only counts as *identified* if it also beat its siblings by the
+  // margin — e.g. a per-user title override, or a German edition matched under its German title.
+  const tiedSibling = rivals.some(
+    (c) => sameWork(c, best) && best.score - c.score < AMBIGUITY_MARGIN,
+  );
+  return { ...best, identifiedCopy: !tiedSibling };
 }
 
 // Convenience wrapper for one-shot matching (and the tests). A batch caller matching many query

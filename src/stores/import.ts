@@ -19,6 +19,7 @@ import {
   writesToAdopt,
   type ScanWrite,
 } from "@/utils/import-cards";
+import { importSortRank } from "@/utils/import-sort";
 import type { ReadStatus, OwningStatus } from "@/types/book";
 
 // The custom tag field Goodreads' "Bookshelves" column imports into, when the user opts in.
@@ -148,6 +149,12 @@ export interface ImportedItem {
   siblingUpdates: ScanWrite[];
   /** The title-match confidence (0-1) — only set when matchedByTitle. */
   matchConfidence: number | null;
+  /** Where this card sits in the Matched list (`importSortRank` — owning, then reading status, then
+   *  rating descending). Captured once, at creation, and not persisted: the cards are editable in
+   *  place, and re-ranking on every edit would make a card jump out from under the click that changed
+   *  it — but a reload has no click in flight, so rehydration re-derives it from current state. An
+   *  edition swap keeps it too — same book, same place in the list. */
+  sortRank: number;
   /** Set when this row created a *second* edition of a work already in the library — the copy
    *  that was already there. The new scan is real and wanted in the ISBN sense, but it carries no
    *  ownership claim, so the card names the edition it sits beside. */
@@ -237,9 +244,9 @@ const BATCH_SIZE = 10;
 // library, so a batch is cheap regardless of size.
 const MATCH_BATCH_SIZE = 50;
 
-// The ephemeral, re-fetchable-on-demand fields stripped before persisting an ImportedItem/
-// ReviewItem to localStorage — candidate lists are the bulk of the payload and cost nothing to
-// rebuild the next time their dropdown opens.
+// The fields stripped before persisting an ImportedItem/ReviewItem to localStorage — candidate
+// lists are the bulk of the payload and cost nothing to re-fetch the next time their dropdown
+// opens, and sortRank is a pure derivation re-computed on revive (see its field doc).
 type PersistedImportedItem = Omit<
   ImportedItem,
   | "candidates"
@@ -250,6 +257,7 @@ type PersistedImportedItem = Omit<
   | "busy"
   | "error"
   | "editingEdition"
+  | "sortRank"
 >;
 type PersistedReviewItem = Omit<
   ReviewItem,
@@ -289,6 +297,10 @@ function reviveImportedItem(p: StoredImportedItem): ImportedItem {
     otherEdition: p.otherEdition ?? null,
     matchedViaWork: p.matchedViaWork ?? false,
     siblingUpdates: p.siblingUpdates ?? [],
+    // Not persisted, always re-derived: the freeze exists so a card doesn't jump out from under the
+    // click that edited it, and a reload has no click in flight — re-ranking from current state is
+    // the correct order for a fresh render (and what an edited card's rank *should* become).
+    sortRank: importSortRank(p),
     candidates: [],
     candidatesLoaded: false,
     loadingCandidates: false,
@@ -381,6 +393,7 @@ export const useImportStore = defineStore("import", () => {
       busy: _busy,
       error: _error,
       editingEdition: _editingEdition,
+      sortRank: _sortRank,
       ...rest
     } = item;
     return rest;
@@ -549,6 +562,11 @@ export const useImportStore = defineStore("import", () => {
       previous,
       matchedByTitle: matchConfidence != null,
       matchConfidence,
+      sortRank: importSortRank({
+        status: resolved.status,
+        owningStatus: resolved.owning_status,
+        rating: resolved.rating,
+      }),
       matchedViaWork: result.matched_via_work ?? false,
       siblingUpdates: (result.sibling_updates ?? []).map((s) => ({
         scanId: s.scan_id,

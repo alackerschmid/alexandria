@@ -21,8 +21,9 @@ there.
 
 - If the work **already has a `wikidata_qid`** (a series-member placeholder, or a
   force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
-- Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → work QID + primary
-  series) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as
+- Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → **verified** work QID +
+  primary series — see "Which QID counts as this book's"; a search hit no label confirms is treated
+  as not found) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as
   placeholder works with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
 
 Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an identified work
@@ -40,11 +41,48 @@ stored `openlibrary_work_id` when its seed-ISBN path comes up empty.
 
 Finally it writes genres/pub date/awards/nominations back to `works`.
 
+## Which QID counts as this book's
+
+`fetchBookInfo`'s SPARQL is an **mwapi full-text search ranked by text relevance**, so its top hit
+is only a candidate. Accepting it unverified is what merged distinct books onto one work — the
+sequel ("The Monster Baru Cormorant" → the Traitor item), the German sequel title ("Der Herr des
+Wüstenplaneten" → Dune), the duology item ("Ilium/Olympos"), the novel series ("Star wars - Wächter
+der Macht" → *Legacy of the Force*) and a Wikipedia list article ("James Bond 007" → *list of James
+Bond films*). Two guards, both needed — neither catches all five:
+
+- **Type**: `FILTER NOT EXISTS` on `P31/P279*` → `Q7725310` (series of creative works) and on
+  `P31` → `Q13406463` (Wikimedia list article). The existing `P31/P279* Q47461344` allow-filter
+  cannot do this: Wikidata puts book, novel *and* film series **under** literary work (verified —
+  Q277759, Q1667921 and Q24856 all reach Q47461344), which is why series items passed for so long.
+  Verified to reject all four series/list items above with zero false positives on the works this
+  library resolved correctly.
+- **Label**: `pickVerifiedQid` (pure, unit-tested) takes the first candidate, in rank order, one of
+  whose labels **or aliases** clears `QID_TITLE_THRESHOLD` (0.85) against the searched title via
+  `titleScorer`. Labels are fetched in **every** language on purpose: the good cross-language
+  merge ("Unendlicher Spaß" → Q1077445 *Infinite Jest*) happens through the item's German label, so
+  an en/de restriction would reject correct hits in other languages. The threshold sits in a
+  measured gap — tightest correct hit 0.909, closest wrong one 0.732. The all-language labels query
+  is only the **fallback**: the search query carries each hit's en/de labels itself (no row
+  multiplication — one label per language), and a top-ranked candidate they verify is accepted
+  without the extra round trip, which keeps the sweeper's subrequest budget where its `BATCH_SIZE`
+  comment assumes. Only a *top-ranked* fast hit is decisive — a lower-ranked one still goes through
+  the full fetch, since a higher-ranked candidate could verify through another language and rank
+  order must win.
+
+Nothing matching is a normal outcome: it stores nulls and lands on `done` with `wikidata_qid IS
+NULL`, which is strictly better than a confidently wrong merge. Note that `ILIUM` vs "Ilium/Olympos"
+scores **1.000** (prefix containment), so only the type guard catches that one.
+
 ## Merge logic
 
 If `fetchBookInfo` returns a QID already assigned to another work row, `mergeWorks` repoints
 all `books`, `work_authors`, `work_series`, `work_edition_isbns` and `work_ratings` rows from
 the duplicate onto the canonical row and deletes the duplicate.
+
+`mergeWorks` is destructive and trusts the QID completely, so **the verification above is the only
+thing standing between a bad search hit and two books permanently sharing one reading status, one
+rating and one card.** `worker/scripts/repair-merged-works.mjs` splits works already merged this way
+— it writes nothing, emitting reviewable SQL from an explicit per-work plan (the sign-off surface).
 
 `work_ratings` is the only one where a collision is *lossy* rather than redundant (the user may
 have rated the English edition's work and reviewed the German one's before enrichment
@@ -110,6 +148,21 @@ no-op) writes one row: `work_id`, `started_at`, `duration_ms`, `outcome`
 Query it directly for pending/failure-rate/timing stats — there's no dashboard, this is a
 queryable log table, not a UI feature. Telemetry writes are best-effort (wrapped so a logging
 failure can't fail the enrichment itself).
+
+## Work identity before Wikidata (`editions.ts`)
+
+`workMatchKey` (pure, unit-tested) is the key two editions must share to be one work before a QID
+exists: `normalizeStr(title)|normalizeAuthorKey(firstAuthor)`, **but only when both halves are
+present**. Title alone is not identity — German series volumes are routinely catalogued under the
+series name rather than the volume's, six editions titled "Star wars - Wächter der Macht" with no
+author on the row, and a title-only key made them one work. An edition missing either half is keyed
+`isbn:<isbn>|<authorKey>` instead, i.e. it stands alone until enrichment can group it deliberately.
+That fallback keeps the `|<authorKey>` suffix a titleless edition already had, so rows linked under
+the old key still resolve to their work.
+
+This does **not** cover same-titled volumes that do carry an author (three Fleming novels all
+catalogued "James Bond 007" still collapse) — nothing local distinguishes those from three editions
+of one book. Correcting `books.title` is the only real fix there.
 
 ## Author identity (`editions.ts`)
 

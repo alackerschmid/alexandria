@@ -12,15 +12,21 @@ export function sortByCreatedAt(list: Book[], dir: SortOption): Book[] {
   );
 }
 
-// Edition-collapsing priority rule: read > reading > unread > dnf, most-recent tie-break.
-// Distinct from STATUS_ORDER (useBookStatus.ts), which orders the quick-cycle button, not
-// which edition "wins" when multiple editions of a work carry different statuses.
-const REPRESENTATIVE_STATUS_PRIORITY: Record<ReadStatus, number> = {
-  read: 3,
-  reading: 2,
-  unread: 1,
-  dnf: 0,
-};
+/** Reading status by progress, most-progressed first — `dnf` last as the abandoned end of the axis.
+ *  Distinct from STATUS_ORDER (useBookStatus.ts), which orders the quick-cycle button. Shared by the
+ *  edition-collapsing rule below and the import review sort (import-sort.ts), so the two can't drift. */
+export const STATUS_PROGRESS_ORDER: readonly ReadStatus[] = [
+  "read",
+  "reading",
+  "unread",
+  "dnf",
+];
+
+// Edition-collapsing priority rule: which edition "wins" when multiple editions of a work carry
+// different statuses — STATUS_PROGRESS_ORDER as a higher-is-better score, most-recent tie-break.
+const REPRESENTATIVE_STATUS_PRIORITY = Object.fromEntries(
+  STATUS_PROGRESS_ORDER.map((s, i) => [s, STATUS_PROGRESS_ORDER.length - 1 - i]),
+) as Record<ReadStatus, number>;
 
 /** Picks the edition whose edition-only fields (cover, publisher, status, ...) represent a
  *  collapsed work-card, via the status-priority rule with most-recently-added as tie-break. */

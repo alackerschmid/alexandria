@@ -5,6 +5,7 @@ import {
   normalizeAuthorKey,
   discoverEditionsFromOpenLibrary,
 } from "./editions";
+import { titleScorer } from "./title-match";
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -172,6 +173,81 @@ async function runSparql(query: string, timeoutMs = 25_000): Promise<any[]> {
 }
 
 // Title (+ optional author) → matched work QID and its primary series, if any.
+// Wikidata's own class graph puts book, novel and film series *under* literary work (verified:
+// Q277759 "book series", Q1667921 "novel series" and Q24856 "film series" all reach Q47461344 through
+// P279*), so the P31 allow-filter below cannot tell a series item from a single book. That matters
+// because a German edition is often catalogued under its *series* name — six volumes all titled
+// "Star wars - Wächter der Macht" — and the series item then outranks every real book in the text
+// search, after which mergeWorks collapses six distinct volumes onto one QID. Excluding the two
+// families that actually turn up costs nothing: none of the works this app resolved correctly reach
+// either class.
+const SERIES_OF_CREATIVE_WORKS = "Q7725310";
+const WIKIMEDIA_LIST_ARTICLE = "Q13406463";
+
+// How close one of an item's labels/aliases must come to the searched title before the QID is
+// accepted as this book's. Calibrated against the pairs this library actually produced: the tightest
+// *correct* hit is 0.909 (`Jagd auf "Roter Oktober"` vs the label without quotes) and the closest
+// *wrong* one is 0.732 ("Der Herr des Wüstenplaneten" — Dune Messiah — against Dune's German label
+// "Der Wüstenplanet"), with the sequel case at 0.720 ("The Monster Baru Cormorant" vs "The Traitor
+// Baru Cormorant"). 0.85 sits in the middle of that gap.
+const QID_TITLE_THRESHOLD = 0.85;
+
+/**
+ * The first candidate (they arrive in search-rank order) whose own name plausibly *is* the searched
+ * title. The mwapi search ranks by text relevance and will happily return the sequel, the omnibus or
+ * the series as its top hit, and accepting that unverified is what merged distinct books onto one
+ * work. Pure, so the thresholds above are unit-testable (`test/enrichment.spec.ts`).
+ */
+export function pickVerifiedQid(
+  title: string,
+  candidates: readonly string[],
+  labels: ReadonlyMap<string, Iterable<string>>,
+): string | null {
+  const score = titleScorer(title);
+  for (const qid of candidates) {
+    for (const label of labels.get(qid) ?? []) {
+      if (score(label) >= QID_TITLE_THRESHOLD) return qid;
+    }
+  }
+  return null;
+}
+
+// A well-covered item carries a label in ~100 languages plus aliases, and most of them are the same
+// string (the ~50 Wikipedias that call Q190192 "Dune"), so the query DISTINCTs and the Set dedupes:
+// scoring one spelling once instead of fifty times is the difference between a handful of
+// titleSimilarity calls per candidate and a thousand. LIMIT is a sanity bound on the response size in
+// the same spirit as findWorkSiblingScans' — the candidate count is already capped at 10 upstream,
+// but nothing else bounds the rows each one contributes.
+const MAX_LABEL_ROWS = 600;
+
+// Labels *and* aliases, in every language: a German edition legitimately resolves to an
+// English-titled work through the item's German label ("Unendlicher Spaß" → Q1077445 Infinite Jest),
+// so restricting this to en/de would reject correct hits in Hebrew, Japanese and the rest. An extra
+// round trip per enrichment, but only the fallback one — the common case is decided by the en/de
+// labels the search query itself carries (see fetchBookInfo's fast path).
+async function fetchWorkLabels(
+  qids: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const values = qids.map((q) => `wd:${q}`).join(" ");
+  const rows = await runSparql(
+    `
+    SELECT DISTINCT ?item ?label WHERE {
+      VALUES ?item { ${values} }
+      { ?item rdfs:label ?label } UNION { ?item skos:altLabel ?label }
+    } LIMIT ${MAX_LABEL_ROWS}`.trim(),
+  );
+  const out = new Map<string, Set<string>>();
+  for (const r of rows) {
+    const qid = qidFromUri(r.item?.value);
+    const label = r.label?.value;
+    if (!qid || !label) continue;
+    const existing = out.get(qid);
+    if (existing) existing.add(label);
+    else out.set(qid, new Set([label]));
+  }
+  return out;
+}
+
 async function fetchBookInfo(
   title: string,
   author: string,
@@ -189,7 +265,7 @@ async function fetchBookInfo(
        ?work wdt:P50 ?author.`
     : "";
   const query = `
-    SELECT ?work ?titleRank ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe WHERE {
+    SELECT ?work ?titleRank ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe ?workLabelEn ?workLabelDe WHERE {
       SERVICE wikibase:mwapi {
         bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
                          mwapi:srsearch "${escapeSparql(title)}".
@@ -197,7 +273,11 @@ async function fetchBookInfo(
         ?titleRank wikibase:apiOrdinal true.
       }
       ?work wdt:P31/wdt:P279* wd:Q47461344.
+      FILTER NOT EXISTS { ?work wdt:P31/wdt:P279* wd:${SERIES_OF_CREATIVE_WORKS} }
+      FILTER NOT EXISTS { ?work wdt:P31 wd:${WIKIMEDIA_LIST_ARTICLE} }
       ${authorBlock}
+      OPTIONAL { ?work rdfs:label ?workLabelEn. FILTER(LANG(?workLabelEn) = "en") }
+      OPTIONAL { ?work rdfs:label ?workLabelDe. FILTER(LANG(?workLabelDe) = "de") }
       OPTIONAL {
         ?work p:P179 ?seriesStmt.
         ?seriesStmt ps:P179 ?series.
@@ -213,19 +293,59 @@ async function fetchBookInfo(
     console.log("[fetchBookInfo] no rows returned");
     return null;
   }
-  const workQid = qidFromUri(rows[0].work?.value);
+  // Rows grouped by hit, a Map so the keys stay in search-rank order — the top one is only a
+  // *candidate* until one of its own labels says it is this book (see pickVerifiedQid). Grouping once
+  // rather than re-deriving the qid per read is also what scopes the author and series rows below to
+  // the chosen work structurally, instead of by repeating the predicate.
+  const byQid = new Map<string, any[]>();
+  for (const r of rows) {
+    const qid = qidFromUri(r.work?.value);
+    // Shape-checked because these are interpolated into the labels query below.
+    if (!qid || !/^Q\d+$/.test(qid)) continue;
+    const existing = byQid.get(qid);
+    if (existing) existing.push(r);
+    else byQid.set(qid, [r]);
+  }
+  const candidates = [...byQid.keys()];
+  if (!candidates.length) {
+    console.log("[fetchBookInfo] no rows carried a usable work URI:", rows[0]);
+    return null;
+  }
+  // Fast path: the en/de labels already ride the search query (one per language per work, so no row
+  // multiplication — the same shape as the series labels). Only a *top-ranked* fast hit is decisive,
+  // though: a lower-ranked one (or none) leaves open that a higher-ranked candidate would verify
+  // through an alias or another language, and rank order must win — so everything else falls back to
+  // the all-language round trip. Most books verify through their en or de label, which is what keeps
+  // the second SPARQL call off the sweeper's subrequest budget in the common case.
+  const fastLabels = new Map(
+    candidates.map((qid): [string, string[]] => {
+      const r = byQid.get(qid)![0];
+      return [
+        qid,
+        [r.workLabelEn?.value, r.workLabelDe?.value].filter(
+          (l): l is string => !!l,
+        ),
+      ];
+    }),
+  );
+  const workQid =
+    pickVerifiedQid(title, candidates, fastLabels) === candidates[0]
+      ? candidates[0]
+      : pickVerifiedQid(title, candidates, await fetchWorkLabels(candidates));
   if (!workQid) {
-    console.log("[fetchBookInfo] first row has no work URI:", rows[0]);
+    console.log(
+      `[fetchBookInfo] no candidate's own name matches "${title}" — treating as not found rather than trusting the search rank. Candidates: ${candidates.join(", ")}`,
+    );
     return null;
   }
   console.log("[fetchBookInfo] workQid =", workQid);
-  const authorQid = qidFromUri(rows[0].author?.value);
+  // The rows of the *verified* work, which need not be the top-ranked one. Scoping the series read to
+  // them is what stops a series match on some other candidate row (a same-titled but unrelated work)
+  // from being attached to this workQid.
+  const chosenRows = byQid.get(workQid)!;
+  const authorQid = qidFromUri(chosenRows[0].author?.value);
 
-  // Scoped to the chosen work: without this, a series match on some *other* candidate
-  // row (e.g. a same-titled but unrelated work) could get attached to the wrong workQid.
-  const withSeries = rows.find(
-    (r) => r.series?.value && qidFromUri(r.work?.value) === workQid,
-  );
+  const withSeries = chosenRows.find((r) => r.series?.value);
   let series: SeriesHit | null = null;
   if (withSeries) {
     const seriesQid = qidFromUri(withSeries.series.value);

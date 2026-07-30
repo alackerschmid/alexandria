@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   titleSimilarity,
+  titleScorer,
   pickBestMatch,
   type TitleMatchCandidate,
 } from "../src/title-match";
@@ -48,6 +49,13 @@ describe("titleSimilarity", () => {
     );
     expect(score).toBeGreaterThan(0.9);
   });
+
+  it("titleScorer agrees with the one-shot form", () => {
+    const score = titleScorer("Dune");
+    for (const other of ["Dune", "Dune: Book One", "The Dune Chronicles", "", "Pride and Prejudice"]) {
+      expect(score(other)).toBe(titleSimilarity("Dune", other));
+    }
+  });
 });
 
 describe("pickBestMatch", () => {
@@ -57,11 +65,21 @@ describe("pickBestMatch", () => {
     return {
       scanId: 1,
       bookId: 1,
+      workId: null,
       title: null,
       canonicalTitle: null,
       author: null,
       ...overrides,
     };
+  }
+
+  /** Two copies of one work, as the library index would hand them over — same workId, and both
+   *  therefore scoring against the same canonical title. */
+  function copies(
+    workId: number,
+    ...overrides: Partial<TitleMatchCandidate>[]
+  ): TitleMatchCandidate[] {
+    return overrides.map((o) => candidate({ workId, ...o }));
   }
 
   it("returns null when there are no candidates", () => {
@@ -73,7 +91,13 @@ describe("pickBestMatch", () => {
       { title: "Dune", author: "Frank Herbert" },
       [candidate({ scanId: 5, bookId: 5, title: "Dune", author: "Frank Herbert" })],
     );
-    expect(result).toEqual({ scanId: 5, bookId: 5, score: 1 });
+    expect(result).toEqual({
+      scanId: 5,
+      bookId: 5,
+      workId: null,
+      score: 1,
+      identifiedCopy: true,
+    });
   });
 
   it("matches against the candidate's canonical (work) title when the stored title differs", () => {
@@ -152,6 +176,90 @@ describe("pickBestMatch", () => {
       ],
     );
     expect(result?.scanId).toBe(1);
+  });
+
+  it("matches a work the user has two copies of, rather than calling it ambiguous", () => {
+    // The no-ISBN counterpart of the ISBN work path: the row names a book, and a book the user owns
+    // twice is still one book. Both copies tie (each scores against the shared canonical title), and
+    // treating that tie as unanswerable sent every multi-copy row to manual review.
+    const result = pickBestMatch(
+      { title: "Dune", author: "Frank Herbert" },
+      copies(
+        9,
+        { scanId: 1, bookId: 1, title: "Dune", author: "Frank Herbert" },
+        { scanId: 2, bookId: 2, title: "Dune", author: "Frank Herbert" },
+      ),
+    );
+    expect(result?.workId).toBe(9);
+    // Neither copy outscored the other, so the caller — not the matcher — picks which one the card
+    // points at.
+    expect(result?.identifiedCopy).toBe(false);
+  });
+
+  it("still identifies the copy that outscores its own siblings", () => {
+    const result = pickBestMatch(
+      { title: "Der Wüstenplanet", author: "Frank Herbert" },
+      copies(
+        9,
+        {
+          scanId: 1,
+          bookId: 1,
+          title: "Dune",
+          canonicalTitle: "Dune",
+          author: "Frank Herbert",
+        },
+        {
+          scanId: 2,
+          bookId: 2,
+          title: "Der Wüstenplanet",
+          canonicalTitle: "Dune",
+          author: "Frank Herbert",
+        },
+      ),
+    );
+    expect(result?.scanId).toBe(2);
+    expect(result?.identifiedCopy).toBe(true);
+  });
+
+  it("is still ambiguous when the tied candidates are different works", () => {
+    const result = pickBestMatch(
+      { title: "The Ring", author: "Someone" },
+      [
+        candidate({ scanId: 1, bookId: 1, workId: 1, title: "The Ring", author: "Someone" }),
+        candidate({ scanId: 2, bookId: 2, workId: 2, title: "The Ring", author: "Someone" }),
+      ],
+    );
+    expect(result).toBeNull();
+  });
+
+  it("does not group two unlinked scans as one work", () => {
+    // work_id NULL is "not linked yet", not "the same work as every other unlinked book" — same rule
+    // as workSiblings on the client.
+    const result = pickBestMatch(
+      { title: "The Ring", author: "Someone" },
+      [
+        candidate({ scanId: 1, bookId: 1, title: "The Ring", author: "Someone" }),
+        candidate({ scanId: 2, bookId: 2, title: "The Ring", author: "Someone" }),
+      ],
+    );
+    expect(result).toBeNull();
+  });
+
+  it("ignores a same-work copy when ranking against a rival work", () => {
+    // The runner-up that has to be beaten is the best *other* work, so a third copy of the winner
+    // doesn't change the verdict either way.
+    const result = pickBestMatch(
+      { title: "Dune", author: "Frank Herbert" },
+      [
+        ...copies(
+          9,
+          { scanId: 1, bookId: 1, title: "Dune", author: "Frank Herbert" },
+          { scanId: 2, bookId: 2, title: "Dune", author: "Frank Herbert" },
+        ),
+        candidate({ scanId: 3, bookId: 3, workId: 4, title: "Dune", author: "Frank Herbert" }),
+      ],
+    );
+    expect(result).toBeNull();
   });
 
   it("ignores candidates that never clear their threshold", () => {
