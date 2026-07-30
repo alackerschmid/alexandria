@@ -30,23 +30,44 @@ function normalizeTitle(raw: string | null): NormalizedTitle | null {
   return { norm, bigrams: bg, counts };
 }
 
-// One normalized title is a prefix of the other, ending at a word boundary — "dune" vs
+/** How much of a title one side is allowed to be missing and still count as containment.
+ *
+ * `word` — any word boundary: "dune" contains "dune messiah" as much as "dune: book one".
+ * Right when the candidates are the user's own scans, where the alternative is failing to
+ * recognize a book they demonstrably have.
+ * `subtitle` — a punctuation boundary only, so the extra text has to read as a subtitle. Right
+ * when the answer is an *ISBN to file the row under*: "Dune" and "Dune Messiah" are two books, and
+ * nothing downstream would catch the swap. */
+type PrefixRule = "word" | "subtitle";
+
+// One normalized title is a prefix of the other, ending at a boundary — "dune" vs
 // "dune: book one", "the hobbit" vs "the hobbit, or there and back again". Deliberately a
 // prefix check (not substring anywhere) so e.g. "dune" doesn't match "the dune chronicles".
-function isPrefixContainment(a: string, b: string): boolean {
+function isPrefixContainment(
+  a: string,
+  b: string,
+  rule: PrefixRule = "word",
+): boolean {
   const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
   if (!shorter || longer.indexOf(shorter) !== 0) return false;
   const nextChar = longer[shorter.length];
-  return nextChar === undefined || /[^\p{L}\p{N}]/u.test(nextChar);
+  if (nextChar === undefined) return true;
+  return rule === "word"
+    ? /[^\p{L}\p{N}]/u.test(nextChar)
+    : /[^\p{L}\p{N}\s]/u.test(nextChar);
 }
 
 // Sørensen–Dice coefficient over character bigrams of the two prepared titles:
 // 2 * |bigrams(a) ∩ bigrams(b)| / (|bigrams(a)| + |bigrams(b)|). Robust to word reordering and
 // punctuation differences that plain equality or a Levenshtein distance would penalize more
 // harshly. `a.counts` is copied (not mutated) so a prepared title can be scored against many.
-function diceScore(a: NormalizedTitle | null, b: NormalizedTitle | null): number {
+function diceScore(
+  a: NormalizedTitle | null,
+  b: NormalizedTitle | null,
+  rule: PrefixRule = "word",
+): number {
   if (!a || !b) return 0;
-  if (a.norm === b.norm || isPrefixContainment(a.norm, b.norm)) return 1;
+  if (a.norm === b.norm || isPrefixContainment(a.norm, b.norm, rule)) return 1;
   if (a.bigrams.length === 0 || b.bigrams.length === 0) return 0;
 
   const counts = new Map(a.counts);
@@ -135,6 +156,34 @@ const TITLE_ONLY_THRESHOLD = 0.92;
 // and resolved as "no match" rather than guessed.
 const AMBIGUITY_MARGIN = 0.08;
 
+// The bar a candidate's title score has to clear, given whether its author agrees with the query's.
+function titleThreshold(queryAuthorKey: string, candidateAuthorKey: string): number {
+  const authorMatched =
+    queryAuthorKey !== "" && candidateAuthorKey === queryAuthorKey;
+  return authorMatched ? AUTHOR_MATCH_TITLE_THRESHOLD : TITLE_ONLY_THRESHOLD;
+}
+
+/**
+ * The shared decision rule, and the reason both pickers below can claim to apply the same one:
+ * the best candidate wins only if it beats the best *genuinely competing* one by `AMBIGUITY_MARGIN`,
+ * otherwise the question is unanswerable and the caller must decline rather than guess.
+ *
+ * What counts as competing differs by caller — copies of one work, editions of one book — so it
+ * comes in as `sameAnswer`. `rivals` rides back out because the ranking is worth exactly one sort,
+ * and `pickBestMatchPrepared` has a second question to ask of it.
+ */
+function bestUnambiguous<T extends { score: number }>(
+  qualifying: T[],
+  sameAnswer: (a: T, b: T) => boolean,
+): { best: T; rivals: T[] } | null {
+  if (qualifying.length === 0) return null;
+  qualifying.sort((a, b) => b.score - a.score);
+  const [best, ...rivals] = qualifying;
+  const runnerUp = rivals.find((c) => !sameAnswer(c, best));
+  if (runnerUp && best.score - runnerUp.score < AMBIGUITY_MARGIN) return null;
+  return { best, rivals };
+}
+
 // Two candidates that are copies of one work are the same answer twice, not a question the matcher
 // can't answer — so ambiguity is judged between *works*. An unlinked scan (work_id NULL) is its own
 // work and never groups with another, mirroring `workSiblings` on the client: grouping books that
@@ -156,16 +205,13 @@ export function pickBestMatchPrepared(
 
   const qualifying: ScoredCandidate[] = [];
   for (const c of candidates) {
-    const authorMatched =
-      queryAuthorKey !== "" && c.authorKey === queryAuthorKey;
+    // "word": the candidates here are scans the user demonstrably has, so a title that merely
+    // contains theirs at a word boundary is still recognizably their book. See PrefixRule.
     const score = Math.max(
-      diceScore(queryTitle, c.title),
-      diceScore(queryTitle, c.canonicalTitle),
+      diceScore(queryTitle, c.title, "word"),
+      diceScore(queryTitle, c.canonicalTitle, "word"),
     );
-    const threshold = authorMatched
-      ? AUTHOR_MATCH_TITLE_THRESHOLD
-      : TITLE_ONLY_THRESHOLD;
-    if (score >= threshold) {
+    if (score >= titleThreshold(queryAuthorKey, c.authorKey)) {
       qualifying.push({
         scanId: c.scanId,
         bookId: c.bookId,
@@ -175,15 +221,13 @@ export function pickBestMatchPrepared(
     }
   }
 
-  if (qualifying.length === 0) return null;
-  qualifying.sort((a, b) => b.score - a.score);
-  const [best, ...rivals] = qualifying;
   // The runner-up that has to be beaten is the best-scoring candidate of a *different* work. Two
   // editions of one book score identically here (each is compared against the shared canonical title
   // as well as its own), so treating them as rivals sent every multi-copy row to manual review —
   // exactly the case the ISBN path resolves by work rather than declining to answer.
-  const runnerUp = rivals.find((c) => !sameWork(c, best));
-  if (runnerUp && best.score - runnerUp.score < AMBIGUITY_MARGIN) return null;
+  const ranked = bestUnambiguous(qualifying, sameWork);
+  if (!ranked) return null;
+  const { best, rivals } = ranked;
   // Within the winning work, one copy only counts as *identified* if it also beat its siblings by the
   // margin — e.g. a per-user title override, or a German edition matched under its German title.
   const tiedSibling = rivals.some(
@@ -200,4 +244,63 @@ export function pickBestMatch(
   candidates: TitleMatchCandidate[],
 ): TitleMatchResult | null {
   return pickBestMatchPrepared(query, prepareCandidates(candidates));
+}
+
+// ── Auto-assigning an ISBN to a row that has none ─────────────────────────────────────────────
+
+/** One title-search result, as much of it as the pick below judges. */
+export interface IsbnCandidate {
+  isbn: string;
+  title: string | null;
+  author: string | null;
+}
+
+export interface IsbnPick {
+  isbn: string;
+  /** The winning candidate's title score — what the wizard shows next to "ISBN auto-assigned". */
+  confidence: number;
+}
+
+// Two search results are the same book — and so the same answer twice rather than two competing
+// ones — when they agree on author and their titles match outright (equal, or one the other's
+// subtitled form). A title search legitimately returns a dozen editions of the book it found;
+// treating those as rivals would decline every unambiguous query. Under the `subtitle` rule, one
+// author's "Dune" and "Dune Messiah" stay two books and rule each other out, which is the point.
+function sameBook(
+  a: { authorKey: string; title: NormalizedTitle | null },
+  b: { authorKey: string; title: NormalizedTitle | null },
+): boolean {
+  return a.authorKey === b.authorKey && diceScore(a.title, b.title, "subtitle") === 1;
+}
+
+/**
+ * Picks the ISBN to auto-assign to an import row that carries none, from the candidates a
+ * title/author search returned — or null when nothing clears the bar.
+ *
+ * The decision rule is `pickBestMatchPrepared`'s, shared rather than restated — same thresholds via
+ * `titleThreshold`, same margin via `bestUnambiguous` — and for the same reason: a wrong ISBN
+ * silently files the row under a different book, which is worse than one more manual review row.
+ * Two things differ, both because the candidates are search results rather than scans the user
+ * demonstrably has: what counts as one answer twice (see `sameBook`), and the stricter `subtitle`
+ * containment rule (see `PrefixRule`).
+ */
+export function pickAutoIsbn(
+  query: { title: string; author: string },
+  candidates: IsbnCandidate[],
+): IsbnPick | null {
+  const queryAuthorKey = normalizeAuthorKey(query.author);
+  const queryTitle = normalizeTitle(query.title);
+
+  const qualifying = [];
+  for (const c of candidates) {
+    const authorKey = normalizeAuthorKey(c.author);
+    const title = normalizeTitle(c.title);
+    const score = diceScore(queryTitle, title, "subtitle");
+    if (score >= titleThreshold(queryAuthorKey, authorKey)) {
+      qualifying.push({ isbn: c.isbn, authorKey, title, score });
+    }
+  }
+
+  const ranked = bestUnambiguous(qualifying, sameBook);
+  return ranked ? { isbn: ranked.best.isbn, confidence: ranked.best.score } : null;
 }

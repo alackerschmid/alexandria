@@ -259,7 +259,7 @@ function escapeLike(s: string): string {
 // `normalizeStr`'d: SQLite's LIKE is already case-insensitive for ASCII, and there's no
 // normalized column to match against without a schema change. A miss here (e.g. a diacritic
 // mismatch) just falls through to Google, same as an empty catalog would.
-export async function searchLocalBooks(
+async function searchLocalBooks(
   db: D1Database,
   title: string,
   author: string | undefined,
@@ -351,6 +351,91 @@ export async function searchBooksByTitle(
   }
 
   return results;
+}
+
+// Title search results are stable and identical for every user, and the Google Books project has a
+// hard daily query quota — so successful searches are cached. 6h.
+export const SEARCH_CACHE_TTL_SECONDS = 6 * 60 * 60;
+
+/** A title search's query, as every layer of the chain below keys it. */
+export interface TitleQuery {
+  title: string;
+  author?: string;
+  publisher?: string;
+}
+
+// Normalized so trivially different spellings share an entry. Deliberately not keyed by user:
+// the response depends only on the query.
+export function searchCacheKeyString({
+  title,
+  author,
+  publisher,
+}: TitleQuery): string {
+  const params = new URLSearchParams({ title: normalizeStr(title) });
+  if (author) params.set("author", normalizeStr(author));
+  if (publisher) params.set("publisher", normalizeStr(publisher));
+  return params.toString();
+}
+
+/**
+ * Title search with the shared caches in front of it: our own catalog first (free of Google quota),
+ * then the D1 `search_cache` table (global — a search made from one datacenter is a hit from every
+ * other), then Google Books itself, whose answer is written back to `search_cache`.
+ *
+ * `fromLocalCatalog` marks the one answer a caller must not cache any further: the catalog is the
+ * live source, and freezing it would hide the rows that keep being added to it.
+ *
+ * Throws `UpstreamSearchError` when Google rejects the query — never cached, since a quota/rate-limit
+ * rejection says nothing about the query. `GET /api/books/search` wraps this in the Workers edge
+ * cache and turns that throw into a 503; the import wizard's auto-ISBN pass calls it directly.
+ */
+export async function searchTitleCached(
+  db: D1Database,
+  apiKey: string,
+  query: TitleQuery,
+  // The cache write is off the critical path: the answer is already in hand, and the caller has a
+  // response to return. Both call sites pass `c.executionCtx.waitUntil`.
+  waitUntil: (p: Promise<unknown>) => void,
+): Promise<{ results: EditionCandidate[]; fromLocalCatalog: boolean }> {
+  const { title, author, publisher } = query;
+  // An unindexed `LIKE '%...%'` substring scan of `books` — SQLite can't use an index for a leading
+  // wildcard. An empty result (new title, or a miss from not normalizing diacritics) falls through.
+  const localResults = await searchLocalBooks(db, title, author, publisher);
+  if (localResults.length > 0) {
+    return { results: localResults, fromLocalCatalog: true };
+  }
+
+  const queryKey = searchCacheKeyString(query);
+  const dbCached = await db
+    .prepare(
+      "SELECT response FROM search_cache WHERE query_key = ? AND expires_at > ?",
+    )
+    .bind(queryKey, Date.now())
+    .first<{ response: string }>();
+  if (dbCached) {
+    return {
+      results: JSON.parse(dbCached.response) as EditionCandidate[],
+      fromLocalCatalog: false,
+    };
+  }
+
+  const results = await searchBooksByTitle(title, author, apiKey, 20, publisher);
+  // Zero-result searches are cached too: with `searchBooksByTitle` throwing on upstream failure, an
+  // empty array is a real answer.
+  waitUntil(
+    db
+      .prepare(
+        `INSERT INTO search_cache (query_key, response, expires_at) VALUES (?, ?, ?)
+         ON CONFLICT(query_key) DO UPDATE SET response = excluded.response, expires_at = excluded.expires_at`,
+      )
+      .bind(
+        queryKey,
+        JSON.stringify(results),
+        Date.now() + SEARCH_CACHE_TTL_SECONDS * 1000,
+      )
+      .run(),
+  );
+  return { results, fromLocalCatalog: false };
 }
 
 // ── Related editions (OpenLibrary works/editions) ────────────────────────────────

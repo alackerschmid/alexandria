@@ -1,7 +1,14 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
-import { resolveEdition, linkWork, type FallbackMetadata } from "../editions";
+import {
+  resolveEdition,
+  linkWork,
+  searchTitleCached,
+  searchCacheKeyString,
+  type FallbackMetadata,
+} from "../editions";
+import { normalizeIsbn, isValidIsbn } from "../isbn";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
 import {
@@ -18,7 +25,12 @@ import {
   OWNED_OWNING_STATUSES,
   type ExistingScan,
 } from "../library-query";
-import { pickBestMatchPrepared, prepareCandidates } from "../title-match";
+import {
+  pickAutoIsbn,
+  pickBestMatchPrepared,
+  prepareCandidates,
+  type IsbnCandidate,
+} from "../title-match";
 
 const importRoutes = new Hono<Env>();
 
@@ -39,6 +51,32 @@ const ROW_CONCURRENCY = 4;
 // a real Goodreads export (500-3000 books) without a multi-minute stall, while still bounding a
 // runaway client loop.
 const IMPORT_RATE_LIMIT = 600;
+
+// The batch-shape guard all three routes below share. Their caps differ (each has its own budget
+// argument) but the contract — a non-empty array within the cap — and the 400 it produces do not.
+function batchSizeError(
+  c: Context<Env>,
+  rows: unknown[],
+  max: number,
+): Response | null {
+  if (rows.length === 0 || rows.length > max) {
+    return c.json({ error: `rows must contain between 1 and ${max} entries` }, 400);
+  }
+  return null;
+}
+
+// All three passes of one import session share a bucket, so they jointly stay under budget — and
+// all three charge what they actually are (rows, not requests). Returns a ready 429, or null.
+function importRateLimit(c: Context<Env>, rowCount: number): Promise<Response | null> {
+  return rateLimitOrReject(
+    c,
+    `import:${c.get("userId")}`,
+    IMPORT_RATE_LIMIT,
+    1,
+    "Too many import requests — please slow down",
+    rowCount,
+  );
+}
 
 type ImportOutcome = "imported" | "updated" | "duplicate" | "invalid_isbn" | "failed";
 
@@ -589,27 +627,19 @@ importRoutes.post("/goodreads", async (c) => {
     // per import session (see stores/import.ts) rather than per row.
     shelves_field_def_id?: number;
   }>();
-  const rows = body.rows;
+  // Defaulted rather than checked for undefined: an absent `rows` is an empty batch, which the
+  // size guard already rejects — and defaulting keeps `rows` an array for the checks below.
+  const rows = body.rows ?? [];
   const update = body.update === true;
-  if (!Array.isArray(rows) || rows.length === 0 || rows.length > MAX_BATCH_SIZE) {
-    return c.json(
-      { error: `rows must contain between 1 and ${MAX_BATCH_SIZE} entries` },
-      400,
-    );
-  }
+  const tooMany = batchSizeError(c, rows, MAX_BATCH_SIZE);
+  if (tooMany) return tooMany;
   if (rows.some((r) => typeof r?.isbn !== "string" || !r.isbn)) {
     return c.json({ error: "each row requires an isbn" }, 400);
   }
 
   const userId = c.get("userId");
-  const blocked = await rateLimitOrReject(
-    c,
-    `import:${userId}`,
-    IMPORT_RATE_LIMIT,
-    1,
-    "Too many import requests — please slow down",
-    rows.length,
-  );
+  // After the shape checks, so a malformed batch 400s without burning the user's row budget.
+  const blocked = await importRateLimit(c, rows.length);
   if (blocked) return blocked;
 
   const db = c.env.DB;
@@ -698,33 +728,16 @@ interface LibraryIndexRow {
 
 importRoutes.post("/match", async (c) => {
   const body = await c.req.json<{ rows?: MatchRowInput[]; update?: boolean }>();
-  const rows = body.rows;
+  const rows = body.rows ?? [];
   const update = body.update === true;
-  if (
-    !Array.isArray(rows) ||
-    rows.length === 0 ||
-    rows.length > MAX_MATCH_BATCH_SIZE
-  ) {
-    return c.json(
-      { error: `rows must contain between 1 and ${MAX_MATCH_BATCH_SIZE} entries` },
-      400,
-    );
-  }
+  const tooMany = batchSizeError(c, rows, MAX_MATCH_BATCH_SIZE);
+  if (tooMany) return tooMany;
   if (rows.some((r) => typeof r?.title !== "string" || !r.title)) {
     return c.json({ error: "each row requires a title" }, 400);
   }
 
   const userId = c.get("userId");
-  // Shares the import route's bucket — the two passes of one import session must jointly stay
-  // under the same per-minute budget, not each get their own.
-  const blocked = await rateLimitOrReject(
-    c,
-    `import:${userId}`,
-    IMPORT_RATE_LIMIT,
-    1,
-    "Too many import requests — please slow down",
-    rows.length,
-  );
+  const blocked = await importRateLimit(c, rows.length);
   if (blocked) return blocked;
 
   const db = c.env.DB;
@@ -848,6 +861,98 @@ importRoutes.post("/match", async (c) => {
       confidence: match.score,
     });
   }
+
+  return c.json({ results });
+});
+
+// ── Auto-assigning an ISBN to a row that has none ────────────────────────────────────────────
+//
+// The third and last pass over a row with no usable ISBN: /match has already ruled out the user's
+// own library, so this one asks the catalogue/Google Books what edition the title/author names and
+// hands back an ISBN the client can send through /goodreads like any other row. The user picks
+// nothing — but `pickAutoIsbn` only answers when the answer is confident and unambiguous, so a row
+// this pass declines still goes to manual review rather than being guessed at.
+
+// One Google Books search per row at most (the catalogue, `search_cache` and the per-request memo
+// below absorb the repeats). Nominally 10 external subrequests, but `searchBooksByTitle` retries a
+// 5xx up to 4 times, so a bad Google episode makes the true worst case 40 of the free plan's 50 —
+// which is the real reason this cap isn't higher.
+const MAX_SUGGEST_BATCH_SIZE = 10;
+
+interface SuggestRowInput {
+  title?: unknown;
+  author?: unknown;
+}
+
+interface SuggestRowResult {
+  isbn: string | null;
+  /** Title-match score of the winning candidate; absent when nothing was picked. */
+  confidence?: number;
+}
+
+importRoutes.post("/suggest-isbn", async (c) => {
+  const body = await c.req.json<{ rows?: SuggestRowInput[] }>();
+  const rows = body.rows ?? [];
+  const tooMany = batchSizeError(c, rows, MAX_SUGGEST_BATCH_SIZE);
+  if (tooMany) return tooMany;
+
+  const blocked = await importRateLimit(c, rows.length);
+  if (blocked) return blocked;
+
+  const db = c.env.DB;
+  const apiKey = c.env.GOOGLE_BOOKS_API_KEY;
+
+  // Rows run concurrently and the `search_cache` write only lands in waitUntil, so two rows naming
+  // the same book — routine in a hand-added Goodreads shelf — would each spend a Google query on
+  // the identical search. Sharing the in-flight promise costs one Map and saves the scarce thing.
+  const searches = new Map<string, Promise<IsbnCandidate[]>>();
+  function searchOnce(title: string): Promise<IsbnCandidate[]> {
+    // Searched by title alone, with the author only used to *score* the results: Google's
+    // `inauthor:` is an exact-ish filter, and a Goodreads author string ("Tolkien, J.R.R.",
+    // "Terry Pratchett, Neil Gaiman") often fails it outright, which would return nothing to judge
+    // rather than something to reject.
+    const query = { title };
+    const key = searchCacheKeyString(query);
+    let search = searches.get(key);
+    if (!search) {
+      search = searchTitleCached(db, apiKey, query, (p) =>
+        c.executionCtx.waitUntil(p),
+      ).then(({ results }) =>
+        // Google occasionally reports an identifier that isn't a valid ISBN; /goodreads would reject
+        // it as `invalid_isbn` and the row would land in review anyway, one round-trip later.
+        results
+          .map((cand) => ({ ...cand, isbn: normalizeIsbn(cand.isbn) }))
+          .filter((cand) => isValidIsbn(cand.isbn)),
+      );
+      searches.set(key, search);
+    }
+    return search;
+  }
+
+  const results = await mapWithConcurrency<SuggestRowInput, SuggestRowResult>(
+    rows,
+    ROW_CONCURRENCY,
+    async (row) => {
+      const title = typeof row?.title === "string" ? row.title.trim() : "";
+      const author = typeof row?.author === "string" ? row.author.trim() : "";
+      // Nothing to search on. The client filters these out already; this is the backstop that keeps
+      // the response positional with the request either way.
+      if (!title) return { isbn: null };
+
+      let candidates: IsbnCandidate[];
+      try {
+        candidates = await searchOnce(title);
+      } catch {
+        // A quota/rate-limit rejection (UpstreamSearchError) is not an answer about this row — but
+        // it isn't worth failing the batch over either. The row falls to manual review, where the
+        // user can retry the search by hand.
+        return { isbn: null };
+      }
+
+      const pick = pickAutoIsbn({ title, author }, candidates);
+      return pick ? { isbn: pick.isbn, confidence: pick.confidence } : { isbn: null };
+    },
+  );
 
   return c.json({ results });
 });

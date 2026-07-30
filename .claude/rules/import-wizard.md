@@ -12,7 +12,23 @@ paths:
 
 # Goodreads import
 
-Both halves of one feature: the wizard in `src/` and the two batch routes in `worker/`.
+Both halves of one feature: the wizard in `src/` and the three batch routes in `worker/`.
+
+`startImport` runs a row through up to three passes, in this order, and every row ends either
+resolved (a summary card or a log entry) or in the review queue — the progress accounting depends
+on it:
+
+1. **`/goodreads`** — rows whose ISBN is at least ISBN-shaped.
+2. **`/match`** — the rest, scored by title/author against the user's *own library*.
+3. **`/suggest-isbn` → `/goodreads`** — what `/match` didn't recognize: the server names an edition
+   from the title/author and the row is imported under that ISBN like any other. Only rows all
+   three passes decline reach manual review.
+
+Passes 2 and 3 both resolve a row by **scoring a title**, and their cards say so through one field
+rather than a flag/confidence pair each: `ImportedItem.titleMatch` is
+`{ confidence, source: "library" | "catalog" } | null`, `library` for a match against the user's own
+scans and `catalog` for an auto-assigned ISBN. `source` is what `MatchedRow` keys both the sentence
+and the warning colouring on, so the exclusivity is in the type instead of in the ladder's ordering.
 
 ## Frontend
 
@@ -35,7 +51,11 @@ Pieces in `src/components/import/`:
   `previous`; ownership needs no such caption, since the import never changes it. A
   `matchedViaWork` row additionally says the export named a different edition than the copy shown
   — with the count when several copies were written; the "was X" caption still names only the
-  primary's prior status, a simplification, since `siblingUpdates` carries each one for Undo
+  primary's prior status, a simplification, since `siblingUpdates` carries each one for Undo. A
+  `titleMatch` row outranks every ISBN-derived line in the provenance ladder, and a
+  `source: "catalog"` one is additionally warning-coloured: there the edition shown is the wizard's
+  answer rather than one the export named, so it is the one thing on the card worth a second look,
+  and the edition picker beside it is the correction
 - `AttentionRow` — one review-queue row
 - `ResolveDrawer` — manual title/ISBN search side panel for a review-queue row.
   `useFocusTrap`'d, always-mounted with a nullable `item` prop so its focus-trap state
@@ -270,3 +290,46 @@ that helper is generic over the row shape. The status write covers every copy ei
 `title-match.ts` is pure: `titleSimilarity` (Dice-coefficient bigram comparison with a
 prefix-containment shortcut) + `pickBestMatch` (confident-and-unambiguous match against a
 candidate list, else no match). Unit-tested.
+
+## `POST /api/import/suggest-isbn`
+
+Names an ISBN for a row the export gave none and `/match` didn't recognize, so the user doesn't
+have to pick one per book; body `{ rows: [{ title, author? }] }` (1-10 rows — one Google Books
+search each, so the same subrequest budget argument as `/goodreads`), returns
+`{ results: [{ isbn: string | null, confidence? }] }`, positional. Shares the `import:<userId>`
+rate-limit bucket, charged `rows.length`.
+
+Each row searches through `editions.ts`'s `searchTitleCached` (local catalog → D1 `search_cache` →
+Google Books) and scores the results with `pickAutoIsbn`. Four things are deliberate:
+
+- **Searched by title alone; the author only scores the results.** Google's `inauthor:` is an
+  exact-ish filter and a Goodreads author string ("Tolkien, J.R.R.", two co-authors joined by a
+  comma) often fails it outright — which returns nothing to judge rather than something to reject.
+- **`pickAutoIsbn` uses the stricter `subtitle` prefix rule.** `pickBestMatch`'s `word` rule scores
+  "Dune" against "Dune Messiah" as 1, which is right when the candidate is a scan the user
+  demonstrably has and wrong when the answer is an ISBN to file the row under — nothing downstream
+  would catch that swap. Under `subtitle` the extra text has to start at punctuation, so
+  "The Hobbit" still matches "The Hobbit, or There and Back Again" while the sequel is a rival that
+  rules the row out. Thresholds and the ambiguity margin are otherwise `pickBestMatch`'s own, and
+  `sameBook` (author key + title, same strict rule) is what keeps a search's dozen editions of one
+  book from reading as a dozen competing answers.
+- **An upstream failure is not an answer.** `UpstreamSearchError` (Google quota/rate limit) degrades
+  that row to `isbn: null` rather than failing the batch — it lands in review, where the user can
+  retry the search by hand.
+- **Candidates are filtered to valid ISBNs first.** Google occasionally reports an identifier that
+  isn't one; `/goodreads` would reject it as `invalid_isbn` and the row would reach review anyway,
+  one round-trip later.
+
+The client (`autoAssignPass` in `stores/import.ts`) then sends the picks through `/goodreads`
+unchanged — same `update` semantics, same `absorbIntoExistingCard` guard, same shelves field — and
+builds the cards with a `source: "catalog"` `titleMatch`. A row whose import comes back
+`invalid_isbn`/`failed` goes to review, exactly where it started. `changeImportedEdition` clears
+`titleMatch`: the ISBN is the user's choice from then on.
+
+`autoAssignPass` is also **the one place in the wizard that keeps two requests in flight**: it
+prefetches batch *b+1*'s `/suggest-isbn` before awaiting batch *b*'s `/goodreads`, since the two
+share nothing and serializing them idled ~3s of every ~7.5s batch. That is why `batchInFlight` is a
+count (`inFlightBatches`) rather than a boolean — with a flag, whichever request finished first
+would clear the `beforeunload` guard while the other was still out. A prefetch outstanding when the
+user cancels is simply dropped; `postWithRetry` never rejects, so nothing is left unhandled, and the
+server's rate-limit charge is a single atomic upsert, so two concurrent charges can't undercount.

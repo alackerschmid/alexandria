@@ -558,6 +558,7 @@
         "updated_other_edition": "Goodreads listed a different edition — updated the copy in your library",
         "also_copies": "all {n} copies updated",
         "matched_by_title": "Matched by title — {pct}% confidence",
+        "isbn_auto_assigned": "No ISBN in the export — edition chosen automatically ({pct}% confidence)",
         "unknown_publisher": "Unknown publisher",
         "error_duplicate": "That edition is already in your library.",
         "error_failed": "Couldn't switch edition — please try again.",

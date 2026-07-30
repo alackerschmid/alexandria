@@ -117,13 +117,22 @@ const provenanceNote = computed<{ text: string; warning?: true } | null>(() => {
       ? `${text} · ${t("import.summary.card.also_copies", { n: copies })}`
       : text;
 
-  if (item.matchedByTitle) {
+  // A title score decided this row, which outranks anything the match then did. Which score it was
+  // changes both the sentence and the colour: a `catalog` pick is the wizard's own answer to "which
+  // edition is this?", so the edition shown is a guess worth a second look — the picker is right
+  // there — whereas a `library` match only names how a copy the user already had was recognized.
+  if (item.titleMatch) {
+    const guessedEdition = item.titleMatch.source === "catalog";
     return {
       text: withCopies(
-        t("import.summary.card.matched_by_title", {
-          pct: Math.round((item.matchConfidence ?? 0) * 100),
-        }),
+        t(
+          guessedEdition
+            ? "import.summary.card.isbn_auto_assigned"
+            : "import.summary.card.matched_by_title",
+          { pct: Math.round(item.titleMatch.confidence * 100) },
+        ),
       ),
+      ...(guessedEdition ? { warning: true as const } : {}),
     };
   }
   // The export named a different edition than the copy in the library, and the copy is what got

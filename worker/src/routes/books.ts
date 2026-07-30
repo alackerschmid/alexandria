@@ -6,10 +6,11 @@ import {
   resolveEdition,
   fetchBookMetadata,
   linkWork,
-  searchBooksByTitle,
-  searchLocalBooks,
-  normalizeStr,
+  searchTitleCached,
+  searchCacheKeyString,
+  SEARCH_CACHE_TTL_SECONDS,
   UpstreamSearchError,
+  type TitleQuery,
 } from "../editions";
 import { enrichWork } from "../enrichment";
 import {
@@ -32,44 +33,19 @@ const books = new Hono<Env>();
 // tighter per-user cap than routine per-scan traffic.
 const REFRESH_RATE_LIMIT = 10;
 
-// Title search results are stable and identical for every user, and the Google Books project has a
-// hard daily query quota — so successful searches go in the Workers edge cache. Repeating a search
-// (retyping in the scanner, an import re-checking the same title across rows) then costs nothing.
-const SEARCH_CACHE_TTL_SECONDS = 6 * 60 * 60;
-
-// Normalized so trivially different spellings share an entry. Deliberately not keyed by user:
-// the response depends only on the query. Note this caches zero-result searches too — with
-// `searchBooksByTitle` now throwing on upstream failure, an empty array is a real answer.
-function searchCacheKeyString(
-  title: string,
-  author?: string,
-  publisher?: string,
-): string {
-  const params = new URLSearchParams({ title: normalizeStr(title) });
-  if (author) params.set("author", normalizeStr(author));
-  if (publisher) params.set("publisher", normalizeStr(publisher));
-  return params.toString();
-}
-
-function searchCacheKey(
-  title: string,
-  author?: string,
-  publisher?: string,
-): Request {
+function searchCacheKey(query: TitleQuery): Request {
   return new Request(
-    `https://bookscan-cache/search?${searchCacheKeyString(title, author, publisher)}`,
+    `https://bookscan-cache/search?${searchCacheKeyString(query)}`,
   );
 }
 
 // Shared by /search and /guest-search — same query, same answer, same cache entry.
 //
-// Checked in order: the Workers edge cache (colo-local, fastest, no DB round-trip at all), then
-// our own catalog (free of Google quota, but an unindexed `LIKE '%...%'` substring scan of
-// `books` — SQLite can't use an index for a leading wildcard, so this is a full table scan and
-// worth skipping on a cache hit), then a D1-backed `search_cache` table (global — a search made
-// from one datacenter is a hit from every other, unlike the edge cache alone), then Google Books
-// itself. A D1 cache hit re-warms the edge cache so the next request from this colo skips the DB
-// round-trip too.
+// The Workers edge cache (colo-local, fastest, no DB round-trip at all) sits in front of
+// `searchTitleCached`, which owns the rest of the chain: our own catalog, then the D1-backed
+// `search_cache` table (global — a search made from one datacenter is a hit from every other,
+// unlike the edge cache alone), then Google Books itself. Anything but a local hit re-warms the
+// edge cache, so the next request from this colo skips the DB round-trip too.
 //
 // Trade-off: a book added to the local catalog while an identical query is still edge-cached
 // (up to 6h) won't be surfaced as a local hit until that cache entry expires — same staleness
@@ -79,59 +55,27 @@ async function handleTitleSearch(c: Context<Env>): Promise<Response> {
   const author = c.req.query("author")?.trim() || undefined;
   const publisher = c.req.query("publisher")?.trim() || undefined;
   if (!title) return c.json({ error: "Title required" }, 400);
+  const query = { title, author, publisher };
 
   const cache = caches.default;
-  const cacheKey = searchCacheKey(title, author, publisher);
+  const cacheKey = searchCacheKey(query);
   const cached = await cache.match(cacheKey);
   // Re-wrap: cache.match responses have immutable headers, and the CORS middleware
   // mutates response headers after the handler returns.
   if (cached) return new Response(cached.body, cached);
 
-  // A local hit is returned outright — no upstream call, and nothing to cache since the
-  // catalog itself already is the up-to-date source. An empty result (new title, or a miss from
-  // not normalizing diacritics) falls through to the cached/live search below exactly as before.
-  const localResults = await searchLocalBooks(c.env.DB, title, author, publisher);
-  if (localResults.length > 0) return c.json(localResults);
+  try {
+    const { results, fromLocalCatalog } = await searchTitleCached(
+      c.env.DB,
+      c.env.GOOGLE_BOOKS_API_KEY,
+      query,
+      (p) => c.executionCtx.waitUntil(p),
+    );
+    if (fromLocalCatalog) return c.json(results);
 
-  const queryKey = searchCacheKeyString(title, author, publisher);
-  const dbCached = await c.env.DB.prepare(
-    "SELECT response FROM search_cache WHERE query_key = ? AND expires_at > ?",
-  )
-    .bind(queryKey, Date.now())
-    .first<{ response: string }>();
-  if (dbCached) {
-    const res = new Response(dbCached.response, {
-      headers: { "Content-Type": "application/json" },
-    });
+    const res = Response.json(results);
     res.headers.set("Cache-Control", `public, max-age=${SEARCH_CACHE_TTL_SECONDS}`);
     c.executionCtx.waitUntil(cache.put(cacheKey, res.clone()));
-    return res;
-  }
-
-  try {
-    const results = await searchBooksByTitle(
-      title,
-      author,
-      c.env.GOOGLE_BOOKS_API_KEY,
-      20,
-      publisher,
-    );
-    const body = JSON.stringify(results);
-    const res = new Response(body, {
-      headers: { "Content-Type": "application/json" },
-    });
-    res.headers.set("Cache-Control", `public, max-age=${SEARCH_CACHE_TTL_SECONDS}`);
-    c.executionCtx.waitUntil(
-      Promise.all([
-        cache.put(cacheKey, res.clone()),
-        c.env.DB.prepare(
-          `INSERT INTO search_cache (query_key, response, expires_at) VALUES (?, ?, ?)
-           ON CONFLICT(query_key) DO UPDATE SET response = excluded.response, expires_at = excluded.expires_at`,
-        )
-          .bind(queryKey, body, Date.now() + SEARCH_CACHE_TTL_SECONDS * 1000)
-          .run(),
-      ]),
-    );
     return res;
   } catch (e) {
     if (!(e instanceof UpstreamSearchError)) throw e;
