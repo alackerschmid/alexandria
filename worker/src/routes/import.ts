@@ -54,12 +54,17 @@ const IMPORT_RATE_LIMIT = 600;
 
 // The batch-shape guard all three routes below share. Their caps differ (each has its own budget
 // argument) but the contract — a non-empty array within the cap — and the 400 it produces do not.
+//
+// `Array.isArray` is load-bearing, not defensive: `rows` comes straight off an unvalidated JSON
+// body, and a string has a `length` too. `{"rows":"0123456789"}` otherwise passed this check and
+// then either threw on `.some` (a 500 instead of a 400) or, on /suggest-isbn, sailed through and
+// charged 10 rows against the caller's rate-limit budget for ten junk results.
 function batchSizeError(
   c: Context<Env>,
-  rows: unknown[],
+  rows: unknown,
   max: number,
 ): Response | null {
-  if (rows.length === 0 || rows.length > max) {
+  if (!Array.isArray(rows) || rows.length === 0 || rows.length > max) {
     return c.json({ error: `rows must contain between 1 and ${max} entries` }, 400);
   }
   return null;
@@ -888,6 +893,10 @@ interface SuggestRowResult {
   isbn: string | null;
   /** Title-match score of the winning candidate; absent when nothing was picked. */
   confidence?: number;
+  /** Set when the search never ran to an answer (Google quota/5xx). The row is *unanswered*, not
+   *  declined — nothing about it was judged — so the client can offer a retry instead of sending
+   *  the user off to resolve by hand what a second attempt would resolve by itself. */
+  unavailable?: true;
 }
 
 importRoutes.post("/suggest-isbn", async (c) => {
@@ -942,11 +951,14 @@ importRoutes.post("/suggest-isbn", async (c) => {
       let candidates: IsbnCandidate[];
       try {
         candidates = await searchOnce(title);
-      } catch {
+      } catch (e) {
         // A quota/rate-limit rejection (UpstreamSearchError) is not an answer about this row — but
-        // it isn't worth failing the batch over either. The row falls to manual review, where the
-        // user can retry the search by hand.
-        return { isbn: null };
+        // it isn't worth failing the batch over either. It is reported apart from a considered
+        // "no" so the row can be retried rather than hand-resolved, and logged because nothing
+        // else records it: `search_cache` stores only successes, which left a Google outage
+        // mid-import indistinguishable from a library of genuinely unidentifiable titles.
+        console.error("[POST /api/import/suggest-isbn] search failed, title:", title, e);
+        return { isbn: null, unavailable: true };
       }
 
       const pick = pickAutoIsbn({ title, author }, candidates);

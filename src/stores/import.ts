@@ -189,7 +189,10 @@ export interface ImportedItem {
 export interface ReviewItem {
   id: number;
   row: ParsedGoodreadsRow;
-  reason: "no_isbn" | "invalid_isbn" | "cancelled";
+  /** `search_unavailable` is the one reason that isn't a verdict on the row: the auto-assign
+   *  pass's title search failed upstream, so nothing was judged and a retry may well resolve it
+   *  without the user touching it (see `retrySearchUnavailable`). */
+  reason: "no_isbn" | "invalid_isbn" | "cancelled" | "search_unavailable";
   status: "pending" | "skipped";
   candidates: EditionCandidate[];
   candidatesLoaded: boolean;
@@ -207,7 +210,10 @@ export type ImportLogReason =
   | "invalid_isbn"
   | "no_isbn"
   | "unreadable_row"
-  | "cancelled";
+  | "cancelled"
+  // Only ever reached via a skipped review item (`notImported` carries the review reason through),
+  // never pushed by `pushLog` — the auto-assign pass queues those rows rather than logging them.
+  | "search_unavailable";
 
 export interface ImportLogEntry {
   /** The source row's id, when this entry came from one (absent for nothing today, but keeps
@@ -375,6 +381,10 @@ export const useImportStore = defineStore("import", () => {
   // batchInFlight below). False again as soon as it returns, whether by finishing, cancelling,
   // or hitting an unhandled error.
   const isRunning = ref(false);
+  // The review screen's retry of the rows whose title search failed upstream. Its own flag rather
+  // than isRunning: those rows are re-run from the review step, which the send loop has already
+  // left, and setting isRunning there would read as a second import to everything watching it.
+  const retryingSearch = ref(false);
   // Narrower than isRunning: true only while a batch request is actually awaiting a response —
   // the moment an interrupted page load could lose real work in flight. isRunning also covers the
   // synchronous gaps between batches, which reloading doesn't put at risk.
@@ -946,18 +956,21 @@ export const useImportStore = defineStore("import", () => {
   interface SuggestRowResult {
     isbn: string | null;
     confidence?: number;
+    /** The search never produced an answer (see the route). Nothing was judged about the row. */
+    unavailable?: boolean;
   }
 
   // Same retry policy, against /api/import/suggest-isbn. A request-level failure degrades every row
   // to "no suggestion", which sends it to manual review — the same place it would have gone before
-  // this pass existed.
+  // this pass existed — flagged `unavailable` for the same reason the route flags its own upstream
+  // failures: a request that never landed judged the row no more than a failed search did.
   function postSuggestBatchWithRetry(
     payloads: SuggestPayloadRow[],
   ): Promise<SuggestRowResult[]> {
     return postWithRetry<SuggestRowResult>(
       "/api/import/suggest-isbn",
       { rows: payloads },
-      () => payloads.map(() => ({ isbn: null })),
+      () => payloads.map(() => ({ isbn: null, unavailable: true })),
     );
   }
 
@@ -1008,7 +1021,35 @@ export const useImportStore = defineStore("import", () => {
   async function autoAssignPass(
     unassigned: ParsedGoodreadsRow[],
     shelvesFieldDefId: number | null,
+    // The review-queue entries these rows already have, keyed by row id — non-empty only on the
+    // retry path (`retrySearchUnavailable`), where the rows are re-run *from* the queue. Passing
+    // them keeps the pass's invariant intact for a second run: a row is never in neither the queue
+    // nor a result, so an interrupt mid-retry can't drop it. Without it the retry had to lift the
+    // rows out first, and anything the pass hadn't reached yet vanished — the review step offers no
+    // resume (only `step === "importing"` does), so nothing would have brought them back.
+    queued: Map<number, ReviewItem> = new Map(),
   ): Promise<void> {
+    // Either updates the entry a row already has or makes one — same end state, but a retried row
+    // keeps its identity (and its loaded candidates) instead of being replaced by a fresh entry.
+    const keepInReview = (
+      row: ParsedGoodreadsRow,
+      reason: ReviewItem["reason"],
+    ): void => {
+      const existing = queued.get(row.id);
+      if (!existing) {
+        queueForReview(row, reason);
+        return;
+      }
+      existing.reason = reason;
+      existing.status = "pending";
+    };
+    // A row that resolved leaves the queue — only ever true on the retry path, since a first-run
+    // row has no entry yet.
+    const leaveReview = (row: ParsedGoodreadsRow): void => {
+      const existing = queued.get(row.id);
+      if (existing) dropFromQueue(existing);
+    };
+
     // One suggest batch's picks always fit one import batch, both being capped at BATCH_SIZE.
     const batches = chunk(unassigned, BATCH_SIZE);
     if (batches.length === 0) return;
@@ -1022,7 +1063,8 @@ export const useImportStore = defineStore("import", () => {
     let pending = searchFor(batches[0]);
     for (let b = 0; b < batches.length; b++) {
       if (cancelRequested.value) {
-        for (const rest of batches.slice(b)) queueRemainderAsCancelled(rest);
+        for (const rest of batches.slice(b))
+          for (const row of rest) keepInReview(row, "cancelled");
         // The outstanding prefetch is left to settle and its answer dropped: one search already
         // charged against the rate limit, and postWithRetry never rejects, so there's no unhandled
         // rejection to guard against either.
@@ -1052,7 +1094,10 @@ export const useImportStore = defineStore("import", () => {
                 : null,
           });
         } else {
-          queueForReview(row, reviewReason(row));
+          keepInReview(
+            row,
+            suggestion.unavailable ? "search_unavailable" : reviewReason(row),
+          );
         }
       });
 
@@ -1068,12 +1113,14 @@ export const useImportStore = defineStore("import", () => {
           const { row, titleMatch } = assigned[i];
           if (result.outcome === "imported" || result.outcome === "updated") {
             pushOrAbsorb(row, result, titleMatch);
+            leaveReview(row);
           } else if (result.outcome === "duplicate") {
             pushLog(row, result.isbn, "duplicate", "in_library");
+            leaveReview(row);
           } else {
             // Including invalid_isbn: the suggestion turned out not to be importable, which leaves
             // the row exactly where it started — with no usable ISBN and a human to ask.
-            queueForReview(row, reviewReason(row));
+            keepInReview(row, reviewReason(row));
           }
         });
       }
@@ -1381,6 +1428,42 @@ export const useImportStore = defineStore("import", () => {
     if (item.status === "skipped") return;
     item.status = "skipped";
     persistSession();
+  }
+
+  // The rows the auto-assign pass never got an answer for, because the title search behind it
+  // failed upstream. Nothing about them was judged, so the whole fix is to ask again — sending the
+  // user to resolve them one by one is asking for work a retry does for free.
+  const retryableReviewItems = computed(() =>
+    reviewQueue.value.filter(
+      (item) => item.reason === "search_unavailable" && item.status === "pending",
+    ),
+  );
+
+  async function retrySearchUnavailable(): Promise<void> {
+    if (isRunning.value || retryingSearch.value) return;
+    const items = retryableReviewItems.value.slice();
+    if (items.length === 0) return;
+    retryingSearch.value = true;
+    try {
+      // The rows stay in the queue for the whole pass and leave it only as they resolve — see
+      // autoAssignPass's `queued` parameter. Lifting them out first would have dropped whatever the
+      // pass hadn't reached if the tab went away mid-retry, since the review step has no resume.
+      const queued = new Map(items.map((item) => [item.row.id, item]));
+      // A cancel that ended the original run leaves this set, and autoAssignPass honours it by
+      // marking its whole input "cancelled" — which would silently swallow the retry.
+      cancelRequested.value = false;
+      const shelvesFieldDefId = importShelvesAsTags.value
+        ? await ensureShelvesFieldDef()
+        : null;
+      await autoAssignPass(
+        items.map((item) => item.row),
+        shelvesFieldDefId,
+        queued,
+      );
+      persistSession();
+    } finally {
+      retryingSearch.value = false;
+    }
   }
 
   function undoSkipReviewItem(item: ReviewItem): void {
@@ -1783,6 +1866,9 @@ export const useImportStore = defineStore("import", () => {
     confirmReviewItem,
     skipReviewItem,
     undoSkipReviewItem,
+    retryableReviewItems,
+    retryingSearch,
+    retrySearchUnavailable,
     toggleImportedEdition,
     closeImportedEdition,
     retryImportedCandidates,

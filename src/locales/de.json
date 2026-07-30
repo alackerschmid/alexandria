@@ -528,6 +528,9 @@
       "reason_no_isbn": "Keine ISBN im Export — wähle eine Ausgabe",
       "reason_invalid_isbn": "ISBN nicht validierbar — wähle eine Ausgabe",
       "reason_cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — wähle eine Ausgabe",
+      "reason_search_unavailable": "Buchsuche war nicht verfügbar — erneut versuchen oder Ausgabe wählen",
+      "search_unavailable_note": "Für {n} dieser Bücher war die Buchsuche nicht verfügbar, daher konnte keine Ausgabe vorgeschlagen werden. Entschieden wurde damit nichts — versuche es erneut.",
+      "retry_search": "Suche erneut versuchen",
       "as_imported": "ISBN: {isbn} · wie aus Goodreads importiert",
       "search_placeholder": "Nach Titel, Autor oder ISBN suchen",
       "use_this": "Auswählen",
@@ -579,7 +582,8 @@
           "invalid_isbn": "Ungültige ISBN — übersprungen",
           "no_isbn": "Keine ISBN — übersprungen",
           "unreadable_row": "Diese Zeile der Datei konnte nicht gelesen werden — übersprungen",
-          "cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — übersprungen"
+          "cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — übersprungen",
+          "search_unavailable": "Buchsuche war nicht verfügbar — übersprungen"
         }
       }
     }

@@ -313,12 +313,27 @@ Google Books) and scores the results with `pickAutoIsbn`. Four things are delibe
   rules the row out. Thresholds and the ambiguity margin are otherwise `pickBestMatch`'s own, and
   `sameBook` (author key + title, same strict rule) is what keeps a search's dozen editions of one
   book from reading as a dozen competing answers.
+- **Author agreement narrows the field, it doesn't only lower the bar.** Unique to this picker: when
+  the row names an author and any candidate's key agrees, the pick is judged among those alone. A
+  title score cannot exceed exact, so the lower threshold wins the real book nothing at the top end,
+  while the title-only 0.92 bar admits a film companion or an unrelated book published under the
+  identical title — which then ties it at 1.000 and takes the row out as ambiguous. "No Country for
+  Old Men" and "Less Than Zero" both failed exactly that way. Narrowing only: no author, or a name
+  the search spells differently, leaves the field as it was.
 - **An upstream failure is not an answer.** `UpstreamSearchError` (Google quota/rate limit) degrades
-  that row to `isbn: null` rather than failing the batch — it lands in review, where the user can
-  retry the search by hand.
+  that row to `{ isbn: null, unavailable: true }` rather than failing the batch. `unavailable` is
+  what separates "the search never ran" from "nothing cleared the bar": those rows land in review
+  under the `search_unavailable` reason, which the review screen offers to retry in bulk
+  (`retrySearchUnavailable` re-runs `autoAssignPass` over exactly them) instead of making the user
+  resolve by hand what a second attempt resolves for free. It is also the one path here that logs —
+  `search_cache` records only successes, so a Google outage mid-import otherwise left no trace and
+  read as a library of unidentifiable titles.
 - **Candidates are filtered to valid ISBNs first.** Google occasionally reports an identifier that
   isn't one; `/goodreads` would reject it as `invalid_isbn` and the row would reach review anyway,
   one round-trip later.
+
+A request-level failure on the client degrades the batch to `unavailable` too, for the same reason:
+a request that never landed judged the row no more than a failed search did.
 
 The client (`autoAssignPass` in `stores/import.ts`) then sends the picks through `/goodreads`
 unchanged — same `update` semantics, same `absorbIntoExistingCard` guard, same shelves field — and
