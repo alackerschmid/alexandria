@@ -8,10 +8,13 @@ import { ratingStars, RATING_COLOR, RATING_TRACK, STAR_PATH } from "@/composable
 // are drawn as SVG (see useRating.ts) rather than a text glyph, for exact alignment with
 // surrounding text.
 //
-// Interactive rows render each star as two overlapping half-width buttons (left = odd/half
-// value, right = even/full value) and toggle: clicking the half that already represents the
-// current value clears the rating. Display-only rows render no buttons, because they are
-// usually nested inside a button (which can't contain another button).
+// Interactive rows render each star as two half-width buttons (left = odd/half value, right =
+// even/full value), and a click always *sets* that value. Clearing is the host's job — the
+// dialog's "Clear rating" footer button, or the ✕ beside the row in `RecordControls` and the
+// scanner picker. Re-clicking the current value used to clear it, which fires on any accidental
+// double-tap, has no visible cue, and was redundant everywhere an explicit clear existed.
+// Display-only rows render no buttons, because they are usually nested inside a button (which
+// can't contain another button).
 
 const props = withDefaults(
   defineProps<{
@@ -28,10 +31,6 @@ const GAP_CLASS = { sm: "gap-0", md: "gap-0.5", lg: "gap-0.5" } as const;
 
 const uid = useId();
 const data = computed(() => ratingStars(props.rating, props.size));
-
-function pick(value: number) {
-  emit("update:rating", props.rating === value ? null : value);
-}
 </script>
 
 <template>
@@ -65,13 +64,13 @@ function pick(value: number) {
           type="button"
           :aria-label="String(s.halfValue)"
           class="absolute inset-y-0 left-0 w-1/2 p-0 border-0 bg-transparent cursor-pointer"
-          @click="pick(s.halfValue)"
+          @click="emit('update:rating', s.halfValue)"
         />
         <button
           type="button"
           :aria-label="String(s.fullValue)"
           class="absolute inset-y-0 right-0 w-1/2 p-0 border-0 bg-transparent cursor-pointer"
-          @click="pick(s.fullValue)"
+          @click="emit('update:rating', s.fullValue)"
         />
       </template>
     </span>

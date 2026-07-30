@@ -57,6 +57,17 @@ Pieces in `src/components/import/`:
   an import was in progress
 - `matched-grid.ts` — shared grid-column geometry for the Matched table's header + rows
 
+The Matched tab is ordered **owning status, then reading status, then rating descending** — owned /
+read / 10-of-10 first — via `src/utils/import-sort.ts` (`importSortRank`, unit-tested). Owning reuses
+`OWNING_ORDER` (the library sort's own order); reading status gets its own `read → reading → unread →
+dnf`, since `STATUS_ORDER` is the pickers' order and neither it nor its reverse is what's wanted here.
+A rating of 0 or `null` both sort last. The rank is **captured once**, at card creation, into
+`ImportedItem.sortRank` — not persisted, but re-derived from current state on every rehydrate: the
+cards are editable in place, so a live comparator would make one jump out from under the click that
+changed its status or rating, but a reload has no click in flight and re-ranking there is the order a
+fresh render should have. `import.vue` sorts a copy for rendering — the store's array stays in arrival
+order, which `absorbIntoExistingCard`, `indexOf`/`splice` removal and `resolvedRowIds` all read.
+
 `src/utils/goodreads.ts` does the CSV row parsing, shelf mapping and import-payload building.
 Unit-tested (`test/goodreads.spec.ts`).
 
@@ -240,12 +251,21 @@ fan-out across every copy of the matched work, which costs no query here since t
 already in memory. Below the confidence/ambiguity threshold, `no_match` sends the row to manual
 review instead of guessing.
 
-Note that the ambiguity guard makes the multi-copy case mostly unreachable from this route: two
-same-titled editions of one work score identically (each candidate is compared against its own title
-*and* the shared work canonical title), so `pickBestMatchPrepared` returns `null` and the row goes to
-review rather than fanning out. It fires only when one copy wins outright — e.g. a per-user title
-override on one edition. Treating a tie *within one work* as unambiguous would be a change to what
-gets auto-matched, not just to what gets written, so it is deliberately not done here.
+**The ambiguity guard is judged between works, not between scans.** Two same-titled editions of one
+work score identically (each candidate is compared against its own title *and* the shared work
+canonical title), so scan-level ambiguity sent every multi-copy row to manual review — the exact case
+the ISBN path answers by updating the work. So `pickBestMatchPrepared` takes each candidate's `workId`
+and picks the runner-up to beat from a *different* work; a tie among copies of one work is one answer
+twice, not an unanswerable question. An unlinked scan (`work_id` NULL) is its own work and never
+groups with another, mirroring `workSiblings` on the client. Genuinely different works with the same
+title still come back `null` and still go to review.
+
+Which copy the card then points at is the caller's call, via `identifiedCopy` on the result: true when
+one copy beat its own siblings by the margin (a per-user title override, or a German edition matched
+under its German title), and the row therefore identified a scan. On a tie the route picks with
+`pickPrimarySibling` — owned/lent_out first, else the oldest — the same rule and the same reasoning as
+the ISBN work path, which is why the `/match` library-index query orders by `created_at, id` and why
+that helper is generic over the row shape. The status write covers every copy either way.
 
 `title-match.ts` is pure: `titleSimilarity` (Dice-coefficient bigram comparison with a
 prefix-containment shortcut) + `pickBestMatch` (confident-and-unambiguous match against a

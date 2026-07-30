@@ -261,6 +261,15 @@ The masthead stars are the exception: they are `interactive` and emit `set-ratin
 to the host's `useScanStatus.setRating`, so setting a rating is one tap and doesn't raise a
 dialog at all — the dialog is still what edits the *review*.
 
+**A star click only ever sets a value, so every interactive surface owes its own clear.**
+`RatingStars` used to toggle — clicking the half that already equalled the rating cleared it —
+which fired on any accidental double-tap, had no visible cue, and was redundant next to this
+dialog's own "Clear rating" footer button. The three `interactive` surfaces now each carry one:
+that footer button, and a ✕ beside the row in `RecordControls` and the scanner picker. That ✕
+is also why the stacked mobile layout gives owning and rating a full-width row each — they
+shared one, and five `md` stars plus "10/10" plus a clear button don't fit in half a phone
+width.
+
 It takes `with-review` to show the review/notes textarea (rating stars save per click; the
 review is a draft flushed once on close) — the Goodreads-import wizard reuses it without that
 flag for rating only.

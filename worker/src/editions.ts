@@ -667,7 +667,9 @@ export function normalizeStr(s: string | null | undefined): string {
 // that case still lets "(various)" and "(anonymous)" key apart.
 //
 // Kept in exact sync with the SQL in migration 0040, which backfills the stored keys — truncating
-// at '(' rather than excising the span is what makes the two agree.
+// at '(' rather than excising the span is what makes the two agree. A third copy lives in
+// scripts/repair-merged-works.mjs (a .mjs can't import this TS), which computes match_keys that
+// linkWork must later recompute identically.
 export function normalizeAuthorKey(s: string | null | undefined): string {
   const normalized = normalizeStr(s);
   const paren = normalized.indexOf("(");
@@ -708,10 +710,32 @@ export function splitAuthors(author: string | null): string[] {
 // Resolve (or create) the work this edition belongs to, plus its normalized authors.
 // Same-language editions sharing title+author collapse to one work synchronously;
 // cross-language editions merge later via wikidata_qid (see enrichWork).
+/**
+ * The identity key two editions must share to count as one work before Wikidata can say so.
+ *
+ * Title *and* author, because a title on its own is not work identity: German series volumes are
+ * frequently catalogued under the series name rather than the volume's — six editions all titled
+ * "Star wars - Wächter der Macht", with no author on the row either — and keying on the title alone
+ * collapsed six different books into one work, which means one reading status, one rating and one
+ * card for all of them. An edition missing either half stands alone (keyed by its own ISBN) until
+ * enrichment can identify it by QID and `mergeWorks` groups it deliberately.
+ *
+ * The `isbn:` fallback keeps the `|<authorKey>` suffix a titleless edition already had, so existing
+ * rows keep resolving to the work they are linked to.
+ */
+export function workMatchKey(
+  title: string | null,
+  author: string | null,
+  isbn: string,
+): string {
+  const titlePart = normalizeStr(title);
+  const authorKey = normalizeAuthorKey(splitAuthors(author)[0] ?? "");
+  return `${titlePart && authorKey ? titlePart : `isbn:${isbn}`}|${authorKey}`;
+}
+
 export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
   const authors = splitAuthors(book.author);
-  const titlePart = normalizeStr(book.title) || `isbn:${book.isbn}`;
-  const matchKey = `${titlePart}|${normalizeAuthorKey(authors[0])}`;
+  const matchKey = workMatchKey(book.title, book.author, book.isbn);
 
   await db
     .prepare(

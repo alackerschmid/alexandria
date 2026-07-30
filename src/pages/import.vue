@@ -257,6 +257,14 @@ const OUTCOME_COLOR_CLASS: Record<ImportLogEntry["outcome"], string> = {
   skipped: "text-warning",
 };
 
+// Owning status, then reading status, then rating descending — owned/read/10-of-10 first. The rank
+// is frozen per card at creation (see ImportedItem.sortRank), so editing a card in place doesn't move
+// it; rows still slot into the right spot as each batch resolves. Ties keep arrival order (sort is
+// stable), and the store's own array stays in arrival order, which its absorb/remove paths rely on.
+const sortedImportedItems = computed(() =>
+  [...importedItems.value].sort((a, b) => a.sortRank - b.sortRank),
+);
+
 const tabs = computed(() => [
   {
     value: "matched" as const,
@@ -583,7 +591,7 @@ const tabs = computed(() => [
             </div>
             <div class="divide-y divide-charcoal-border">
               <MatchedRow
-                v-for="item in importedItems"
+                v-for="item in sortedImportedItems"
                 :key="item.scanId"
                 :item="item"
                 @toggle-edition="toggleImportedEdition(item)"

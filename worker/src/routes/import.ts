@@ -296,10 +296,13 @@ async function findWorkSiblingScans(
   return results;
 }
 
-// Which sibling the summary card points at: the copy the user actually has, else the oldest (the
-// query orders by created_at). Only the card's identity hangs on this — the status write covers
-// every sibling regardless.
-function pickPrimarySibling(siblings: WorkSiblingScan[]): WorkSiblingScan {
+// Which sibling the summary card points at: the copy the user actually has, else the oldest (both
+// callers' queries order by created_at). Only the card's identity hangs on this — the status write
+// covers every sibling regardless. Generic over the row shape, so /match's library-index row can use
+// it as well as the work path's sibling row.
+function pickPrimarySibling<T extends { owning_status: string }>(
+  siblings: T[],
+): T {
   return (
     siblings.find((s) => OWNED_OWNING_STATUSES.includes(s.owning_status)) ??
     siblings[0]
@@ -748,18 +751,32 @@ importRoutes.post("/match", async (c) => {
        LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
        LEFT JOIN works wk ON wk.id = b.work_id
        LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
-       WHERE s.user_id = ?`,
+       WHERE s.user_id = ?
+       ORDER BY s.created_at, s.id`,
     )
     .bind(userId)
     .all<LibraryIndexRow>();
 
   const byScanId = new Map(library.map((row) => [row.scan_id, row]));
+  // The copies of each work, grouped once rather than re-scanned per matched row: at the 20k-scan
+  // ceiling a filter inside the loop is 50 walks of the whole library to find the one or two rows
+  // that share a work. Insertion order follows the query's `ORDER BY created_at, id`, which is what
+  // makes pickPrimarySibling's "else the oldest" fallback mean anything.
+  const byWorkId = new Map<number, LibraryIndexRow[]>();
+  for (const row of library) {
+    if (row.work_id == null) continue;
+    const existing = byWorkId.get(row.work_id);
+    if (existing) existing.push(row);
+    else byWorkId.set(row.work_id, [row]);
+  }
   // Normalize every candidate's titles/author-key once, up front — the whole row batch is then
-  // scored against the same prepared list instead of re-normalizing the library per row.
+  // scored against the same prepared list instead of re-normalizing the library per row. `workId`
+  // rides along so two copies of one book don't read as two rival answers (see pickBestMatchPrepared).
   const candidates = prepareCandidates(
     library.map((row) => ({
       scanId: row.scan_id,
       bookId: row.book_id,
+      workId: row.work_id,
       title: row.title,
       canonicalTitle: row.canonical_title,
       author: row.author,
@@ -797,20 +814,21 @@ importRoutes.post("/match", async (c) => {
       continue;
     }
 
-    // Every copy of the matched work, matched scan first. Same rule as the /goodreads work path —
-    // one book the user has twice still takes one reading status — and free here: the whole library
-    // is already in memory, so the siblings cost no query. A work-less scan is its own only copy;
-    // grouping unlinked books together would be wrong (see `workSiblings` on the client).
+    // Every copy of the matched work, primary first. Same rule as the /goodreads work path — one book
+    // the user has twice still takes one reading status — and free here: the whole library is already
+    // in memory, so the siblings cost no query. A work-less scan is its own only copy; grouping
+    // unlinked books together would be wrong (see `workSiblings` on the client).
+    const copies =
+      matched.work_id == null ? [matched] : byWorkId.get(matched.work_id)!;
+    // The row named a title, not an edition, so it only identifies a *copy* when one outscored its
+    // siblings. On a tie the card points at an owned copy, else the oldest — the same choice the ISBN
+    // work path makes for the same reason: the card is an editor for one scan, and the copy on the
+    // user's shelf is the one they mean. The status write covers all of them either way.
+    const primary = match.identifiedCopy ? matched : pickPrimarySibling(copies);
     const scans: UpdatableScan[] = [
-      { ...matched, id: matched.scan_id },
-      ...(matched.work_id == null
-        ? []
-        : library
-            .filter(
-              (r) => r.work_id === matched.work_id && r.scan_id !== matched.scan_id,
-            )
-            .map((r) => ({ ...r, id: r.scan_id }))),
-    ];
+      primary,
+      ...copies.filter((r) => r !== primary),
+    ].map((r) => ({ ...r, id: r.scan_id }));
 
     if (!update || !claimScans(claimedScanIds, scans.map((s) => s.id))) {
       results.push({ outcome: "duplicate" });
@@ -822,15 +840,7 @@ importRoutes.post("/match", async (c) => {
         db,
         userId,
         scans,
-        {
-          isbn: matched.isbn,
-          title: matched.title,
-          author: matched.author,
-          cover_url: matched.cover_url,
-          publisher: matched.publisher,
-          language: matched.language,
-          work_id: matched.work_id,
-        },
+        bookSummary(primary),
         validated.status,
         validated.rating,
         ratedWorkIds,

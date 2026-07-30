@@ -66,6 +66,16 @@ The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker m
 
 Primary language is TypeScript; preserve strict typing and prefer minimal, clean code (simplify where reasonable when refactoring).
 
+## Cloudflare MCP
+
+The `cloudflare` plugin adds five MCP servers. Four of them reach the **live account**, which also holds unrelated `thursday` and `bookclub` projects — scope every call to `bookscan-worker` / D1 `bookscan` explicitly, never take "the first worker in the list".
+
+- **`cloudflare-docs`** — `search_cloudflare_documentation`. Consult it before writing worker code, editing either `wrangler.toml`, or adding a migration, instead of answering from pretrained knowledge: wrangler flags, D1 limits, and cron semantics all move faster than a model cutoff. Same rule for the `cloudflare:wrangler` and `cloudflare:workers-best-practices` skills.
+- **`cloudflare-observability`** — `query_worker_observability` plus `observability_keys` / `observability_values` over production logs (7-day retention; filter `$metadata.service = bookscan-worker`). This is the only view of prod enrichment behaviour — whether the 2-minute cron actually fired, SPARQL error and timeout rates, real latency. Local `wrangler dev` logs cover none of that. Confirm keys and values with the `_keys`/`_values` tools before filtering on them rather than guessing field names.
+- **`cloudflare-bindings`** — `d1_database_query` runs arbitrary SQL against the **production** database. Read-only `SELECT` for diagnosis is fine; `INSERT`/`UPDATE`/`DELETE`/DDL through it is not. Schema changes go through `worker/migrations/` and the deploy path, always. It is deliberately **not** allowlisted in `.claude/settings.json`, so every call prompts — that prompt is the guardrail; don't route around it with `wrangler d1 execute --remote` either.
+- **`cloudflare-api`** — generic REST API access. Its `execute` tool could mutate anything in the account and is in `deny`, so only the read-only `search` / `docs` tools are usable. Anything that genuinely needs `execute` is a conversation, not a tool call.
+- **`cloudflare-builds`** — Workers Builds only, which is disabled for this repo (see Architecture), so it will be empty for `bookscan-worker`. Deploy status comes from `gh run watch` on the **Deploy** workflow.
+
 ## Versioning
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
