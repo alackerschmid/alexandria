@@ -101,4 +101,34 @@ A failure blocks the turn and returns the output. A turn that edited nothing run
 
 So don't hand-run these to "check your work" — finish the edit and let the hook decide. Do run them manually when you need a result mid-task, or when the hook has given up after three consecutive failures. The same standard applies to a `/code-review` pass: fixes applied from one aren't done until these pass.
 
+## Shell
+
+Both a PowerShell tool and a Bash tool (Git Bash, POSIX `sh`) are available, each with its own
+syntax. Bash heredocs are fine **in the Bash tool**; the hazard is PowerShell, where a here-string
+whose closing `'@` isn't at column 0 is a parse error, and quoting inside one silently mangles the
+content. That has cost a mangled commit message and an amend more than once.
+
+So: **never pass a multi-line string to a native executable inline.** Write it to a file with the
+Write tool and point the command at that file — for commits, `git commit -F <file>`, then delete the
+file. Same for SQL, JSON payloads and scripts: file first, then run it.
+
+## Debugging a reported defect
+
+When I report something concrete — a screenshot, a record, a specific book that behaved wrong —
+**reproduce that case before proposing a cause, and say what the evidence is.** A mechanism that
+would explain the symptom is not the same as the one that produced it, and a fix aimed at the wrong
+case looks like progress while changing nothing I can see.
+
+Two specifics, both learned the hard way:
+
+- **Check the environment I'm actually in.** The local D1 and production hold different libraries, so
+  "not reproducible locally" often means "not present locally". Read-only `SELECT`s against prod for
+  diagnosis are fine and usually decisive; the Cloudflare MCP notes above say which tool to use.
+- **Confirm the root cause against data, not plausibility.** A same-title/same-author collision, a
+  wrong external id and a bad merge all produce "two books share one row" — only the rows say which.
+  Name the mechanism *and* the field that proves it before editing.
+
+When the diagnosis contradicts something a rule file or comment claims, that's a finding worth
+telling me about, not a detail to quietly work around.
+
 Note: both the worker (`worker/test/*.spec.ts`) and the frontend (root `test/*.spec.ts`) have unit tests covering **pure logic only** — no D1/miniflare, no component mounting, so anything requiring a DB or the DOM is untested (deliberate scope decision). Frontend components/pages are verified by type-checking and manual QA (seed via `cd worker && npm run seed:dev`); only Vue-free helpers get unit tests. `test/locales.spec.ts` additionally fails `npm test` (and so CI) if `en.json` and `de.json` key sets drift — note that `npm run build` does not run the tests, so it will not catch that on its own.

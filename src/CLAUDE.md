@@ -65,6 +65,15 @@ ask the `inventory` subagent rather than expecting a list here.
   migrates them server-side on register/login.
 - **`stores/import.ts` is the deliberate exception to the cross-page-only store rule** — it
   holds page-shaped state specifically so an import survives navigation.
+- **A persisted shape is a compatibility surface: every new field needs a default on the way back
+  in.** `stores/import.ts`, `stores/guest.ts` and `stores/preferences.ts` all rehydrate from
+  `localStorage` written by an *older build*, and the load is a bare `as` cast — so a field added
+  today is `undefined` on every session stored before today, whatever the type says. Anything the
+  UI reads *through* while rendering (`item.x.y`) then throws mid-render and paints a blank page
+  rather than degrading. The established pattern is `stores/import.ts`'s `NewerImportedItemFields`
+  plus a revive function that defaults each one (`reviveImportedItem`) — extend that union when you
+  add a field, and derive the value if a sensible default exists. Assume nothing about stored data
+  matching the current type.
 
 ## Data flow
 
