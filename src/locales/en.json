@@ -528,6 +528,9 @@
       "reason_no_isbn": "No ISBN in the export — pick an edition",
       "reason_invalid_isbn": "ISBN couldn't be validated — pick an edition",
       "reason_cancelled": "Import cancelled before this book was reached — pick an edition",
+      "reason_search_unavailable": "Book search was unavailable — retry, or pick an edition",
+      "search_unavailable_note": "Book search was unavailable for {n} of these books, so no edition could be suggested. Nothing about them was decided — try again.",
+      "retry_search": "Retry search",
       "as_imported": "ISBN: {isbn} · as imported from Goodreads",
       "search_placeholder": "Search by title, author or ISBN",
       "use_this": "Use this",
@@ -579,7 +582,8 @@
           "invalid_isbn": "Invalid ISBN — skipped",
           "no_isbn": "No ISBN — skipped",
           "unreadable_row": "Couldn't read this row from the file — skipped",
-          "cancelled": "Import cancelled before this book was reached — skipped"
+          "cancelled": "Import cancelled before this book was reached — skipped",
+          "search_unavailable": "Book search was unavailable — skipped"
         }
       }
     }

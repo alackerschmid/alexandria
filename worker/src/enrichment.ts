@@ -215,10 +215,20 @@ export function pickVerifiedQid(
 // A well-covered item carries a label in ~100 languages plus aliases, and most of them are the same
 // string (the ~50 Wikipedias that call Q190192 "Dune"), so the query DISTINCTs and the Set dedupes:
 // scoring one spelling once instead of fifty times is the difference between a handful of
-// titleSimilarity calls per candidate and a thousand. LIMIT is a sanity bound on the response size in
-// the same spirit as findWorkSiblingScans' — the candidate count is already capped at 10 upstream,
-// but nothing else bounds the rows each one contributes.
-const MAX_LABEL_ROWS = 600;
+// titleSimilarity calls per candidate and a thousand.
+//
+// The bound is **per candidate**. As one shared budget across all ten it was a starvation bug: a
+// couple of heavily-labelled items ate the whole response and later candidates arrived with no
+// labels at all — and a candidate with no labels can never verify, so `pickVerifiedQid` returned
+// null and the work was stored as "not found" with its correct, lower-ranked QID sitting right
+// there in the candidate list. Nothing ordered the rows either, so which candidates starved was
+// SPARQL's business and the same book could enrich differently on two runs.
+//
+// 200 is measured, not guessed: the best-covered books run 107 (Dune) to 157 (The Lord of the
+// Rings) distinct label+alias strings, and a cap under that would swap the starvation bug for a
+// truncation one — LIMIT without ORDER BY would drop an arbitrary slice, possibly the very label
+// that verifies. Worst case is 10 × 200 rows on a fallback-only query.
+const MAX_LABEL_ROWS_PER_ITEM = 200;
 
 // Labels *and* aliases, in every language: a German edition legitimately resolves to an
 // English-titled work through the item's German label ("Unendlicher Spaß" → Q1077445 Infinite Jest),
@@ -228,13 +238,22 @@ const MAX_LABEL_ROWS = 600;
 async function fetchWorkLabels(
   qids: readonly string[],
 ): Promise<Map<string, Set<string>>> {
-  const values = qids.map((q) => `wd:${q}`).join(" ");
+  if (!qids.length) return new Map();
+  // One subquery per candidate, because SPARQL has no per-group limit and a subquery's own LIMIT is
+  // how you get one. The qids are shape-checked (`/^Q\d+$/`) where the candidate list is built, and
+  // that list is capped at 10 by the search query's own LIMIT, so the response stays bounded by
+  // 10 × MAX_LABEL_ROWS_PER_ITEM — the same ceiling the single shared budget had, now split fairly.
+  const blocks = qids.map(
+    (q) => `
+      { SELECT DISTINCT ?item ?label WHERE {
+          VALUES ?item { wd:${q} }
+          { ?item rdfs:label ?label } UNION { ?item skos:altLabel ?label }
+        } LIMIT ${MAX_LABEL_ROWS_PER_ITEM} }`,
+  );
   const rows = await runSparql(
     `
-    SELECT DISTINCT ?item ?label WHERE {
-      VALUES ?item { ${values} }
-      { ?item rdfs:label ?label } UNION { ?item skos:altLabel ?label }
-    } LIMIT ${MAX_LABEL_ROWS}`.trim(),
+    SELECT ?item ?label WHERE {${blocks.join(" UNION")}
+    }`.trim(),
   );
   const out = new Map<string, Set<string>>();
   for (const r of rows) {

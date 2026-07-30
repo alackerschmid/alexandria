@@ -346,6 +346,57 @@ describe("pickAutoIsbn", () => {
     expect(pick?.isbn).toBe("9780547928227");
   });
 
+  it("is not blocked by a same-titled book someone else wrote", () => {
+    // The candidates and their order are verbatim what Google Books returned for
+    // intitle:"No Country for Old Men" (three film-studies collections share the novel's exact
+    // title). Scored on titles alone they all tie at 1.000 and the row was declined as ambiguous.
+    const pick = pickAutoIsbn(
+      { title: "No Country for Old Men", author: "Cormac McCarthy" },
+      [
+        cand("9780810867307", "No Country for Old Men", "Lynnea Chapman King, Rick Wallach, Jim Welsh"),
+        cand("9780375706677", "No Country for Old Men", "Cormac McCarthy"),
+        cand("9783039118410", "No Country for Old Men", "Paddy Lyons"),
+        cand("9780810867291", "No Country for Old Men", "James M. Welsh"),
+        cand("9788439741114", "No es país para viejos / No Country for Old Men", "Cormac McCarthy"),
+      ],
+    );
+    expect(pick?.isbn).toBe("9780375706677");
+  });
+
+  it("narrows to the author without relaxing anything inside that field", () => {
+    // Same shape as above, from intitle:"Less Than Zero" — the novel against a children's maths
+    // book of the identical name.
+    expect(
+      pickAutoIsbn({ title: "Less Than Zero", author: "Bret Easton Ellis" }, [
+        cand("9780330474177", "Less Than Zero", "Bret Easton Ellis"),
+        cand("9781234567897", "Less Than Zero", "Stuart J. Murphy"),
+      ])?.isbn,
+    ).toBe("9780330474177");
+    // Narrowing hands the author's own books to the same thresholds they already faced, so the
+    // sequel is still not the book — the row goes to review rather than being filed under it.
+    expect(
+      pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+        cand("9780593098233", "Dune Messiah", "Frank Herbert"),
+      ]),
+    ).toBeNull();
+  });
+
+  it("falls back to judging every candidate when no author agrees", () => {
+    // A name Google spells differently keys apart, which must leave the previous rule in force
+    // rather than emptying the field — the title has to carry the match on its own, as before.
+    expect(
+      pickAutoIsbn({ title: "The Trial", author: "Kafka, Franz" }, [
+        cand("9780805209990", "The Trial", "Franz Kafka"),
+        cand("9781234567897", "The Trial", "D. H. Lawrence"),
+      ]),
+    ).toBeNull();
+    expect(
+      pickAutoIsbn({ title: "The Trial", author: "Kafka, Franz" }, [
+        cand("9780805209990", "The Trial", "Franz Kafka"),
+      ])?.isbn,
+    ).toBe("9780805209990");
+  });
+
   it("returns null for an empty candidate list and for untitled candidates", () => {
     expect(pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [])).toBeNull();
     expect(

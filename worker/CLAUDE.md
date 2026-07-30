@@ -95,7 +95,7 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Lo
 - `GET /api/stats` — aggregated library statistics (status counts, top authors, genres, languages, page/year stats); response shape defined in `src/types/stats.ts`
 - `POST /api/import/goodreads` — batch-import scans from a parsed Goodreads CSV export (1-10 rows). Rate-limited to ~600 rows/min per user (`import:<userId>`, charged via `checkRateLimit`'s `cost` param as `rows.length`).
 - `POST /api/import/match` — the title/author matching pass for rows with no usable ISBN (1-50 rows; no external fetches). Shares the `/goodreads` rate-limit bucket.
-- `POST /api/import/suggest-isbn` — names an ISBN for a row that has none, from a title/author search (1-10 rows, one search each via `searchTitleCached`). Answers only when `pickAutoIsbn` is confident and unambiguous; body `{ rows: [{ title, author? }] }` → `{ results: [{ isbn: string | null, confidence? }] }`, positional. Shares the `/goodreads` rate-limit bucket.
+- `POST /api/import/suggest-isbn` — names an ISBN for a row that has none, from a title/author search (1-10 rows, one search each via `searchTitleCached`). Answers only when `pickAutoIsbn` is confident and unambiguous; body `{ rows: [{ title, author? }] }` → `{ results: [{ isbn: string | null, confidence?, unavailable? }] }`, positional. `unavailable: true` marks a row whose *search* failed upstream rather than one that was declined — the client offers those a retry instead of manual resolution. Shares the `/goodreads` rate-limit bucket.
 
   Request/response shapes, the ownership rule, `update`/Undo semantics and the batch concurrency model are in the `import-wizard` rule, alongside the wizard that drives them.
 

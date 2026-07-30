@@ -45,6 +45,8 @@ const {
   reviewRemaining,
   sessionPaused,
   cancelRequested,
+  retryableReviewItems,
+  retryingSearch,
 } = storeToRefs(importStore);
 const {
   loadFile,
@@ -58,6 +60,7 @@ const {
   confirmReviewItem,
   skipReviewItem,
   undoSkipReviewItem,
+  retrySearchUnavailable,
   toggleImportedEdition,
   closeImportedEdition,
   retryImportedCandidates,
@@ -610,6 +613,29 @@ const tabs = computed(() => [
 
         <!-- Needs attention -->
         <div v-else-if="activeTab === 'attention'">
+          <!-- These rows were never judged — the title search behind the auto-assign pass failed
+               upstream — so asking again is likelier to clear them than resolving them by hand. -->
+          <div
+            v-if="retryableReviewItems.length > 0"
+            class="flex items-center justify-between gap-3 flex-wrap px-6 md:px-8 py-4 border-b border-charcoal-border"
+          >
+            <p class="text-[11px] text-text-secondary">
+              {{
+                t("import.review.search_unavailable_note", {
+                  n: retryableReviewItems.length,
+                })
+              }}
+            </p>
+            <AppButton
+              variant="secondary"
+              size="sm"
+              :loading="retryingSearch"
+              class="flex-none"
+              @click="retrySearchUnavailable()"
+            >
+              {{ t("import.review.retry_search") }}
+            </AppButton>
+          </div>
           <p
             v-if="reviewQueue.length === 0"
             class="p-6 md:p-8 text-[12px] text-text-secondary"

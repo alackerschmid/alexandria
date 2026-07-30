@@ -280,9 +280,10 @@ function sameBook(
  * The decision rule is `pickBestMatchPrepared`'s, shared rather than restated — same thresholds via
  * `titleThreshold`, same margin via `bestUnambiguous` — and for the same reason: a wrong ISBN
  * silently files the row under a different book, which is worse than one more manual review row.
- * Two things differ, both because the candidates are search results rather than scans the user
- * demonstrably has: what counts as one answer twice (see `sameBook`), and the stricter `subtitle`
- * containment rule (see `PrefixRule`).
+ * Three things differ, all because the candidates are search results rather than scans the user
+ * demonstrably has: what counts as one answer twice (see `sameBook`), the stricter `subtitle`
+ * containment rule (see `PrefixRule`), and that author agreement narrows the field rather than only
+ * lowering the bar (see below).
  */
 export function pickAutoIsbn(
   query: { title: string; author: string },
@@ -301,6 +302,25 @@ export function pickAutoIsbn(
     }
   }
 
-  const ranked = bestUnambiguous(qualifying, sameBook);
+  // Author agreement *ranks* here, rather than only lowering the bar as it does on the library
+  // path. A title search for a well-known novel routinely returns a film companion, a critical
+  // reader or an unrelated book published under the identical title, and those score 1.000 just as
+  // the novel does — a title score cannot go higher than exact. The lower threshold therefore buys
+  // the real book nothing at the top end, while the title-only 0.92 bar admits every one of those
+  // impostors as a rival, and `bestUnambiguous` then declines the whole row at margin 0.000. That
+  // is what sent "No Country for Old Men" (vs. three film-studies collections of the same name) and
+  // "Less Than Zero" (vs. a children's maths book and a monetary-economics one) to manual review.
+  //
+  // The row named an author, so a candidate disagreeing about it is not a competing answer to the
+  // question asked. Narrowing only — never a promotion: a row with no author, or one Google spells
+  // differently enough to key apart, leaves this empty and the field is judged exactly as before.
+  const authorMatched = qualifying.filter(
+    (c) => queryAuthorKey !== "" && c.authorKey === queryAuthorKey,
+  );
+
+  const ranked = bestUnambiguous(
+    authorMatched.length > 0 ? authorMatched : qualifying,
+    sameBook,
+  );
   return ranked ? { isbn: ranked.best.isbn, confidence: ranked.best.score } : null;
 }
