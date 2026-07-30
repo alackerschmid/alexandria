@@ -3,7 +3,9 @@ import {
   titleSimilarity,
   titleScorer,
   pickBestMatch,
+  pickAutoIsbn,
   type TitleMatchCandidate,
+  type IsbnCandidate,
 } from "../src/title-match";
 
 describe("titleSimilarity", () => {
@@ -268,5 +270,88 @@ describe("pickBestMatch", () => {
       [candidate({ scanId: 1, bookId: 1, title: "Pride and Prejudice", author: "Jane Austen" })],
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("pickAutoIsbn", () => {
+  const cand = (
+    isbn: string,
+    title: string | null,
+    author: string | null,
+  ): IsbnCandidate => ({ isbn, title, author });
+
+  it("picks the confident match when the author agrees", () => {
+    const pick = pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+      cand("9780441013593", "Dune", "Frank Herbert"),
+    ]);
+    expect(pick?.isbn).toBe("9780441013593");
+    expect(pick?.confidence).toBe(1);
+  });
+
+  it("treats further editions of the same book as the same answer, not a rival", () => {
+    // What a title search actually returns: a dozen editions of the book it found.
+    const pick = pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+      cand("9780441013593", "Dune", "Frank Herbert"),
+      cand("9780450011849", "Dune", "Frank Herbert"),
+      cand("9780593099322", "Dune: Book One", "Frank Herbert"),
+    ]);
+    expect(pick?.isbn).toBe("9780441013593");
+  });
+
+  it("does not let a sequel pass as its own predecessor", () => {
+    // The `word` prefix rule pickBestMatch uses scores "Dune" against "Dune Messiah" as 1; here the
+    // answer is an ISBN to file the row under, so the two have to stay apart.
+    expect(
+      pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+        cand("9780593098233", "Dune Messiah", "Frank Herbert"),
+      ]),
+    ).toBeNull();
+    // ...and when both are in the results, the right one wins outright rather than tying.
+    const pick = pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+      cand("9780593098233", "Dune Messiah", "Frank Herbert"),
+      cand("9780441013593", "Dune", "Frank Herbert"),
+    ]);
+    expect(pick?.isbn).toBe("9780441013593");
+  });
+
+  it("declines when two different books are too close to call", () => {
+    const pick = pickAutoIsbn({ title: "The Trial", author: "" }, [
+      cand("9780805209990", "The Trial", "Franz Kafka"),
+      cand("9781234567897", "The Trial", "D. H. Lawrence"),
+    ]);
+    expect(pick).toBeNull();
+  });
+
+  it("requires a near-exact title when no author corroborates it", () => {
+    // 'Dune Messiah' against 'Dune' clears neither bar without an author agreeing.
+    expect(
+      pickAutoIsbn({ title: "Dune", author: "Someone Else" }, [
+        cand("9780593098233", "Dune Messiah", "Frank Herbert"),
+      ]),
+    ).toBeNull();
+    expect(
+      pickAutoIsbn({ title: "Dune Messiah", author: "Frank Herbert" }, [
+        cand("9780593098233", "Dune Messiah", "Frank Herbert"),
+      ])?.isbn,
+    ).toBe("9780593098233");
+  });
+
+  it("tolerates an author written the other way round", () => {
+    // Goodreads exports "Tolkien, J.R.R."; normalizeAuthorKey does not reorder, so this one rides
+    // on the title bar alone — near-exact, and it is.
+    const pick = pickAutoIsbn(
+      { title: "The Hobbit", author: "Tolkien, J.R.R." },
+      [cand("9780547928227", "The Hobbit, or There and Back Again", "J.R.R. Tolkien")],
+    );
+    expect(pick?.isbn).toBe("9780547928227");
+  });
+
+  it("returns null for an empty candidate list and for untitled candidates", () => {
+    expect(pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [])).toBeNull();
+    expect(
+      pickAutoIsbn({ title: "Dune", author: "Frank Herbert" }, [
+        cand("9780441013593", null, "Frank Herbert"),
+      ]),
+    ).toBeNull();
   });
 });

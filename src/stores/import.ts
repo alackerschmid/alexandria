@@ -134,10 +134,6 @@ export interface ImportedItem {
    *  Lets "remove" become "undo" (PATCH status/rating back) instead of deleting a scan that
    *  predates the import. */
   previous: ScanStateSummary | null;
-  /** True when this row had no usable ISBN and was matched to its (preexisting) library entry
-   *  by title/author instead — shown as "matched by title" rather than "already in your
-   *  library" so the user knows this one was a fuzzy match, not an ISBN-confirmed duplicate. */
-  matchedByTitle: boolean;
   /** True when the CSV row's ISBN named a *different* edition than the copy in the library, and
    *  that copy was updated instead of a second scan being created. Worth saying on the card: the
    *  edition shown isn't the one the export listed. */
@@ -147,8 +143,21 @@ export interface ImportedItem {
    *  more than one copy in the library, on every match kind (ISBN, work or title), and grows when
    *  `absorbIntoExistingCard` folds a later row's writes into this card. */
   siblingUpdates: ScanWrite[];
-  /** The title-match confidence (0-1) — only set when matchedByTitle. */
-  matchConfidence: number | null;
+  /** Set when a title score — not an ISBN the export carried — decided which edition this card
+   *  points at, with the score (0-1) behind it. `source` says what the title was scored against,
+   *  which is the whole difference between the two title-driven passes and what the card's note
+   *  and its warning colouring key on:
+   *
+   *  - `library` — matched against the user's own scans (`/match`), so the row is `preexisting`
+   *    and the card says "matched by title" rather than the ISBN-confirmed "already in your
+   *    library".
+   *  - `catalog` — no usable ISBN in the export, so the auto-assign pass picked one from a title
+   *    search (`/suggest-isbn`). The edition shown is the wizard's answer rather than anything the
+   *    export named, which is why that one is worth a second look.
+   *
+   *  Null when the export's own ISBN identified the row. `changeImportedEdition` clears it: a
+   *  hand-picked edition is the user's choice, not a match. */
+  titleMatch: { confidence: number; source: "library" | "catalog" } | null;
   /** Where this card sits in the Matched list (`importSortRank` — owning, then reading status, then
    *  rating descending). Captured once, at creation, and not persisted: the cards are editable in
    *  place, and re-ranking on every edit would make a card jump out from under the click that changed
@@ -283,7 +292,11 @@ interface PersistedSession {
 // A session in localStorage may have been written by an older build — loadPersistedSession is a bare
 // `as` cast, so the fields listed here (all added since the persisted shape first shipped) aren't
 // guaranteed to be present.
-type NewerImportedItemFields = "otherEdition" | "matchedViaWork" | "siblingUpdates";
+type NewerImportedItemFields =
+  | "otherEdition"
+  | "matchedViaWork"
+  | "siblingUpdates"
+  | "titleMatch";
 
 type StoredImportedItem = Omit<PersistedImportedItem, NewerImportedItemFields> &
   Partial<Pick<PersistedImportedItem, NewerImportedItemFields>>;
@@ -297,6 +310,11 @@ function reviveImportedItem(p: StoredImportedItem): ImportedItem {
     otherEdition: p.otherEdition ?? null,
     matchedViaWork: p.matchedViaWork ?? false,
     siblingUpdates: p.siblingUpdates ?? [],
+    // A session written before `titleMatch` replaced the two flag/confidence pairs revives without
+    // a provenance note on its title-matched cards. Deliberately not migrated from the old fields:
+    // the app is pre-release, and a card losing one caption is a better trade than carrying a
+    // translation for a shape no live session has.
+    titleMatch: p.titleMatch ?? null,
     // Not persisted, always re-derived: the freeze exists so a card doesn't jump out from under the
     // click that edited it, and a reload has no click in flight — re-ranking from current state is
     // the correct order for a fresh render (and what an edited card's rank *should* become).
@@ -360,7 +378,12 @@ export const useImportStore = defineStore("import", () => {
   // Narrower than isRunning: true only while a batch request is actually awaiting a response —
   // the moment an interrupted page load could lose real work in flight. isRunning also covers the
   // synchronous gaps between batches, which reloading doesn't put at risk.
-  const batchInFlight = ref(false);
+  //
+  // A count rather than a flag, because autoAssignPass deliberately overlaps two requests: with a
+  // boolean, whichever finished first would clear the beforeunload guard while the other was still
+  // out — exactly the window the guard exists for.
+  const inFlightBatches = ref(0);
+  const batchInFlight = computed(() => inFlightBatches.value > 0);
   // Set when a persisted session from a previous tab/reload is rehydrated mid-run. Surfaced by
   // the confirm-adjacent "paused" panel and the global chip; never auto-cleared by resuming
   // silently — the user has to explicitly resume or discard.
@@ -535,7 +558,9 @@ export const useImportStore = defineStore("import", () => {
   function buildImportedItem(
     row: ParsedGoodreadsRow,
     result: ImportRowResult,
-    matchConfidence: number | null = null,
+    // Null for a row the export's own ISBN identified — the two title-driven passes each pass
+    // their own `source`. See ImportedItem.titleMatch.
+    titleMatch: ImportedItem["titleMatch"] = null,
   ): ImportedItem {
     const book = result.book;
     const preexisting = result.outcome === "updated";
@@ -560,8 +585,7 @@ export const useImportStore = defineStore("import", () => {
       workId: book?.work_id ?? null,
       preexisting,
       previous,
-      matchedByTitle: matchConfidence != null,
-      matchConfidence,
+      titleMatch,
       sortRank: importSortRank({
         status: resolved.status,
         owningStatus: resolved.owning_status,
@@ -625,6 +649,25 @@ export const useImportStore = defineStore("import", () => {
     existing.siblingUpdates.push(...writesToAdopt(existing, written));
     pushLog(row, row.isbn, "duplicate", "in_file");
     return true;
+  }
+
+  // The card side of every pass's result ladder: a row that wrote a scan either folds into the card
+  // already covering it or gets one of its own. All three passes do exactly this — they differ only
+  // in the provenance they attach and in where their *non*-imported outcomes go.
+  function pushOrAbsorb(
+    row: ParsedGoodreadsRow,
+    result: ImportRowResult,
+    titleMatch: ImportedItem["titleMatch"] = null,
+  ): void {
+    if (!absorbIntoExistingCard(row, result)) {
+      importedItems.value.push(buildImportedItem(row, result, titleMatch));
+    }
+  }
+
+  // Why a row that reached the end of the passes still needs a human: the export had no ISBN at all,
+  // or had something that isn't one.
+  function reviewReason(row: ParsedGoodreadsRow): ReviewItem["reason"] {
+    return row.isbn ? "invalid_isbn" : "no_isbn";
   }
 
   function pushLog(
@@ -803,7 +846,7 @@ export const useImportStore = defineStore("import", () => {
     onFail: () => T[],
   ): Promise<T[]> {
     let networkRetried = false;
-    batchInFlight.value = true;
+    inFlightBatches.value++;
     try {
       for (let attempt = 0; attempt < 10; attempt++) {
         try {
@@ -829,7 +872,7 @@ export const useImportStore = defineStore("import", () => {
       }
       return onFail();
     } finally {
-      batchInFlight.value = false;
+      inFlightBatches.value--;
     }
   }
 
@@ -852,6 +895,19 @@ export const useImportStore = defineStore("import", () => {
     );
   }
 
+  // How a row is named to the two title-driven routes. Annotations are stripped because
+  // "(Discworld, #3)" is Goodreads' shelf furniture, not part of the title anyone catalogued the
+  // book under — and both routes score against catalogued titles.
+  function titleAuthorQuery(row: ParsedGoodreadsRow): {
+    title: string;
+    author: string;
+  } {
+    return {
+      title: stripTitleAnnotations(row.title).trim(),
+      author: row.author.trim(),
+    };
+  }
+
   interface MatchPayloadRow {
     title: string;
     author: string;
@@ -862,8 +918,7 @@ export const useImportStore = defineStore("import", () => {
   function buildMatchPayload(row: ParsedGoodreadsRow): MatchPayloadRow {
     const { status } = shelfMappingFor(row.shelf, mapping);
     return {
-      title: stripTitleAnnotations(row.title).trim(),
-      author: row.author.trim(),
+      ...titleAuthorQuery(row),
       status,
       rating: row.rating,
     };
@@ -880,6 +935,29 @@ export const useImportStore = defineStore("import", () => {
       "/api/import/match",
       { rows: payloads, update },
       () => payloads.map(() => ({ outcome: "no_match" as const })),
+    );
+  }
+
+  interface SuggestPayloadRow {
+    title: string;
+    author: string;
+  }
+
+  interface SuggestRowResult {
+    isbn: string | null;
+    confidence?: number;
+  }
+
+  // Same retry policy, against /api/import/suggest-isbn. A request-level failure degrades every row
+  // to "no suggestion", which sends it to manual review — the same place it would have gone before
+  // this pass existed.
+  function postSuggestBatchWithRetry(
+    payloads: SuggestPayloadRow[],
+  ): Promise<SuggestRowResult[]> {
+    return postWithRetry<SuggestRowResult>(
+      "/api/import/suggest-isbn",
+      { rows: payloads },
+      () => payloads.map(() => ({ isbn: null })),
     );
   }
 
@@ -914,6 +992,93 @@ export const useImportStore = defineStore("import", () => {
       searchQuery: "",
       searching: false,
     });
+  }
+
+  // The last pass over a row the export gave no usable ISBN: /match has already ruled out the
+  // user's own library, so the server is asked to name an edition from the title/author (see
+  // POST /api/import/suggest-isbn) and the row is imported under it like any other. The point is
+  // that the user picks nothing — but the server only answers when the answer is confident and
+  // unambiguous, so a row it declines still goes to manual review rather than being guessed at.
+  // Every imported card carries a `catalog`-sourced `titleMatch`, which is what the summary card
+  // says out loud.
+  //
+  // Cancelling mid-pass queues the remaining rows as "cancelled", same as the passes before it —
+  // and since this is the last one, it needs no early return of its own: startImport moves to the
+  // review step either way.
+  async function autoAssignPass(
+    unassigned: ParsedGoodreadsRow[],
+    shelvesFieldDefId: number | null,
+  ): Promise<void> {
+    // One suggest batch's picks always fit one import batch, both being capped at BATCH_SIZE.
+    const batches = chunk(unassigned, BATCH_SIZE);
+    if (batches.length === 0) return;
+    const searchFor = (batch: ParsedGoodreadsRow[]) =>
+      postSuggestBatchWithRetry(batch.map((row) => titleAuthorQuery(row)));
+
+    // The one place in the wizard that keeps two requests in flight at once. A batch's searches
+    // share nothing with the previous batch's import, so waiting for that import before starting
+    // them idled ~3s of every ~7.5s batch — hence the prefetch below, which always holds the
+    // search for the batch this loop is about to handle.
+    let pending = searchFor(batches[0]);
+    for (let b = 0; b < batches.length; b++) {
+      if (cancelRequested.value) {
+        for (const rest of batches.slice(b)) queueRemainderAsCancelled(rest);
+        // The outstanding prefetch is left to settle and its answer dropped: one search already
+        // charged against the rate limit, and postWithRetry never rejects, so there's no unhandled
+        // rejection to guard against either.
+        return;
+      }
+      const batch = batches[b];
+      const suggestions = await pending;
+      // Start the next batch's searches *before* awaiting this batch's import, not after it. The
+      // last iteration has none to start and never reads `pending` again.
+      const next = batches[b + 1];
+      if (next) pending = searchFor(next);
+
+      const assigned: {
+        row: ParsedGoodreadsRow;
+        isbn: string;
+        titleMatch: ImportedItem["titleMatch"];
+      }[] = [];
+      suggestions.forEach((suggestion, i) => {
+        const row = batch[i];
+        if (suggestion.isbn) {
+          assigned.push({
+            row,
+            isbn: suggestion.isbn,
+            titleMatch:
+              suggestion.confidence != null
+                ? { confidence: suggestion.confidence, source: "catalog" }
+                : null,
+          });
+        } else {
+          queueForReview(row, reviewReason(row));
+        }
+      });
+
+      if (assigned.length > 0) {
+        const results = await postBatchWithRetry(
+          assigned.map((a) =>
+            buildImportPayload({ ...a.row, isbn: a.isbn }, mapping),
+          ),
+          updateExisting.value,
+          shelvesFieldDefId,
+        );
+        results.forEach((result, i) => {
+          const { row, titleMatch } = assigned[i];
+          if (result.outcome === "imported" || result.outcome === "updated") {
+            pushOrAbsorb(row, result, titleMatch);
+          } else if (result.outcome === "duplicate") {
+            pushLog(row, result.isbn, "duplicate", "in_library");
+          } else {
+            // Including invalid_isbn: the suggestion turned out not to be importable, which leaves
+            // the row exactly where it started — with no usable ISBN and a human to ask.
+            queueForReview(row, reviewReason(row));
+          }
+        });
+      }
+      persistSession();
+    }
   }
 
   // Rows left in a stage that's been abandoned (cancel, or everything after it) go to the
@@ -978,9 +1143,7 @@ export const useImportStore = defineStore("import", () => {
             queueForReview(row, "invalid_isbn");
           } else {
             if (result.outcome === "imported" || result.outcome === "updated") {
-              if (!absorbIntoExistingCard(row, result)) {
-                importedItems.value.push(buildImportedItem(row, result));
-              }
+              pushOrAbsorb(row, result);
             } else {
               pushLog(
                 row,
@@ -997,10 +1160,14 @@ export const useImportStore = defineStore("import", () => {
       // Rows with no usable ISBN aren't given up on outright — try matching them against the
       // existing library by title/author first (see worker/src/title-match.ts). A Goodreads
       // export commonly has these for books added by hand, and many turn out to already be here.
+      // Rows the library pass didn't recognize either — they still have no ISBN, and the
+      // auto-assign pass below tries to name one for each rather than sending them all to review.
+      const unassigned: ParsedGoodreadsRow[] = [];
       const unmatchedBatches = chunk(unmatched, MATCH_BATCH_SIZE);
       for (let b = 0; b < unmatchedBatches.length; b++) {
         if (cancelRequested.value) {
           for (const rest of unmatchedBatches.slice(b)) queueRemainderAsCancelled(rest);
+          queueRemainderAsCancelled(unassigned);
           step.value = "review";
           persistSession();
           return;
@@ -1011,25 +1178,28 @@ export const useImportStore = defineStore("import", () => {
         results.forEach((result, i) => {
           const row = batch[i];
           if (result.outcome === "updated") {
-            // Same aliasing guard as the ISBN pass: this pass scores against the user's whole
-            // library, which by now includes the scans this session created.
-            const asImportResult = matchResultToImportRowResult(result);
-            if (!absorbIntoExistingCard(row, asImportResult)) {
-              importedItems.value.push(
-                buildImportedItem(row, asImportResult, result.confidence ?? null),
-              );
-            }
+            // pushOrAbsorb's aliasing guard matters here too: this pass scores against the user's
+            // whole library, which by now includes the scans this session created.
+            pushOrAbsorb(
+              row,
+              matchResultToImportRowResult(result),
+              result.confidence != null
+                ? { confidence: result.confidence, source: "library" }
+                : null,
+            );
           } else if (result.outcome === "duplicate") {
             // A confident match was found but updateExisting is off — nothing was written, and
             // unlike "no_match" there's nothing for the user to resolve, so this isn't a review
             // row: it's resolved, just declined.
             pushLog(row, row.isbn, "duplicate", "in_library");
           } else {
-            queueForReview(row, row.isbn ? "invalid_isbn" : "no_isbn");
+            unassigned.push(row);
           }
         });
         persistSession();
       }
+
+      await autoAssignPass(unassigned, shelvesFieldDefId);
 
       step.value = "review";
       persistSession();
@@ -1345,6 +1515,10 @@ export const useImportStore = defineStore("import", () => {
         // this swap's own INSERT, so what it found is the item's *previous* scan — the one the
         // DELETE below removes. Clear the note rather than restate a copy that's on its way out.
         item.otherEdition = null;
+        // The ISBN is the user's choice now, so no title score describes this card any more. Only
+        // a `catalog` one can be here — a `library` match is preexisting, which this path refuses
+        // above — but clearing the field outright is the honest statement either way.
+        item.titleMatch = null;
         item.editingEdition = false;
         // The candidate list just shown belonged to the *previous* work — reopening the picker
         // must re-fetch for the new one, not silently show stale editions of the old book.
