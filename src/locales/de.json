@@ -697,5 +697,102 @@
     "heading_line2": "gefunden.",
     "body": "Diese Seite existiert nicht oder wurde verschoben.",
     "cta": "Zur Bibliothek"
+  },
+  "admin": {
+    "nav": "Admin",
+    "settings_description": "API-Nutzung, Anreicherungsstatus und Nutzerliste.",
+    "settings_button": "Board öffnen",
+    "loading": "Wird geladen",
+    "refresh": "Aktualisieren",
+    "refreshing": "Aktualisiert",
+    "range": {
+      "hours": "letzte {hours} Std.",
+      "days": "letzte {days} Tage"
+    },
+    "pips": {
+      "quota": "Kontingent",
+      "enrichment": "Anreicherung",
+      "run_failures": "Fehlläufe 24 Std.",
+      "rate_limited": "429er · {range}",
+      "instance": "Instanz"
+    },
+    "quota": {
+      "title": "Google Books · heute",
+      "remaining": "verbleibend",
+      "projected": "Prognose Tagesende",
+      "peak": "Spitze",
+      "warn_marker": "Warnung bei {percent} %",
+      "cap": "{limit} · Tageslimit",
+      "state": {
+        "ok": "Im Rahmen",
+        "warning": "Limit rückt näher",
+        "critical": "Kritisch"
+      }
+    },
+    "vitals": {
+      "title": "Instanz",
+      "users": "Nutzer",
+      "scans": "Scans",
+      "catalogue": "Bücher / Werke",
+      "enrichment": "Anreicherung",
+      "runs_24h": "Läufe 24 Std.",
+      "works": "{count} Werke",
+      "done_of": "fertig von {total}",
+      "growth_7d": "{percent} % Wachstum 7 T.",
+      "editions_per_work": "{ratio} Ausg. / Werk",
+      "avg_p95": "{avg} Ø · p95 {p95}",
+      "no_failures": "keine Fehler",
+      "status": {
+        "done": "fertig",
+        "pending": "offen",
+        "failed": "fehlgeschlagen",
+        "exhausted": "aufgegeben"
+      },
+      "outcome": {
+        "done": "fertig",
+        "not_found": "nicht gefunden",
+        "failed": "fehlgeschlagen"
+      }
+    },
+    "chart": {
+      "title": "Aufrufe pro Stunde",
+      "summary": "{calls} Aufrufe · Spitze {peak}/Std.",
+      "now": "jetzt",
+      "days_ago": "−{days} T.",
+      "empty_title": "Noch keine API-Aktivität erfasst",
+      "empty_body": "Aufrufe werden erfasst, sobald Bücher gescannt und Werke angereichert werden."
+    },
+    "endpoints": {
+      "title": "Nach Endpunkt",
+      "provider": "Anbieter",
+      "operation": "Operation",
+      "share": "Anteil am Zeitraum",
+      "success": "Erfolg",
+      "errors": "Fehler",
+      "rate_limited": "Gedrosselt",
+      "total": "Gesamt",
+      "empty": "In diesem Zeitraum wurde nichts erfasst."
+    },
+    "roster": {
+      "title": "Nutzerliste",
+      "meta": "{count} Nutzer · neueste zuerst",
+      "role": "Rolle",
+      "email": "E-Mail",
+      "firstname": "Vorname",
+      "signed_up": "Registriert",
+      "scans": "Scans",
+      "last_activity": "Letzte Aktivität",
+      "admin": "Admin",
+      "user": "Nutzer",
+      "never": "nie",
+      "empty": "Noch keine registrierten Nutzer."
+    },
+    "error": {
+      "badge": "Fehlgeschlagen",
+      "title": "Dieser Abschnitt konnte nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "retrying": "Versucht erneut",
+      "network": "Netzwerkfehler"
+    }
   }
 }

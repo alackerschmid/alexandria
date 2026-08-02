@@ -43,6 +43,21 @@
           <span class="w-1.5 h-1.5 rounded-full flex-none" :class="importDotClass" />
           {{ $t("home.nav_import") }}
         </router-link>
+        <!-- Also outside useNavLinks, for the same four-entry reason. Shown from a flag the
+             login response sets; the route guard and every /api/admin call check again. -->
+        <router-link
+          v-if="authStore.isAdmin"
+          :to="{ name: 'admin' }"
+          class="flex items-center gap-2 text-[11px] tracking-[0.18em] uppercase transition-colors"
+          :class="
+            route.name === 'admin'
+              ? 'text-text-primary border-b border-text-primary pb-px pointer-events-none'
+              : 'text-text-secondary hover:text-text-primary'
+          "
+        >
+          <span class="w-1.5 h-1.5 rounded-full flex-none bg-orange-neon" />
+          {{ $t("admin.nav") }}
+        </router-link>
       </nav>
       <div class="flex items-center gap-1">
         <v-menu location="bottom end" :offset="8">

@@ -212,7 +212,12 @@ const submit = async () => {
     // synchronously off it. Seeded, it skips the GET round-trip. `?? {}` keeps an older worker
     // deploy working — an absent field just takes the same path as an empty server blob.
     preferencesStore.seed(data.preferences ?? {});
-    authStore.setAuth(data.token, data.email, data.firstname ?? null);
+    authStore.setAuth(
+      data.token,
+      data.email,
+      data.firstname ?? null,
+      data.is_admin === true,
+    );
 
     // Guest scan migration is handled centrally in App.vue (reacts to isAuthenticated),
     // so it also retries any scans that failed to sync on a previous login.

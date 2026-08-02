@@ -13,12 +13,12 @@ ask the `inventory` subagent rather than expecting a list here.
 
 | Directory | Holds |
 | --- | --- |
-| `src/pages/` | Route-level components — `landing` (`/`), `home` (`/home`), `index` (`/library`), `series/:id`, `settings`, `import`, `welcome`, `login`, `scanner`, `privacy`, `NotFound` |
-| `src/components/` | App chrome and shared primitives, plus `book-detail/`, `import/` and `settings/` subfolders |
+| `src/pages/` | Route-level components — `landing` (`/`), `home` (`/home`), `index` (`/library`), `series/:id`, `settings`, `import`, `welcome`, `login`, `scanner`, `privacy`, `admin` (`/admin`, `requiresAdmin`), `NotFound` |
+| `src/components/` | App chrome and shared primitives, plus `book-detail/`, `import/`, `settings/` and `admin/` subfolders |
 | `src/composables/` | Shared logic extracted from pages (API client, library pipeline, status/rating writes, polling, focus trap) |
 | `src/stores/` | Pinia — cross-page state: auth/guest session, field definitions, preferences, theme/accent/locale |
 | `src/utils/` | Pure helpers. Several are unit-tested in `test/*.spec.ts` — keep new pure logic here so it can be tested without mounting a component |
-| `src/types/` | `book.ts` (the scan-row shape), `library.ts`, `stats.ts` |
+| `src/types/` | `book.ts` (the scan-row shape), `library.ts`, `stats.ts`, `admin.ts` |
 | `src/locales/` | `en.json`, `de.json` — all UI strings |
 | `src/plugins/` | `i18n.ts`, `vuetify.ts` (Vuetify 4, `editorial` / `editorial-dark` themes) |
 | `src/styles/` | `tailwind.css` — Tailwind v4 config and design tokens |

@@ -697,5 +697,102 @@
     "heading_line2": "found.",
     "body": "That page doesn't exist or has moved.",
     "cta": "Go to library"
+  },
+  "admin": {
+    "nav": "Admin",
+    "settings_description": "API usage, enrichment health and the user roster.",
+    "settings_button": "Open board",
+    "loading": "Loading",
+    "refresh": "Refresh",
+    "refreshing": "Refreshing",
+    "range": {
+      "hours": "last {hours}h",
+      "days": "last {days} days"
+    },
+    "pips": {
+      "quota": "Quota",
+      "enrichment": "Enrichment",
+      "run_failures": "Run failures 24h",
+      "rate_limited": "429s · {range}",
+      "instance": "Instance"
+    },
+    "quota": {
+      "title": "Google Books · today",
+      "remaining": "remaining",
+      "projected": "projected EOD",
+      "peak": "peak",
+      "warn_marker": "warn at {percent}%",
+      "cap": "{limit} · daily cap",
+      "state": {
+        "ok": "Within quota",
+        "warning": "Approaching limit",
+        "critical": "Critical"
+      }
+    },
+    "vitals": {
+      "title": "Instance",
+      "users": "Users",
+      "scans": "Scans",
+      "catalogue": "Books / works",
+      "enrichment": "Enrichment",
+      "runs_24h": "Runs 24h",
+      "works": "{count} works",
+      "done_of": "done of {total}",
+      "growth_7d": "{percent}% growth 7d",
+      "editions_per_work": "{ratio} eds / work",
+      "avg_p95": "{avg} avg · p95 {p95}",
+      "no_failures": "no failures",
+      "status": {
+        "done": "done",
+        "pending": "pending",
+        "failed": "failed",
+        "exhausted": "exhausted"
+      },
+      "outcome": {
+        "done": "done",
+        "not_found": "not_found",
+        "failed": "failed"
+      }
+    },
+    "chart": {
+      "title": "Calls per hour",
+      "summary": "{calls} calls · peak {peak}/h",
+      "now": "now",
+      "days_ago": "−{days}d",
+      "empty_title": "No API activity recorded yet",
+      "empty_body": "Calls are logged as books are scanned and works enriched."
+    },
+    "endpoints": {
+      "title": "By endpoint",
+      "provider": "Provider",
+      "operation": "Operation",
+      "share": "Share of range",
+      "success": "Success",
+      "errors": "Errors",
+      "rate_limited": "Rate-limited",
+      "total": "Total",
+      "empty": "Nothing recorded in this range."
+    },
+    "roster": {
+      "title": "Roster",
+      "meta": "{count} users · newest first",
+      "role": "Role",
+      "email": "Email",
+      "firstname": "First name",
+      "signed_up": "Signed up",
+      "scans": "Scans",
+      "last_activity": "Last activity",
+      "admin": "admin",
+      "user": "user",
+      "never": "never",
+      "empty": "No registered users yet."
+    },
+    "error": {
+      "badge": "Failed",
+      "title": "Couldn't load this section",
+      "retry": "Retry",
+      "retrying": "Retrying",
+      "network": "network error"
+    }
   }
 }

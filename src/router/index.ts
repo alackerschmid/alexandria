@@ -19,6 +19,11 @@ declare module "vue-router" {
     mobileNav?: boolean;
     /** Redirect unauthenticated users to `/` instead of rendering this route. */
     requiresAuth?: boolean;
+    /**
+     * Redirect users without the admin flag away from this route. Cosmetic only — the flag is
+     * client-side state; `/api/admin/*` is what actually enforces access.
+     */
+    requiresAdmin?: boolean;
   }
 }
 
@@ -76,6 +81,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: "/admin",
+      name: "admin",
+      component: () => import("@/pages/admin.vue"),
+      meta: { requiresAuth: true, requiresAdmin: true },
+    },
+    {
       path: "/privacy",
       name: "privacy",
       component: () => import("@/pages/privacy.vue"),
@@ -98,6 +109,9 @@ router.beforeEach((to) => {
   }
   if (!authStore.isAuthenticated && to.meta.requiresAuth) {
     return { name: "home" };
+  }
+  if (to.meta.requiresAdmin && !authStore.isAdmin) {
+    return { name: authStore.isAuthenticated ? "dashboard" : "home" };
   }
 });
 

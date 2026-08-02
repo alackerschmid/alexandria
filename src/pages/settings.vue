@@ -19,7 +19,7 @@
         </p>
         <nav>
           <a
-            v-for="s in NAV_SECTIONS"
+            v-for="s in navSections"
             :key="s.id"
             :href="`#${s.id}`"
             class="flex items-center gap-3 px-7 py-[11px] text-[13px] transition-colors border-l-2 cursor-pointer"
@@ -604,6 +604,31 @@
             </div>
           </section>
 
+          <!-- ── ADMIN ────────────────────────────────────────────────────── -->
+          <section v-if="authStore.isAdmin" id="admin">
+            <SectionHeading :title="$t('admin.nav')" />
+
+            <div
+              class="flex items-center justify-between gap-6 border border-charcoal-border p-6"
+            >
+              <div>
+                <p class="text-[15px] text-text-primary font-medium">
+                  {{ $t("admin.settings_description") }}
+                </p>
+              </div>
+              <router-link
+                :to="{ name: 'admin' }"
+                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
+                :style="{
+                  color: 'rgb(var(--v-theme-on-background))',
+                  borderColor: accentStore.color,
+                }"
+              >
+                {{ $t("admin.settings_button") }}
+              </router-link>
+            </div>
+          </section>
+
           <!-- ── DANGER ───────────────────────────────────────────────────── -->
           <section id="danger" class="pb-16">
             <div class="flex items-baseline gap-4 mb-[18px]">
@@ -781,12 +806,24 @@ const NAV_SECTIONS = [
     },
   },
   {
+    id: "admin",
+    get label() {
+      return t("admin.nav");
+    },
+  },
+  {
     id: "danger",
     get label() {
       return t("settings.danger.heading");
     },
   },
 ];
+
+// The admin entry is the one conditional section. Settings is the only route on the mobile tab
+// bar, so this is also how an admin reaches the board on a phone — the header link is desktop-only.
+const navSections = computed(() =>
+  NAV_SECTIONS.filter((s) => s.id !== "admin" || authStore.isAdmin),
+);
 
 const activeSection = ref("account");
 
