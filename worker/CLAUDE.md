@@ -11,7 +11,7 @@ frontend wizard those routes serve).
 
 ### Worker (`worker/src/`)
 
-Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts` is just CORS + route mounting; the routes live in `worker/src/routes/`, one file per resource: `auth.ts` (`/api/auth`), `books.ts` (`/api/books`), `scans.ts` (`/api/scans`), `fields.ts` (`/api/field-definitions`), `catalog.ts` (`/api/works` + `/api/series`), `stats.ts` (`/api/stats`), `import.ts` (`/api/import`).
+Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts` is just CORS + route mounting; the routes live in `worker/src/routes/`, one file per resource: `auth.ts` (`/api/auth`), `books.ts` (`/api/books`), `scans.ts` (`/api/scans`), `fields.ts` (`/api/field-definitions`), `catalog.ts` (`/api/works` + `/api/series`), `stats.ts` (`/api/stats`), `import.ts` (`/api/import`), `admin.ts` (`/api/admin`).
 
 **Key modules:**
 
@@ -20,7 +20,7 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts
 - `title-match.ts` — pure title/author matching for the Goodreads-import no-ISBN path: `titleSimilarity` (Dice-coefficient bigram comparison with a prefix-containment shortcut) + `pickBestMatch` (confident-and-unambiguous match against a candidate list, else no match; ambiguity is judged between *works*, not scans). `titleScorer` (the same scoring with the query title prepared once) is what `enrichment.ts` verifies a Wikidata search hit's labels with. `pickAutoIsbn` picks the ISBN to auto-assign to a row that has none, from title-search results — same thresholds and margin, but the stricter `subtitle` prefix rule (see `PrefixRule`), since there the answer is a new ISBN rather than a scan the user demonstrably has.
 - `enrichment.ts` — Wikidata SPARQL pipeline; exports `CURRENT_ENRICHMENT_SCHEMA_VERSION`.
 - `sweeper.ts` — cron handler; imported by `index.ts` as the `scheduled` export.
-- `auth.ts` — `authMiddleware` (JWT verify, injects `userId`), `signToken` (HS256, 7-day expiry).
+- `auth.ts` — `authMiddleware` (JWT verify, injects `userId`), `signToken` (HS256, 7-day expiry), `adminMiddleware` (gate for `/api/admin/*`; runs **after** `authMiddleware`, `SELECT`s `users.is_admin`, 403 otherwise). The flag is read per request rather than cached or carried in the JWT — it's flipped by hand in D1, and a token issued before the flip has to start working without being re-issued.
 - `usage.ts` — `recordApiUsage` (best-effort UPSERT into the hourly `api_usage` counters, swallows every failure so telemetry can't fail the call it measures), `usageHourStart` + `outcomeForStatus` (pure, unit-tested). Instrumented at three choke points: `fetchGoogleBooksJson` (per HTTP attempt — a retry spends real daily quota), `fetchOpenLibraryBibkey`/`fetchEditionsForWorkKey`, and `runSparql`. Counters are global, never per-user — see `worker/migrations/CLAUDE.md`.
 - `override-validation.ts` — `validateOverrides`, the per-field rules for `PATCH /api/books/override` (length caps, `http(s)`-only cover URLs, partial-ISO `publish_date`, BCP-47-shaped `language`, integer page count). Returns normalized values plus stable error codes — never prose, so the worker ships no locale strings. Mirrored client-side by `src/utils/book-edit.ts`, which is the round-trip saver, not the enforcement point. Unit-tested.
 - `preferences.ts` — `sanitizePreferences`/`parsePreferences` for the opaque per-user preference blob on `users.preferences` (validates a flat string→string map within size bounds; backs `GET`/`PUT /api/auth/preferences`). Unit-tested.
@@ -30,7 +30,7 @@ Hono on Cloudflare Workers with D1 (SQLite). All routes under `/api/`. `index.ts
 **Public routes** (no auth required):
 
 - `POST /api/auth/register` — creates user, returns JWT; migrates any guest scans to account. Also returns `preferences` (always `{}` — the INSERT never sets it), for the same reason login does
-- `POST /api/auth/login` — returns JWT; migrates any guest scans to account. Also returns `preferences` (the user's blob, via `parsePreferences`) — it rides the row already read to verify the password, so it costs no extra query and saves the client a `GET /api/auth/preferences` before it can paint the user's look
+- `POST /api/auth/login` — returns JWT; migrates any guest scans to account. Also returns `preferences` (the user's blob, via `parsePreferences`) and `is_admin` (boolean) — both ride the row already read to verify the password, so they cost no extra query: `preferences` saves the client a `GET /api/auth/preferences` before it can paint the user's look, and `is_admin` is what makes the admin nav link appear. `/register` returns both too, constant-empty and `false` respectively. The client copy of `is_admin` only controls that link — it goes stale until the next login if the column is flipped, which is accepted because `adminMiddleware` re-checks on every `/api/admin` request
 - `GET /api/books/guest-lookup?isbn=` — metadata lookup for guest mode (same cache-then-fetch as authenticated `/api/books/lookup`, but **skips Wikidata enrichment** to reduce anonymous load)
 - `GET /api/books/guest-search?title=` — title search for guest mode (Google Books, no DB writes)
 
@@ -99,6 +99,12 @@ Worker secrets (`wrangler secret put`): `JWT_SECRET`, `GOOGLE_BOOKS_API_KEY`. Lo
 - `POST /api/import/suggest-isbn` — names an ISBN for a row that has none, from a title/author search (1-10 rows, one search each via `searchTitleCached`). Answers only when `pickAutoIsbn` is confident and unambiguous; body `{ rows: [{ title, author? }] }` → `{ results: [{ isbn: string | null, confidence?, unavailable? }] }`, positional. `unavailable: true` marks a row whose *search* failed upstream rather than one that was declined — the client offers those a retry instead of manual resolution. Shares the `/goodreads` rate-limit bucket.
 
   Request/response shapes, the ownership rule, `update`/Undo semantics and the batch concurrency model are in the `import-wizard` rule, alongside the wizard that drives them.
+
+**Admin** (`/api/admin/*`, all behind `authMiddleware` + `adminMiddleware`, backing the `/admin` status board):
+
+- `GET /api/admin/overview` — instance headline numbers: user/scan/book/work counts with 7-day deltas, works grouped by `enrichment_status`, and a 24h `enrichment_runs` summary (outcome counts, failure reasons, avg + p95 duration). This is the first read surface `enrichment_runs` has ever had. p95 is computed in JS from the raw durations — a day is a few hundred rows, and that beats bending SQLite into a percentile
+- `GET /api/admin/usage?hours=` — the `api_usage` counters: the raw hourly `series`, per-provider/operation `totals`, and `googleBooksToday` (calls since UTC midnight, the number the quota gauge measures against). `hours` defaults to 48 and is clamped to 336; Google resets the quota on Pacific time, so the UTC day is a deliberate approximation
+- `GET /api/admin/users` — every registered user with `scanCount` and `lastScanAt`, newest first. Unpaginated on purpose: this is a single-owner instance whose user base is countable by hand
 
 `GET /api/scans` accepts a `locale` query param (default `en`) for localized series names, and `sort` with values: `date_desc` (default), `date_asc`, `title_asc`, `title_desc`, `author_asc`, `author_desc`, `series_asc`.
 
