@@ -146,12 +146,13 @@ works.post("/:workId/editions/discover", async (c) => {
     // related is null when the OpenLibrary lookup itself failed (network/timeout/non-2xx) —
     // distinct from a successful call that found zero results. Only a successful call (found
     // something or confirmed nothing) marks the work as searched; a failure leaves it retryable.
-    let related = seed ? await fetchOpenLibraryEditions(seed.isbn) : [];
+    let related = seed ? await fetchOpenLibraryEditions(seed.isbn, db) : [];
     // Seed-ISBN path found nothing (e.g. the owned ISBN is unknown to OpenLibrary) — fall back
     // to the OpenLibrary work id Wikidata linked during enrichment, when available.
     if (related !== null && related.length === 0 && work.openlibrary_work_id) {
       related = await fetchOpenLibraryEditionsByWorkId(
         work.openlibrary_work_id,
+        db,
       );
     }
 

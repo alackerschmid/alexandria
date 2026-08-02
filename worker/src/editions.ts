@@ -1,6 +1,7 @@
 import type { BookRow, BookMetadata } from "./types";
 import { alternateIsbnForm } from "./isbn";
 import { dedupeTrimmed } from "./library-query";
+import { outcomeForStatus, recordApiUsage } from "./usage";
 
 async function fetchWithTimeout(
   url: string,
@@ -56,6 +57,10 @@ interface GoogleBooksOptions {
    * reasoning applies to a 5xx blip just as much as a 429.
    */
   retryTransient: boolean;
+  /** Which counter the call is charged to in `api_usage`. */
+  operation: "isbn_lookup" | "title_search";
+  /** Omitted only where no handle is available (unit tests); then nothing is recorded. */
+  usageDb?: D1Database | null;
 }
 
 // Google Books' backend intermittently returns 5xx ("Service temporarily unavailable") for
@@ -66,15 +71,24 @@ interface GoogleBooksOptions {
 // otherwise indistinguishable from a legitimate zero-result search.
 async function fetchGoogleBooksJson(
   url: string,
-  { retryTransient }: GoogleBooksOptions,
+  { retryTransient, operation, usageDb }: GoogleBooksOptions,
 ): Promise<GoogleBooksResult> {
   let status = 0;
   let retryAfterSeconds: number | undefined;
+  // Counted per HTTP attempt rather than per logical call: a retry spends daily quota just like
+  // the first try did, so attempts are the honest number to hold against the cap.
+  const record = (outcome: Parameters<typeof recordApiUsage>[3]) =>
+    recordApiUsage(usageDb, "google_books", operation, outcome);
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS_5XX; attempt++) {
+    // Guards against an attempt being counted twice when the response arrives but parsing it
+    // throws — that's one call to Google, whatever went wrong afterwards.
+    let recorded = false;
     try {
       const res = await fetchWithTimeout(url);
       status = res.status;
+      await record(outcomeForStatus(status));
+      recorded = true;
 
       const retryable =
         retryTransient &&
@@ -95,6 +109,7 @@ async function fetchGoogleBooksJson(
       if (!res.ok) return { data: undefined, status, ok: false };
       return { data: await res.json(), status, ok: true };
     } catch {
+      if (!recorded) await record("error");
       if (attempt < MAX_ATTEMPTS_5XX - 1) continue;
       return { data: undefined, status, ok: false };
     }
@@ -105,13 +120,14 @@ async function fetchGoogleBooksJson(
 async function fetchFromGoogleBooks(
   isbn: string,
   apiKey: string,
+  usageDb?: D1Database | null,
 ): Promise<BookMetadata | null> {
   // retryTransient: false — fetchBookMetadata runs OpenLibrary in parallel and merges, so a
   // quota-rejected or 5xx-failing Google call should give up immediately rather than delay the
   // whole row waiting on backoff.
   const { data } = await fetchGoogleBooksJson(
     `https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(isbn)}&key=${apiKey}`,
-    { retryTransient: false },
+    { retryTransient: false, operation: "isbn_lookup", usageDb },
   );
   const info = data?.items?.[0]?.volumeInfo;
   if (!info) return null;
@@ -156,22 +172,41 @@ async function fetchOpenLibraryWorkDescription(
   }
 }
 
+// Fetches data (existing fields) and details (physical_dimensions, edition_name, work link) in
+// parallel. The details fetch is best-effort; failures leave those fields null.
+//
+// Counted once per logical lookup rather than per inner fetch — OpenLibrary has no quota, so what's
+// worth watching is how often the lookup as a whole works. A bibkey miss still counts as a success:
+// the call answered, the answer was "not here".
+async function fetchOpenLibraryBibkey(
+  base: string,
+  usageDb?: D1Database | null,
+): Promise<[any, any]> {
+  try {
+    const pair = await Promise.all([
+      fetchWithTimeout(`${base}&jscmd=data`).then(
+        (r) => r.json() as Promise<any>,
+      ),
+      fetchWithTimeout(`${base}&jscmd=details`)
+        .then((r) => r.json() as Promise<any>)
+        .catch(() => ({})),
+    ]);
+    await recordApiUsage(usageDb, "openlibrary", "isbn_lookup", "success");
+    return pair;
+  } catch (e) {
+    await recordApiUsage(usageDb, "openlibrary", "isbn_lookup", "error");
+    throw e;
+  }
+}
+
 async function fetchFromOpenLibrary(
   isbn: string,
+  usageDb?: D1Database | null,
 ): Promise<BookMetadata | null> {
   const bibkey = `ISBN:${isbn}`;
   const base = `https://openlibrary.org/api/books?bibkeys=${encodeURIComponent(bibkey)}&format=json`;
 
-  // Fetch data (existing fields) and details (physical_dimensions, edition_name, work link) in
-  // parallel. details fetch is best-effort; failures leave those fields null.
-  const [dataJson, detailsJson] = await Promise.all([
-    fetchWithTimeout(`${base}&jscmd=data`).then(
-      (r) => r.json() as Promise<any>,
-    ),
-    fetchWithTimeout(`${base}&jscmd=details`)
-      .then((r) => r.json() as Promise<any>)
-      .catch(() => ({})),
-  ]);
+  const [dataJson, detailsJson] = await fetchOpenLibraryBibkey(base, usageDb);
 
   const book = dataJson[bibkey];
   if (!book) return null;
@@ -223,12 +258,13 @@ export function mergeMetadata(
 export async function fetchBookMetadata(
   isbn: string,
   googleApiKey?: string,
+  usageDb?: D1Database | null,
 ): Promise<BookMetadata | null> {
   const [google, openlib] = await Promise.all([
     googleApiKey
-      ? fetchFromGoogleBooks(isbn, googleApiKey).catch(() => null)
+      ? fetchFromGoogleBooks(isbn, googleApiKey, usageDb).catch(() => null)
       : Promise.resolve(null),
-    fetchFromOpenLibrary(isbn).catch(() => null),
+    fetchFromOpenLibrary(isbn, usageDb).catch(() => null),
   ]);
 
   if (!google) return openlib;
@@ -297,6 +333,7 @@ export async function searchBooksByTitle(
   apiKey: string,
   limit = 20,
   publisher?: string,
+  usageDb?: D1Database | null,
 ): Promise<EditionCandidate[]> {
   let q = `intitle:"${encodeURIComponent(title)}"`;
   if (author) q += `+inauthor:"${encodeURIComponent(author)}"`;
@@ -307,7 +344,7 @@ export async function searchBooksByTitle(
   // no fallback to soften a transient rate-limit or 5xx rejection.
   const { data, status, ok, retryAfterSeconds } = await fetchGoogleBooksJson(
     url,
-    { retryTransient: true },
+    { retryTransient: true, operation: "title_search", usageDb },
   );
 
   // Fail loudly rather than returning []: a quota/rate-limit rejection is not the same answer as
@@ -419,7 +456,14 @@ export async function searchTitleCached(
     };
   }
 
-  const results = await searchBooksByTitle(title, author, apiKey, 20, publisher);
+  const results = await searchBooksByTitle(
+    title,
+    author,
+    apiKey,
+    20,
+    publisher,
+    db,
+  );
   // Zero-result searches are cached too: with `searchBooksByTitle` throwing on upstream failure, an
   // empty array is a real answer.
   waitUntil(
@@ -526,6 +570,7 @@ export type OpenLibraryEdition = {
 // no further editions — so the caller doesn't permanently cache a transient error as "none found".
 export async function fetchOpenLibraryEditions(
   isbn: string,
+  usageDb?: D1Database | null,
 ): Promise<OpenLibraryEdition[] | null> {
   try {
     const editionRes = await fetchWithTimeout(
@@ -542,7 +587,7 @@ export async function fetchOpenLibraryEditions(
     const workKey: string | undefined = edition.works?.[0]?.key;
     if (!workKey) return [];
 
-    return await fetchEditionsForWorkKey(workKey);
+    return await fetchEditionsForWorkKey(workKey, usageDb);
   } catch (e) {
     console.error(`[OL editions] failed for isbn ${isbn}:`, e);
     return null;
@@ -553,13 +598,14 @@ export async function fetchOpenLibraryEditions(
 // of a seed ISBN — works even when none of the owned editions' ISBNs exist in OpenLibrary.
 export async function fetchOpenLibraryEditionsByWorkId(
   olWorkId: string,
+  usageDb?: D1Database | null,
 ): Promise<OpenLibraryEdition[] | null> {
   if (!/^OL\d+W$/.test(olWorkId)) {
     console.warn(`[OL editions] invalid work id: ${olWorkId}`);
     return [];
   }
   try {
-    return await fetchEditionsForWorkKey(`/works/${olWorkId}`);
+    return await fetchEditionsForWorkKey(`/works/${olWorkId}`, usageDb);
   } catch (e) {
     console.error(`[OL editions] failed for work ${olWorkId}:`, e);
     return null;
@@ -568,9 +614,26 @@ export async function fetchOpenLibraryEditionsByWorkId(
 
 async function fetchEditionsForWorkKey(
   workKey: string,
+  usageDb?: D1Database | null,
 ): Promise<OpenLibraryEdition[] | null> {
-  const editionsRes = await fetchWithTimeout(
-    `https://openlibrary.org${workKey}/editions.json?limit=200`,
+  let editionsRes: Response;
+  try {
+    editionsRes = await fetchWithTimeout(
+      `https://openlibrary.org${workKey}/editions.json?limit=200`,
+    );
+  } catch (e) {
+    await recordApiUsage(usageDb, "openlibrary", "editions", "error");
+    throw e;
+  }
+  // A 404 means the work has no editions listing, which is an answer rather than a failure —
+  // hence classified here instead of by `outcomeForStatus`.
+  await recordApiUsage(
+    usageDb,
+    "openlibrary",
+    "editions",
+    editionsRes.status === 404
+      ? "success"
+      : outcomeForStatus(editionsRes.status),
   );
   if (editionsRes.status === 404) return [];
   if (!editionsRes.ok) {
@@ -662,7 +725,7 @@ export async function discoverEditionsFromOpenLibrary(
     .first();
   if (existing) return;
 
-  const related = await fetchOpenLibraryEditionsByWorkId(olWorkId);
+  const related = await fetchOpenLibraryEditionsByWorkId(olWorkId, db);
   if (related === null) return; // transient OL failure — leave retryable, don't mark searched
   await saveEditionCandidates(db, workId, related);
 }
@@ -691,7 +754,7 @@ export async function materializeEdition(
     return book;
   }
 
-  const meta = await fetchBookMetadata(isbn, apiKey);
+  const meta = await fetchBookMetadata(isbn, apiKey, db);
   if (!meta) return null;
 
   book = await db
@@ -899,7 +962,7 @@ export async function resolveEdition(
     return book;
   }
 
-  const fetched = await fetchBookMetadata(isbn, apiKey);
+  const fetched = await fetchBookMetadata(isbn, apiKey, db);
   if (!fetched && !allowEmpty) return null;
   // Neither source had this ISBN — fall back to whatever the caller already knows (e.g. a
   // Goodreads CSV row's title/author) rather than inserting an all-NULL placeholder.

@@ -254,7 +254,11 @@ books.post("/refresh", async (c) => {
   // Likewise, if every refreshable field is already populated there's nothing for a fetch to
   // fill — the COALESCE update would be a no-op. Skip straight to the enrichment refresh below.
   if (hasMissingMetadata(existing)) {
-    const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY);
+    const bookData = await fetchBookMetadata(
+      isbn,
+      c.env.GOOGLE_BOOKS_API_KEY,
+      c.env.DB,
+    );
     if (!bookData) return c.json({ error: "Book not found in any source" }, 404);
 
     await c.env.DB.prepare(
