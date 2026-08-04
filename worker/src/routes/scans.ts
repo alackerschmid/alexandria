@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Env, BookRow } from "../types";
 import { authMiddleware } from "../auth";
 import { resolveEdition, materializeEdition, linkWork } from "../editions";
-import { enrichWork } from "../enrichment";
+import { enrichWorkDetached } from "../enrichment";
 import {
   SORT_CLAUSES,
   buildScanSelect,
@@ -125,7 +125,10 @@ scans.post("/", async (c) => {
   if (blocked) return blocked;
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
-  const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, true);
+  const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
+    allowEmpty: true,
+    usage: c.get("usage"),
+  });
   if (!book) {
     console.error("[POST /api/scans] book resolution failed, isbn:", isbn);
     return c.json({ error: "Failed to resolve book entry" }, 500);
@@ -172,7 +175,13 @@ scans.post("/", async (c) => {
 
   if (book.work_id)
     c.executionCtx.waitUntil(
-      enrichWork(db, book.work_id, false, c.env.GOOGLE_BOOKS_API_KEY, "scan"),
+      enrichWorkDetached(
+        db,
+        book.work_id,
+        false,
+        c.env.GOOGLE_BOOKS_API_KEY,
+        "scan",
+      ),
     );
 
   const saved = await db

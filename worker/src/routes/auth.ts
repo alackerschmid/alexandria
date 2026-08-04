@@ -58,7 +58,12 @@ auth.post("/register", async (c) => {
   // `preferences` is constant-empty here (the INSERT never sets it), but it's returned for the
   // same reason login returns it: the client seeds its preferences store from the auth response
   // rather than spending a round-trip on GET /preferences.
-  return c.json({ token, email, firstname: null, preferences: {} }, 201);
+  // is_admin is likewise constant here — the column defaults to 0 and nothing but a manual D1
+  // update ever sets it — but the client reads the same field from both auth responses.
+  return c.json(
+    { token, email, firstname: null, preferences: {}, is_admin: false },
+    201,
+  );
 });
 
 auth.post("/login", async (c) => {
@@ -86,7 +91,7 @@ auth.post("/login", async (c) => {
   const db = c.env.DB;
   const user = await db
     .prepare(
-      "SELECT id, password_hash, firstname, preferences FROM users WHERE email = ?",
+      "SELECT id, password_hash, firstname, preferences, is_admin FROM users WHERE email = ?",
     )
     .bind(email)
     .first<{
@@ -94,6 +99,7 @@ auth.post("/login", async (c) => {
       password_hash: string;
       firstname: string | null;
       preferences: string | null;
+      is_admin: number;
     }>();
 
   if (!user || !(await verifyPassword(password, user.password_hash))) {
@@ -124,6 +130,9 @@ auth.post("/login", async (c) => {
     email,
     firstname: user.firstname ?? null,
     preferences: parsePreferences(user.preferences),
+    // Rides the same row, so it also costs nothing. Only decides whether the client shows the
+    // admin nav link — every /api/admin request re-checks the column server-side regardless.
+    is_admin: user.is_admin === 1,
   });
 });
 

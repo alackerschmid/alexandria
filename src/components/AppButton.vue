@@ -7,7 +7,11 @@
     :class="[
       `app-btn--${variant}`,
       `app-btn--${size}`,
-      { 'app-btn--block': block, 'app-btn--outlined': outlined },
+      {
+        'app-btn--block': block,
+        'app-btn--outlined': outlined,
+        'app-btn--mono': mono,
+      },
     ]"
   >
     <v-progress-circular
@@ -37,6 +41,12 @@ withDefaults(
     block?: boolean;
     /** Hairline-outline treatment instead of a solid fill (currently only `danger`). */
     outlined?: boolean;
+    /**
+     * Monospace, unbolded label — for surfaces typeset as an instrument panel rather than as
+     * app chrome (the `/admin` board). Orthogonal to `variant`: it changes the typeface, not
+     * the button's semantic role, so it composes with any of them.
+     */
+    mono?: boolean;
     loading?: boolean;
     disabled?: boolean;
     type?: "button" | "submit";
@@ -46,6 +56,7 @@ withDefaults(
     size: "md",
     block: false,
     outlined: false,
+    mono: false,
     loading: false,
     disabled: false,
     type: "button",
@@ -93,6 +104,11 @@ withDefaults(
 }
 .app-btn--block {
   width: 100%;
+}
+/* mono: the instrument-panel treatment — same sizes and roles, monospace and unbolded. */
+.app-btn--mono {
+  font-family: var(--font-mono);
+  font-weight: 400;
 }
 
 /* ── Variants ───────────────────────────────────────────────────────────── */

@@ -19,7 +19,7 @@
         </p>
         <nav>
           <a
-            v-for="s in NAV_SECTIONS"
+            v-for="s in navSections"
             :key="s.id"
             :href="`#${s.id}`"
             class="flex items-center gap-3 px-7 py-[11px] text-[13px] transition-colors border-l-2 cursor-pointer"
@@ -505,25 +505,12 @@
           <section id="export">
             <SectionHeading :title="$t('settings.export.heading')" />
 
-            <div
-              class="flex items-center justify-between gap-6 border border-charcoal-border p-6 mb-4"
-            >
-              <div>
-                <p class="text-[15px] text-text-primary font-medium">
-                  {{ $t("settings.export.import_description") }}
-                </p>
-              </div>
-              <router-link
-                :to="{ name: 'import' }"
-                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
-                :style="{
-                  color: 'rgb(var(--v-theme-on-background))',
-                  borderColor: accentStore.color,
-                }"
-              >
-                {{ $t("settings.export.import_button") }}
-              </router-link>
-            </div>
+            <SettingsLinkCard
+              class="mb-4"
+              :description="$t('settings.export.import_description')"
+              :to="{ name: 'import' }"
+              :label="$t('settings.export.import_button')"
+            />
 
             <div
               class="flex items-center justify-between gap-6 border border-charcoal-border p-6"
@@ -602,6 +589,17 @@
                 />
               </DefaultRow>
             </div>
+          </section>
+
+          <!-- ── ADMIN ────────────────────────────────────────────────────── -->
+          <section v-if="authStore.isAdmin" id="admin">
+            <SectionHeading :title="$t('admin.nav')" />
+
+            <SettingsLinkCard
+              :description="$t('admin.settings_description')"
+              :to="{ name: 'admin' }"
+              :label="$t('admin.settings_button')"
+            />
           </section>
 
           <!-- ── DANGER ───────────────────────────────────────────────────── -->
@@ -734,6 +732,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
 import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
+import SettingsLinkCard from "@/components/settings/SettingsLinkCard.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
 
 const { t } = useI18n();
@@ -781,12 +780,24 @@ const NAV_SECTIONS = [
     },
   },
   {
+    id: "admin",
+    get label() {
+      return t("admin.nav");
+    },
+  },
+  {
     id: "danger",
     get label() {
       return t("settings.danger.heading");
     },
   },
 ];
+
+// The admin entry is the one conditional section. Settings is the only route on the mobile tab
+// bar, so this is also how an admin reaches the board on a phone — the header link is desktop-only.
+const navSections = computed(() =>
+  NAV_SECTIONS.filter((s) => s.id !== "admin" || authStore.isAdmin),
+);
 
 const activeSection = ref("account");
 

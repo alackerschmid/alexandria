@@ -22,6 +22,10 @@ export const useAuthStore = defineStore("auth", () => {
   const token = ref<string | null>(localStorage.getItem("token"));
   const email = ref<string | null>(localStorage.getItem("email"));
   const firstname = ref<string | null>(localStorage.getItem("firstname"));
+  // Only decides whether the admin link is shown — every /api/admin call re-checks the flag
+  // server-side. A session stored before this field existed rehydrates false, which is the safe
+  // direction: the link reappears on the next login.
+  const isAdmin = ref(localStorage.getItem("is_admin") === "1");
   const router = useRouter();
 
   const isAuthenticated = computed(() => !!token.value);
@@ -33,16 +37,23 @@ export const useAuthStore = defineStore("auth", () => {
     newToken: string,
     newEmail: string,
     newFirstname: string | null = null,
+    newIsAdmin = false,
   ) => {
     token.value = newToken;
     email.value = newEmail;
     firstname.value = newFirstname;
+    isAdmin.value = newIsAdmin;
     localStorage.setItem("token", newToken);
     localStorage.setItem("email", newEmail);
     if (newFirstname) {
       localStorage.setItem("firstname", newFirstname);
     } else {
       localStorage.removeItem("firstname");
+    }
+    if (newIsAdmin) {
+      localStorage.setItem("is_admin", "1");
+    } else {
+      localStorage.removeItem("is_admin");
     }
   };
 
@@ -60,9 +71,11 @@ export const useAuthStore = defineStore("auth", () => {
     token.value = null;
     email.value = null;
     firstname.value = null;
+    isAdmin.value = false;
     localStorage.removeItem("token");
     localStorage.removeItem("email");
     localStorage.removeItem("firstname");
+    localStorage.removeItem("is_admin");
     localStorage.removeItem(WELCOME_SEEN_KEY);
     router.push("/");
   };
@@ -71,6 +84,7 @@ export const useAuthStore = defineStore("auth", () => {
     token,
     email,
     firstname,
+    isAdmin,
     isAuthenticated,
     userId,
     setAuth,

@@ -697,5 +697,138 @@
     "heading_line2": "found.",
     "body": "That page doesn't exist or has moved.",
     "cta": "Go to library"
+  },
+  "admin": {
+    "nav": "Admin",
+    "settings_description": "API usage, enrichment health and the user roster.",
+    "settings_button": "Open board",
+    "loading": "Loading",
+    "refresh": "Refresh",
+    "range": {
+      "hours": "last {hours}h",
+      "days": "last {days} days"
+    },
+    "pips": {
+      "quota": "Quota",
+      "enrichment": "Enrichment",
+      "enrichment_stuck": "{count} works failed or exhausted — the colour tracks these, not the percentage",
+      "run_failures": "Run failures 24h",
+      "rate_limited": "429s · {range}",
+      "instance": "Instance",
+      "sweeper_stalled": "{due} works queued · last enrichment run {ago} — the cron may have stopped",
+      "sweeper_never": "{due} works queued and no enrichment run on record — the cron may never have fired"
+    },
+    "quota": {
+      "title": "Google Books · today",
+      "remaining": "remaining",
+      "projected": "projected EOD",
+      "peak": "peak",
+      "warn_marker": "warn at {percent}%",
+      "cap": "{limit} · daily cap",
+      "state": {
+        "ok": "Within quota",
+        "warning": "Approaching limit",
+        "critical": "Critical"
+      }
+    },
+    "vitals": {
+      "title": "Instance",
+      "counts": "Counts",
+      "health": "Health",
+      "users": "Users",
+      "scans": "Scans",
+      "books": "Books",
+      "works": "Works",
+      "delta_note": "green column · last 7 days",
+      "enrichment": "Enrichment",
+      "works_count": "{count} works",
+      "percent_done": "{percent}% done",
+      "runs": "Runs",
+      "runs_meta": "last 24h · {count} runs",
+      "avg_p95": "{avg} avg · p95 {p95}",
+      "no_failures": "no failures",
+      "status": {
+        "done": "done",
+        "pending": "pending",
+        "failed": "failed",
+        "exhausted": "exhausted"
+      },
+      "outcome": {
+        "done": "done",
+        "not_found": "not found",
+        "failed": "failed"
+      },
+      "sweeper": "{due} queued · last run {ago}",
+      "sweeper_never": "{due} queued · no runs on record"
+    },
+    "chart": {
+      "title": "Calls per hour",
+      "range": "Time range",
+      "summary": "{calls} calls · peak {peak}/h",
+      "now": "now",
+      "days_ago": "−{days}d",
+      "empty_title": "No API activity recorded yet",
+      "empty_body": "Calls are logged as books are scanned and works enriched."
+    },
+    "labels": {
+      "provider": {
+        "google_books": "Google Books",
+        "openlibrary": "Open Library",
+        "wikidata": "Wikidata"
+      },
+      "operation": {
+        "isbn_lookup": "ISBN lookup",
+        "title_search": "Title search",
+        "editions": "Editions",
+        "book_search": "Book search",
+        "labels": "Labels",
+        "work_details": "Work details",
+        "series_members": "Series members",
+        "edition_isbn": "Edition ISBN"
+      },
+      "reason": {
+        "timeout": "Timeout",
+        "rate_limited": "Rate limited",
+        "http_5xx": "HTTP 5xx",
+        "network": "Network",
+        "other": "Other"
+      }
+    },
+    "table": {
+      "sort": "Sort by this column",
+      "reverse": "Reverse the sort order"
+    },
+    "endpoints": {
+      "title": "By endpoint",
+      "provider": "Provider",
+      "operation": "Operation",
+      "share": "Share of range",
+      "success": "Success",
+      "errors": "Errors",
+      "rate_limited": "Rate-limited",
+      "total": "Total",
+      "empty": "Nothing recorded in this range."
+    },
+    "roster": {
+      "title": "Roster",
+      "meta": "{count} users · newest first",
+      "meta_count": "{count} users",
+      "role": "Role",
+      "email": "Email",
+      "firstname": "First name",
+      "signed_up": "Signed up",
+      "scans": "Scans",
+      "last_activity": "Last activity",
+      "admin": "admin",
+      "user": "user",
+      "never": "never",
+      "empty": "No registered users yet."
+    },
+    "error": {
+      "badge": "Failed",
+      "title": "Couldn't load this section",
+      "retry": "Retry",
+      "network": "network error"
+    }
   }
 }

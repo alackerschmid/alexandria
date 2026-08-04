@@ -12,7 +12,7 @@ import {
   UpstreamSearchError,
   type TitleQuery,
 } from "../editions";
-import { enrichWork } from "../enrichment";
+import { enrichWorkDetached } from "../enrichment";
 import {
   attachCustomFields,
   buildScanSelect,
@@ -70,6 +70,7 @@ async function handleTitleSearch(c: Context<Env>): Promise<Response> {
       c.env.GOOGLE_BOOKS_API_KEY,
       query,
       (p) => c.executionCtx.waitUntil(p),
+      c.get("usage"),
     );
     if (fromLocalCatalog) return c.json(results);
 
@@ -110,13 +111,10 @@ books.get("/guest-lookup", async (c) => {
   const isbn = normalizeIsbn(rawIsbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
-  const book = await resolveEdition(
-    c.env.DB,
-    isbn,
-    c.env.GOOGLE_BOOKS_API_KEY,
-    false,
-    true,
-  );
+  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
+    skipLinkWork: true,
+    usage: c.get("usage"),
+  });
   if (!book) return c.json({ notFound: true }, 404);
   return c.json(book);
 });
@@ -188,11 +186,13 @@ books.get("/lookup", async (c) => {
   const isbn = normalizeIsbn(rawIsbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
-  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY);
+  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
+    usage: c.get("usage"),
+  });
   if (!book) return c.json({ error: "Book not found" }, 404);
   if (book.work_id)
     c.executionCtx.waitUntil(
-      enrichWork(
+      enrichWorkDetached(
         c.env.DB,
         book.work_id,
         false,
@@ -254,7 +254,11 @@ books.post("/refresh", async (c) => {
   // Likewise, if every refreshable field is already populated there's nothing for a fetch to
   // fill — the COALESCE update would be a no-op. Skip straight to the enrichment refresh below.
   if (hasMissingMetadata(existing)) {
-    const bookData = await fetchBookMetadata(isbn, c.env.GOOGLE_BOOKS_API_KEY);
+    const bookData = await fetchBookMetadata(
+      isbn,
+      c.env.GOOGLE_BOOKS_API_KEY,
+      c.get("usage"),
+    );
     if (!bookData) return c.json({ error: "Book not found in any source" }, 404);
 
     await c.env.DB.prepare(
@@ -307,7 +311,7 @@ books.post("/refresh", async (c) => {
   // Unlike the cron sweeper (which only picks up works that aren't 'done'), this forces any work.
   if (book.work_id)
     c.executionCtx.waitUntil(
-      enrichWork(
+      enrichWorkDetached(
         c.env.DB,
         book.work_id,
         true,

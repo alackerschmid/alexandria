@@ -1,6 +1,7 @@
 import type { Bindings, BookRow } from "./types";
 import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
+import { UsageRecorder } from "./usage";
 
 // How many works to enrich per cron tick. A typical work costs ~3-6 external calls, which keeps a
 // batch under the Workers free-plan ceiling of 50 subrequests per invocation (7 x 6 = 42). The tail
@@ -25,6 +26,9 @@ const RUNS_RETENTION_DAYS = 30;
 // again), this just guards against clock skew. Correct regardless of which caller/window size
 // wrote the row, unlike a single fixed retention constant.
 const RATE_LIMIT_PRUNE_GRACE_MS = 5 * 60_000;
+// How much api_usage history the admin page can look back over. Bounded by construction (one row
+// per hour per provider+operation — a few dozen a day at most), so this is generous.
+const USAGE_RETENTION_DAYS = 90;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -33,7 +37,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export async function scheduled(
   _event: ScheduledController,
   env: Bindings,
-  _ctx: ExecutionContext,
+  ctx: ExecutionContext,
 ): Promise<void> {
   const { results: unlinked } = await env.DB.prepare(
     "SELECT * FROM books WHERE work_id IS NULL LIMIT ?",
@@ -120,10 +124,22 @@ export async function scheduled(
   const results = [...backlog, ...backfill];
 
   console.log(`[sweeper] ${results.length} work(s) to enrich`);
+  // One recorder for the whole tick: a batch of 7 works is ~15-40 external calls but only a
+  // handful of distinct (hour, provider, operation) buckets, so it collapses to one small batch
+  // write instead of a D1 round-trip in front of every SPARQL response.
+  const usage = new UsageRecorder(env.DB);
   for (const [i, w] of results.entries()) {
-    await enrichWork(env.DB, w.id, false, env.GOOGLE_BOOKS_API_KEY, "sweeper");
+    await enrichWork(
+      env.DB,
+      w.id,
+      false,
+      env.GOOGLE_BOOKS_API_KEY,
+      "sweeper",
+      usage,
+    );
     if (i < results.length - 1) await sleep(DELAY_MS);
   }
+  ctx.waitUntil(usage.flush());
 
   // Keep enrichment_runs from growing unbounded — cheap given idx_enrichment_runs_created.
   await env.DB.prepare(
@@ -142,5 +158,10 @@ export async function scheduled(
   // never served, `handleTitleSearch` filters on expires_at > now), just wasted storage.
   await env.DB.prepare("DELETE FROM search_cache WHERE expires_at < ?")
     .bind(Date.now())
+    .run();
+
+  // Same for api_usage — hour_start is the PK's leading column, so this needs no extra index.
+  await env.DB.prepare("DELETE FROM api_usage WHERE hour_start < ?")
+    .bind(Date.now() - USAGE_RETENTION_DAYS * 86_400_000)
     .run();
 }

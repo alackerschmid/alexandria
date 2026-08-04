@@ -4,6 +4,7 @@ import {
   pickRepresentativeEdition,
   publishYear,
   bookYear,
+  d1TimestampMs,
 } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 
@@ -113,5 +114,24 @@ describe("publishYear", () => {
     });
     expect(bookYear(b)).toBe("2004");
     expect(bookYear({ ...b, publish_date: null })).toBe("1936");
+  });
+});
+
+describe("d1TimestampMs", () => {
+  it("reads a zone-less D1 timestamp as UTC, not local time", () => {
+    // `datetime('now')` writes `YYYY-MM-DD HH:MM:SS` with no marker; `Date.parse` would take it
+    // as local, putting `created_at` hours out and, near midnight, on the wrong day.
+    expect(d1TimestampMs("2026-08-02 09:00:00")).toBe(Date.UTC(2026, 7, 2, 9));
+  });
+
+  it("leaves an already-explicit ISO instant alone", () => {
+    expect(d1TimestampMs("2026-08-02T09:00:00Z")).toBe(Date.UTC(2026, 7, 2, 9));
+  });
+
+  it("returns null for absent or unparseable input", () => {
+    expect(d1TimestampMs(null)).toBeNull();
+    expect(d1TimestampMs(undefined)).toBeNull();
+    expect(d1TimestampMs("")).toBeNull();
+    expect(d1TimestampMs("not a date")).toBeNull();
   });
 });

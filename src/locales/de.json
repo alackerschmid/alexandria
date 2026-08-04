@@ -697,5 +697,138 @@
     "heading_line2": "gefunden.",
     "body": "Diese Seite existiert nicht oder wurde verschoben.",
     "cta": "Zur Bibliothek"
+  },
+  "admin": {
+    "nav": "Admin",
+    "settings_description": "API-Nutzung, Anreicherungsstatus und Nutzerliste.",
+    "settings_button": "Board öffnen",
+    "loading": "Wird geladen",
+    "refresh": "Aktualisieren",
+    "range": {
+      "hours": "letzte {hours} Std.",
+      "days": "letzte {days} Tage"
+    },
+    "pips": {
+      "quota": "Kontingent",
+      "enrichment": "Anreicherung",
+      "enrichment_stuck": "{count} Werke fehlgeschlagen oder aufgegeben — die Farbe zeigt diese an, nicht den Prozentsatz",
+      "run_failures": "Fehlläufe 24 Std.",
+      "rate_limited": "429er · {range}",
+      "instance": "Instanz",
+      "sweeper_stalled": "{due} Werke in der Warteschlange · letzter Anreicherungslauf {ago} — der Cron läuft möglicherweise nicht mehr",
+      "sweeper_never": "{due} Werke in der Warteschlange und kein Anreicherungslauf verzeichnet — der Cron wurde möglicherweise nie ausgeführt"
+    },
+    "quota": {
+      "title": "Google Books · heute",
+      "remaining": "verbleibend",
+      "projected": "Prognose Tagesende",
+      "peak": "Spitze",
+      "warn_marker": "Warnung bei {percent} %",
+      "cap": "{limit} · Tageslimit",
+      "state": {
+        "ok": "Im Rahmen",
+        "warning": "Limit rückt näher",
+        "critical": "Kritisch"
+      }
+    },
+    "vitals": {
+      "title": "Instanz",
+      "counts": "Zahlen",
+      "health": "Zustand",
+      "users": "Nutzer",
+      "scans": "Scans",
+      "books": "Bücher",
+      "works": "Werke",
+      "delta_note": "grüne Spalte · letzte 7 Tage",
+      "enrichment": "Anreicherung",
+      "works_count": "{count} Werke",
+      "percent_done": "{percent} % fertig",
+      "runs": "Läufe",
+      "runs_meta": "letzte 24 Std. · {count} Läufe",
+      "avg_p95": "{avg} Ø · p95 {p95}",
+      "no_failures": "keine Fehler",
+      "status": {
+        "done": "fertig",
+        "pending": "offen",
+        "failed": "fehlgeschlagen",
+        "exhausted": "aufgegeben"
+      },
+      "outcome": {
+        "done": "fertig",
+        "not_found": "nicht gefunden",
+        "failed": "fehlgeschlagen"
+      },
+      "sweeper": "{due} in Warteschlange · letzter Lauf {ago}",
+      "sweeper_never": "{due} in Warteschlange · keine Läufe verzeichnet"
+    },
+    "chart": {
+      "title": "Aufrufe pro Stunde",
+      "range": "Zeitraum",
+      "summary": "{calls} Aufrufe · Spitze {peak}/Std.",
+      "now": "jetzt",
+      "days_ago": "−{days} T.",
+      "empty_title": "Noch keine API-Aktivität erfasst",
+      "empty_body": "Aufrufe werden erfasst, sobald Bücher gescannt und Werke angereichert werden."
+    },
+    "labels": {
+      "provider": {
+        "google_books": "Google Books",
+        "openlibrary": "Open Library",
+        "wikidata": "Wikidata"
+      },
+      "operation": {
+        "isbn_lookup": "ISBN-Abfrage",
+        "title_search": "Titelsuche",
+        "editions": "Ausgaben",
+        "book_search": "Buchsuche",
+        "labels": "Bezeichnungen",
+        "work_details": "Werkdetails",
+        "series_members": "Reihenbände",
+        "edition_isbn": "Ausgaben-ISBN"
+      },
+      "reason": {
+        "timeout": "Zeitüberschreitung",
+        "rate_limited": "Gedrosselt",
+        "http_5xx": "HTTP 5xx",
+        "network": "Netzwerk",
+        "other": "Sonstiges"
+      }
+    },
+    "table": {
+      "sort": "Nach dieser Spalte sortieren",
+      "reverse": "Sortierreihenfolge umkehren"
+    },
+    "endpoints": {
+      "title": "Nach Endpunkt",
+      "provider": "Anbieter",
+      "operation": "Operation",
+      "share": "Anteil am Zeitraum",
+      "success": "Erfolg",
+      "errors": "Fehler",
+      "rate_limited": "Gedrosselt",
+      "total": "Gesamt",
+      "empty": "In diesem Zeitraum wurde nichts erfasst."
+    },
+    "roster": {
+      "title": "Nutzerliste",
+      "meta": "{count} Nutzer · neueste zuerst",
+      "meta_count": "{count} Nutzer",
+      "role": "Rolle",
+      "email": "E-Mail",
+      "firstname": "Vorname",
+      "signed_up": "Registriert",
+      "scans": "Scans",
+      "last_activity": "Letzte Aktivität",
+      "admin": "Admin",
+      "user": "Nutzer",
+      "never": "nie",
+      "empty": "Noch keine registrierten Nutzer."
+    },
+    "error": {
+      "badge": "Fehlgeschlagen",
+      "title": "Dieser Abschnitt konnte nicht geladen werden",
+      "retry": "Erneut versuchen",
+      "network": "Netzwerkfehler"
+    }
   }
 }

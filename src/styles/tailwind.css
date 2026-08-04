@@ -38,6 +38,12 @@
      stay legible against both a near-black and a near-white surface. */
   --color-status-read: #22c55e;
   --color-status-dnf: #d9a441;
+  /* Signal states for the admin status board (quota headroom, error/429 counts). Like the
+     reading-status accents these are theme-independent — the board is always dark, and these
+     read the same there in either app theme. */
+  --color-signal-ok: #4caf80;
+  --color-signal-warn: #e8a838;
+  --color-signal-critical: #e05252;
 
   --font-heading: "Playfair Display", Georgia, serif;
   --font-body: "Roboto", system-ui, sans-serif;

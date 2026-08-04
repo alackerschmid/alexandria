@@ -11,6 +11,7 @@ import {
 import { normalizeIsbn, isValidIsbn } from "../isbn";
 import { rateLimitOrReject } from "../rate-limit";
 import { mapWithConcurrency } from "../concurrency";
+import type { UsageRecorder } from "../usage";
 import {
   validateImportRow,
   validateMatchRow,
@@ -389,6 +390,7 @@ async function importRow(
   // wrong value. The first row to claim a work id owns the rating write; later rows report the
   // claimed value instead of their own, hence a Map rather than a Set.
   ratedWorkIds: Map<number, number | null>,
+  usage: UsageRecorder,
 ): Promise<ImportRowResult> {
   const validated = validateImportRow(input);
   if (!validated.ok) {
@@ -490,7 +492,11 @@ async function importRow(
         publish_date,
         number_of_pages_median: number_of_pages,
       };
-      book = await resolveEdition(db, isbn13, apiKey, true, false, fallbackMeta);
+      book = await resolveEdition(db, isbn13, apiKey, {
+        allowEmpty: true,
+        fallbackMeta,
+        usage,
+      });
     }
 
     if (!book) {
@@ -680,6 +686,7 @@ importRoutes.post("/goodreads", async (c) => {
       shelvesFieldDefId,
       claimedScanIds,
       ratedWorkIds,
+      c.get("usage"),
     ),
   );
 
@@ -924,8 +931,12 @@ importRoutes.post("/suggest-isbn", async (c) => {
     const key = searchCacheKeyString(query);
     let search = searches.get(key);
     if (!search) {
-      search = searchTitleCached(db, apiKey, query, (p) =>
-        c.executionCtx.waitUntil(p),
+      search = searchTitleCached(
+        db,
+        apiKey,
+        query,
+        (p) => c.executionCtx.waitUntil(p),
+        c.get("usage"),
       ).then(({ results }) =>
         // Google occasionally reports an identifier that isn't a valid ISBN; /goodreads would reject
         // it as `invalid_isbn` and the row would land in review anyway, one round-trip later.
