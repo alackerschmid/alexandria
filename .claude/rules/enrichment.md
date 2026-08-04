@@ -56,10 +56,32 @@ Bond films*). Two guards, both needed — neither catches all five:
 
 - **Type**: `FILTER NOT EXISTS` on `P31/P279*` → `Q7725310` (series of creative works) and on
   `P31` → `Q13406463` (Wikimedia list article). The existing `P31/P279* Q47461344` allow-filter
-  cannot do this: Wikidata puts book, novel *and* film series **under** literary work (verified —
+  cannot do this: Wikidata puts book, novel *and* film series **under** written work (verified —
   Q277759, Q1667921 and Q24856 all reach Q47461344), which is why series items passed for so long.
-  Verified to reject all four series/list items above with zero false positives on the works this
-  library resolved correctly.
+
+  **The type test is blunt on purpose, and must stay that way.** It over-rejects: a single novel
+  Wikidata *additionally* types as a trilogy/dylogy/limited series is thrown out with the series —
+  Cryptonomicon and Reamde (literary work + literary trilogy/dylogy), Watchmen (literary work +
+  limited series) and Daemon (written work + novel series) all resolved correctly before it shipped
+  and were silently unresolvable after. **Do not fix that by weakening the type test.** It cannot be
+  done: Daemon's type set is *identical* to that of genuine series (Q1195086 "The Once and Future
+  King", Q60969361 "Beartown"). Measured against live Wikidata, "at least one non-series type"
+  readmits **1048** series items — Q464928 "Auf der Suche nach der verlorenen Zeit" among them,
+  whose German label then verifies at 1.000 against any volume titled with it — and adding a
+  direct-membership check for the unambiguous series classes still leaves 115 (Q182099 "Xanth", 46
+  volumes). Structural signals don't separate them either: Cryptonomicon has 3 `P527` parts and 3
+  items pointing at it with `P179`, the same shape as a real trilogy.
+
+  **The exception lives in the label instead.** When the strict pass finds nothing, `fetchBookInfo`
+  runs once more with `{ exactOnly: true }` — type filter dropped, and `pickExactQid` accepts a
+  candidate only on **exact** normalized title equality (`exactTitleMatcher` in `title-match.ts`, no
+  prefix containment, no bigram tolerance). All four books match their item's label exactly; a volume
+  never matches its series, because the ordinal it carries is the difference. This cannot reintroduce
+  the merge: two works can only both match one label exactly if their normalized titles are equal,
+  and `workMatchKey` (title|author) has already made those one work before enrichment runs. The retry
+  deliberately uses the **original** title, never the stripped one — stripping the ordinal is exactly
+  what would turn a volume into an exact match for its series. It costs one extra SPARQL call, only
+  on the path that was about to return "not found".
 - **Label**: `pickVerifiedQid` (pure, unit-tested) takes the first candidate, in rank order, one of
   whose labels **or aliases** clears `QID_TITLE_THRESHOLD` (0.85) against the searched title via
   `titleScorer`. Labels are fetched in **every** language on purpose: the good cross-language
@@ -75,7 +97,9 @@ Bond films*). Two guards, both needed — neither catches all five:
 
 Nothing matching is a normal outcome: it stores nulls and lands on `done` with `wikidata_qid IS
 NULL`, which is strictly better than a confidently wrong merge. Note that `ILIUM` vs "Ilium/Olympos"
-scores **1.000** (prefix containment), so only the type guard catches that one.
+scores **1.000** under `titleScorer` (prefix containment), so the type guard is the only thing
+rejecting Q692326 on the strict pass — and `exactTitleMatcher` is the only reason the `exactOnly`
+retry can safely drop that guard, since it scores the same pair as no match at all.
 
 ## Merge logic
 
