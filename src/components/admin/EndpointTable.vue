@@ -1,11 +1,7 @@
 <template>
   <section>
     <div class="flex justify-between items-baseline mb-3">
-      <h2
-        class="font-mono text-[10px] md:text-[11px] tracking-[0.24em] md:tracking-[0.28em] uppercase text-orange-neon"
-      >
-        {{ $t("admin.endpoints.title") }}
-      </h2>
+      <SectionHeading :title="$t('admin.endpoints.title')" />
       <span
         class="font-mono text-[9px] md:text-[10px] tracking-[0.14em] uppercase text-text-secondary"
       >
@@ -24,21 +20,23 @@
       <template v-else>
         <!-- Desktop: full grid with an in-cell share bar. -->
         <div class="hidden md:block">
+          <TableHeader
+            :columns="COLUMNS"
+            :grid-class="GRID"
+            key-prefix="admin.endpoints"
+            :right-aligned="RIGHT_ALIGNED"
+            :sort-key="sortKey"
+            :sort-direction="sortDirection"
+            @sort="toggle"
+          />
           <div
-            class="grid grid-cols-[170px_190px_1fr_96px_96px_120px] px-4.5 bg-charcoal-light border-b border-charcoal-border"
-          >
-            <span v-for="h in HEADERS" :key="h.key" :class="headerClass(h)">
-              {{ $t(`admin.endpoints.${h.key}`) }}
-            </span>
-          </div>
-          <div
-            v-for="row in rows"
-            :key="`${row.provider}/${row.operation}`"
-            class="grid grid-cols-[170px_190px_1fr_96px_96px_120px] px-4.5 border-b border-charcoal-border/60 items-center border-l-2"
-            :class="row.rateLimited > 0 ? 'border-l-signal-warn' : 'border-l-transparent'"
+            v-for="row in sorted"
+            :key="row.key"
+            class="px-4.5 border-b border-charcoal-border/60 items-center border-l-2"
+            :class="[GRID, row.edgeClass]"
           >
             <span class="flex items-center gap-2 py-2.5">
-              <span class="w-2 h-2 flex-none" :class="providerBg(row.provider)" />
+              <span class="w-2 h-2 flex-none" :class="row.bg" />
               <span class="font-mono text-xs text-text-primary">{{
                 row.provider
               }}</span>
@@ -47,45 +45,45 @@
               row.operation
             }}</span>
             <span class="py-2.5 pr-6">
-              <span class="block h-2 bg-search-bg">
-                <span
-                  class="block h-full"
-                  :class="providerBg(row.provider)"
-                  :style="{ width: `${sharePercent(row)}%` }"
-                />
-              </span>
+              <ShareBar
+                class="block h-2"
+                :percent="row.share"
+                :bar-class="row.bg"
+              />
             </span>
-            <span class="font-mono text-xs text-text-primary py-2.5 text-right">{{
-              row.success
-            }}</span>
+            <span
+              class="font-mono text-xs text-text-primary py-2.5 text-right"
+              >{{ row.success }}</span
+            >
             <span
               class="font-mono text-xs py-2.5 text-right"
-              :class="row.error > 0 ? 'text-text-primary' : 'text-chart-muted'"
+              :class="row.errorClass"
               >{{ row.error || "—" }}</span
             >
             <span
               class="font-mono text-xs py-2.5 text-right"
-              :class="row.rateLimited > 0 ? 'text-signal-warn' : 'text-chart-muted'"
+              :class="row.rateClass"
               >{{ row.rateLimited || "—" }}</span
             >
           </div>
-          <div
-            class="grid grid-cols-[170px_190px_1fr_96px_96px_120px] px-4.5 bg-charcoal-light"
-          >
+          <div class="px-4.5 bg-charcoal-light" :class="GRID">
             <span
               class="font-mono text-[10px] tracking-[0.16em] uppercase text-text-secondary py-2.75"
               >{{ $t("admin.endpoints.total") }}</span
             >
-            <span /><span />
-            <span class="font-mono text-xs text-text-primary py-2.75 text-right">{{
-              grand.success
-            }}</span>
-            <span class="font-mono text-xs text-text-primary py-2.75 text-right">{{
-              grand.error
-            }}</span>
+            <span
+              class="col-start-4 font-mono text-xs text-text-primary py-2.75 text-right"
+              >{{ grand.success }}</span
+            >
+            <span
+              class="font-mono text-xs text-text-primary py-2.75 text-right"
+              >{{ grand.error }}</span
+            >
             <span
               class="font-mono text-xs py-2.75 text-right"
-              :class="grand.rateLimited > 0 ? 'text-signal-warn' : 'text-text-primary'"
+              :class="
+                grand.rateLimited > 0 ? 'text-signal-warn' : 'text-text-primary'
+              "
               >{{ grand.rateLimited }}</span
             >
           </div>
@@ -94,44 +92,34 @@
         <!-- Mobile: two lines per endpoint, same numbers in ok / err / 429 order. -->
         <div class="md:hidden">
           <div
-            v-for="row in rows"
-            :key="`${row.provider}/${row.operation}`"
+            v-for="row in sorted"
+            :key="row.key"
             class="px-3 py-2.5 border-b border-charcoal-border/60 border-l-2"
-            :class="row.rateLimited > 0 ? 'border-l-signal-warn' : 'border-l-transparent'"
+            :class="row.edgeClass"
           >
             <div class="flex justify-between items-baseline gap-2.5">
               <span class="flex items-center gap-1.5 min-w-0">
+                <span class="w-1.75 h-1.75 flex-none" :class="row.bg" />
                 <span
-                  class="w-1.75 h-1.75 flex-none"
-                  :class="providerBg(row.provider)"
-                />
-                <span class="font-mono text-[11px] text-text-primary truncate">{{
-                  row.operation
-                }}</span>
+                  class="font-mono text-[11px] text-text-primary truncate"
+                  >{{ row.operation }}</span
+                >
               </span>
               <span class="flex gap-2.5 flex-none font-mono text-[11px]">
                 <span class="text-text-primary">{{ row.success }}</span>
-                <span
-                  :class="row.error > 0 ? 'text-text-primary' : 'text-chart-muted'"
-                  >{{ row.error || "—" }}</span
-                >
-                <span
-                  :class="row.rateLimited > 0 ? 'text-signal-warn' : 'text-chart-muted'"
-                  >{{ row.rateLimited || "—" }}</span
-                >
+                <span :class="row.errorClass">{{ row.error || "—" }}</span>
+                <span :class="row.rateClass">{{ row.rateLimited || "—" }}</span>
               </span>
             </div>
             <div class="flex items-center gap-2.5 mt-1.5 pl-3.25">
               <span class="font-mono text-[10px] text-chart-muted flex-none">{{
                 row.provider
               }}</span>
-              <span class="flex-1 h-1.25 bg-search-bg">
-                <span
-                  class="block h-full"
-                  :class="providerBg(row.provider)"
-                  :style="{ width: `${sharePercent(row)}%` }"
-                />
-              </span>
+              <ShareBar
+                class="flex-1 h-1.25"
+                :percent="row.share"
+                :bar-class="row.bg"
+              />
             </div>
           </div>
         </div>
@@ -143,37 +131,31 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { UsageTotal } from "@/types/admin";
+import SectionHeading from "@/components/admin/SectionHeading.vue";
+import ShareBar from "@/components/admin/ShareBar.vue";
+import TableHeader from "@/components/admin/TableHeader.vue";
+import { useAdminLabels } from "@/composables/useAdminLabels";
+import { useTableSort } from "@/composables/useTableSort";
+import { barPercent, totalCalls } from "@/utils/admin-usage";
+import { providerBg } from "@/utils/admin-signal";
 
 const props = defineProps<{
   rows: UsageTotal[];
   rangeLabel: string;
 }>();
 
-const HEADERS = [
-  { key: "provider", align: "left" },
-  { key: "operation", align: "left" },
-  { key: "share", align: "left" },
-  { key: "success", align: "right" },
-  { key: "errors", align: "right" },
-  { key: "rate_limited", align: "right" },
+const { providerLabel, operationLabel } = useAdminLabels();
+
+const GRID = "grid grid-cols-[170px_190px_1fr_96px_96px_120px]";
+const COLUMNS = [
+  "provider",
+  "operation",
+  "share",
+  "success",
+  "errors",
+  "rate_limited",
 ] as const;
-
-const headerClass = (h: (typeof HEADERS)[number]) => [
-  "font-mono text-[9px] tracking-[0.16em] uppercase text-text-secondary py-2.75",
-  h.align === "right" ? "text-right" : "",
-];
-
-const PROVIDER_BG: Record<string, string> = {
-  google_books: "bg-orange-neon",
-  openlibrary: "bg-chart-total",
-  wikidata: "bg-chart-muted",
-};
-// An operation from a provider this build doesn't know about still gets a bar, just a neutral
-// one — the counters are written by the worker and can outrun the frontend across a deploy.
-const providerBg = (provider: string) =>
-  PROVIDER_BG[provider] ?? "bg-chart-muted";
-
-const calls = (r: UsageTotal) => r.success + r.error + r.rateLimited;
+const RIGHT_ALIGNED = ["success", "errors", "rate_limited"] as const;
 
 const grand = computed(() =>
   props.rows.reduce(
@@ -186,11 +168,41 @@ const grand = computed(() =>
   ),
 );
 
+// Derived once per data change and read by both the desktop grid and the mobile cards — the two
+// layouts are both in the DOM at all times, so anything left in the template is computed twice.
 // Scaled against the busiest endpoint rather than the total: with nine rows, shares of the whole
 // are all short stubs and the bar stops distinguishing anything.
-const busiest = computed(() =>
-  props.rows.reduce((m, r) => Math.max(m, calls(r)), 0),
+const viewRows = computed(() => {
+  const busiest = props.rows.reduce((m, r) => Math.max(m, totalCalls(r)), 0);
+  return props.rows.map((r) => ({
+    key: `${r.provider}/${r.operation}`,
+    provider: providerLabel(r.provider),
+    operation: operationLabel(r.operation),
+    bg: providerBg(r.provider),
+    calls: totalCalls(r),
+    share: barPercent(totalCalls(r), busiest),
+    success: r.success,
+    error: r.error,
+    rateLimited: r.rateLimited,
+    edgeClass:
+      r.rateLimited > 0 ? "border-l-signal-warn" : "border-l-transparent",
+    errorClass: r.error > 0 ? "text-text-primary" : "text-chart-muted",
+    rateClass: r.rateLimited > 0 ? "text-signal-warn" : "text-chart-muted",
+  }));
+});
+
+// Sorted after the mapping, so the two label columns order by what's on screen (the translated
+// provider/operation names) rather than by the machine strings behind them.
+const { sortKey, sortDirection, toggle, sorted } = useTableSort(
+  () => viewRows.value,
+  {
+    provider: { value: (r) => r.provider },
+    operation: { value: (r) => r.operation },
+    // The bar is scaled against the busiest row, so its length and the call count agree on order.
+    share: { value: (r) => r.calls, descFirst: true },
+    success: { value: (r) => r.success, descFirst: true },
+    errors: { value: (r) => r.error, descFirst: true },
+    rate_limited: { value: (r) => r.rateLimited, descFirst: true },
+  },
 );
-const sharePercent = (r: UsageTotal) =>
-  busiest.value > 0 ? (calls(r) / busiest.value) * 100 : 0;
 </script>

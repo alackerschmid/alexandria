@@ -37,7 +37,9 @@ ask the `inventory` subagent rather than expecting a list here.
   font CDN would. Never bind unsanitized HTML anywhere else.
 - **`AppButton` is the shared action-button primitive** — `variant`
   `primary`/`secondary`/`ghost`/`danger`/`inverse` × `size` `sm`/`md`/`lg`, plus
-  `block`/`outlined`/`loading`. Use it for all action buttons. Segmented pickers and
+  `block`/`outlined`/`loading`/`mono`. Use it for all action buttons. `mono` is a typeface
+  flag orthogonal to `variant` — monospace and unbolded, for the `/admin` board's
+  instrument-panel surface; it composes with any variant. Segmented pickers and
   `AppToggle` are deliberately not this, and the scanner's camera mode keeps its
   dark-hardcoded secondary/ghost buttons — only its accent-fill buttons use `AppButton`.
 - **`AppSegmented` is the shared single-select segmented control** — `variant` `fill`

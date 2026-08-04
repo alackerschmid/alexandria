@@ -9,6 +9,7 @@ import { works, series } from "./routes/catalog";
 import statsRoutes from "./routes/stats";
 import importRoutes from "./routes/import";
 import adminRoutes from "./routes/admin";
+import { usageMiddleware } from "./usage";
 import { scheduled } from "./sweeper";
 
 const app = new Hono<Env>();
@@ -22,6 +23,9 @@ app.use("/api/*", async (c, next) => {
     exposeHeaders: ["Content-Type", "Retry-After"],
   })(c, next);
 });
+
+// After CORS so a preflight doesn't allocate one, before the routes so every handler has it.
+app.use("/api/*", usageMiddleware);
 
 app.route("/api/auth", authRoutes);
 app.route("/api/books", booksRoutes);

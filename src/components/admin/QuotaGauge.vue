@@ -5,11 +5,7 @@
       class="flex flex-col md:flex-row md:justify-between md:items-end gap-3 mb-3.5"
     >
       <div class="flex items-center gap-3">
-        <h2
-          class="font-mono text-[10px] md:text-[11px] tracking-[0.24em] md:tracking-[0.28em] uppercase text-orange-neon"
-        >
-          {{ $t("admin.quota.title") }}
-        </h2>
+        <SectionHeading :title="$t('admin.quota.title')" />
         <span
           class="font-mono text-[8px] md:text-[11px] tracking-[0.14em] uppercase px-2 py-0.5 md:px-2.5 md:py-1 border"
           :class="[signalText(level), signalBorder(level)]"
@@ -69,13 +65,13 @@
           </div>
           <div
             class="absolute -top-1.5 -bottom-1.5 w-0.5 bg-text-primary"
-            :style="{ left: `${warnPercent}%` }"
+            :style="{ left: `${QUOTA_WARN_PERCENT}%` }"
           />
         </div>
         <div class="flex justify-between mt-2">
           <span class="font-mono text-[9px] text-chart-muted">0</span>
           <span class="font-mono text-[9px] tracking-[0.1em] text-text-secondary">
-            {{ $t("admin.quota.warn_marker", { percent: warnPercent }) }}
+            {{ $t("admin.quota.warn_marker", { percent: QUOTA_WARN_PERCENT }) }}
           </span>
           <span class="font-mono text-[9px] text-chart-muted">
             {{ $t("admin.quota.cap", { limit: fmt(limit) }) }}
@@ -91,40 +87,39 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { signalBg, signalBorder, signalText } from "@/utils/admin-signal";
 import type { SignalLevel } from "@/utils/admin-signal";
-import { QUOTA_WARN_PERCENT } from "@/utils/admin-usage";
+import { QUOTA_WARN_PERCENT, percent } from "@/utils/admin-usage";
+import SectionHeading from "@/components/admin/SectionHeading.vue";
+import { useAdminFormat } from "@/composables/useAdminFormat";
 
 const props = defineProps<{
   used: number;
   limit: number;
-  level: SignalLevel;
+  /** The gauge only renders with data loaded, so there is no `neutral` reading to show. */
+  level: Exclude<SignalLevel, "neutral">;
   /** null until enough of the UTC day has elapsed to extrapolate from. */
   projected: number | null;
   /** Pre-formatted "14:00 · 96", or null when nothing was recorded in the window. */
   peak: string | null;
 }>();
 
-const { t, locale } = useI18n();
+const { t } = useI18n();
+const { formatCount: fmt } = useAdminFormat();
 
 const TICKS = 20;
-const warnPercent = QUOTA_WARN_PERCENT;
-
-const fmt = (n: number) => n.toLocaleString(locale.value);
 
 const fillPercent = computed(() =>
-  props.limit > 0 ? Math.min(100, (props.used / props.limit) * 100) : 0,
+  Math.min(100, percent(props.used, props.limit)),
 );
 const remaining = computed(() => Math.max(0, props.limit - props.used));
 
-const stateLabel = computed(() =>
-  t(`admin.quota.state.${props.level === "neutral" ? "ok" : props.level}`),
-);
+const stateLabel = computed(() => t(`admin.quota.state.${props.level}`));
 
 // The projection is the early warning — it goes amber/red on its own once the day is on track
 // to blow the cap, even while `used` is still comfortably inside it.
 const projectedClass = computed(() => {
   if (props.projected === null) return "text-text-secondary";
   if (props.projected > props.limit) return signalText("critical");
-  return props.projected > props.limit * (warnPercent / 100)
+  return props.projected > props.limit * (QUOTA_WARN_PERCENT / 100)
     ? signalText("warning")
     : "text-text-primary";
 });

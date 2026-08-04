@@ -505,25 +505,12 @@
           <section id="export">
             <SectionHeading :title="$t('settings.export.heading')" />
 
-            <div
-              class="flex items-center justify-between gap-6 border border-charcoal-border p-6 mb-4"
-            >
-              <div>
-                <p class="text-[15px] text-text-primary font-medium">
-                  {{ $t("settings.export.import_description") }}
-                </p>
-              </div>
-              <router-link
-                :to="{ name: 'import' }"
-                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
-                :style="{
-                  color: 'rgb(var(--v-theme-on-background))',
-                  borderColor: accentStore.color,
-                }"
-              >
-                {{ $t("settings.export.import_button") }}
-              </router-link>
-            </div>
+            <SettingsLinkCard
+              class="mb-4"
+              :description="$t('settings.export.import_description')"
+              :to="{ name: 'import' }"
+              :label="$t('settings.export.import_button')"
+            />
 
             <div
               class="flex items-center justify-between gap-6 border border-charcoal-border p-6"
@@ -608,25 +595,11 @@
           <section v-if="authStore.isAdmin" id="admin">
             <SectionHeading :title="$t('admin.nav')" />
 
-            <div
-              class="flex items-center justify-between gap-6 border border-charcoal-border p-6"
-            >
-              <div>
-                <p class="text-[15px] text-text-primary font-medium">
-                  {{ $t("admin.settings_description") }}
-                </p>
-              </div>
-              <router-link
-                :to="{ name: 'admin' }"
-                class="flex-none border font-mono text-[10px] tracking-[0.16em] uppercase px-[22px] py-3 whitespace-nowrap transition-colors"
-                :style="{
-                  color: 'rgb(var(--v-theme-on-background))',
-                  borderColor: accentStore.color,
-                }"
-              >
-                {{ $t("admin.settings_button") }}
-              </router-link>
-            </div>
+            <SettingsLinkCard
+              :description="$t('admin.settings_description')"
+              :to="{ name: 'admin' }"
+              :label="$t('admin.settings_button')"
+            />
           </section>
 
           <!-- ── DANGER ───────────────────────────────────────────────────── -->
@@ -759,6 +732,7 @@ import ConfirmDialog from "@/components/ConfirmDialog.vue";
 import SectionHeading from "@/components/settings/SettingsSectionHeading.vue";
 import SettingsField from "@/components/settings/SettingsField.vue";
 import DefaultRow from "@/components/settings/SettingsDefaultRow.vue";
+import SettingsLinkCard from "@/components/settings/SettingsLinkCard.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
 
 const { t } = useI18n();

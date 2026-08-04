@@ -6,7 +6,7 @@ import {
   discoverEditionsFromOpenLibrary,
 } from "./editions";
 import { titleScorer } from "./title-match";
-import { outcomeForStatus, recordApiUsage } from "./usage";
+import { outcomeForStatus, UsageRecorder } from "./usage";
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -39,14 +39,23 @@ type SparqlOperation =
 //   - network / http_5xx: infrastructure-adjacent, not evidence of a hopeless work — default policy.
 export const RETRY_POLICY: Record<
   FailureReason,
-  { capAttempts: number; backoffMinutes: number }
+  { capAttempts: number; backoffMinutes: number; transient: boolean }
 > = {
-  rate_limited: { capAttempts: 5, backoffMinutes: 5 },
-  timeout: { capAttempts: 3, backoffMinutes: 60 },
-  other: { capAttempts: 2, backoffMinutes: 30 },
-  http_5xx: { capAttempts: 5, backoffMinutes: 30 },
-  network: { capAttempts: 5, backoffMinutes: 30 },
+  rate_limited: { capAttempts: 5, backoffMinutes: 5, transient: true },
+  timeout: { capAttempts: 3, backoffMinutes: 60, transient: true },
+  other: { capAttempts: 2, backoffMinutes: 30, transient: false },
+  http_5xx: { capAttempts: 5, backoffMinutes: 30, transient: true },
+  network: { capAttempts: 5, backoffMinutes: 30, transient: true },
 };
+
+/**
+ * Whether a stored `failure_reason` means upstream pressure rather than a broken query — the same
+ * split the caps and backoffs above are reasoned from. Takes a plain string because it reads rows
+ * out of `enrichment_runs`, where an older build's reason can survive; anything unrecognised is
+ * treated as a query bug, which is the reading that gets looked at rather than waited out.
+ */
+export const isTransientFailure = (reason: string): boolean =>
+  RETRY_POLICY[reason as FailureReason]?.transient ?? false;
 
 // Backstop past the per-reason caps: a work that has exhausted its cap (e.g. a genuinely bad
 // title/author match that will never resolve) is marked 'exhausted' rather than dropped —
@@ -122,7 +131,7 @@ function parseOrdinal(v: string | undefined): number | null {
 // so enrichWork's catch block can set enrichment_failed_at (retryable) rather than
 // treating the failure as a permanent "not found" (which would set series_checked_at).
 async function runSparql(
-  db: D1Database | null | undefined,
+  usage: UsageRecorder | null | undefined,
   operation: SparqlOperation,
   query: string,
   timeoutMs = 25_000,
@@ -163,15 +172,10 @@ async function runSparql(
   const attempt = async () => {
     try {
       const res = await once();
-      await recordApiUsage(
-        db,
-        "wikidata",
-        operation,
-        outcomeForStatus(res.status),
-      );
+      usage?.record("wikidata", operation, outcomeForStatus(res.status));
       return res;
     } catch (e) {
-      await recordApiUsage(db, "wikidata", operation, "error");
+      usage?.record("wikidata", operation, "error");
       throw e;
     }
   };
@@ -270,7 +274,7 @@ const MAX_LABEL_ROWS_PER_ITEM = 200;
 // round trip per enrichment, but only the fallback one — the common case is decided by the en/de
 // labels the search query itself carries (see fetchBookInfo's fast path).
 async function fetchWorkLabels(
-  db: D1Database,
+  usage: UsageRecorder | null | undefined,
   qids: readonly string[],
 ): Promise<Map<string, Set<string>>> {
   if (!qids.length) return new Map();
@@ -286,7 +290,7 @@ async function fetchWorkLabels(
         } LIMIT ${MAX_LABEL_ROWS_PER_ITEM} }`,
   );
   const rows = await runSparql(
-    db,
+    usage,
     "labels",
     `
     SELECT ?item ?label WHERE {${blocks.join(" UNION")}
@@ -305,7 +309,7 @@ async function fetchWorkLabels(
 }
 
 async function fetchBookInfo(
-  db: D1Database,
+  usage: UsageRecorder | null | undefined,
   title: string,
   author: string,
 ): Promise<{
@@ -345,7 +349,7 @@ async function fetchBookInfo(
     } ORDER BY ASC(?titleRank) LIMIT 10`.trim();
 
   console.log("[fetchBookInfo] querying Wikidata for:", { title, author });
-  const rows = await runSparql(db, "book_search", query);
+  const rows = await runSparql(usage, "book_search", query);
   if (!rows.length) {
     console.log("[fetchBookInfo] no rows returned");
     return null;
@@ -391,7 +395,7 @@ async function fetchBookInfo(
       : pickVerifiedQid(
           title,
           candidates,
-          await fetchWorkLabels(db, candidates),
+          await fetchWorkLabels(usage, candidates),
         );
   if (!workQid) {
     console.log(
@@ -428,7 +432,7 @@ async function fetchBookInfo(
 // Fetches work-level metadata for a known Wikidata QID.
 // Uses one subquery per property to avoid cartesian-product explosion when a work has many values.
 async function fetchWorkDetails(
-  db: D1Database,
+  usage: UsageRecorder | null | undefined,
   workQid: string,
 ): Promise<WorkDetails> {
   const empty: WorkDetails = {
@@ -514,7 +518,7 @@ async function fetchWorkDetails(
       { SELECT (SAMPLE(?pageCount) AS ?refPageCount) WHERE {
           OPTIONAL { wd:${workQid} wdt:P747 ?refEd. ?refEd wdt:P1104 ?pageCount. } } }
     }`.trim();
-  const rows = await runSparql(db, "work_details", query);
+  const rows = await runSparql(usage, "work_details", query);
   const row = rows[0];
   console.log("[fetchWorkDetails] raw row:", JSON.stringify(row ?? null));
   const result = parseWorkDetailsRow(row);
@@ -595,7 +599,7 @@ function parseWorkDetailsRow(row: any): WorkDetails {
 
 // All member works of a series (for completeness), with ordinals + English titles.
 async function fetchSeriesMembers(
-  db: D1Database,
+  usage: UsageRecorder | null | undefined,
   seriesQid: string,
 ): Promise<{ qid: string; ordinal: number | null; title: string | null }[]> {
   if (!/^Q\d+$/.test(seriesQid)) {
@@ -609,7 +613,7 @@ async function fetchSeriesMembers(
       OPTIONAL { ?st pq:P1545 ?ordinal. }
       OPTIONAL { ?work rdfs:label ?label. FILTER(LANG(?label) = "en") }
     } LIMIT 200`.trim();
-  const rows = await runSparql(db, "series_members", query);
+  const rows = await runSparql(usage, "series_members", query);
   const out: { qid: string; ordinal: number | null; title: string | null }[] =
     [];
   for (const r of rows) {
@@ -627,7 +631,7 @@ async function fetchSeriesMembers(
 // A representative ISBN for a work QID (via its editions), preferring en/de editions.
 // Many works have no edition/ISBN data in Wikidata — returns null in that case.
 async function fetchWorkEditionIsbn(
-  db: D1Database,
+  usage: UsageRecorder | null | undefined,
   workQid: string,
 ): Promise<string | null> {
   if (!/^Q\d+$/.test(workQid)) return null;
@@ -637,7 +641,7 @@ async function fetchWorkEditionIsbn(
       { ?ed wdt:P212 ?isbn } UNION { ?ed wdt:P957 ?isbn }
       OPTIONAL { ?ed wdt:P407 ?l. ?l wdt:P218 ?lang }
     } LIMIT 20`.trim();
-  const rows = await runSparql(db, "edition_isbn", query);
+  const rows = await runSparql(usage, "edition_isbn", query);
   if (!rows.length) return null;
   const clean = (v: string | undefined) => (v ?? "").replace(/[-\s]/g, "");
   // Prefer an English, then German, then any edition.
@@ -656,6 +660,7 @@ async function backfillEdition(
   workId: number,
   workQid: string,
   apiKey?: string,
+  usage?: UsageRecorder | null,
 ): Promise<void> {
   const existing = await db
     .prepare("SELECT 1 FROM books WHERE work_id = ? LIMIT 1")
@@ -663,13 +668,13 @@ async function backfillEdition(
     .first();
   if (existing) return;
 
-  const isbn = await fetchWorkEditionIsbn(db, workQid);
+  const isbn = await fetchWorkEditionIsbn(usage, workQid);
   if (!isbn) {
     console.log(`[backfillEdition] no ISBN for ${workQid} (work ${workId})`);
     return;
   }
 
-  const book = await materializeEdition(db, isbn, workId, apiKey);
+  const book = await materializeEdition(db, isbn, workId, apiKey, usage);
   if (!book) {
     console.log(`[backfillEdition] no metadata for ISBN ${isbn}`);
     return;
@@ -787,8 +792,9 @@ async function populateSeriesMembers(
   db: D1Database,
   seriesId: number,
   seriesQid: string,
+  usage?: UsageRecorder | null,
 ): Promise<void> {
-  const members = await fetchSeriesMembers(db, seriesQid);
+  const members = await fetchSeriesMembers(usage, seriesQid);
   if (!members.length) return;
   await db.batch(
     members.map((m) =>
@@ -849,12 +855,13 @@ async function resolveWorkIdentity(
   db: D1Database,
   workId: number,
   w: WorkRow,
+  usage?: UsageRecorder | null,
 ): Promise<IdentityOutcome> {
   if (w.wikidata_qid) {
     console.log(
       `[enrichWork] work ${workId} already has QID ${w.wikidata_qid}, fetching details directly`,
     );
-    const details = await fetchWorkDetails(db, w.wikidata_qid);
+    const details = await fetchWorkDetails(usage, w.wikidata_qid);
     return {
       kind: "resolved",
       workQid: w.wikidata_qid,
@@ -878,14 +885,14 @@ async function resolveWorkIdentity(
   const author = splitAuthors(ed?.author ?? null)[0] ?? "";
   console.log(`[enrichWork] looking up: title="${title}" author="${author}"`);
 
-  let info = await fetchBookInfo(db, title, author);
+  let info = await fetchBookInfo(usage, title, author);
   if (!info) {
     const strippedTitle = title.replace(/\s*[([{].*?[)\]}]/g, "").trim();
     if (strippedTitle && strippedTitle !== title) {
       console.log(
         `[enrichWork] no results for "${title}", retrying with stripped title "${strippedTitle}"`,
       );
-      info = await fetchBookInfo(db, strippedTitle, author);
+      info = await fetchBookInfo(usage, strippedTitle, author);
     }
   }
   console.log(
@@ -940,7 +947,7 @@ async function resolveWorkIdentity(
     const seriesId = await upsertSeries(db, canonicalId, info.series);
     console.log(`[enrichWork] seriesId=${seriesId}`);
     if (seriesId)
-      await populateSeriesMembers(db, seriesId, info.series.seriesQid);
+      await populateSeriesMembers(db, seriesId, info.series.seriesQid, usage);
   }
 
   // Best-effort: link the searched author's own QID for future dedup, in parallel with the
@@ -970,7 +977,7 @@ async function resolveWorkIdentity(
       : Promise.resolve();
 
   const [details] = await Promise.all([
-    fetchWorkDetails(db, info.workQid),
+    fetchWorkDetails(usage, info.workQid),
     authorQidUpdate,
   ]);
   return {
@@ -992,15 +999,17 @@ async function backfillEditionsAndDiscovery(
   workQid: string | null,
   details: WorkDetails | null,
   apiKey?: string,
+  usage?: UsageRecorder | null,
 ): Promise<void> {
   const backfill = workQid
-    ? backfillEdition(db, canonicalId, workQid, apiKey)
+    ? backfillEdition(db, canonicalId, workQid, apiKey, usage)
     : Promise.resolve();
   const discovery = details?.openlibraryWorkId
     ? discoverEditionsFromOpenLibrary(
         db,
         canonicalId,
         details.openlibraryWorkId,
+        usage,
       ).catch((e) => {
         console.error(
           "[enrichWork] edition discovery failed for work",
@@ -1146,12 +1155,20 @@ async function recordRun(
 
 // Best-effort enrichment for a work. Negative-cached via works.series_checked_at unless force=true.
 // apiKey (Google Books) is only needed when backfilling a cover edition for an unowned work.
+// Every argument is explicit: `enrichWorkDetached` below is the convenience wrapper that carries
+// the defaults, and it and the sweeper are the only two callers.
 export async function enrichWork(
   db: D1Database,
   workId: number,
-  force = false,
-  apiKey?: string,
-  source: EnrichmentSource = "unknown",
+  force: boolean,
+  apiKey: string | undefined,
+  source: EnrichmentSource,
+  /**
+   * Required, not optional: an omitted recorder counts nothing and fails silently, and the whole
+   * point of the counters is that they can't quietly under-report. Callers with nothing to flush
+   * into (unit tests) pass `null` deliberately.
+   */
+  usage: UsageRecorder | null,
 ): Promise<void> {
   let canonicalId = workId;
   let merged = false;
@@ -1202,7 +1219,7 @@ export async function enrichWork(
         .bind(workId)
         .run();
 
-    const identity = await resolveWorkIdentity(db, workId, w);
+    const identity = await resolveWorkIdentity(db, workId, w, usage);
     if (identity.kind === "no-title") {
       await persistWorkDetails(db, workId, null, force);
       await recordRun(db, workId, startedAt, "not_found", null, source);
@@ -1220,6 +1237,7 @@ export async function enrichWork(
       workQid,
       details,
       apiKey,
+      usage,
     );
     await persistWorkDetails(db, canonicalId, details, force);
     await recordRun(
@@ -1264,5 +1282,26 @@ export async function enrichWork(
         .run();
     } catch {}
     await recordRun(db, failTarget, startedAt, "failed", reason, source);
+  }
+}
+
+/**
+ * `enrichWork` as a detached background task — the `waitUntil(enrichWork(...))` shape used after
+ * a lookup or a scan. It runs *after* the response, so `usageMiddleware`'s flush has already
+ * fired by the time its SPARQL calls happen; it therefore owns its own recorder and flushes it
+ * itself. The sweeper doesn't use this: it enriches a whole batch and flushes once for all of it.
+ */
+export async function enrichWorkDetached(
+  db: D1Database,
+  workId: number,
+  force = false,
+  apiKey?: string,
+  source: EnrichmentSource = "unknown",
+): Promise<void> {
+  const usage = new UsageRecorder(db);
+  try {
+    await enrichWork(db, workId, force, apiKey, source, usage);
+  } finally {
+    await usage.flush();
   }
 }

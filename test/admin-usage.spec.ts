@@ -5,12 +5,14 @@ import {
   ageMs,
   barPercent,
   buildHourColumns,
+  enrichmentBreakdown,
   formatDurationMs,
   peakHour,
   projectEndOfDay,
   providerTotals,
   quotaLevel,
   relativeTime,
+  sweeperStatus,
 } from "@/utils/admin-usage";
 
 const HOUR = 3_600_000;
@@ -19,16 +21,8 @@ const H0 = Date.UTC(2026, 7, 2, 10);
 const bucket = (
   hourStart: number,
   provider: string,
-  operation: string,
-  counts: Partial<Pick<UsageBucket, "success" | "error" | "rateLimited">> = {},
-): UsageBucket => ({
-  hourStart,
-  provider,
-  operation,
-  success: counts.success ?? 0,
-  error: counts.error ?? 0,
-  rateLimited: counts.rateLimited ?? 0,
-});
+  calls: number,
+): UsageBucket => ({ hourStart, provider, calls });
 
 describe("quotaLevel", () => {
   it("bands on the share of the cap used", () => {
@@ -62,11 +56,7 @@ describe("projectEndOfDay", () => {
 
 describe("buildHourColumns", () => {
   it("keeps a slot for every hour, including ones with no calls", () => {
-    const columns = buildHourColumns(
-      [bucket(H0 + 2 * HOUR, "wikidata", "work_details", { success: 3 })],
-      H0,
-      4,
-    );
+    const columns = buildHourColumns([bucket(H0 + 2 * HOUR, "wikidata", 3)], H0, 4);
     expect(columns).toHaveLength(4);
     expect(columns.map((c) => c.total)).toEqual([0, 0, 3, 0]);
     expect(columns.map((c) => c.hourStart)).toEqual([
@@ -77,12 +67,11 @@ describe("buildHourColumns", () => {
     ]);
   });
 
-  it("sums every outcome into the hour's call count, per provider", () => {
+  it("stacks the providers of one hour into its total", () => {
     const columns = buildHourColumns(
       [
-        bucket(H0, "google_books", "isbn_lookup", { success: 5, error: 1 }),
-        bucket(H0, "google_books", "title_search", { rateLimited: 2 }),
-        bucket(H0, "openlibrary", "editions", { success: 4 }),
+        bucket(H0, "google_books", 8),
+        bucket(H0, "openlibrary", 4),
       ],
       H0,
       1,
@@ -96,11 +85,7 @@ describe("buildHourColumns", () => {
   });
 
   it("ignores rows outside the window rather than extending the axis", () => {
-    const columns = buildHourColumns(
-      [bucket(H0 - HOUR, "wikidata", "labels", { success: 9 })],
-      H0,
-      2,
-    );
+    const columns = buildHourColumns([bucket(H0 - HOUR, "wikidata", 9)], H0, 2);
     expect(columns).toHaveLength(2);
     expect(columns.every((c) => c.total === 0)).toBe(true);
   });
@@ -108,11 +93,7 @@ describe("buildHourColumns", () => {
   it("still counts an unknown provider in the hour total", () => {
     // The worker writes these counters; a provider added there reaches an older frontend build
     // before it knows the name. Dropping it would understate the hour.
-    const columns = buildHourColumns(
-      [bucket(H0, "future_source", "lookup", { success: 7 })],
-      H0,
-      1,
-    );
+    const columns = buildHourColumns([bucket(H0, "future_source", 7)], H0, 1);
     expect(columns[0].total).toBe(7);
   });
 });
@@ -120,9 +101,9 @@ describe("buildHourColumns", () => {
 describe("providerTotals and peakHour", () => {
   const columns = buildHourColumns(
     [
-      bucket(H0, "google_books", "isbn_lookup", { success: 2 }),
-      bucket(H0 + HOUR, "google_books", "isbn_lookup", { success: 9 }),
-      bucket(H0 + HOUR, "wikidata", "labels", { success: 1 }),
+      bucket(H0, "google_books", 2),
+      bucket(H0 + HOUR, "google_books", 9),
+      bucket(H0 + HOUR, "wikidata", 1),
     ],
     H0,
     3,
@@ -137,12 +118,23 @@ describe("providerTotals and peakHour", () => {
   });
 
   it("finds the busiest hour", () => {
-    expect(peakHour(columns)?.hourStart).toBe(H0 + HOUR);
-    expect(peakHour(columns)?.total).toBe(10);
+    expect(peakHour(columns, (c) => c.total)).toEqual({
+      hourStart: H0 + HOUR,
+      value: 10,
+    });
+  });
+
+  it("measures whatever `pick` names, not always the total", () => {
+    // Same hour wins here, but on its Google Books calls (9) rather than its 10 total.
+    expect(peakHour(columns, (c) => c.google_books)).toEqual({
+      hourStart: H0 + HOUR,
+      value: 9,
+    });
+    expect(peakHour(columns, (c) => c.openlibrary)).toBeNull();
   });
 
   it("has no peak when nothing was recorded", () => {
-    expect(peakHour(buildHourColumns([], H0, 5))).toBeNull();
+    expect(peakHour(buildHourColumns([], H0, 5), (c) => c.total)).toBeNull();
   });
 });
 
@@ -171,24 +163,106 @@ describe("formatDurationMs", () => {
 describe("relativeTime / ageMs", () => {
   const now = Date.UTC(2026, 7, 2, 12);
 
-  it("reads a D1 timestamp as UTC, not local time", () => {
-    // "2026-08-02 09:00:00" is three hours before `now`. Parsed as local time it would be off
-    // by the host's offset — which is exactly the bug this normalization exists for.
-    expect(ageMs("2026-08-02 09:00:00", now)).toBe(3 * HOUR);
-  });
-
   it("formats an age in the largest unit that fits", () => {
-    expect(relativeTime("2026-08-02 09:00:00", now, "en-GB")).toBe(
-      "3 hours ago",
-    );
-    expect(relativeTime("2026-07-26 12:00:00", now, "en-GB")).toBe(
-      "last week",
-    );
+    expect(relativeTime(now - 3 * HOUR, now, "en-GB")).toBe("3 hours ago");
+    expect(relativeTime(now - 7 * 24 * HOUR, now, "en-GB")).toBe("last week");
   });
 
-  it("returns null for absent or unparseable input", () => {
+  it("returns null when there is no instant to measure from", () => {
     expect(relativeTime(null, now, "en-GB")).toBeNull();
-    expect(relativeTime("not a date", now, "en-GB")).toBeNull();
     expect(ageMs(null, now)).toBeNull();
+  });
+});
+
+describe("enrichmentBreakdown", () => {
+  it("measures every share against the tracked statuses, not totalWorks", () => {
+    const b = enrichmentBreakdown({
+      done: 60,
+      pending: 30,
+      failed: 6,
+      exhausted: 4,
+    });
+    expect(b.total).toBe(100);
+    expect(b.donePercent).toBe(60);
+    // The two that don't drain with time, which is what the pip's colour bands on.
+    expect(b.terminalCount).toBe(10);
+    expect(b.terminalPercent).toBe(10);
+    expect(b.segments.map((s) => s.key)).toEqual([
+      "done",
+      "pending",
+      "failed",
+      "exhausted",
+    ]);
+    expect(b.segments.reduce((sum, s) => sum + s.percent, 0)).toBeCloseTo(100);
+  });
+
+  it("separates a big backlog from a real problem", () => {
+    // Right after a bulk import: barely any progress, but nothing is actually wrong.
+    const draining = enrichmentBreakdown({
+      done: 20,
+      pending: 80,
+      failed: 0,
+      exhausted: 0,
+    });
+    expect(draining.donePercent).toBe(20);
+    expect(draining.terminalPercent).toBe(0);
+
+    // Nearly finished, but a fifth of the library will never enrich on its own.
+    const stuck = enrichmentBreakdown({
+      done: 78,
+      pending: 2,
+      failed: 5,
+      exhausted: 15,
+    });
+    expect(stuck.donePercent).toBe(78);
+    expect(stuck.terminalPercent).toBe(20);
+  });
+
+  it("reports zeroes rather than dividing by zero on an empty instance", () => {
+    const b = enrichmentBreakdown({
+      done: 0,
+      pending: 0,
+      failed: 0,
+      exhausted: 0,
+    });
+    expect(b.total).toBe(0);
+    expect(b.donePercent).toBe(0);
+    expect(b.terminalPercent).toBe(0);
+    expect(b.segments.every((s) => s.percent === 0)).toBe(true);
+  });
+});
+
+describe("sweeperStatus", () => {
+  const now = Date.UTC(2026, 7, 2, 12);
+
+  it("separates a stalled cron from a draining backlog", () => {
+    // Both have work queued and neither has finished recently in status terms — only the run
+    // timestamp tells them apart, which is the whole reason the endpoint returns it.
+    const draining = sweeperStatus(
+      { dueCount: 812, lastRunAt: now - 60_000 },
+      now,
+    );
+    expect(draining.level).toBe("ok");
+    expect(draining.ageMsSinceRun).toBe(60_000);
+
+    const stalled = sweeperStatus(
+      { dueCount: 812, lastRunAt: now - 3 * HOUR },
+      now,
+    );
+    expect(stalled.level).toBe("critical");
+    expect(stalled.ageMsSinceRun).toBe(3 * HOUR);
+  });
+
+  it("says nothing is wrong when the queue is empty", () => {
+    expect(
+      sweeperStatus({ dueCount: 0, lastRunAt: now - 60 * 24 * HOUR }, now)
+        .level,
+    ).toBe("ok");
+  });
+
+  it("handles an instance with no runs on record", () => {
+    const s = sweeperStatus({ dueCount: 3, lastRunAt: null }, now);
+    expect(s.ageMsSinceRun).toBeNull();
+    expect(s.level).toBe("warning");
   });
 });

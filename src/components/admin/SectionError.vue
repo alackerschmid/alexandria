@@ -3,11 +3,7 @@
        says which request broke rather than replacing the whole board with an error page. -->
   <section>
     <div class="flex justify-between items-center mb-3.5">
-      <h2
-        class="font-mono text-[10px] md:text-[11px] tracking-[0.24em] md:tracking-[0.28em] uppercase text-orange-neon"
-      >
-        {{ title }}
-      </h2>
+      <SectionHeading :title="title" />
       <span
         class="font-mono text-[10px] tracking-[0.14em] uppercase text-signal-critical border border-signal-critical px-2 py-0.5"
       >
@@ -25,19 +21,24 @@
           {{ detail }}
         </p>
       </div>
-      <button
-        type="button"
-        class="self-start md:self-auto flex-none border border-charcoal-border px-5 py-2.75 font-mono text-[10px] tracking-[0.16em] uppercase text-text-primary hover:border-orange-neon hover:text-orange-neon transition-colors disabled:opacity-50"
-        :disabled="retrying"
+      <AppButton
+        variant="secondary"
+        size="sm"
+        mono
+        class="self-start md:self-auto flex-none"
+        :loading="retrying"
         @click="emit('retry')"
       >
-        {{ retrying ? $t("admin.error.retrying") : $t("admin.error.retry") }}
-      </button>
+        {{ $t("admin.error.retry") }}
+      </AppButton>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
+import AppButton from "@/components/AppButton.vue";
+import SectionHeading from "@/components/admin/SectionHeading.vue";
+
 defineProps<{
   title: string;
   /** The failing request and its status, e.g. "GET /api/admin/usage — 500". */

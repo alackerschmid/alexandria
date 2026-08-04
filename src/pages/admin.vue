@@ -4,47 +4,38 @@
   <div class="force-dark bg-charcoal min-h-screen flex flex-col">
     <AppHeader />
 
-    <SignalPips
-      :quota-percent="quotaPercent"
-      :quota-level="quotaLevel"
-      :enrichment-percent="enrichmentPercent"
-      :run-failure-percent="runFailurePercent"
-      :run-failure-level="runFailureLevel"
-      :rate-limited="rateLimitedInRange"
-      :range-label="rangeLabel"
-      :loading="loading"
-      @refresh="loadAll"
-    />
+    <SignalPips :readings="pips" :loading="loading" @refresh="loadAll" />
 
     <main
       class="flex-1 px-5 md:px-10 pt-5 pb-9 md:pt-6.5 md:pb-11 flex flex-col gap-6.5 md:gap-7.5"
     >
-      <SectionSkeleton v-if="usage.loading && !usage.data" :rows="3" />
-      <SectionError
-        v-else-if="usage.error"
+      <AdminSection
+        :section="usage"
         :title="$t('admin.quota.title')"
-        :detail="usage.error"
-        :retrying="usage.loading"
+        :rows="3"
         @retry="loadUsage"
-      />
-      <QuotaGauge
-        v-else-if="usage.data"
-        :used="usage.data.googleBooksToday.calls"
-        :limit="GOOGLE_BOOKS_DAILY_QUOTA"
-        :level="quotaLevel"
-        :projected="projectedEod"
-        :peak="peakLabel"
-      />
+      >
+        <template #default="{ data }">
+          <QuotaGauge
+            :used="data.googleBooksToday.calls"
+            :limit="GOOGLE_BOOKS_DAILY_QUOTA"
+            :level="quotaLevel"
+            :projected="projectedEod"
+            :peak="peakLabel"
+          />
+        </template>
+      </AdminSection>
 
-      <SectionSkeleton v-if="overview.loading && !overview.data" :rows="5" />
-      <SectionError
-        v-else-if="overview.error"
+      <AdminSection
+        :section="overview"
         :title="$t('admin.vitals.title')"
-        :detail="overview.error"
-        :retrying="overview.loading"
+        :rows="5"
         @retry="loadOverview"
-      />
-      <VitalsStrips v-else-if="overview.data" :overview="overview.data" />
+      >
+        <template #default="{ data }">
+          <VitalsPanel :overview="data" />
+        </template>
+      </AdminSection>
 
       <template v-if="usage.data && !usage.error">
         <UsageChart
@@ -55,47 +46,57 @@
         <EndpointTable :rows="usage.data.totals" :range-label="rangeLabel" />
       </template>
 
-      <SectionSkeleton v-if="users.loading && !users.data" :rows="4" />
-      <SectionError
-        v-else-if="users.error"
+      <AdminSection
+        :section="users"
         :title="$t('admin.roster.title')"
-        :detail="users.error"
-        :retrying="users.loading"
+        :rows="4"
         @retry="loadUsers"
-      />
-      <UserRoster v-else-if="users.data" :users="users.data" />
+      >
+        <template #default="{ data }">
+          <UserRoster :users="data" />
+        </template>
+      </AdminSection>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useI18n } from "vue-i18n";
 import AppHeader from "@/components/AppHeader.vue";
 import SignalPips from "@/components/admin/SignalPips.vue";
 import QuotaGauge from "@/components/admin/QuotaGauge.vue";
-import VitalsStrips from "@/components/admin/VitalsStrips.vue";
+import VitalsPanel from "@/components/admin/VitalsPanel.vue";
 import UsageChart from "@/components/admin/UsageChart.vue";
 import EndpointTable from "@/components/admin/EndpointTable.vue";
 import UserRoster from "@/components/admin/UserRoster.vue";
-import SectionError from "@/components/admin/SectionError.vue";
-import SectionSkeleton from "@/components/admin/SectionSkeleton.vue";
+import AdminSection from "@/components/admin/AdminSection.vue";
 import { useApi } from "@/composables/useApi";
+import { useAdminFormat } from "@/composables/useAdminFormat";
 import type { AdminOverview, AdminUsage, AdminUserRow } from "@/types/admin";
 import {
+  DEFAULT_USAGE_HOURS,
   GOOGLE_BOOKS_DAILY_QUOTA,
   buildHourColumns,
+  enrichmentBreakdown,
   peakHour,
   percent,
   projectEndOfDay,
   quotaLevel as quotaLevelFor,
+  rangeUnit,
+  sweeperStatus,
 } from "@/utils/admin-usage";
-import { failureLevel } from "@/utils/admin-signal";
+import {
+  enrichmentLevel,
+  failureLevel,
+  worstLevel,
+} from "@/utils/admin-signal";
 import type { SignalLevel } from "@/utils/admin-signal";
 
 const { apiFetch } = useApi();
-const { t, locale } = useI18n();
+const { t } = useI18n();
+const { formatHour, formatRelative } = useAdminFormat();
 const router = useRouter();
 
 type Section<T> = { data: T | null; loading: boolean; error: string | null };
@@ -116,9 +117,7 @@ const users = reactive<Section<AdminUserRow[]>>({
   error: null,
 });
 
-const hours = computed(() => usage.data?.hours ?? DEFAULT_HOURS);
-const DEFAULT_HOURS = 48;
-let requestedHours = DEFAULT_HOURS;
+const hours = ref(DEFAULT_USAGE_HOURS);
 
 /**
  * Each section owns its own request and its own failure. A 403 is different in kind — it means
@@ -140,7 +139,8 @@ async function load<T>(
     }
     const payload = await res.json();
     if (!res.ok) {
-      section.error = `GET ${path} — ${res.status} ${payload?.error ?? ""}`.trim();
+      section.error =
+        `GET ${path} — ${res.status} ${payload?.error ?? ""}`.trim();
       return;
     }
     section.data = pick(payload);
@@ -154,7 +154,7 @@ async function load<T>(
 const loadOverview = () =>
   load(overview, "/api/admin/overview", (p) => p as AdminOverview);
 const loadUsage = () =>
-  load(usage, `/api/admin/usage?hours=${requestedHours}`, (p) => p as AdminUsage);
+  load(usage, `/api/admin/usage?hours=${hours.value}`, (p) => p as AdminUsage);
 const loadUsers = () =>
   load(users, "/api/admin/users", (p) => (p.users ?? []) as AdminUserRow[]);
 
@@ -162,7 +162,7 @@ const loadUsers = () =>
 const loadAll = () => Promise.all([loadOverview(), loadUsage(), loadUsers()]);
 
 function setHours(next: number) {
-  requestedHours = next;
+  hours.value = next;
   void loadUsage();
 }
 
@@ -179,10 +179,12 @@ const quotaPercent = computed(() =>
     ? percent(usage.data.googleBooksToday.calls, GOOGLE_BOOKS_DAILY_QUOTA)
     : null,
 );
-const quotaLevel = computed<SignalLevel>(() =>
+// A real banding whenever there is data; the "no reading yet" case is resolved once, by `levelFor`
+// below, so the gauge — which only renders with data — never has to handle it.
+const quotaLevel = computed(() =>
   usage.data
     ? quotaLevelFor(usage.data.googleBooksToday.calls, GOOGLE_BOOKS_DAILY_QUOTA)
-    : "neutral",
+    : "ok",
 );
 
 const projectedEod = computed(() =>
@@ -201,15 +203,17 @@ const hourColumns = computed(() =>
     : [],
 );
 
+// Google Books only, and only today: this sits in the quota panel, whose other three figures are
+// all "today's Google Books calls". The busiest hour overall is usually a Wikidata burst, and
+// reading that as quota spend would be wrong in the alarming direction.
 const peakLabel = computed(() => {
-  const peak = peakHour(hourColumns.value);
-  if (!peak) return null;
-  const time = new Date(peak.hourStart).toLocaleTimeString(locale.value, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  return `${time} · ${peak.total}`;
+  if (!usage.data) return null;
+  const dayStart = usage.data.googleBooksToday.utcDayStart;
+  const peak = peakHour(
+    hourColumns.value.filter((c) => c.hourStart >= dayStart),
+    (c) => c.google_books,
+  );
+  return peak ? `${formatHour(peak.hourStart)} · ${peak.value}` : null;
 });
 
 const rateLimitedInRange = computed(() =>
@@ -219,26 +223,111 @@ const rateLimitedInRange = computed(() =>
 );
 
 const rangeLabel = computed(() =>
-  hours.value >= 168
+  rangeUnit(hours.value) === "days"
     ? t("admin.range.days", { days: Math.round(hours.value / 24) })
     : t("admin.range.hours", { hours: hours.value }),
 );
 
-const enrichmentPercent = computed(() => {
-  if (!overview.data) return null;
-  const e = overview.data.enrichment;
-  const total = e.done + e.pending + e.failed + e.exhausted;
-  return percent(e.done, total);
-});
+const enrichment = computed(() =>
+  overview.data ? enrichmentBreakdown(overview.data.enrichment) : null,
+);
 
 const runFailurePercent = computed(() => {
   if (!overview.data) return null;
   const r = overview.data.enrichmentRuns24h;
   return percent(r.byOutcome.failed, r.total);
 });
-const runFailureLevel = computed<SignalLevel>(() =>
-  runFailurePercent.value === null
-    ? "neutral"
-    : failureLevel(runFailurePercent.value),
-);
+
+/**
+ * The cron's own health, which the status counts can't show: a stalled sweeper and a draining
+ * backlog both read `pending`. Recomputed on each load rather than on a timer — the board is
+ * manually refreshed, and a clock ticking under a static reading would only mislead.
+ */
+const sweeper = computed(() => {
+  if (!overview.data) return null;
+  const now = Date.now();
+  return {
+    ...sweeperStatus(overview.data.sweeper, now),
+    lastRunLabel: formatRelative(overview.data.sweeper.lastRunAt, now),
+  };
+});
+
+// Stall first: it's the actionable one, and it explains why the percentage isn't moving.
+const enrichmentHint = computed(() => {
+  const hints: string[] = [];
+  const s = sweeper.value;
+  if (s && s.level !== "ok") {
+    hints.push(
+      s.lastRunLabel
+        ? t("admin.pips.sweeper_stalled", {
+            due: s.dueCount,
+            ago: s.lastRunLabel,
+          })
+        : t("admin.pips.sweeper_never", { due: s.dueCount }),
+    );
+  }
+  if (enrichment.value?.terminalCount) {
+    hints.push(
+      t("admin.pips.enrichment_stuck", {
+        count: enrichment.value.terminalCount,
+      }),
+    );
+  }
+  return hints.length ? hints.join(" · ") : undefined;
+});
+
+// A missing reading is neutral, not a fourth severity — resolved here, where the null already
+// lives, so the strip is pure presentation.
+const NO_READING = "—";
+const asPercent = (v: number | null) =>
+  v === null ? NO_READING : `${Math.round(v)}%`;
+const levelFor = (value: number | null, level: SignalLevel): SignalLevel =>
+  value === null ? "neutral" : level;
+
+const pips = computed(() => [
+  {
+    key: "quota",
+    label: t("admin.pips.quota"),
+    value: asPercent(quotaPercent.value),
+    level: levelFor(quotaPercent.value, quotaLevel.value),
+  },
+  {
+    key: "enrichment",
+    label: t("admin.pips.enrichment"),
+    // Shows progress, coloured by whichever of two unrelated problems is worse: works that will
+    // never enrich, and a sweeper that has stopped draining the ones that could. Neither is
+    // readable off the percentage — see `enrichmentLevel` and `sweeperLevel` — so the title
+    // names whichever is driving the colour, and a red "72%" can't read as "72% is bad".
+    value: asPercent(enrichment.value?.donePercent ?? null),
+    title: enrichmentHint.value,
+    level: levelFor(
+      enrichment.value?.donePercent ?? null,
+      worstLevel(
+        enrichmentLevel(enrichment.value?.terminalPercent ?? 0),
+        sweeper.value?.level ?? "ok",
+      ),
+    ),
+  },
+  {
+    key: "failures",
+    label: t("admin.pips.run_failures"),
+    value: asPercent(runFailurePercent.value),
+    level: levelFor(
+      runFailurePercent.value,
+      failureLevel(runFailurePercent.value ?? 0),
+    ),
+  },
+  {
+    key: "rate_limited",
+    label: t("admin.pips.rate_limited", { range: rangeLabel.value }),
+    value:
+      rateLimitedInRange.value === null
+        ? NO_READING
+        : String(rateLimitedInRange.value),
+    level: levelFor(
+      rateLimitedInRange.value,
+      (rateLimitedInRange.value ?? 0) > 0 ? "warning" : "ok",
+    ),
+  },
+]);
 </script>

@@ -120,17 +120,35 @@ export function bookYear(
 }
 
 /**
+ * A D1 `datetime('now')` timestamp as ms-epoch, or null when it's absent/unparseable.
+ *
+ * D1 stores these as `YYYY-MM-DD HH:MM:SS` in UTC with **no zone marker**, which `Date.parse`
+ * reads as *local* time — so west of UTC every such timestamp lands hours early, and near
+ * midnight on the wrong calendar day. Anything reading one of these columns has to come through
+ * here; `/api/admin/*` sidesteps it entirely by returning ms-epoch.
+ */
+export function d1TimestampMs(
+  value: string | null | undefined,
+): number | null {
+  if (!value) return null;
+  const iso = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const then = Date.parse(iso);
+  return Number.isNaN(then) ? null : then;
+}
+
+/**
  * Locale-aware "28 Jul 2026" for a full timestamp — the format the detail view uses for both the
- * acquisition date and the review's written date. Shared so the `?? "en-GB"` fallback and the
- * field set stay one decision rather than being re-typed per call site.
+ * acquisition date and the review's written date. Shared so the `?? "en-GB"` fallback, the field
+ * set and the UTC normalization stay one decision rather than being re-typed per call site.
  */
 export function formatDateTime(
   value: string | null | undefined,
   locale: string,
 ): string | null {
-  if (!value) return null;
+  const ms = d1TimestampMs(value);
+  if (ms === null) return null;
   const loc = BCP47[locale] ?? "en-GB";
-  return new Date(value).toLocaleDateString(loc, {
+  return new Date(ms).toLocaleDateString(loc, {
     year: "numeric",
     month: "short",
     day: "numeric",

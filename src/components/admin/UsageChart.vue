@@ -4,46 +4,39 @@
       class="flex flex-col md:flex-row md:justify-between md:items-center gap-3 mb-3.5"
     >
       <div class="flex items-baseline gap-4">
-        <h2
-          class="font-mono text-[10px] md:text-[11px] tracking-[0.24em] md:tracking-[0.28em] uppercase text-orange-neon"
+        <SectionHeading :title="$t('admin.chart.title')" />
+        <span
+          class="hidden md:inline font-mono text-[11px] text-text-secondary"
         >
-          {{ $t("admin.chart.title") }}
-        </h2>
-        <span class="hidden md:inline font-mono text-[11px] text-text-secondary">
           {{ summary }}
         </span>
       </div>
       <div class="flex items-center justify-between md:justify-end gap-6">
         <div class="hidden md:flex items-center gap-4">
           <span
-            v-for="p in USAGE_PROVIDERS"
-            :key="p"
+            v-for="p in legend"
+            :key="p.provider"
             class="flex items-center gap-1.5"
           >
-            <span class="w-2.5 h-2.5" :class="PROVIDER_BG[p]" />
-            <span class="font-mono text-[10px] text-text-secondary">{{ p }}</span>
+            <span class="w-2.5 h-2.5" :class="p.class" />
+            <span class="font-mono text-[10px] text-text-secondary">{{
+              p.label
+            }}</span>
             <span class="font-mono text-[10px] text-text-primary">{{
-              totals[p].toLocaleString($i18n.locale)
+              p.total
             }}</span>
           </span>
         </div>
-        <div class="flex border border-charcoal-border">
-          <button
-            v-for="(opt, i) in RANGE_OPTIONS"
-            :key="opt.hours"
-            type="button"
-            class="px-3 py-1.5 md:px-4 md:py-1.75 font-mono text-[10px] tracking-[0.14em] uppercase transition-colors"
-            :class="[
-              i > 0 ? 'border-l border-charcoal-border' : '',
-              opt.hours === hours
-                ? 'bg-charcoal-light text-text-primary'
-                : 'text-text-secondary hover:text-text-primary',
-            ]"
-            @click="emit('update:hours', opt.hours)"
-          >
-            {{ opt.label }}
-          </button>
-        </div>
+        <!-- highlight, not fill: this is toolbar chrome above a chart, where an accent-filled
+             option would shout louder than the data. -->
+        <AppSegmented
+          :options="rangeOptions"
+          :model-value="String(hours)"
+          variant="highlight"
+          size="sm"
+          :aria-label="$t('admin.chart.range')"
+          @update:model-value="emit('update:hours', Number($event))"
+        />
       </div>
     </div>
 
@@ -69,16 +62,16 @@
           class="flex items-end gap-px md:gap-0.5 h-24 md:h-[150px] justify-between"
         >
           <div
-            v-for="col in columns"
-            :key="col.hourStart"
+            v-for="bar in bars"
+            :key="bar.hourStart"
             class="flex-1 min-w-0 max-w-3.5 md:max-w-6.5 h-full bg-search-bg flex flex-col justify-end"
-            :title="tooltip(col)"
+            :title="bar.title"
           >
             <div
-              v-for="p in USAGE_PROVIDERS"
-              :key="p"
-              :class="PROVIDER_BG[p]"
-              :style="{ height: `${barPercent(col[p], max)}%` }"
+              v-for="seg in bar.segments"
+              :key="seg.provider"
+              :class="seg.class"
+              :style="{ height: `${seg.height}%` }"
             />
           </div>
         </div>
@@ -94,14 +87,16 @@
           class="flex md:hidden flex-wrap gap-x-3.5 gap-y-2 mt-2.5 pt-2.5 border-t border-charcoal-border"
         >
           <span
-            v-for="p in USAGE_PROVIDERS"
-            :key="p"
+            v-for="p in legend"
+            :key="p.provider"
             class="flex items-center gap-1.5"
           >
-            <span class="w-2 h-2" :class="PROVIDER_BG[p]" />
-            <span class="font-mono text-[9px] text-text-secondary">{{ p }}</span>
+            <span class="w-2 h-2" :class="p.class" />
+            <span class="font-mono text-[9px] text-text-secondary">{{
+              p.label
+            }}</span>
             <span class="font-mono text-[9px] text-text-primary">{{
-              totals[p].toLocaleString($i18n.locale)
+              p.total
             }}</span>
           </span>
         </div>
@@ -116,9 +111,15 @@ import { useI18n } from "vue-i18n";
 import type { HourColumn } from "@/utils/admin-usage";
 import {
   USAGE_PROVIDERS,
+  USAGE_RANGES,
   barPercent,
   providerTotals,
 } from "@/utils/admin-usage";
+import { providerBg } from "@/utils/admin-signal";
+import AppSegmented from "@/components/AppSegmented.vue";
+import SectionHeading from "@/components/admin/SectionHeading.vue";
+import { useAdminLabels } from "@/composables/useAdminLabels";
+import { useAdminFormat } from "@/composables/useAdminFormat";
 
 const props = defineProps<{
   columns: HourColumn[];
@@ -127,42 +128,70 @@ const props = defineProps<{
 
 const emit = defineEmits<{ "update:hours": [hours: number] }>();
 
-const { t, locale } = useI18n();
-
-/** google_books leads on the accent because it's the one with a cap to watch. */
-const PROVIDER_BG: Record<(typeof USAGE_PROVIDERS)[number], string> = {
-  google_books: "bg-orange-neon",
-  openlibrary: "bg-chart-total",
-  wikidata: "bg-chart-muted",
-};
-
-const RANGE_OPTIONS = [
-  { hours: 24, label: "24h" },
-  { hours: 48, label: "48h" },
-  { hours: 168, label: "7d" },
-];
+const { t } = useI18n();
+const { providerLabel } = useAdminLabels();
+const { formatCount, formatHour } = useAdminFormat();
 
 const TICK_COUNT = 4;
+
+// AppSegmented binds a string v-model; the hour count is the value, so it round-trips through
+// String()/Number() rather than the picker keeping its own parallel list.
+const rangeOptions = USAGE_RANGES.map((r) => ({
+  value: String(r.hours),
+  label: r.label,
+}));
 
 const max = computed(() =>
   props.columns.reduce((m, c) => Math.max(m, c.total), 0),
 );
 const totals = computed(() => providerTotals(props.columns));
 
+// Swatch and translated name per provider — three values that are the same for every column, so
+// they are resolved once here rather than re-resolved inside the 168-column `bars` mapping.
+const providerMeta = computed(() =>
+  USAGE_PROVIDERS.map((p) => ({
+    provider: p,
+    class: providerBg(p),
+    label: providerLabel(p),
+  })),
+);
+
+const legend = computed(() =>
+  providerMeta.value.map((m) => ({
+    ...m,
+    total: formatCount(totals.value[m.provider]),
+  })),
+);
+
 const summary = computed(() => {
   const all = Object.values(totals.value).reduce((a, b) => a + b, 0);
   return t("admin.chart.summary", {
-    calls: all.toLocaleString(locale.value),
+    calls: formatCount(all),
     peak: max.value,
   });
 });
 
-const hourLabel = (ms: number) =>
-  new Date(ms).toLocaleTimeString(locale.value, {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+// Segment heights and tooltips are derived once per data change rather than per render: at the
+// 7d range that is 168 tooltips, each one an Intl format plus three label lookups. Empty segments
+// are dropped rather than rendered at 0% — most hours use one provider, and a zero-height element
+// still costs a vnode and a style patch on every re-render without painting anything.
+const bars = computed(() =>
+  props.columns.map((col) => ({
+    hourStart: col.hourStart,
+    title:
+      `${formatHour(col.hourStart)} · ${col.total} — ` +
+      providerMeta.value
+        .map((m) => `${m.label} ${col[m.provider]}`)
+        .join(", "),
+    segments: providerMeta.value
+      .map((m) => ({
+        provider: m.provider,
+        class: m.class,
+        height: barPercent(col[m.provider], max.value),
+      }))
+      .filter((s) => s.height > 0),
+  })),
+);
 
 /** Evenly spaced labels under the bars; the right-most one is always "now". */
 const ticks = computed(() => {
@@ -179,12 +208,8 @@ const ticks = computed(() => {
             ? t("admin.chart.days_ago", {
                 days: Math.round((cols.length - 1 - idx) / 24),
               })
-            : hourLabel(cols[idx].hourStart),
+            : formatHour(cols[idx].hourStart),
     };
   });
 });
-
-const tooltip = (col: HourColumn) =>
-  `${hourLabel(col.hourStart)} · ${col.total} — ` +
-  USAGE_PROVIDERS.map((p) => `${p} ${col[p]}`).join(", ");
 </script>

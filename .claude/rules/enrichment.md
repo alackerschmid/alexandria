@@ -7,8 +7,8 @@ paths:
 
 # Wikidata enrichment pipeline
 
-Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWork(...))` after lookups
-and scans, and in the background via a cron sweeper. It is intentionally skipped for guest
+Enrichment runs asynchronously via `c.executionCtx.waitUntil(enrichWorkDetached(...))` after
+lookups and scans, and in the background via a cron sweeper. It is intentionally skipped for guest
 lookups to avoid anonymous SPARQL load.
 
 To add a new enriched field, use the `/add-api-column` skill — the step-by-step procedure lives
@@ -16,8 +16,12 @@ there.
 
 ## Flow
 
-`enrichWork(db, workId, force?, apiKey?, source?)` (`source` is `scan` | `lookup` | `refresh` |
-`sweeper` | `unknown`, recorded in `enrichment_runs` for observability) →
+`enrichWork(db, workId, force, apiKey, source, usage)` (`source` is `scan` | `lookup` | `refresh` |
+`sweeper` | `unknown`, recorded in `enrichment_runs` for observability; `usage` is the `api_usage`
+recorder and is **required** — pass `null` only when there is deliberately nothing to count).
+`enrichWorkDetached` is the wrapper the `waitUntil` call sites use: it owns and flushes its own
+recorder, because `usageMiddleware`'s flush has already fired by then. The sweeper calls
+`enrichWork` directly, with one recorder for the whole tick →
 
 - If the work **already has a `wikidata_qid`** (a series-member placeholder, or a
   force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
@@ -145,9 +149,17 @@ no-op) writes one row: `work_id`, `started_at`, `duration_ms`, `outcome`
 (`done` | `not_found` | `failed`), `failure_reason` (set only when `outcome = 'failed'`),
 `source`.
 
-Query it directly for pending/failure-rate/timing stats — there's no dashboard, this is a
-queryable log table, not a UI feature. Telemetry writes are best-effort (wrapped so a logging
-failure can't fail the enrichment itself).
+`GET /api/admin/overview` reads a 24h summary of it (outcome counts, failure reasons, avg + p95
+duration) for the `/admin` board's vitals panel — the table's only read surface. Everything else
+is a direct query. A busy day writes ~5k rows (`BATCH_SIZE` × 30 × 24), so any new read has to
+aggregate in SQL rather than pull the rows out. Telemetry writes are best-effort (wrapped so a
+logging failure can't fail the enrichment itself).
+
+`MAX(created_at)` over the whole table is also the board's **liveness signal for the cron**: paired
+with a count of currently-due works, it's the only way to tell a stalled sweeper from a draining
+backlog, since `works.enrichment_status` reads `pending` in both cases. So a change that stops
+writing a run row per processed work — batching them, sampling them, or skipping the `not_found`
+case — silently blinds that check as well as the stats.
 
 ## Work identity before Wikidata (`editions.ts`)
 

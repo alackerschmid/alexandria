@@ -1,3 +1,5 @@
+import type { UsageRecorder } from "./usage";
+
 export type Bindings = {
   DB: D1Database;
   JWT_SECRET: string;
@@ -7,6 +9,8 @@ export type Bindings = {
 
 export type Variables = {
   userId: number;
+  /** Set by `usageMiddleware`; flushed once after the handler returns. */
+  usage: UsageRecorder;
 };
 
 export type Env = { Bindings: Bindings; Variables: Variables };
