@@ -1430,6 +1430,38 @@ export const useImportStore = defineStore("import", () => {
     persistSession();
   }
 
+  // The bulk counterparts, for a queue the user has decided not to work through row by row. Same
+  // semantics as the per-row actions — nothing is written to the server either way, the entries just
+  // stay in the queue with a different status — so a mis-click on either is one click to reverse,
+  // which is why neither asks for confirmation.
+  //
+  // Both refuse while a retry pass is in flight, matching `retrySearchUnavailable`'s own guard.
+  // `autoAssignPass` snapshots its rows up front and writes `pending` back onto every one it fails
+  // to resolve (`keepInReview`), so a bulk flip issued mid-pass is silently undone for exactly
+  // those rows — the skip count collapses and the finalize gate re-locks with no user action. The
+  // buttons are disabled too; this is the guard that holds if another caller appears.
+  function skipAllReviewItems(): void {
+    if (retryingSearch.value) return;
+    let changed = false;
+    for (const item of reviewQueue.value) {
+      if (item.status !== "pending") continue;
+      item.status = "skipped";
+      changed = true;
+    }
+    if (changed) persistSession();
+  }
+
+  function undoAllSkippedReviewItems(): void {
+    if (retryingSearch.value) return;
+    let changed = false;
+    for (const item of reviewQueue.value) {
+      if (item.status !== "skipped") continue;
+      item.status = "pending";
+      changed = true;
+    }
+    if (changed) persistSession();
+  }
+
   // The rows the auto-assign pass never got an answer for, because the title search behind it
   // failed upstream. Nothing about them was judged, so the whole fix is to ask again — sending the
   // user to resolve them one by one is asking for work a retry does for free.
@@ -1866,6 +1898,8 @@ export const useImportStore = defineStore("import", () => {
     confirmReviewItem,
     skipReviewItem,
     undoSkipReviewItem,
+    skipAllReviewItems,
+    undoAllSkippedReviewItems,
     retryableReviewItems,
     retryingSearch,
     retrySearchUnavailable,
