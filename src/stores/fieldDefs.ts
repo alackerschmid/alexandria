@@ -27,27 +27,40 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
     };
   }
 
+  // Bumped on every account switch, so a load that started under the previous token can't apply
+  // its result afterwards — it would re-install that account's defs *and* set `loaded`, which
+  // makes the next user's load() early-return onto them. Same guard as the preferences store's
+  // `revision`.
+  let revision = 0;
+
   async function load() {
     if (loaded.value) return;
+    const seq = revision;
     const authStore = useAuthStore();
     try {
       const res = await fetch(`${BASE}/api/field-definitions`, {
         headers: { Authorization: `Bearer ${authStore.token}` },
       });
       if (res.ok) {
-        defs.value = await res.json();
+        const data = await res.json();
+        if (seq !== revision) return;
+        defs.value = data;
         loaded.value = true;
       }
     } catch {}
   }
 
   async function loadTagValues(id: number) {
+    const seq = revision;
     try {
       const res = await fetch(`${BASE}/api/field-definitions/${id}/values`, {
         headers: authHeaders(),
       });
-      if (res.ok)
-        tagValues.value = { ...tagValues.value, [id]: await res.json() };
+      if (res.ok) {
+        const data = await res.json();
+        if (seq !== revision) return; // same account-switch guard as load()
+        tagValues.value = { ...tagValues.value, [id]: data };
+      }
     } catch {}
   }
 
@@ -89,6 +102,7 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
     tagValues.value = rest;
   }
   function reset() {
+    revision++; // invalidate any in-flight load/loadTagValues
     defs.value = [];
     loaded.value = false;
     tagValues.value = {};

@@ -39,13 +39,23 @@ export async function scheduled(
   env: Bindings,
   ctx: ExecutionContext,
 ): Promise<void> {
-  // Prunes run first, ahead of the fallible link/enrichment phases: they are cheap indexed
-  // DELETEs, and running them last meant a throw anywhere above skipped all four — every tick,
-  // if the throw was deterministic.
-  await prune(env);
+  // Prunes run first, ahead of the fallible link/enrichment phases, so a throw down there can't
+  // skip all four every tick. Isolated in turn, because ordering them first would otherwise just
+  // move the same failure mode: they are pure housekeeping, and none of the work below depends
+  // on them, so a failed prune costs only pruning (and self-heals next tick).
+  try {
+    await prune(env);
+  } catch (e) {
+    console.error("[sweeper] prune failed:", e);
+  }
 
+  // ORDER BY RANDOM() rather than the implicit rowid order: a book that deterministically fails
+  // to link is re-served forever (nothing marks it, and linking has no retry state machine by
+  // design), so a fixed order lets LINK_BATCH_SIZE poisoned rows occupy every slot of every tick
+  // and starve the rest of the backlog. Sampling instead bounds the damage to their share of it.
+  // Costs a scan of the unlinked set, which is the transient import backlog rather than `books`.
   const { results: unlinked } = await env.DB.prepare(
-    "SELECT * FROM books WHERE work_id IS NULL LIMIT ?",
+    "SELECT * FROM books WHERE work_id IS NULL ORDER BY RANDOM() LIMIT ?",
   )
     .bind(LINK_BATCH_SIZE)
     .all<BookRow>();
@@ -56,10 +66,8 @@ export async function scheduled(
       try {
         await linkWork(env.DB, book);
       } catch (e) {
-        // Per-book isolation: this SELECT re-serves the same head rows every tick, so one book
-        // that deterministically fails to link would otherwise throw out of the handler at the
-        // same point every 2 minutes — no linking, no enrichment, ever. (Works enrichment has a
-        // retry state machine; linking deliberately stays this simple.)
+        // Per-book isolation: without it, one book that throws deterministically takes the whole
+        // handler down at the same point every 2 minutes — no linking, no enrichment, ever.
         console.error(`[sweeper] linkWork failed for book ${book.id}:`, e);
       }
     }
@@ -164,8 +172,8 @@ export async function scheduled(
 }
 
 // The four retention DELETEs, in one place so the tick can run them ahead of everything
-// fallible. Each is self-healing (rows just wait for the next tick), so they share the
-// handler's error handling rather than carrying their own.
+// fallible. Each is self-healing (rows just wait for the next tick); the caller isolates the
+// whole helper, so a failure here costs pruning only.
 async function prune(env: Bindings): Promise<void> {
   // Keep enrichment_runs from growing unbounded — cheap given idx_enrichment_runs_created.
   await env.DB.prepare(
