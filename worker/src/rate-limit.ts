@@ -3,6 +3,29 @@ import type { Env } from "./types";
 
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
 
+// Cloudflare always sets CF-Connecting-IP in production, so this fallback only fires off-edge —
+// `wrangler dev`, a direct-to-origin request, a test. A literal "unknown" put every such caller in
+// one shared bucket, where a handful of local logins exhausted the 10/min budget for everyone
+// (including other dev sessions against the same D1). One random token per isolate keeps the limit
+// working as a runaway-loop guard without collapsing unrelated callers into a single counter.
+//
+// Generated lazily on first use, never at module scope: workerd forbids generating random values
+// during initial script evaluation ("Disallowed operation called within global scope. Asynchronous
+// I/O ..., setting a timeout, and generating random values are not allowed within global scope"),
+// and this module is on the static import path from index.ts — a top-level `crypto.randomUUID()`
+// here takes the *whole worker* down at startup, every request and every cron tick. Nothing local
+// catches that: the worker's vitest runs in plain Node, where it is perfectly legal.
+// `clientIp` is only ever called from inside a handler, so the lazy init always has a request
+// context, and the token stays constant for the isolate's lifetime as intended.
+let fallbackClientId: string | undefined;
+
+export function clientIp(c: Context<Env>): string {
+  const ip = c.req.header("CF-Connecting-IP");
+  if (ip) return ip;
+  fallbackClientId ??= `unknown-${crypto.randomUUID()}`;
+  return fallbackClientId;
+}
+
 // Fixed-window rate limiter backed by D1. `key` is caller-defined (e.g. `scan:<userId>`) so one
 // table can back multiple rate-limited routes without a schema change. Not exact under bursts at
 // a window boundary (a caller could in principle get up to ~2x the limit split across one) —

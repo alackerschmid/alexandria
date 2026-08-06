@@ -1,6 +1,8 @@
-// ISBN validation and normalization for route boundaries. Only applied to user-supplied ISBNs —
-// never to ISBNs coming back from external APIs (OpenLibrary edition discovery etc.), which are
-// trusted as-is.
+// ISBN validation and normalization for route boundaries. *Validation* (checksums) is only applied
+// to user-supplied ISBNs — ISBNs coming back from external APIs are trusted as-is. *Normalization*
+// is applied on both sides: OpenLibrary edition discovery runs its ISBNs through `normalizeIsbn`
+// too, since a lowercase ISBN-10 check digit from there can never string-match the uppercased form
+// every route boundary stores.
 
 export function normalizeIsbn(raw: string): string {
   return raw.replace(/[-\s]/g, "").toUpperCase();
@@ -76,4 +78,14 @@ export function isbn13To10(s: string): string | null {
 // edition can be scanned/looked-up under either form depending on which barcode was read.
 export function alternateIsbnForm(s: string): string | null {
   return s.length === 13 ? isbn13To10(s) : s.length === 10 ? isbn10To13(s) : null;
+}
+
+// Every form the same physical edition can be stored under: the ISBN itself plus its 10/13
+// counterpart when it has one. For comparison sites that would otherwise match on the exact
+// string and treat the two forms of one edition as two editions — see the editions subsystem,
+// where an ISBN-13 `books` row and an OpenLibrary-discovered ISBN-10 candidate used to surface
+// as a second edition and mint a duplicate row when switched to.
+export function isbnForms(s: string): string[] {
+  const alt = alternateIsbnForm(s);
+  return alt ? [s, alt] : [s];
 }

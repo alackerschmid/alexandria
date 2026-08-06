@@ -4,7 +4,7 @@ import { authMiddleware } from "../auth";
 import { resolveEdition, materializeEdition, linkWork } from "../editions";
 import { enrichWorkDetached } from "../enrichment";
 import {
-  SORT_CLAUSES,
+  sortClauseFor,
   buildScanSelect,
   fetchCustomFields,
   attachCustomFields,
@@ -21,6 +21,7 @@ import {
   upsertWorkRating,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
 
 const scans = new Hono<Env>();
@@ -39,8 +40,7 @@ scans.get("/", async (c) => {
   );
   const offset = Math.max(parseIntOr(c.req.query("offset"), 0), 0);
   const locale = c.req.query("locale") ?? "en";
-  const orderClause =
-    SORT_CLAUSES[c.req.query("sort") ?? ""] ?? SORT_CLAUSES.date_desc;
+  const orderClause = sortClauseFor(c.req.query("sort"));
 
   const { results } = await c.env.DB.prepare(
     `${buildScanSelect(locale)} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`,
@@ -60,15 +60,34 @@ scans.get("/", async (c) => {
   );
 });
 
+// The scanner's duplicate-detection index: every ISBN the user owns with its reading status,
+// unpaginated. Deliberately not `GET /` with a big limit — that row is the full merged JOIN
+// (descriptions, JSON tag arrays, per-book custom field values), and the scanner needs *all* of
+// it on mount just to build an ISBN→status map, so paging the heavy row put a cost linear in
+// library size on the most latency-sensitive page in the app. Two columns per scan stays small
+// enough to send in one response at any realistic library size.
+// Registered before `/:id` so the literal path wins the match.
+scans.get("/isbns", async (c) => {
+  const userId = c.get("userId");
+  const { results } = await c.env.DB.prepare(
+    "SELECT b.isbn, s.status FROM scans s JOIN books b ON b.id = s.book_id WHERE s.user_id = ?",
+  )
+    .bind(userId)
+    .all<{ isbn: string; status: string }>();
+  return c.json(results);
+});
+
 scans.post("/", async (c) => {
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     isbn: string;
     status?: string;
     owning_status?: string;
     rating?: number | null;
     review?: string | null;
-  }>();
-  if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  if (typeof body.isbn !== "string" || !body.isbn)
+    return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
   // Format-only check (not checksum): a scanner misread that gets one check digit wrong must
   // still queue as a pending scan rather than being hard-rejected — see resolveEdition's allowEmpty.
@@ -258,11 +277,8 @@ function validatePatchBody(
 }
 
 scans.patch("/:id", async (c) => {
-  const rawBody = await c.req.json();
-  if (typeof rawBody !== "object" || rawBody === null) {
-    return c.json({ error: "status or owning_status is required" }, 400);
-  }
-  const body = rawBody as PatchScanBody;
+  const body = await readJsonBody<PatchScanBody>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   const hasStatus = "status" in body;
   const hasOwningStatus = "owning_status" in body;
   const hasRating = "rating" in body;
@@ -380,8 +396,10 @@ scans.patch("/:id/edition", async (c) => {
   const scanId = c.req.param("id");
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
-  const body = await c.req.json<{ isbn: string }>();
-  if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
+  const body = await readJsonBody<{ isbn: string }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  if (typeof body.isbn !== "string" || !body.isbn)
+    return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
@@ -399,7 +417,10 @@ scans.patch("/:id/edition", async (c) => {
     return c.json({ error: "This book has no known editions" }, 400);
   const workId = currentBook.work_id;
 
-  if (isbn === currentBook.isbn) {
+  // The scan's current row, returned untouched. Used both for the trivial "same ISBN" case and
+  // for a request that only *resolves* to the current book (see the self-switch guard below) —
+  // in each the correct answer is the state the caller already has, with nothing written.
+  const respondUnchanged = async () => {
     const unchanged = await db
       .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)
       .bind(scanId)
@@ -412,7 +433,9 @@ scans.patch("/:id/edition", async (c) => {
     return c.json(
       unchanged ? attachCustomFields(unchanged, defs, valuesByBook) : {},
     );
-  }
+  };
+
+  if (isbn === currentBook.isbn) return respondUnchanged();
 
   // Validate the target ISBN actually belongs to this work (either already materialized,
   // or a candidate discovered via OpenLibrary) — prevents repointing to an arbitrary book.
@@ -436,6 +459,24 @@ scans.patch("/:id/edition", async (c) => {
   if (!targetBook)
     return c.json({ error: "Failed to resolve target edition" }, 500);
 
+  // Self-switch guard. The `isbn === currentBook.isbn` short-circuit above compares exact strings,
+  // but `materializeEdition` matches on both ISBN forms — so a request naming the 10/13 counterpart
+  // of the scan's *current* ISBN (a legacy `work_edition_isbns` candidate written before the
+  // dedupe was form-aware) resolves right back to the book the scan is already on. Without this,
+  // the batch below deletes that book's custom-field values and its overrides and the following
+  // UPDATE moves nothing back — silent data loss, answered 200. `alreadyOwned` can't catch it: it
+  // deliberately excludes this scan.
+  if (targetBook.id === scan.book_id) return respondUnchanged();
+
+  // The target must belong to *this* work. `materializeEdition` takes `workId` only to link a row
+  // that has none — a row with a non-null but different `work_id` is returned as-is, and matching
+  // on both ISBN forms made that reachable from the editions carousel (a candidate of this work
+  // whose counterpart form is materialized under a duplicate/translated work). Repointing there
+  // would move the scan out of its work, and since rating and review are keyed per work, the
+  // user's rating would silently stop showing with no error.
+  if (targetBook.work_id !== workId)
+    return c.json({ error: "ISBN is not a known edition of this book" }, 400);
+
   const alreadyOwned = await db
     .prepare(
       "SELECT id FROM scans WHERE user_id = ? AND book_id = ? AND id != ?",
@@ -448,19 +489,42 @@ scans.patch("/:id/edition", async (c) => {
       409,
     );
 
-  await db.batch([
-    db
-      .prepare("UPDATE scans SET book_id = ? WHERE id = ? AND user_id = ?")
-      .bind(targetBook.id, scanId, userId),
-    db
-      .prepare(
-        "UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?",
-      )
-      .bind(targetBook.id, userId, scan.book_id),
-    db
-      .prepare("DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?")
-      .bind(userId, scan.book_id),
-  ]);
+  try {
+    await db.batch([
+      db
+        .prepare("UPDATE scans SET book_id = ? WHERE id = ? AND user_id = ?")
+        .bind(targetBook.id, scanId, userId),
+      // Clear the target's own custom-field rows before moving the scan's across.
+      // `PATCH /api/books/custom-fields` needs no scan, so the user can already hold values on
+      // the target book; without this the move violates UNIQUE (user_id, book_id, field_def_id)
+      // and the whole batch throws an opaque 500 with the switch rolled back. Merge rule: the
+      // values follow the scan and win, matching the documented "custom field values follow the
+      // scan" behaviour — the target's rows are orphans of a book the user has no scan of.
+      db
+        .prepare(
+          "DELETE FROM book_custom_fields WHERE user_id = ? AND book_id = ?",
+        )
+        .bind(userId, targetBook.id),
+      db
+        .prepare(
+          "UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?",
+        )
+        .bind(targetBook.id, userId, scan.book_id),
+      db
+        .prepare("DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?")
+        .bind(userId, scan.book_id),
+    ]);
+  } catch (e) {
+    // The alreadyOwned SELECT above is check-then-act: a concurrent scan of the target edition
+    // lands between it and this UPDATE and trips UNIQUE (user_id, book_id). Same answer as the
+    // check itself gives, rather than a 500.
+    if (isUniqueConstraintError(e))
+      return c.json(
+        { error: "You already have this edition in your library" },
+        409,
+      );
+    throw e;
+  }
 
   const updated = await db
     .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)

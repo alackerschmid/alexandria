@@ -159,6 +159,11 @@ export function formatDateTime(
  * Locale-aware human date for partial or full ISO date strings.
  * Handles `YYYY-MM-DD` (full date), `YYYY-MM` (month + year), and returns
  * anything else (e.g. a bare year) unchanged.
+ *
+ * Formatted in **UTC**, unlike `formatDateTime` above. A publish date is a calendar date rather
+ * than an instant: the value is built as UTC midnight, so rendering it in the reader's zone showed
+ * "1965-08-09" as 8 Aug to everyone west of UTC — a day earlier than the string says, for no
+ * reason a reader could act on.
  */
 export function formatPublishDate(
   date: string | null | undefined,
@@ -172,6 +177,7 @@ export function formatPublishDate(
       year: "numeric",
       month: "short",
       day: "numeric",
+      timeZone: "UTC",
     });
   }
   if (/^\d{4}-\d{2}$/.test(date)) {
@@ -179,6 +185,7 @@ export function formatPublishDate(
     return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(loc, {
       year: "numeric",
       month: "long",
+      timeZone: "UTC",
     });
   }
   return date;

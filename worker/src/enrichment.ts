@@ -5,8 +5,12 @@ import {
   normalizeAuthorKey,
   discoverEditionsFromOpenLibrary,
 } from "./editions";
-import { titleScorer, exactTitleMatcher } from "./title-match";
-import { outcomeForStatus, UsageRecorder } from "./usage";
+import { titleScorer } from "./title-match";
+import {
+  googleBooksCallsToday,
+  outcomeForStatus,
+  UsageRecorder,
+} from "./usage";
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -694,12 +698,23 @@ async function fetchWorkEditionIsbn(
   return isbn || null;
 }
 
+// The share of the Google Books daily quota the cron sweeper may spend. The placeholder backlog is
+// self-amplifying — enriching one work with a series inserts its whole roster as placeholder works
+// (~10 observed), and each of those can spend a Google Books call here to give itself a cover — so
+// one bulk import can drain a quota that interactive title search (the scanner, the import wizard)
+// depends on and that nothing refills until the day rolls over. 700 of the project's 1,000/day
+// (`GOOGLE_BOOKS_DAILY_QUOTA`, the number the admin gauge displays) leaves ~300 for the paths
+// somebody is actually waiting on. Only the sweeper is ever gated; interactive requests spend
+// freely, which is the point of reserving anything.
+const SWEEPER_GOOGLE_BOOKS_BUDGET = 700;
+
 // Gives a placeholder/unowned work a real books row (with cover) so the series view shows it.
 // No-op when the work already has a linked edition (a scanned book), to avoid duplicates.
 async function backfillEdition(
   db: D1Database,
   workId: number,
   workQid: string,
+  source: EnrichmentSource,
   apiKey?: string,
   usage?: UsageRecorder | null,
 ): Promise<void> {
@@ -715,7 +730,22 @@ async function backfillEdition(
     return;
   }
 
-  const book = await materializeEdition(db, isbn, workId, apiKey, usage);
+  // Over budget, the Google half is dropped by withholding the key: `fetchBookMetadata` then
+  // resolves from OpenLibrary alone, which is unmetered and often enough for a cover. Only if
+  // OpenLibrary doesn't know the ISBN either does the work stay edition-less — and since that
+  // leaves no `books` row, a later run (schema backfill, force refresh) retries the whole thing.
+  let effectiveKey = apiKey;
+  if (apiKey && source === "sweeper") {
+    const spent = await googleBooksCallsToday(db);
+    if (spent >= SWEEPER_GOOGLE_BOOKS_BUDGET) {
+      console.log(
+        `[backfillEdition] over sweeper Google Books budget (${spent}/${SWEEPER_GOOGLE_BOOKS_BUDGET} today), OpenLibrary only for ISBN ${isbn} (work ${workId})`,
+      );
+      effectiveKey = undefined;
+    }
+  }
+
+  const book = await materializeEdition(db, isbn, workId, effectiveKey, usage);
   if (!book) {
     console.log(`[backfillEdition] no metadata for ISBN ${isbn}`);
     return;
@@ -878,7 +908,10 @@ async function claimWork(db: D1Database, workId: number): Promise<boolean> {
 
 type IdentityOutcome =
   | { kind: "no-title" }
-  | { kind: "in-flight" }
+  // `canonicalId` is the surviving work of the merge this run performed before losing the
+  // re-claim — the row the telemetry has to be written against, since the row this call started
+  // from no longer exists.
+  | { kind: "in-flight"; canonicalId: number }
   | {
       kind: "resolved";
       workQid: string | null;
@@ -980,7 +1013,7 @@ async function resolveWorkIdentity(
       console.log(
         `[enrichWork] canonical work ${canonicalId} already has an enrichment in flight, skipping after merge`,
       );
-      return { kind: "in-flight" };
+      return { kind: "in-flight", canonicalId };
     }
   } else {
     console.log(`[enrichWork] assigning QID ${info.workQid} to work ${workId}`);
@@ -1048,11 +1081,12 @@ async function backfillEditionsAndDiscovery(
   canonicalId: number,
   workQid: string | null,
   details: WorkDetails | null,
+  source: EnrichmentSource,
   apiKey?: string,
   usage?: UsageRecorder | null,
 ): Promise<void> {
   const backfill = workQid
-    ? backfillEdition(db, canonicalId, workQid, apiKey, usage)
+    ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage)
     : Promise.resolve();
   const discovery = details?.openlibraryWorkId
     ? discoverEditionsFromOpenLibrary(
@@ -1271,11 +1305,35 @@ export async function enrichWork(
 
     const identity = await resolveWorkIdentity(db, workId, w, usage);
     if (identity.kind === "no-title") {
+      // Lands on `done` at the current schema version, so neither sweeper query serves this work
+      // again — deliberate: nothing about it will have changed on the next tick, and a titleless
+      // work re-queued forever would occupy batch slots and write a run row every two minutes.
+      // The recovery path is `POST /api/books/refresh`, which fills a NULL `books.title` and
+      // force-schedules enrichment *unconditionally* (not only when the metadata fetch changed
+      // something) — so an edition that later gains a title does get re-enriched, without anything
+      // extra here. The one case still outside that: a title corrected directly in D1, which no
+      // request observes.
       await persistWorkDetails(db, workId, null, force);
       await recordRun(db, workId, startedAt, "not_found", null, source);
       return;
     }
-    if (identity.kind === "in-flight") return;
+    if (identity.kind === "in-flight") {
+      // This call searched, verified and then *merged two works* before losing the re-claim — the
+      // most consequential thing the pipeline does. Returning silently left the one path where
+      // that happens with no row at all, which blinds the duration/outcome stats and, worse, the
+      // board's cron-liveness signal (`MAX(enrichment_runs.created_at)`). Recorded as `done`
+      // against the surviving work, which is exactly what the same merge records when it *wins*
+      // the re-claim; the detail writes it skipped belong to the run that holds the claim now.
+      await recordRun(
+        db,
+        identity.canonicalId,
+        startedAt,
+        "done",
+        null,
+        source,
+      );
+      return;
+    }
 
     const { workQid, details } = identity;
     canonicalId = identity.canonicalId;
@@ -1286,6 +1344,7 @@ export async function enrichWork(
       canonicalId,
       workQid,
       details,
+      source,
       apiKey,
       usage,
     );

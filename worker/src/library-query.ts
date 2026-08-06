@@ -10,10 +10,30 @@ export function parseIntOr(
   return Number.isNaN(n) ? fallback : n;
 }
 
-export function getBookByIsbn(db: D1Database, isbn: string) {
+/**
+ * The `books` row for an ISBN, but only when this user actually holds a scan of it — the entry
+ * check for the two per-user write routes keyed by ISBN rather than by scan id
+ * (`PATCH /api/books/override`, `PATCH /api/books/custom-fields`).
+ *
+ * It used to be a plain `books` lookup, which let any authenticated user accumulate override and
+ * custom-field rows against the whole shared catalogue: nothing bounded the write, and
+ * `DELETE /api/scans/:id` only garbage-collects the rows belonging to a book the user scanned. The
+ * write also answered `200 {}` — the merged scan row can't exist without a scan — so it read as a
+ * save while storing something the user could never see or delete. Requiring the scan bounds the
+ * rows to the library they can actually reach.
+ */
+export function getScannedBookByIsbn(
+  db: D1Database,
+  userId: number,
+  isbn: string,
+) {
   return db
-    .prepare("SELECT id FROM books WHERE isbn = ?")
-    .bind(isbn)
+    .prepare(
+      `SELECT b.id FROM books b
+       JOIN scans s ON s.book_id = b.id
+       WHERE b.isbn = ? AND s.user_id = ?`,
+    )
+    .bind(isbn, userId)
     .first<{ id: number }>();
 }
 
@@ -97,6 +117,17 @@ export const SORT_CLAUSES: Record<string, string> = {
   series_asc:
     "series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC",
 };
+
+// The only supported way to turn a `?sort=` query param into an ORDER BY clause. The clause is
+// interpolated into the SQL, so the lookup must not reach the prototype chain: plain indexing
+// resolves `?sort=constructor` to an inherited function, which is truthy (so a `??` fallback never
+// fires) and stringifies into the query as a syntax error → unhandled 500.
+export function sortClauseFor(sort: string | undefined): string {
+  // hasOwnProperty.call, not Object.hasOwn: the worker's tsconfig lib is es2021.
+  return sort && Object.prototype.hasOwnProperty.call(SORT_CLAUSES, sort)
+    ? SORT_CLAUSES[sort]
+    : SORT_CLAUSES.date_desc;
+}
 
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
 // `ws` is the work's primary (lowest-ordinal) series row, picked per book via a correlated

@@ -53,14 +53,18 @@ On demand:
 
 Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages and sets `VITE_API_URL` at build time; `worker/wrangler.toml` configures the Worker (D1 binding, cron, observability, `CORS_ORIGIN`).
 
-Two separate deployments, both triggered by pushing to `main`:
+Two separate deployments, **both owned by the GitHub Actions Deploy workflow** (`.github/workflows/deploy.yml`) on push to `main`. Its single `deploy` job runs the shared verify workflow first (frontend type-check + lint + tests, worker type-check + tests) and then, in order:
 
-- **Frontend**: Cloudflare Pages — static Vite build, deployed automatically on push to `main` via Cloudflare's Git integration
-- **Worker**: Cloudflare Worker (`bookscan-worker`) — deployed by the GitHub Actions **Deploy** workflow (`.github/workflows/deploy.yml`) on push to `main`: it runs the shared verify workflow (frontend type-check + lint + tests, worker type-check + tests), applies pending D1 migrations, then runs `wrangler deploy`. Requires the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets. The former Cloudflare Git integration (Workers Builds) for the worker is disabled. `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys (it does not apply migrations).
+1. **Worker** (`bookscan-worker`) — `wrangler d1 migrations apply bookscan --remote`, then `wrangler deploy` (from `worker/`)
+2. **Frontend** — root `npm ci`, `npm run build-only` (verify already type-checked), then `wrangler pages deploy --branch=main` from the repo root, using the wrangler binary already installed in `worker/node_modules`
+
+Both steps need the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; the token needs **Pages: Edit** as well as Workers/D1. The ordering is deliberate — the frontend must never go live against an older worker — and a red verify run now deploys **neither half**. `VITE_API_URL` is read out of the root `wrangler.toml` by the workflow, so that file stays the single source for it.
+
+Cloudflare's own Git integrations are disabled for both halves: Workers Builds for the worker, and **automatic deployments on the Pages project** (Workers & Pages → `bookscan` → Settings → Build). If Pages auto-deploy is ever re-enabled, it ships the frontend on every push regardless of verify, which is exactly the failure this replaced. `npm run deploy:worker` (`wrangler deploy`) remains available for manual/out-of-band deploys (it does not apply migrations).
 
 CI: the **CI** workflow (`.github/workflows/ci.yml`) runs the same verify workflow on every push to non-`main` branches.
 
-Pushing to GitHub redeploys both the frontend and the worker. Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote`.
+Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote`.
 
 The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
 

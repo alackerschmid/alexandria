@@ -1,14 +1,20 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { EMAIL_RE, signToken, authMiddleware } from "../auth";
-import { hashPassword, verifyPassword, needsRehash } from "../password";
-import { rateLimitOrReject } from "../rate-limit";
+import {
+  hashPassword,
+  verifyPassword,
+  needsRehash,
+  DUMMY_PASSWORD_HASH,
+} from "../password";
+import { rateLimitOrReject, clientIp } from "../rate-limit";
 import { parsePreferences, sanitizePreferences } from "../preferences";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 
 const auth = new Hono<Env>();
 
 auth.post("/register", async (c) => {
-  const ip = c.req.header("CF-Connecting-IP") ?? "unknown";
+  const ip = clientIp(c);
   const blocked = await rateLimitOrReject(
     c,
     `register:${ip}`,
@@ -18,11 +24,12 @@ auth.post("/register", async (c) => {
   );
   if (blocked) return blocked;
 
-  const body = await c.req.json();
+  const body = await readJsonBody<{ email?: unknown; password?: unknown }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  // typeof guard before EMAIL_RE: `test` stringifies its argument, so a JSON array
+  // `["a@b.com"]` passes the regex and then binds to D1 as neither text nor number → 500.
   const email =
-    typeof body.email === "string"
-      ? body.email.trim().toLowerCase()
-      : body.email;
+    typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
   const { password } = body;
 
   if (!email || !EMAIL_RE.test(email)) {
@@ -67,7 +74,7 @@ auth.post("/register", async (c) => {
 });
 
 auth.post("/login", async (c) => {
-  const ip = c.req.header("CF-Connecting-IP") ?? "unknown";
+  const ip = clientIp(c);
   const blocked = await rateLimitOrReject(
     c,
     `login:${ip}`,
@@ -77,11 +84,10 @@ auth.post("/login", async (c) => {
   );
   if (blocked) return blocked;
 
-  const body = await c.req.json();
+  const body = await readJsonBody<{ email?: unknown; password?: unknown }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   const email =
-    typeof body.email === "string"
-      ? body.email.trim().toLowerCase()
-      : body.email;
+    typeof body.email === "string" ? body.email.trim().toLowerCase() : null;
   const { password } = body;
 
   if (!email || typeof password !== "string" || !password) {
@@ -102,7 +108,15 @@ auth.post("/login", async (c) => {
       is_admin: number;
     }>();
 
-  if (!user || !(await verifyPassword(password, user.password_hash))) {
+  // Always run a verification, even with no row: short-circuiting on `!user` answered an
+  // unregistered email ~100k PBKDF2 iterations sooner than a wrong password, which is a
+  // membership oracle. Registration's 409 already leaks existence, but that's a fixable
+  // separate hole and this one is a two-line close.
+  const passwordOk = await verifyPassword(
+    password,
+    user?.password_hash ?? DUMMY_PASSWORD_HASH,
+  );
+  if (!user || !passwordOk) {
     return c.json({ error: "Invalid email or password" }, 401);
   }
 
@@ -137,25 +151,25 @@ auth.post("/login", async (c) => {
 });
 
 auth.patch("/me", authMiddleware, async (c) => {
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     firstname?: string;
     email?: string;
     currentPassword?: string;
     newPassword?: string;
-  }>();
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   const db = c.env.DB;
   const userId = c.get("userId");
   const result: Record<string, unknown> = {};
 
+  // Validate everything up front and write nothing until the guard block below has passed:
+  // a request carrying {firstname, email, currentPassword} with a wrong password must change
+  // nothing at all, or the 401 the client sees contradicts the state the server kept.
+  let newFirstname: string | null = null;
   if (typeof body.firstname === "string") {
-    const trimmed = body.firstname.trim();
-    if (!trimmed)
+    newFirstname = body.firstname.trim();
+    if (!newFirstname)
       return c.json({ error: "A valid first name is required" }, 400);
-    await db
-      .prepare("UPDATE users SET firstname = ? WHERE id = ?")
-      .bind(trimmed, userId)
-      .run();
-    result.firstname = trimmed;
   }
 
   const changingEmail = typeof body.email === "string";
@@ -174,6 +188,10 @@ auth.patch("/me", authMiddleware, async (c) => {
       { error: "New password must be at least 8 characters" },
       400,
     );
+  }
+
+  if (newFirstname === null && !changingEmail && !changingPassword) {
+    return c.json({ error: "No valid fields to update" }, 400);
   }
 
   // Both email and password changes require re-proving the current password — a leaked bearer
@@ -211,32 +229,37 @@ auth.patch("/me", authMiddleware, async (c) => {
     }
   }
 
-  if (changingEmail) {
-    try {
-      await db
-        .prepare("UPDATE users SET email = ? WHERE id = ?")
-        .bind(newEmail, userId)
-        .run();
-      result.email = newEmail;
-    } catch (e: any) {
-      if (e.message?.includes("UNIQUE constraint failed")) {
-        return c.json({ error: "That email address is already in use" }, 409);
-      }
-      return c.json({ error: "Failed to update email" }, 500);
-    }
+  // One UPDATE for every field the request carried: all three live on `users`, so a single
+  // statement is atomic by construction. Three sequential UPDATEs left the earlier ones applied
+  // when a later one failed (a taken email 409s after the firstname had already been written).
+  const sets: string[] = [];
+  const binds: unknown[] = [];
+  if (newFirstname !== null) {
+    sets.push("firstname = ?");
+    binds.push(newFirstname);
+    result.firstname = newFirstname;
   }
-
+  if (changingEmail) {
+    sets.push("email = ?");
+    binds.push(newEmail);
+    result.email = newEmail;
+  }
   if (changingPassword) {
-    const newHash = await hashPassword(body.newPassword!);
-    await db
-      .prepare("UPDATE users SET password_hash = ? WHERE id = ?")
-      .bind(newHash, userId)
-      .run();
+    sets.push("password_hash = ?");
+    binds.push(await hashPassword(body.newPassword!));
     result.passwordChanged = true;
   }
 
-  if (Object.keys(result).length === 0) {
-    return c.json({ error: "No valid fields to update" }, 400);
+  try {
+    await db
+      .prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`)
+      .bind(...binds, userId)
+      .run();
+  } catch (e: any) {
+    if (e.message?.includes("UNIQUE constraint failed")) {
+      return c.json({ error: "That email address is already in use" }, 409);
+    }
+    return c.json({ error: "Failed to update account" }, 500);
   }
 
   return c.json(result);
@@ -252,7 +275,8 @@ auth.get("/preferences", authMiddleware, async (c) => {
 // Full replace, not a merge: the client holds the complete preference set in memory and
 // sends all of it, so a key it deleted actually disappears.
 auth.put("/preferences", authMiddleware, async (c) => {
-  const body = await c.req.json<{ preferences?: unknown }>();
+  const body = await readJsonBody<{ preferences?: unknown }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   const preferences = sanitizePreferences(body.preferences);
   if (!preferences) {
     return c.json({ error: "Invalid preferences payload" }, 400);
@@ -265,7 +289,9 @@ auth.put("/preferences", authMiddleware, async (c) => {
 });
 
 auth.delete("/me", authMiddleware, async (c) => {
-  const { password } = await c.req.json<{ password?: string }>();
+  const body = await readJsonBody<{ password?: string }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const { password } = body;
   if (typeof password !== "string" || !password) {
     return c.json(
       { error: "Password is required to delete your account" },

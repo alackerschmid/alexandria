@@ -24,7 +24,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: worker/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            worker/package-lock.json
       - run: npm ci
         working-directory: worker
       - run: npx wrangler d1 migrations apply bookscan --remote
@@ -34,6 +36,35 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       - run: npx wrangler deploy
         working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Frontend, in the same job and after the worker on purpose. Two reasons: Cloudflare Pages'
+      # Git integration deployed on every push regardless of whether verify passed, so a red run
+      # shipped new UI against the old API; and even on green, the two deploys raced, with the
+      # frontend typically live minutes before the worker. Here nothing ships unless verify is
+      # green, and the frontend only ships after the worker it talks to.
+      # Requires the Pages project's automatic deployments to stay disabled in the dashboard
+      # (Workers & Pages → bookscan → Settings → Build), or both paths deploy.
+      - run: npm ci
+      # One source of truth for the API base: the value the Pages project already carries in the
+      # root wrangler.toml. Fails the deploy rather than building a frontend that would fall back
+      # to a same-origin /api that doesn't exist in production.
+      - name: Export VITE_API_URL from wrangler.toml
+        run: |
+          url=$(sed -n 's/^ *VITE_API_URL *= *"\(.*\)"/\1/p' wrangler.toml)
+          test -n "$url" || { echo "VITE_API_URL not found in wrangler.toml" >&2; exit 1; }
+          echo "VITE_API_URL=$url" >> "$GITHUB_ENV"
+      # build-only, not build: `npm run build` re-runs type-check, which the verify job just did.
+      - run: npm run build-only
+      # Wrangler lives in worker/node_modules (it is the worker's devDependency); the frontend has
+      # none of its own, and a second pinned copy in the root lockfile would only be another thing
+      # to keep in step. Run from the repo root so the root wrangler.toml — project name `bookscan`,
+      # `pages_build_output_dir = "dist"` — is the config wrangler picks up.
+      # --branch is explicit because Actions checks out a detached HEAD, so wrangler cannot infer
+      # the branch, and only the production branch publishes to bookscan.pages.dev.
+      - run: ./worker/node_modules/.bin/wrangler pages deploy --branch=main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

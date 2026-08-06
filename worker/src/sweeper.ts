@@ -39,15 +39,38 @@ export async function scheduled(
   env: Bindings,
   ctx: ExecutionContext,
 ): Promise<void> {
+  // Prunes run first, ahead of the fallible link/enrichment phases, so a throw down there can't
+  // skip all four every tick. Isolated in turn, because ordering them first would otherwise just
+  // move the same failure mode: they are pure housekeeping, and none of the work below depends
+  // on them, so a failed prune costs only pruning (and self-heals next tick).
+  try {
+    await prune(env);
+  } catch (e) {
+    console.error("[sweeper] prune failed:", e);
+  }
+
+  // ORDER BY RANDOM() rather than the implicit rowid order: a book that deterministically fails
+  // to link is re-served forever (nothing marks it, and linking has no retry state machine by
+  // design), so a fixed order lets LINK_BATCH_SIZE poisoned rows occupy every slot of every tick
+  // and starve the rest of the backlog. Sampling instead bounds the damage to their share of it.
+  // Costs a scan of the unlinked set, which is the transient import backlog rather than `books`.
   const { results: unlinked } = await env.DB.prepare(
-    "SELECT * FROM books WHERE work_id IS NULL LIMIT ?",
+    "SELECT * FROM books WHERE work_id IS NULL ORDER BY RANDOM() LIMIT ?",
   )
     .bind(LINK_BATCH_SIZE)
     .all<BookRow>();
 
   if (unlinked.length) {
     console.log(`[sweeper] linking ${unlinked.length} book(s) with no work`);
-    for (const book of unlinked) await linkWork(env.DB, book);
+    for (const book of unlinked) {
+      try {
+        await linkWork(env.DB, book);
+      } catch (e) {
+        // Per-book isolation: without it, one book that throws deterministically takes the whole
+        // handler down at the same point every 2 minutes — no linking, no enrichment, ever.
+        console.error(`[sweeper] linkWork failed for book ${book.id}:`, e);
+      }
+    }
   }
 
   // Two separate queries so each is served by a partial index (a single OR query can fall
@@ -128,19 +151,30 @@ export async function scheduled(
   // handful of distinct (hour, provider, operation) buckets, so it collapses to one small batch
   // write instead of a D1 round-trip in front of every SPARQL response.
   const usage = new UsageRecorder(env.DB);
-  for (const [i, w] of results.entries()) {
-    await enrichWork(
-      env.DB,
-      w.id,
-      false,
-      env.GOOGLE_BOOKS_API_KEY,
-      "sweeper",
-      usage,
-    );
-    if (i < results.length - 1) await sleep(DELAY_MS);
+  try {
+    for (const [i, w] of results.entries()) {
+      await enrichWork(
+        env.DB,
+        w.id,
+        false,
+        env.GOOGLE_BOOKS_API_KEY,
+        "sweeper",
+        usage,
+      );
+      if (i < results.length - 1) await sleep(DELAY_MS);
+    }
+  } finally {
+    // finally, not after the loop: enrichWork catches its own errors, but anything that does
+    // escape (a D1 hiccup between works) must not also drop every counter recorded this tick —
+    // api_usage is what the admin quota gauge measures, and it can't self-heal an undercount.
+    ctx.waitUntil(usage.flush());
   }
-  ctx.waitUntil(usage.flush());
+}
 
+// The four retention DELETEs, in one place so the tick can run them ahead of everything
+// fallible. Each is self-healing (rows just wait for the next tick); the caller isolates the
+// whole helper, so a failure here costs pruning only.
+async function prune(env: Bindings): Promise<void> {
   // Keep enrichment_runs from growing unbounded — cheap given idx_enrichment_runs_created.
   await env.DB.prepare(
     `DELETE FROM enrichment_runs WHERE created_at < datetime('now', '-${RUNS_RETENTION_DAYS} days')`,

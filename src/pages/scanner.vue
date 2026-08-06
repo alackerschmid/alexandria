@@ -1278,12 +1278,14 @@ async function loadLibraryIsbns() {
     guestStore.scans.forEach((b) => libraryBooks.set(b.isbn, b.status));
     return;
   }
+  // GET /api/scans/isbns, not a paged GET /api/scans: duplicate detection needs every ISBN the
+  // user owns (the capped single request this replaced missed everything past the first page),
+  // and the full scan row is far too heavy to fetch the whole library of on scanner mount.
   try {
-    const res = await apiFetch(`/api/scans?limit=500`);
-    if (res.ok) {
-      const data: { isbn: string; status: ReadStatus }[] = await res.json();
-      data.forEach((b) => libraryBooks.set(b.isbn, b.status));
-    }
+    const res = await apiFetch(`/api/scans/isbns`);
+    if (!res.ok) return;
+    const data: { isbn: string; status: ReadStatus }[] = await res.json();
+    data.forEach((b) => libraryBooks.set(b.isbn, b.status));
   } catch {}
 }
 
@@ -1668,9 +1670,12 @@ const saveBook = async () => {
     const { result, id } = await postScan(queued);
     sessionScanned.add(book.isbn);
     libraryBooks.set(book.isbn, status);
-    // result === "duplicate" → already in the library; nothing to add to the session.
+    // result === "duplicate" → already in the library; nothing to add to the session, but say
+    // so — the local index can be stale, and a silently closing sheet reads as "saved".
     if (result === "saved") {
       recordSession(book, status, id);
+    } else {
+      showToast(t("scanner.toast_already_in_library"), "warning");
     }
   } catch {
     if (!navigator.onLine) {

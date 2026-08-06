@@ -17,14 +17,15 @@ import {
   attachCustomFields,
   buildScanSelect,
   fetchCustomFields,
-  getBookByIsbn,
+  getScannedBookByIsbn,
   parseIntOr,
   parseTagArray,
   type OverrideField,
 } from "../library-query";
 import { validateOverrides } from "../override-validation";
 import { normalizeIsbn, isValidIsbn } from "../isbn";
-import { rateLimitOrReject } from "../rate-limit";
+import { rateLimitOrReject, clientIp } from "../rate-limit";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 
 const books = new Hono<Env>();
 
@@ -96,7 +97,7 @@ async function handleTitleSearch(c: Context<Env>): Promise<Response> {
 // anonymous traffic driving Wikidata load; the work gets enriched when an authenticated
 // user looks it up or scans it.
 books.get("/guest-lookup", async (c) => {
-  const ip = c.req.header("CF-Connecting-IP") ?? "unknown";
+  const ip = clientIp(c);
   const blocked = await rateLimitOrReject(
     c,
     `guest-lookup:${ip}`,
@@ -121,7 +122,7 @@ books.get("/guest-lookup", async (c) => {
 
 // Public guest title search — no auth. Mirrors /search for unauthenticated users.
 books.get("/guest-search", async (c) => {
-  const ip = c.req.header("CF-Connecting-IP") ?? "unknown";
+  const ip = clientIp(c);
   const blocked = await rateLimitOrReject(
     c,
     `guest-search:${ip}`,
@@ -253,16 +254,24 @@ books.post("/refresh", async (c) => {
 
   // Likewise, if every refreshable field is already populated there's nothing for a fetch to
   // fill — the COALESCE update would be a no-op. Skip straight to the enrichment refresh below.
-  if (hasMissingMetadata(existing)) {
+  //
+  // A metadata *miss* is not the end of the request either. Refresh is the documented manual
+  // force-retry path for Wikidata enrichment, and the books that need it most — Goodreads-import
+  // fallback rows whose ISBN neither Google nor OpenLibrary knows — miss here on every attempt by
+  // construction. 404ing on the miss therefore meant the Refresh button could *never* re-trigger
+  // enrichment for exactly those books, even though the work is often resolvable by title/author.
+  // So the miss only skips the UPDATE; the response reports it as `metadata_refreshed: false`.
+  const wasMissingMetadata = hasMissingMetadata(existing);
+  let metadataUpdated = false;
+  if (wasMissingMetadata) {
     const bookData = await fetchBookMetadata(
       isbn,
       c.env.GOOGLE_BOOKS_API_KEY,
       c.get("usage"),
     );
-    if (!bookData) return c.json({ error: "Book not found in any source" }, 404);
-
-    await c.env.DB.prepare(
-      `
+    if (bookData) {
+      await c.env.DB.prepare(
+        `
         UPDATE books SET
           title = COALESCE(title, ?),
           author = COALESCE(author, ?),
@@ -278,28 +287,29 @@ books.post("/refresh", async (c) => {
           categories = COALESCE(categories, ?)
         WHERE isbn = ?
       `,
-    )
-      .bind(
-        bookData.title,
-        bookData.author,
-        bookData.cover_url,
-        bookData.language,
-        bookData.publish_date,
-        bookData.number_of_pages_median,
-        bookData.description,
-        bookData.publisher,
-        bookData.physical_format,
-        bookData.edition_name,
-        bookData.physical_dimensions,
-        bookData.categories,
-        isbn,
       )
-      .run();
+        .bind(
+          bookData.title,
+          bookData.author,
+          bookData.cover_url,
+          bookData.language,
+          bookData.publish_date,
+          bookData.number_of_pages_median,
+          bookData.description,
+          bookData.publisher,
+          bookData.physical_format,
+          bookData.edition_name,
+          bookData.physical_dimensions,
+          bookData.categories,
+          isbn,
+        )
+        .run();
+      metadataUpdated = true;
+    }
   }
 
-  // Re-select only when the UPDATE above could have changed something — otherwise `existing`
-  // is already current.
-  const book = hasMissingMetadata(existing)
+  // Re-select only when the UPDATE above actually ran — otherwise `existing` is already current.
+  const book = metadataUpdated
     ? await c.env.DB.prepare("SELECT * FROM books WHERE isbn = ?")
         .bind(isbn)
         .first<BookRow>()
@@ -319,24 +329,32 @@ books.post("/refresh", async (c) => {
         "refresh",
       ),
     );
-  return c.json(book);
+  // `metadata_refreshed` distinguishes "nothing was missing" / "filled some gaps" from "both
+  // sources still don't know this ISBN" — the last of which used to be the 404. Enrichment was
+  // scheduled regardless, so it is not an error, just a fact about the metadata half.
+  return c.json({ ...book, metadata_refreshed: !wasMissingMetadata || metadataUpdated });
 });
 
 books.patch("/override", async (c) => {
   const userId = c.get("userId");
-  const { isbn: rawIsbn, changes } = await c.req.json<{
+  const body = await readJsonBody<{
     isbn: string;
     changes: Partial<Record<OverrideField, string | number | null>>;
-  }>();
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const { isbn: rawIsbn, changes } = body;
 
-  if (!rawIsbn) return c.json({ error: "ISBN required" }, 400);
+  if (typeof rawIsbn !== "string" || !rawIsbn)
+    return c.json({ error: "ISBN required" }, 400);
   const isbn = normalizeIsbn(rawIsbn);
 
   const { values: validated, errors } = validateOverrides(changes);
   if (Object.keys(errors).length)
     return c.json({ error: "validation_failed", fields: errors }, 400);
 
-  const book = await getBookByIsbn(c.env.DB, isbn);
+  // No scan, no override: the 404 is the catalogue-miss answer on purpose — "we don't have that
+  // book" and "you don't have that book" are the same answer to a caller who has neither.
+  const book = await getScannedBookByIsbn(c.env.DB, userId, isbn);
   if (!book) return c.json({ error: "Book not found" }, 404);
   const locale = c.req.query("locale") ?? "en";
 
@@ -368,15 +386,19 @@ books.patch("/override", async (c) => {
 
 books.patch("/custom-fields", async (c) => {
   const userId = c.get("userId");
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     isbn: string;
     values: Array<{ field_def_id: number; value: string }>;
-  }>();
-  if (!body.isbn) return c.json({ error: "ISBN required" }, 400);
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  if (typeof body.isbn !== "string" || !body.isbn)
+    return c.json({ error: "ISBN required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
 
   const [book, { results: ownedDefs }] = await Promise.all([
-    getBookByIsbn(c.env.DB, isbn),
+    // Same scan requirement as `/override` above, and the same 404 for a book this user hasn't
+    // scanned — a custom-field value is per-user data hanging off a book they must actually hold.
+    getScannedBookByIsbn(c.env.DB, userId, isbn),
     c.env.DB.prepare(
       "SELECT id, field_type, field_options FROM user_field_definitions WHERE user_id = ?",
     )

@@ -697,7 +697,10 @@ import {
   type PackedRow,
 } from "@/utils/shelf-packing";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import { useDetailRoute } from "@/composables/useDetailRoute";
+import {
+  useDetailRoute,
+  DETAIL_QUERY_PARAMS,
+} from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -958,8 +961,11 @@ const pagedBooks = computed<Book[]>(() => {
   return filteredBooks.value.slice(start, start + pageSize.value);
 });
 
-// Reset to page 1 whenever the visible set or view changes.
-watch([filteredBooks, sortDirection, groupBy, perPage], () => {
+// Reset to page 1 when the query or view changes. Deliberately the pipeline *inputs*, not
+// filteredBooks itself: that array's identity changes on every optimistic write (a status
+// cycle, a rating, an enrichment-poll merge — the edition-grouping computed tracks essentially
+// every property of every book), which threw the reader back to page 1 mid-browse.
+watch([search, onlyOwned, groupEditions, sortDirection, groupBy, perPage], () => {
   currentPage.value = 1;
 });
 
@@ -990,6 +996,19 @@ const {
   expanded,
   currentPage,
   pageSize,
+});
+
+// If the visible set shrinks under the current page (a delete, an optimistic write dropping a
+// book out of the filter), clamp to the last page instead of resetting.
+//
+// Must stay *below* `useShelfGroups` and not move up next to the reset watcher above: Vue runs a
+// non-immediate watcher's source getter once at creation to capture the old value, and this one
+// reads `totalPages` → `paginatedCount` → `shelfGroups`. Registered any earlier, that eager read
+// hits the `const shelfGroups` temporal dead zone and setup() throws — but only when `isGrouped`
+// is true, i.e. only for users whose persisted `libGroupBy` isn't "none" (it hydrates
+// synchronously from localStorage), so the default configuration hides it completely.
+watch(totalPages, (total) => {
+  if (currentPage.value > total) currentPage.value = total;
 });
 
 function onEntrySelect(entry: ShelfEntry) {
@@ -1152,13 +1171,18 @@ watch(
   { immediate: true },
 );
 
-// Keep URL in sync as search changes — preserve the book param if a detail is open
+// Keep URL in sync as search changes — carrying the detail params through, so changing the
+// search text while a book is open doesn't close it. The list used to name a single `book`
+// param that nothing writes; the live ones are `work`/`edition`/`scan`/`view`.
 watch(search, (val) => {
   const current = typeof route.query.q === "string" ? route.query.q : "";
   if (val === current) return;
   const next: Record<string, string> = {};
   if (val) next.q = val;
-  if (route.query.book) next.book = String(route.query.book);
+  for (const key of DETAIL_QUERY_PARAMS) {
+    if (typeof route.query[key] === "string")
+      next[key] = route.query[key] as string;
+  }
   router.replace({ query: next });
 });
 

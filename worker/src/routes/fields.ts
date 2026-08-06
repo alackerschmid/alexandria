@@ -1,7 +1,9 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import type { Env } from "../types";
 import { authMiddleware } from "../auth";
 import { parseTagArray, dedupeTrimmed } from "../library-query";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 
 const fields = new Hono<Env>();
 
@@ -33,6 +35,14 @@ function sanitizeOptions(raw: unknown): string[] | null {
     raw.filter((v): v is string => typeof v === "string"),
   );
   return cleaned.length ? cleaned : null;
+}
+
+// `:id` arrives as a string, and `Number("abc")` is NaN — which D1 refuses to bind, turning a
+// plainly malformed URL into an opaque 500. A non-integer id can never match a row, so it gets the
+// same 404 an unknown id does; the caller can't tell the two apart anyway.
+function fieldIdParam(c: Context<Env>): number | null {
+  const id = Number(c.req.param("id"));
+  return Number.isInteger(id) ? id : null;
 }
 
 function parseFieldRow(
@@ -85,12 +95,15 @@ fields.get("/", async (c) => {
 
 fields.post("/", async (c) => {
   const userId = c.get("userId");
-  const { name, type = "text", options } = await c.req.json<{
+  const body = await readJsonBody<{
     name: string;
     type?: string;
     options?: unknown;
-  }>();
-  if (!name?.trim()) return c.json({ error: "Name required" }, 400);
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const { name, type = "text", options } = body;
+  if (typeof name !== "string" || !name.trim())
+    return c.json({ error: "Name required" }, 400);
   if (!VALID_TYPES.has(type)) return c.json({ error: "Invalid type" }, 400);
   const cleanOptions = sanitizeOptions(options);
 
@@ -132,13 +145,15 @@ fields.post("/", async (c) => {
 
 fields.patch("/:id", async (c) => {
   const userId = c.get("userId");
-  const id = Number(c.req.param("id"));
-  const body = await c.req.json<{
+  const id = fieldIdParam(c);
+  if (id === null) return c.json({ error: "Not found" }, 404);
+  const body = await readJsonBody<{
     name?: string;
     type?: string;
     required?: boolean;
     options?: unknown;
-  }>();
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
 
   if (body.type !== undefined && !VALID_TYPES.has(body.type)) {
     return c.json({ error: "Invalid type" }, 400);
@@ -184,7 +199,10 @@ fields.patch("/:id", async (c) => {
     )
       .bind(id)
       .first<FieldDefRow>();
-    if (!updated) return c.json(updated);
+    // The UPDATE reported a row, so the re-select coming up empty means it was deleted between
+    // the two statements — gone either way, and a 200 with a `null` body was something no client
+    // could act on.
+    if (!updated) return c.json({ error: "Not found" }, 404);
     const parsed = parseFieldRow(updated);
     if ("options" in body && parsed.type === "select") {
       await cleanupOrphanedSelectValues(c.env.DB, userId, id, parsed.options);
@@ -199,7 +217,8 @@ fields.patch("/:id", async (c) => {
 
 fields.delete("/:id", async (c) => {
   const userId = c.get("userId");
-  const id = c.req.param("id");
+  const id = fieldIdParam(c);
+  if (id === null) return c.json({ error: "Not found" }, 404);
   const owned = await c.env.DB.prepare(
     "SELECT 1 FROM user_field_definitions WHERE id = ? AND user_id = ?",
   )
@@ -234,8 +253,8 @@ async function userOwnsField(
 // Distinct tag values used across the user's books for a field — powers the tag autocomplete.
 fields.get("/:id/values", async (c) => {
   const userId = c.get("userId");
-  const id = Number(c.req.param("id"));
-  if (!(await userOwnsField(c.env.DB, userId, id)))
+  const id = fieldIdParam(c);
+  if (id === null || !(await userOwnsField(c.env.DB, userId, id)))
     return c.json({ error: "Not found" }, 404);
 
   const { results } = await c.env.DB.prepare(
@@ -253,10 +272,10 @@ fields.get("/:id/values", async (c) => {
 // Remove a tag value from every book the user owns (global tag delete).
 fields.delete("/:id/values", async (c) => {
   const userId = c.get("userId");
-  const id = Number(c.req.param("id"));
+  const id = fieldIdParam(c);
   const value = c.req.query("value");
   if (!value) return c.json({ error: "Value required" }, 400);
-  if (!(await userOwnsField(c.env.DB, userId, id)))
+  if (id === null || !(await userOwnsField(c.env.DB, userId, id)))
     return c.json({ error: "Not found" }, 404);
 
   const { results } = await c.env.DB.prepare(

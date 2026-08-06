@@ -25,11 +25,22 @@ export function tintFor(title: string): string {
   return TINTS[hash(title) % TINTS.length];
 }
 
-/** First letters of the first two words, uppercased (e.g. "The Road" → "TR"). */
+/**
+ * First letters of the first two words, uppercased (e.g. "The Road" → "TR"), or "?" for a title
+ * with no letters or digits at all.
+ *
+ * Keeps letters and digits in **any** script (`\p{L}`/`\p{N}`) rather than the ASCII range: an
+ * ASCII-only filter dropped the first letter of every umlauted German title ("Ärger" → "R") and
+ * emptied a non-Latin one to "?", which is most of what this library holds after the Latin
+ * alphabet. Punctuation still goes, so "Don't Panic" is "DP" and "Anti-Oedipus" is one word.
+ * Indexed by code point, so an astral first character isn't halved into a lone surrogate.
+ */
 export function initials(title: string): string {
   const words = title
-    .replace(/[^a-z0-9 ]/gi, "")
+    .replace(/[^\p{L}\p{N} ]/gu, "")
     .split(" ")
     .filter(Boolean);
-  return ((words[0] || "?")[0] + (words[1] ? words[1][0] : "")).toUpperCase();
+  const first = words[0] ? [...words[0]][0] : "?";
+  const second = words[1] ? [...words[1]][0] : "";
+  return (first + second).toUpperCase();
 }

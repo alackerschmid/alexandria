@@ -971,15 +971,18 @@ async function saveAccount() {
 // ── Custom fields ─────────────────────────────────────────────────────────────
 
 const FIELD_TYPES = ["text", "integer", "select", "tag", "date"];
-const TYPE_LABELS: Record<string, string> = {
+// A computed, not a setup-time const — `t()` called once at setup freezes the labels in whatever
+// locale was active then, so switching language left the field-type labels in the old one. Same
+// pattern as NAV_SECTIONS above, and the documented rule for any locale-dependent config object.
+const TYPE_LABELS = computed<Record<string, string>>(() => ({
   text: t("settings.fields.type_text"),
   integer: t("settings.fields.type_number"),
   select: t("settings.fields.type_select"),
   tag: t("settings.fields.type_tag"),
   date: t("settings.fields.type_date"),
-};
+}));
 function typeLabel(type: string) {
-  return TYPE_LABELS[type] ?? type;
+  return TYPE_LABELS.value[type] ?? type;
 }
 
 function cycleFieldType(def: { id: number; type: string }) {

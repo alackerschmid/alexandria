@@ -1398,7 +1398,8 @@ export const useImportStore = defineStore("import", () => {
   // reappears in the matched list (where its edition can still be changed); anything else is a
   // dead end and drops into the not-imported log.
   async function confirmReviewItem(item: ReviewItem, isbn: string): Promise<void> {
-    const payload = buildImportPayload({ ...item.row, isbn }, mapping);
+    const resolvedRow = { ...item.row, isbn };
+    const payload = buildImportPayload(resolvedRow, mapping);
     const shelvesFieldDefId = importShelvesAsTags.value
       ? await ensureShelvesFieldDef()
       : null;
@@ -1409,7 +1410,12 @@ export const useImportStore = defineStore("import", () => {
     );
     const outcome = result.outcome === "invalid_isbn" ? "failed" : result.outcome;
     if (outcome === "imported" || outcome === "updated") {
-      importedItems.value.push(buildImportedItem(item.row, result));
+      // Through `pushOrAbsorb`, like every other pass — this one pushed a card unconditionally.
+      // With `updateExisting` on, resolving a review row to an ISBN whose *work* an earlier row
+      // already updated writes an overlapping set of copies, and two cards over one scan fight
+      // over Remove/Undo. `resolvedRow` rather than `item.row` so the absorbed row logs the ISBN
+      // it was actually imported under.
+      pushOrAbsorb(resolvedRow, result);
     } else {
       pushLog(
         item.row,

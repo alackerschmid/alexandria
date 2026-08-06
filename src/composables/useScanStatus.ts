@@ -37,7 +37,10 @@ export function useScanStatus(options: ScanStatusOptions = {}) {
       });
       if (!res.ok) throw new Error();
     } catch (e) {
-      book.status = prev;
+      // Only roll back if nothing newer has superseded this optimistic write — the same guard
+      // setOwningStatus and setWorkField carry. Without it, a second rapid status cycle that
+      // already succeeded gets reverted by the first one's failure.
+      if (book.status === next) book.status = prev;
       throw e;
     }
   }

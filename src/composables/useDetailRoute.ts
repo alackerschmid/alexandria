@@ -1,6 +1,12 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
+/** The query params that identify and present an open detail dialog. Exported so callers that
+ *  rewrite the query for their own reasons (the library's search sync) can carry the whole set
+ *  across instead of naming params by hand — the old hand-written list preserved a `book` param
+ *  nothing has written since, so changing the search closed the open detail. */
+export const DETAIL_QUERY_PARAMS = ["work", "edition", "scan", "view"] as const;
+
 export function useDetailRoute() {
   const route = useRoute();
   const router = useRouter();

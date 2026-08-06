@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { adminMiddleware, authMiddleware } from "../auth";
-import { usageHourStart } from "../usage";
+import { googleBooksCallsToday, usageDayStart, usageHourStart } from "../usage";
 import { isTransientFailure } from "../enrichment";
 
 const admin = new Hono<Env>();
@@ -24,7 +24,7 @@ const DEFAULT_USAGE_HOURS = 48;
 const EPOCH_MS = (column: string) =>
   `CAST(strftime('%s', ${column}) AS INTEGER) * 1000`;
 
-type RunRow = {
+export type RunRow = {
   outcome: string;
   failure_reason: string | null;
   count: number;
@@ -34,8 +34,10 @@ type RunRow = {
 /**
  * Folds the `(outcome, failure_reason)` groups into the shape the board reads. Split out of the
  * handler because the per-field `??` fallbacks alone push it past the complexity cap.
+ *
+ * Exported for the unit tests — it is pure, and the fallbacks are the part that would rot silently.
  */
-function summarizeRuns(rows: RunRow[], p95DurationMs: number) {
+export function summarizeRuns(rows: RunRow[], p95DurationMs: number) {
   let total = 0;
   let totalMs = 0;
   const byOutcome: Record<string, number> = {};
@@ -186,18 +188,12 @@ admin.get("/usage", async (c) => {
       : DEFAULT_USAGE_HOURS;
 
   const now = Date.now();
-  // The same bucket boundary the counters are written on — `usage.ts` owns it, so reading them
-  // back cannot drift from writing them.
+  // The same bucket boundaries the counters are written on — `usage.ts` owns both, so reading them
+  // back cannot drift from writing them, and the sweeper's spend guard measures the same day this
+  // gauge does. Google resets the quota on Pacific time; a UTC day is a close enough proxy for a
+  // gauge whose job is "are we about to run out", and it keeps the bucket arithmetic trivial.
   const from = usageHourStart(now) - (hours - 1) * HOUR_MS;
-
-  // Google resets the quota on Pacific time; a UTC day is a close enough proxy for a gauge
-  // whose job is "are we about to run out", and it keeps the bucket arithmetic trivial.
-  const d = new Date(now);
-  const utcDayStart = Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-  );
+  const utcDayStart = usageDayStart(now);
 
   // One scan of the window answers all three questions. A `GROUP BY provider, operation` over the
   // same predicate would read the identical rows a second time, and today's Google calls are a
@@ -267,14 +263,7 @@ admin.get("/usage", async (c) => {
   }
 
   if (from > utcDayStart) {
-    const row = await db
-      .prepare(
-        `SELECT COALESCE(SUM(success + error + rate_limited), 0) AS calls
-         FROM api_usage WHERE provider = 'google_books' AND hour_start >= ?`,
-      )
-      .bind(utcDayStart)
-      .first<{ calls: number }>();
-    googleToday = row?.calls ?? 0;
+    googleToday = await googleBooksCallsToday(db, now);
   }
 
   return c.json({

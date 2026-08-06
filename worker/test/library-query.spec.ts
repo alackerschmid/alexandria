@@ -9,6 +9,8 @@ import {
   isValidReview,
   normalizeReview,
   REVIEW_MAX_LENGTH,
+  sortClauseFor,
+  SORT_CLAUSES,
 } from "../src/library-query";
 
 describe("parseTagArray", () => {
@@ -255,4 +257,29 @@ describe("parseIntOr", () => {
   it("parses the leading integer of a partially-numeric string", () => {
     expect(parseIntOr("12abc", 0)).toBe(12);
   });
+});
+
+describe("sortClauseFor", () => {
+  it("returns the clause for a supported sort key", () => {
+    expect(sortClauseFor("title_asc")).toBe(SORT_CLAUSES.title_asc);
+  });
+
+  it("falls back to date_desc for an unknown key", () => {
+    expect(sortClauseFor("garbage")).toBe(SORT_CLAUSES.date_desc);
+  });
+
+  it("falls back to date_desc for undefined and empty string", () => {
+    expect(sortClauseFor(undefined)).toBe(SORT_CLAUSES.date_desc);
+    expect(sortClauseFor("")).toBe(SORT_CLAUSES.date_desc);
+  });
+
+  // The clause is interpolated into the ORDER BY, so an inherited Object.prototype member must
+  // not be reachable: plain indexing returned a truthy function that stringified into the query
+  // as a syntax error, i.e. an unhandled 500 any authenticated caller could trigger.
+  it.each(["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"])(
+    "falls back to date_desc for the prototype key %s",
+    (key) => {
+      expect(sortClauseFor(key)).toBe(SORT_CLAUSES.date_desc);
+    },
+  );
 });

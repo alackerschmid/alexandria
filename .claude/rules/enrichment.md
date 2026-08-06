@@ -166,12 +166,23 @@ it drains through Q1 from then on.
 Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs`
 rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
 
+**The sweeper has a Google Books budget; interactive paths do not.** `backfillEdition` is the one
+place enrichment spends the metered daily quota, and the backlog it serves is self-amplifying, so
+past `SWEEPER_GOOGLE_BOOKS_BUDGET` (700 of 1,000/day, checked via `googleBooksCallsToday`) a
+`source === "sweeper"` backfill drops the Google half by withholding the API key — OpenLibrary
+alone still usually yields a cover, and a total miss leaves no `books` row, so the backfill is
+retried by any later run. Never extend this gate to a path a user is waiting on: reserving the
+remainder for the scanner's and import wizard's title search is the entire point of it.
+
 ## Observability — `enrichment_runs`
 
 Every `enrichWork` call that actually attempts enrichment (not the "already enriched, skip"
 no-op) writes one row: `work_id`, `started_at`, `duration_ms`, `outcome`
 (`done` | `not_found` | `failed`), `failure_reason` (set only when `outcome = 'failed'`),
-`source`.
+`source`. That includes the awkward path where a run merges two works and *then* loses the
+post-merge re-claim: it records `done` against the surviving work — same as when it wins the
+re-claim — rather than returning silently, because a run that performed a destructive merge is the
+last one that should be missing from the history.
 
 `GET /api/admin/overview` reads a 24h summary of it (outcome counts, failure reasons, avg + p95
 duration) for the `/admin` board's vitals panel — the table's only read surface. Everything else

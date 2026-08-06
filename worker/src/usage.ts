@@ -11,6 +11,7 @@ import type { MiddlewareHandler } from "hono";
 import type { Env } from "./types";
 
 const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 export type UsageProvider = "google_books" | "openlibrary" | "wikidata";
 
@@ -22,6 +23,38 @@ export type UsageOutcome = "success" | "error" | "rate_limited";
  */
 export function usageHourStart(nowMs: number): number {
   return Math.floor(nowMs / HOUR_MS) * HOUR_MS;
+}
+
+/**
+ * The ms-epoch UTC day a timestamp falls in — the bucket the Google Books daily quota is measured
+ * over. Google actually resets on Pacific time, so this is a deliberate approximation (see
+ * `GET /api/admin/usage`); it keeps the arithmetic in the same dialect as `usageHourStart`, and an
+ * hour bucket always falls entirely inside one day bucket, so summing hours per day is exact.
+ */
+export function usageDayStart(nowMs: number): number {
+  return Math.floor(nowMs / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Google Books calls already spent against today's quota. Reads the same hourly counters the admin
+ * gauge displays, so an enforcement decision and the board's picture can't disagree.
+ *
+ * Lags by up to one unit of work: `record()` buffers in memory until `flush()`, so calls made by
+ * the caller's own recorder are not visible here yet. That is fine for a budget check — the
+ * overshoot is bounded by one sweeper tick's worth of calls.
+ */
+export async function googleBooksCallsToday(
+  db: D1Database,
+  nowMs: number = Date.now(),
+): Promise<number> {
+  const row = await db
+    .prepare(
+      `SELECT COALESCE(SUM(success + error + rate_limited), 0) AS calls
+       FROM api_usage WHERE provider = 'google_books' AND hour_start >= ?`,
+    )
+    .bind(usageDayStart(nowMs))
+    .first<{ calls: number }>();
+  return row?.calls ?? 0;
 }
 
 /**

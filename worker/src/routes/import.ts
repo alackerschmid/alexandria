@@ -10,6 +10,7 @@ import {
 } from "../editions";
 import { normalizeIsbn, isValidIsbn } from "../isbn";
 import { rateLimitOrReject } from "../rate-limit";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 import { mapWithConcurrency } from "../concurrency";
 import type { UsageRecorder } from "../usage";
 import {
@@ -164,8 +165,11 @@ interface ImportRowResult {
  * incoming value. It writes nothing when: the book has no work to hang a rating on, the CSV row
  * carries no rating (Goodreads leaves unrated books at 0 — "no opinion", not "clear my rating"),
  * another row in this batch already claimed the work, or `seed` mode found the field already set.
+ *
+ * Exported for the unit tests: the claim bookkeeping is what the batch's per-work guarantee rests
+ * on, and it is pure apart from the statements it hands back unexecuted.
  */
-function applyImportRating(
+export function applyImportRating(
   db: D1Database,
   userId: number,
   workId: number | null,
@@ -231,7 +235,10 @@ type ImportUpdateResult = { outcome: "updated" } &
 // forms, or two editions of one work — and without this both would write, each having read a
 // `previous` from before the other's write, leaving Undo restoring the wrong value. The row that
 // loses the claim reports `duplicate` instead.
-function claimScans(claimedScanIds: Set<number>, ids: number[]): boolean {
+//
+// Exported for the unit tests — all-or-nothing is the whole contract, and a partial claim would be
+// invisible until two rows of one export happened to overlap.
+export function claimScans(claimedScanIds: Set<number>, ids: number[]): boolean {
   if (ids.some((id) => claimedScanIds.has(id))) return false;
   for (const id of ids) claimedScanIds.add(id);
   return true;
@@ -343,8 +350,8 @@ async function findWorkSiblingScans(
 // Which sibling the summary card points at: the copy the user actually has, else the oldest (both
 // callers' queries order by created_at). Only the card's identity hangs on this — the status write
 // covers every sibling regardless. Generic over the row shape, so /match's library-index row can use
-// it as well as the work path's sibling row.
-function pickPrimarySibling<T extends { owning_status: string }>(
+// it as well as the work path's sibling row. Exported for the unit tests.
+export function pickPrimarySibling<T extends { owning_status: string }>(
   siblings: T[],
 ): T {
   return (
@@ -631,16 +638,20 @@ async function importRow(
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     rows?: ImportRowInput[];
     update?: boolean;
     // Request-level, not per-row — the client creates/reuses a single "Shelves" tag field once
     // per import session (see stores/import.ts) rather than per row.
     shelves_field_def_id?: number;
-  }>();
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   // Defaulted rather than checked for undefined: an absent `rows` is an empty batch, which the
   // size guard already rejects — and defaulting keeps `rows` an array for the checks below.
-  const rows = body.rows ?? [];
+  // A `rows` that isn't an array is the same non-batch. `batchSizeError` leads with its own
+  // `Array.isArray` check, so this changes no response; it is here to keep the local type honest
+  // (`.some` below is only reachable on an array because that guard already returned).
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const update = body.update === true;
   const tooMany = batchSizeError(c, rows, MAX_BATCH_SIZE);
   if (tooMany) return tooMany;
@@ -739,8 +750,12 @@ interface LibraryIndexRow {
 }
 
 importRoutes.post("/match", async (c) => {
-  const body = await c.req.json<{ rows?: MatchRowInput[]; update?: boolean }>();
-  const rows = body.rows ?? [];
+  const body = await readJsonBody<{
+    rows?: MatchRowInput[];
+    update?: boolean;
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const update = body.update === true;
   const tooMany = batchSizeError(c, rows, MAX_MATCH_BATCH_SIZE);
   if (tooMany) return tooMany;
@@ -907,8 +922,9 @@ interface SuggestRowResult {
 }
 
 importRoutes.post("/suggest-isbn", async (c) => {
-  const body = await c.req.json<{ rows?: SuggestRowInput[] }>();
-  const rows = body.rows ?? [];
+  const body = await readJsonBody<{ rows?: SuggestRowInput[] }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const tooMany = batchSizeError(c, rows, MAX_SUGGEST_BATCH_SIZE);
   if (tooMany) return tooMany;
 

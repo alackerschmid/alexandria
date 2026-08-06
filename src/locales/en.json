@@ -236,6 +236,7 @@
     "remove": "Remove",
     "edit": "Edit",
     "refresh": "Refresh",
+    "refresh_error": "Refresh failed — please try again",
     "overridden": "Manually edited",
     "filter_by": "Filter library by {field}: {value}",
     "edit_save": "Save changes",

@@ -49,6 +49,9 @@
         />
         {{ refreshing ? $t("detail.loading") : $t("detail.refresh") }}
       </button>
+      <span v-if="refreshError" class="text-[11px] text-red-400">
+        {{ $t(refreshError) }}
+      </span>
     </div>
   </div>
 </template>
@@ -69,6 +72,9 @@ import type { BookWithOverrides } from "@/types/book";
 const props = defineProps<{
   book: BookWithOverrides;
   refreshing?: boolean;
+  /** i18n key of the last refresh failure, or null. Refresh is the only user-facing retry for a
+   *  failed enrichment, so a silent failure leaves the user with nothing to act on. */
+  refreshError?: string | null;
   guest?: boolean;
   readonly?: boolean;
 }>();
