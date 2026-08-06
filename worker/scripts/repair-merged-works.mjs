@@ -16,8 +16,29 @@
 //   node scripts/repair-merged-works.mjs --sql > repair.sql   # emit SQL
 //   npx wrangler d1 execute bookscan --remote --file repair.sql
 //
+// `--work <id>` (repeatable, `--work=<id>` too) narrows both outputs to those entries. Use it for
+// anything added after the first application, and only for that.
+//
+// **Never re-emit an entry that has already been applied.** The SQL is not idempotent, and the
+// non-idempotent part is destructive rather than merely repeated:
+//
+//   - The moved-group pair — `INSERT OR IGNORE INTO works (match_key, …) VALUES (…, 'pending')`
+//     then `UPDATE books SET work_id = (SELECT id FROM works WHERE match_key = …)` — is safe only
+//     while the work it created still exists. It is created `pending`, so the sweeper enriches it;
+//     if it resolves to a QID another row already holds, `mergeWorks` copies its books/ratings/
+//     series onto that row and deletes it, **without carrying `match_key` over**. The key is then
+//     gone, so a re-run creates a fresh empty `pending` work and repoints those ISBNs off the
+//     correctly enriched row onto it, stranding the `work_ratings` row and the series ordinal that
+//     mergeWorks moved. Verified against production: of the 2026-07-30 application, the keys for
+//     `olympos|dansimmons`, `ilium|dansimmons`, `the monster baru cormorant|sethdickinson` and
+//     `der herr des wustenplaneten|frankherbert` no longer exist.
+//   - The survivor statements are keyed `WHERE id = <workId>`, so if the sweeper merged that row
+//     away they silently match zero rows and the entry half-applies. Work 295 is already gone.
+//   - An entry whose `keepQid` is false additionally re-clears enrichment the sweeper has re-run.
+//
 // The PLAN below is the sign-off surface: each group is one real book, listed by ISBN, derived from
-// the production rows as of 2026-07-30. Re-check it before applying if the library has moved on.
+// the production rows as of 2026-07-30 (work 4412 added 2026-08-04). Re-check it before applying if
+// the library has moved on — the ISBN→book mapping is only as current as the query it came from.
 
 // Mirrors normalizeStr / normalizeAuthorKey in src/editions.ts — a .mjs can't import the TS, and the
 // keys must match what linkWork would compute or the repaired works won't be found again.
@@ -142,6 +163,30 @@ const PLAN = [
     ],
   },
   {
+    workId: 4412,
+    author: "Steven Erikson",
+    keepQid: false, // Q458982 "Malazan Book of the Fallen" is a novel series, not any one volume
+    note:
+      "8 German volumes, each merged onto the series item (2026-07-29, the day before the type " +
+      "filter shipped). The 2026-08-02 Goodreads import then read the two scans on this work as " +
+      "'already in your library' for five volumes that were never imported at all — books 748-752 " +
+      "still have no scan. The survivor keeps the QID-free (12) key it was created under, which is " +
+      "also the work the user's rating 8 was written against (2026-07-29 13:05, before the merge), " +
+      "so that rating lands on the right book without being moved.",
+    groups: [
+      { title: "Das Spiel der Götter (12)", isbns: ["9783734160936"] },
+      { title: "Das Spiel der Götter (6)", isbns: ["9783442264100"] },
+      { title: "Das Spiel der Götter (5)", isbns: ["9783442269914"] },
+      { title: "Das Spiel der Götter (4)", isbns: ["9783442269907"] },
+      { title: "Das Spiel der Götter (9)", isbns: ["9783734160400"] },
+      { title: "Das Spiel der Götter (8)", isbns: ["9783734160394"] },
+      { title: "Das Spiel der Götter (10)", isbns: ["9783734160486"] },
+      // The one volume catalogued under the bare series name carries no ordinal to key on, so a
+      // title key here would collect the next such edition the same way this work collected these.
+      { title: "Das Spiel der Götter", isbns: ["9783442269099"], perIsbn: true },
+    ],
+  },
+  {
     workId: 3438,
     keepQid: false, // Q2743959 "The New Jedi Order" is a book series
     note: "4 distinct volumes, each merged onto the series item",
@@ -174,6 +219,41 @@ const ENRICHED_COLUMNS = [
   "enrichment_failed_at", "enrichment_failure_reason", "next_retry_at",
 ];
 
+// `--work 4412 --work 292` → only those entries; no flag → the whole PLAN. An unknown id is an
+// error rather than an empty run, which would otherwise read as "nothing to repair".
+//
+// Both spellings are accepted deliberately. `--work=4412` is the natural form for anyone used to
+// `=`-style flags, and matching only `--work` left it parsing as zero ids — i.e. silently emitting
+// the *whole* PLAN with exit 0, which is indistinguishable from success in the output and is the
+// single worst way this flag could fail. Raw strings are validated rather than `Number()`ed,
+// because `Number("")` is 0, not NaN.
+function selected() {
+  const raw = [];
+  for (let i = 0; i < process.argv.length; i++) {
+    const a = process.argv[i];
+    if (a === "--work") {
+      raw.push(process.argv[++i]);
+    } else if (a.startsWith("--work=")) {
+      raw.push(a.slice("--work=".length));
+    }
+  }
+  // Both of these throw rather than exiting: a bad --work must not fall through to the whole PLAN,
+  // and a throw is a non-zero exit too — which matters, since the shell line after this one pipes
+  // into a file the next command applies to production.
+  //
+  // A `--work` with nothing usable after it is the mistake this flag exists to prevent.
+  if (raw.some((s) => !/^\d+$/.test(s ?? ""))) {
+    throw new Error("--work needs a numeric work id");
+  }
+  const ids = raw.map(Number);
+  if (ids.length === 0) return PLAN;
+  const unknown = ids.filter((id) => !PLAN.some((w) => w.workId === id));
+  if (unknown.length) {
+    throw new Error(`no PLAN entry for work ${unknown.join(", ")}`);
+  }
+  return PLAN.filter((w) => ids.includes(w.workId));
+}
+
 const q = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const groupAuthor = (work, group) =>
   group.author !== undefined ? group.author : work.author;
@@ -188,9 +268,10 @@ const groupKey = (work, group) => {
 };
 
 function plan() {
+  const works = selected();
   const lines = [];
   let newWorks = 0;
-  for (const work of PLAN) {
+  for (const work of works) {
     lines.push(
       `\nwork ${work.workId} — ${work.note}`,
       `  QID: ${work.keepQid ? "kept (correct for the surviving book)" : "CLEARED + requeued for enrichment"}`,
@@ -204,16 +285,17 @@ function plan() {
       );
     });
   }
-  const editions = PLAN.reduce(
+  const editions = works.reduce(
     (n, w) => n + w.groups.reduce((m, g) => m + g.isbns.length, 0),
     0,
   );
   lines.push(
-    `\n${PLAN.length} works split, ${newWorks} new works created, ${editions} editions repointed.`,
+    `\n${works.length} works split, ${newWorks} new works created, ${editions} editions repointed.`,
     "\nRatings left on the surviving row (the import wrote them; the intended book is in the CSV):",
   );
   for (const r of RATINGS_TO_REVIEW) {
-    const work = PLAN.find((w) => w.workId === r.workId);
+    const work = works.find((w) => w.workId === r.workId);
+    if (!work) continue;
     lines.push(
       `  work ${r.workId}: rating ${r.rating} (user ${r.userId}) stays with ${JSON.stringify(work.groups[0].title)}`,
     );
@@ -227,11 +309,12 @@ function plan() {
 }
 
 function sql() {
+  const works = selected();
   const out = [
     "-- Generated by scripts/repair-merged-works.mjs — review before applying.",
     "-- Splits works that group editions of different books. See the script header.",
   ];
-  for (const work of PLAN) {
+  for (const work of works) {
     const [survivor, ...moved] = work.groups;
     out.push(`\n-- ─── work ${work.workId}: ${work.note} ───`);
 
@@ -275,7 +358,8 @@ function sql() {
 
   out.push("\n-- Ratings stay on the surviving row. If one was meant for a book that moved, move it by hand:");
   for (const r of RATINGS_TO_REVIEW) {
-    const work = PLAN.find((w) => w.workId === r.workId);
+    const work = works.find((w) => w.workId === r.workId);
+    if (!work) continue;
     for (const group of work.groups.slice(1)) {
       out.push(
         `--   UPDATE work_ratings SET work_id = (SELECT id FROM works WHERE match_key = ${q(groupKey(work, group))}) WHERE work_id = ${r.workId} AND user_id = ${r.userId};  -- → ${group.title} [${group.isbns[0]}]`,
@@ -283,7 +367,7 @@ function sql() {
     }
   }
 
-  const allIsbns = PLAN.flatMap((w) => w.groups.flatMap((g) => g.isbns))
+  const allIsbns = works.flatMap((w) => w.groups.flatMap((g) => g.isbns))
     .map((i) => q(i))
     .join(", ");
   out.push(
