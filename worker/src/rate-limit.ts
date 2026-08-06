@@ -8,10 +8,22 @@ export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
 // one shared bucket, where a handful of local logins exhausted the 10/min budget for everyone
 // (including other dev sessions against the same D1). One random token per isolate keeps the limit
 // working as a runaway-loop guard without collapsing unrelated callers into a single counter.
-const FALLBACK_CLIENT_ID = `unknown-${crypto.randomUUID()}`;
+//
+// Generated lazily on first use, never at module scope: workerd forbids generating random values
+// during initial script evaluation ("Disallowed operation called within global scope. Asynchronous
+// I/O ..., setting a timeout, and generating random values are not allowed within global scope"),
+// and this module is on the static import path from index.ts — a top-level `crypto.randomUUID()`
+// here takes the *whole worker* down at startup, every request and every cron tick. Nothing local
+// catches that: the worker's vitest runs in plain Node, where it is perfectly legal.
+// `clientIp` is only ever called from inside a handler, so the lazy init always has a request
+// context, and the token stays constant for the isolate's lifetime as intended.
+let fallbackClientId: string | undefined;
 
 export function clientIp(c: Context<Env>): string {
-  return c.req.header("CF-Connecting-IP") ?? FALLBACK_CLIENT_ID;
+  const ip = c.req.header("CF-Connecting-IP");
+  if (ip) return ip;
+  fallbackClientId ??= `unknown-${crypto.randomUUID()}`;
+  return fallbackClientId;
 }
 
 // Fixed-window rate limiter backed by D1. `key` is caller-defined (e.g. `scan:<userId>`) so one

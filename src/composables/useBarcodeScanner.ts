@@ -9,9 +9,17 @@ import Quagga from "@ericblade/quagga2";
 // `generation` is bumped by every start() and every stop(); an init callback whose token is no
 // longer current knows it lost the camera. `owner` is the token of whoever currently holds it
 // (or has an init in flight), `started` whether the stream is actually running.
+//
+// The reason a *pending* init keeps `owner` (rather than stop() clearing it) is that only that
+// callback can release the stream it is acquiring: Quagga is a singleton, so a second init started
+// before the first lands overwrites `_inputStream` and the first stream becomes unreachable —
+// `Quagga.stop()` can never get to it and the camera stays lit until the tab is reloaded. So a
+// start() arriving while an init is in flight doesn't init; it parks itself in `pendingStart` and
+// the stale callback hands the camera over once it has cleaned up after itself.
 let generation = 0;
 let owner: number | null = null;
 let started = false;
+let pendingStart: (() => void) | null = null;
 
 /**
  * Wraps the Quagga2 live-camera barcode scanner: init/start/stop lifecycle plus a
@@ -54,7 +62,13 @@ export function useBarcodeScanner(options: {
   };
 
   function start() {
-    if (!container.value || started || owner !== null) return;
+    if (!container.value || started) return;
+    if (owner !== null) {
+      // An init is still negotiating the camera. Queue *this* instance's start — not a re-entry
+      // into the in-flight one's, whose container ref is already null after its unmount.
+      pendingStart = start;
+      return;
+    }
     const token = ++generation;
     owner = token;
 
@@ -76,14 +90,21 @@ export function useBarcodeScanner(options: {
         locate: true,
       },
       (err: unknown) => {
-        if (owner !== token) {
-          // We lost the camera while negotiating it. Release the stream this init acquired, but
-          // only if nobody has taken it since — a newer start() owns Quagga now, and stopping
-          // would kill *its* camera with no path back (its `started` stays true, so start()
-          // early-returns and the UI exposes no way to recover).
-          if (!err && owner === null && !started) Quagga.stop();
+        if (token !== generation) {
+          // We lost the camera while negotiating it. Nothing else can have started an init in the
+          // meantime (start() parks instead), so this callback is the only thing that can still
+          // reach the stream it just acquired — release it here or it leaks for the life of the
+          // tab. Then hand over to whoever queued up behind us.
+          owner = null;
+          if (!err) Quagga.stop();
+          const next = pendingStart;
+          pendingStart = null;
+          next?.();
           return;
         }
+        // Still current, so any queued start is a redundant self-queue — a real one could only
+        // have come after a stop(), which would have made this callback stale.
+        pendingStart = null;
         owner = null;
         if (err) {
           console.error(err);
@@ -101,12 +122,14 @@ export function useBarcodeScanner(options: {
   function stop() {
     Quagga.offDetected(onQuaggaDetected);
     // Bumping the generation is what tells an in-flight init it no longer owns the camera; it
-    // releases the stream itself (see start), since it can't be stopped before it exists.
+    // releases the stream itself (see start), since it can't be stopped before it exists — which
+    // is also why `owner` is left alone here when nothing is running.
     generation++;
-    owner = null;
+    pendingStart = null;
     if (started) {
       Quagga.stop();
       started = false;
+      owner = null;
     }
   }
 

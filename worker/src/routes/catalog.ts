@@ -7,7 +7,7 @@ import {
   saveEditionCandidates,
 } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
-import { isbnForms } from "../isbn";
+import { isbnForms, normalizeIsbn } from "../isbn";
 
 export const works = new Hono<Env>();
 export const series = new Hono<Env>();
@@ -80,14 +80,19 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
   // here rather than in SQL because the 10↔13 conversion is a checksum recomputation SQLite can't
   // express. Only this work's own editions are considered — a row under a different work is
   // deliberately still offered, exactly as before.
+  // Both sides normalized: `isbnForms` uppercases nothing itself, and candidate rows written
+  // before OpenLibrary ingestion ran through `normalizeIsbn` were dash-stripped but left in
+  // whatever case OpenLibrary reported — so a legacy lowercase ISBN-10 check digit (`…615x`)
+  // would slip past the very dedupe this filter exists for, and then 400 at the switch route,
+  // which normalizes first.
   const materializedForms = new Set(
-    materialized.flatMap((r) => isbnForms(r.isbn)),
+    materialized.flatMap((r) => isbnForms(normalizeIsbn(r.isbn))),
   );
 
   const editions: EditionRow[] = [
     ...materialized.map((r) => ({ ...r, materialized: true })),
     ...candidates
-      .filter((r) => !materializedForms.has(r.isbn))
+      .filter((r) => !materializedForms.has(normalizeIsbn(r.isbn)))
       .map((r) => ({
         ...r,
         author: null,

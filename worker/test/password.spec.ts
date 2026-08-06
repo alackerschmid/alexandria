@@ -5,6 +5,7 @@ import {
   verifyPassword,
   isLegacyHash,
   needsRehash,
+  DUMMY_PASSWORD_HASH,
 } from "../src/password";
 
 describe("hashPassword", () => {
@@ -51,6 +52,39 @@ describe("verifyPassword (pbkdf2)", () => {
     const bumped = hash.replace(/^pbkdf2\$\d+\$/, "pbkdf2$50000$");
     // Different iteration count derives a different key — must no longer match.
     expect(await verifyPassword("pw", bumped)).toBe(false);
+  });
+});
+
+// Login verifies against this when there is no user row, so that an unregistered email costs the
+// same ~100k iterations a wrong password does and response time stops being a membership oracle.
+// The property is entirely structural, and it fails *silently*: verifyPassword parses the base64
+// halves inside a try/catch that returns false before deriveKey ever runs, so a dummy that drifted
+// out of shape (a character short, or a digest length that stopped matching KEY_BYTES if 32 were
+// raised) would return false in microseconds instead — login still 401s correctly, nothing type-
+// errors, and the hole is quietly back. Hence assertions on the shape, not on the answer.
+describe("DUMMY_PASSWORD_HASH", () => {
+  it("is shaped exactly like a real hash, so verification does the full derivation", async () => {
+    const real = (await hashPassword("pw")).split("$");
+    const dummy = DUMMY_PASSWORD_HASH.split("$");
+
+    expect(dummy).toHaveLength(4);
+    expect(dummy[0]).toBe(real[0]);
+    // Same iteration count as a live hash, or the two paths cost different amounts of work.
+    expect(dummy[1]).toBe(real[1]);
+    // Decodable, and byte-for-byte the same lengths — atob throws on malformed base64, and a
+    // digest of the wrong length short-circuits in timingSafeEqual before any derivation.
+    expect(atob(dummy[2])).toHaveLength(atob(real[2]).length);
+    expect(atob(dummy[3])).toHaveLength(atob(real[3]).length);
+  });
+
+  it("no password matches it", async () => {
+    expect(await verifyPassword("", DUMMY_PASSWORD_HASH)).toBe(false);
+    expect(await verifyPassword("password", DUMMY_PASSWORD_HASH)).toBe(false);
+  });
+
+  it("is not mistaken for a legacy hash or flagged for rehash", () => {
+    expect(isLegacyHash(DUMMY_PASSWORD_HASH)).toBe(false);
+    expect(needsRehash(DUMMY_PASSWORD_HASH)).toBe(false);
   });
 });
 

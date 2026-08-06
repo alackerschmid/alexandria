@@ -417,7 +417,10 @@ scans.patch("/:id/edition", async (c) => {
     return c.json({ error: "This book has no known editions" }, 400);
   const workId = currentBook.work_id;
 
-  if (isbn === currentBook.isbn) {
+  // The scan's current row, returned untouched. Used both for the trivial "same ISBN" case and
+  // for a request that only *resolves* to the current book (see the self-switch guard below) —
+  // in each the correct answer is the state the caller already has, with nothing written.
+  const respondUnchanged = async () => {
     const unchanged = await db
       .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)
       .bind(scanId)
@@ -430,7 +433,9 @@ scans.patch("/:id/edition", async (c) => {
     return c.json(
       unchanged ? attachCustomFields(unchanged, defs, valuesByBook) : {},
     );
-  }
+  };
+
+  if (isbn === currentBook.isbn) return respondUnchanged();
 
   // Validate the target ISBN actually belongs to this work (either already materialized,
   // or a candidate discovered via OpenLibrary) — prevents repointing to an arbitrary book.
@@ -453,6 +458,24 @@ scans.patch("/:id/edition", async (c) => {
   );
   if (!targetBook)
     return c.json({ error: "Failed to resolve target edition" }, 500);
+
+  // Self-switch guard. The `isbn === currentBook.isbn` short-circuit above compares exact strings,
+  // but `materializeEdition` matches on both ISBN forms — so a request naming the 10/13 counterpart
+  // of the scan's *current* ISBN (a legacy `work_edition_isbns` candidate written before the
+  // dedupe was form-aware) resolves right back to the book the scan is already on. Without this,
+  // the batch below deletes that book's custom-field values and its overrides and the following
+  // UPDATE moves nothing back — silent data loss, answered 200. `alreadyOwned` can't catch it: it
+  // deliberately excludes this scan.
+  if (targetBook.id === scan.book_id) return respondUnchanged();
+
+  // The target must belong to *this* work. `materializeEdition` takes `workId` only to link a row
+  // that has none — a row with a non-null but different `work_id` is returned as-is, and matching
+  // on both ISBN forms made that reachable from the editions carousel (a candidate of this work
+  // whose counterpart form is materialized under a duplicate/translated work). Repointing there
+  // would move the scan out of its work, and since rating and review are keyed per work, the
+  // user's rating would silently stop showing with no error.
+  if (targetBook.work_id !== workId)
+    return c.json({ error: "ISBN is not a known edition of this book" }, 400);
 
   const alreadyOwned = await db
     .prepare(

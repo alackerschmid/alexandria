@@ -642,8 +642,9 @@ importRoutes.post("/goodreads", async (c) => {
   if (!body) return c.json(INVALID_JSON_BODY, 400);
   // Defaulted rather than checked for undefined: an absent `rows` is an empty batch, which the
   // size guard already rejects — and defaulting keeps `rows` an array for the checks below.
-  // A `rows` that isn't an array is the same non-batch, and defaulting it keeps `.some` below
-  // from throwing on e.g. a string (which has a `.length` the size guard would happily read).
+  // A `rows` that isn't an array is the same non-batch. `batchSizeError` leads with its own
+  // `Array.isArray` check, so this changes no response; it is here to keep the local type honest
+  // (`.some` below is only reachable on an array because that guard already returned).
   const rows = Array.isArray(body.rows) ? body.rows : [];
   const update = body.update === true;
   const tooMany = batchSizeError(c, rows, MAX_BATCH_SIZE);

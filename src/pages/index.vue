@@ -969,12 +969,6 @@ watch([search, onlyOwned, groupEditions, sortDirection, groupBy, perPage], () =>
   currentPage.value = 1;
 });
 
-// If the visible set shrinks under the current page (a delete, an optimistic write dropping a
-// book out of the filter), clamp to the last page instead of resetting.
-watch(totalPages, (total) => {
-  if (currentPage.value > total) currentPage.value = total;
-});
-
 function changePage(p: number) {
   currentPage.value = p;
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1002,6 +996,19 @@ const {
   expanded,
   currentPage,
   pageSize,
+});
+
+// If the visible set shrinks under the current page (a delete, an optimistic write dropping a
+// book out of the filter), clamp to the last page instead of resetting.
+//
+// Must stay *below* `useShelfGroups` and not move up next to the reset watcher above: Vue runs a
+// non-immediate watcher's source getter once at creation to capture the old value, and this one
+// reads `totalPages` → `paginatedCount` → `shelfGroups`. Registered any earlier, that eager read
+// hits the `const shelfGroups` temporal dead zone and setup() throws — but only when `isGrouped`
+// is true, i.e. only for users whose persisted `libGroupBy` isn't "none" (it hydrates
+// synchronously from localStorage), so the default configuration hides it completely.
+watch(totalPages, (total) => {
+  if (currentPage.value > total) currentPage.value = total;
 });
 
 function onEntrySelect(entry: ShelfEntry) {
