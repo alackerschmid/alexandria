@@ -1,7 +1,8 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import type { GroupBy } from "@/types/library";
+import type { BuiltinGroupBy, GroupBy } from "@/types/library";
+import { GROUP_BY_VALUES } from "@/types/library";
 
 export interface CustomFieldMeta {
   def: { id: number; name: string; type: string };
@@ -33,6 +34,24 @@ const BUILTIN_SLUGS = new Set([
   "isbn",
 ]);
 
+// Typed as a total map over the dimensions, so adding one to GROUP_BY_VALUES without giving it a
+// label fails the type-check instead of shipping a dimension the picker can't render.
+const GROUP_LABEL_KEYS: Record<BuiltinGroupBy, string> = {
+  none: "library.group_none",
+  author: "library.group_author",
+  series: "library.group_series",
+  genre: "library.group_genre",
+  status: "library.group_status",
+  owning: "library.group_owning",
+  rating: "library.group_rating",
+  publisher: "library.group_publisher",
+  language: "library.group_language",
+  form: "library.group_form",
+  country: "library.group_country",
+  decade: "library.group_decade",
+  subject: "library.group_subject",
+};
+
 export function useGroupDimensions() {
   const { t } = useI18n();
   const fieldDefsStore = useFieldDefsStore();
@@ -48,20 +67,14 @@ export function useGroupDimensions() {
     });
   });
 
-  // All groupable dimensions — no 'none'. Used by home page dropdowns.
+  // All groupable dimensions — no 'none'. Used by home page dropdowns. Derived from
+  // GROUP_BY_VALUES (which carries the display order), so a dimension can't exist in the type
+  // and the grouping switch yet be missing from the picker.
   const dimensionOptions = computed<DimensionOption[]>(() => [
-    { value: "author", label: t("library.group_author") },
-    { value: "series", label: t("library.group_series") },
-    { value: "genre", label: t("library.group_genre") },
-    { value: "status", label: t("library.group_status") },
-    { value: "owning", label: t("library.group_owning") },
-    { value: "rating", label: t("library.group_rating") },
-    { value: "publisher", label: t("library.group_publisher") },
-    { value: "language", label: t("library.group_language") },
-    { value: "form", label: t("library.group_form") },
-    { value: "country", label: t("library.group_country") },
-    { value: "decade", label: t("library.group_decade") },
-    { value: "subject", label: t("library.group_subject") },
+    ...GROUP_BY_VALUES.filter((v) => v !== "none").map((v) => ({
+      value: v as GroupBy,
+      label: t(GROUP_LABEL_KEYS[v]),
+    })),
     ...customFieldMetas.value
       .filter((m) => m.def.type !== "date" && m.def.type !== "integer")
       .map((m) => ({ value: `cf:${m.def.id}` as GroupBy, label: m.def.name })),
@@ -69,7 +82,7 @@ export function useGroupDimensions() {
 
   // Full list including 'none' — used by the library toolbar.
   const groupOptions = computed<DimensionOption[]>(() => [
-    { value: "none", label: t("library.group_none") },
+    { value: "none", label: t(GROUP_LABEL_KEYS.none) },
     ...dimensionOptions.value,
   ]);
 

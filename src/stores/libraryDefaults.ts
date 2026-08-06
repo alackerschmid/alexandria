@@ -2,28 +2,18 @@ import { defineStore } from "pinia";
 import { computed } from "vue";
 import type { ReadStatus } from "@/types/book";
 import type { GroupBy, OwnershipScope, SortOption } from "@/types/library";
+import { GROUP_BY_VALUES } from "@/types/library";
 import {
   persistedBool,
   persistedNum,
   persistedStr,
 } from "@/stores/preferences";
 
-const VALID_GROUP_BY: GroupBy[] = [
-  "none",
-  "author",
-  "series",
-  "genre",
-  "status",
-  "owning",
-  "publisher",
-  "language",
-  "form",
-  "country",
-  "decade",
-  "subject",
-];
+// Reads the shared list rather than repeating it — see GROUP_BY_VALUES for why. A stored value
+// that fails this is discarded in favour of the fallback on *every read*, so anything missing
+// here is a dimension the picker silently refuses to switch to.
 const isValidGroupBy = (v: string): v is GroupBy =>
-  (VALID_GROUP_BY as string[]).includes(v) || /^cf:\d+$/.test(v);
+  (GROUP_BY_VALUES as readonly string[]).includes(v) || /^cf:\d+$/.test(v);
 
 const VALID_OWNERSHIP_SCOPE: OwnershipScope[] = ["owned", "all", "missing"];
 const isValidOwnershipScope = (v: string): v is OwnershipScope =>
