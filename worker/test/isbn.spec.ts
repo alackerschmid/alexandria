@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizeIsbn,
   isValidIsbn,
+  isIsbnFormat,
   isbn10To13,
   isbn13To10,
   alternateIsbnForm,
@@ -49,6 +50,50 @@ describe("isValidIsbn", () => {
   it("validates the normalized (hyphen-stripped) form", () => {
     expect(isValidIsbn(normalizeIsbn("978-0-306-40615-7"))).toBe(true);
     expect(isValidIsbn(normalizeIsbn("0-8044-2957-X"))).toBe(true);
+  });
+});
+
+describe("isIsbnFormat", () => {
+  it("accepts both shapes", () => {
+    expect(isIsbnFormat("0306406152")).toBe(true);
+    expect(isIsbnFormat("9780306406157")).toBe(true);
+  });
+
+  // The whole reason this exists next to isValidIsbn: the scan queue accepts a barcode misread so
+  // the offline queue can still take the scan, and resolves (or fails to resolve) metadata later.
+  it("accepts a right-shaped ISBN whose checksum is wrong", () => {
+    expect(isIsbnFormat("0306406153")).toBe(true);
+    expect(isValidIsbn("0306406153")).toBe(false);
+    expect(isIsbnFormat("9780306406158")).toBe(true);
+    expect(isValidIsbn("9780306406158")).toBe(false);
+  });
+
+  it("accepts an X only as the ISBN-10 check digit", () => {
+    expect(isIsbnFormat("080442957X")).toBe(true);
+    expect(isIsbnFormat("08044X957X")).toBe(false);
+    expect(isIsbnFormat("978030640615X")).toBe(false);
+  });
+
+  it("rejects any other length", () => {
+    expect(isIsbnFormat("")).toBe(false);
+    expect(isIsbnFormat("030640615")).toBe(false); // 9
+    expect(isIsbnFormat("03064061521")).toBe(false); // 11
+    expect(isIsbnFormat("978030640615")).toBe(false); // 12
+    expect(isIsbnFormat("97803064061577")).toBe(false); // 14
+  });
+
+  it("rejects non-digits and unnormalized input — callers normalize first", () => {
+    expect(isIsbnFormat("notanisbn!")).toBe(false);
+    expect(isIsbnFormat("978-0-306-40615-7")).toBe(false);
+    expect(isIsbnFormat("0 8044 2957 X")).toBe(false);
+    // Lowercase too: normalizeIsbn uppercases, and the check is deliberately not case-insensitive.
+    expect(isIsbnFormat("080442957x")).toBe(false);
+    expect(isIsbnFormat(normalizeIsbn("080442957x"))).toBe(true);
+  });
+
+  it("is anchored — an ISBN embedded in a longer string is not a match", () => {
+    expect(isIsbnFormat("isbn:9780306406157")).toBe(false);
+    expect(isIsbnFormat("9780306406157\n")).toBe(false);
   });
 });
 

@@ -10,10 +10,30 @@ export function parseIntOr(
   return Number.isNaN(n) ? fallback : n;
 }
 
-export function getBookByIsbn(db: D1Database, isbn: string) {
+/**
+ * The `books` row for an ISBN, but only when this user actually holds a scan of it — the entry
+ * check for the two per-user write routes keyed by ISBN rather than by scan id
+ * (`PATCH /api/books/override`, `PATCH /api/books/custom-fields`).
+ *
+ * It used to be a plain `books` lookup, which let any authenticated user accumulate override and
+ * custom-field rows against the whole shared catalogue: nothing bounded the write, and
+ * `DELETE /api/scans/:id` only garbage-collects the rows belonging to a book the user scanned. The
+ * write also answered `200 {}` — the merged scan row can't exist without a scan — so it read as a
+ * save while storing something the user could never see or delete. Requiring the scan bounds the
+ * rows to the library they can actually reach.
+ */
+export function getScannedBookByIsbn(
+  db: D1Database,
+  userId: number,
+  isbn: string,
+) {
   return db
-    .prepare("SELECT id FROM books WHERE isbn = ?")
-    .bind(isbn)
+    .prepare(
+      `SELECT b.id FROM books b
+       JOIN scans s ON s.book_id = b.id
+       WHERE b.isbn = ? AND s.user_id = ?`,
+    )
+    .bind(isbn, userId)
     .first<{ id: number }>();
 }
 

@@ -12,7 +12,10 @@ import { splitAuthors, normalizeStr } from "../editions";
 const stats = new Hono<Env>();
 stats.use("*", authMiddleware);
 
-type RawRow = {
+// Exported (with the four pure helpers below) for the unit tests: everything in this file that is
+// judgement rather than SQL — the year bounds, the `count < 10` decade cutoff, the code-vs-label
+// translation fallback — lives in those helpers and is regression-prone.
+export type RawRow = {
   status: string;
   author: string | null;
   authors_json: string | null;
@@ -76,7 +79,7 @@ type StatsResponse = {
   randomFirstLine: { title: string; firstLine: string } | null;
 };
 
-function extractYear(r: RawRow): number | null {
+export function extractYear(r: RawRow): number | null {
   if (r.original_pub_date) {
     const n = parseInt(r.original_pub_date, 10);
     if (n >= 100 && n <= 2100) return n;
@@ -236,7 +239,7 @@ function computePageStats(rows: RawRow[]) {
   return { avgPages, totalPagesRead };
 }
 
-function computeYearStats(rows: RawRow[]) {
+export function computeYearStats(rows: RawRow[]) {
   const years = rows
     .map((r) => extractYear(r))
     .filter((y): y is number => y !== null)
@@ -256,7 +259,7 @@ function computeYearStats(rows: RawRow[]) {
 }
 
 // Decade × dominant genre
-function computeDecadeGenres(rows: RawRow[]) {
+export function computeDecadeGenres(rows: RawRow[]) {
   const decadeGenreCounts = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const year = extractYear(r);
@@ -301,7 +304,7 @@ function computeDecadeGenres(rows: RawRow[]) {
 // Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
 // ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
 // back to the older English-label comparison for rows the sweeper hasn't reached yet.
-function computeTranslationRatio(rows: RawRow[]) {
+export function computeTranslationRatio(rows: RawRow[]) {
   const langNamer = new Intl.DisplayNames(["en"], { type: "language" });
   let translatedCount = 0;
   let translationKnownCount = 0;

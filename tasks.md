@@ -17,59 +17,8 @@ Conventions used below:
 | A1–A3 | **Done** — see `tasks_completed.md`. `fix/wikidata-series-filter` is unblocked |
 | B1–B5 | **Done** — see `tasks_completed.md` (`56444cb`, `fix/audit-high-severity`) |
 | C1–C9 | **Done** — see `tasks_completed.md` (`fix/audit-medium-severity`) |
-| D, E, F | Open — below |
-
----
-
-## D. Process, docs, and hardening
-
-### D1. Gate the Pages frontend deploy on the verify workflow
-
-- **Where:** `.github/workflows/deploy.yml` + the Cloudflare Pages Git integration (root `CLAUDE.md` §Architecture).
-- **Problem:** Verify failure withholds the worker + migrations, but Pages ships the frontend anyway — new UI against old API. Even on success the two deploys race (frontend typically live minutes before the worker).
-- **Fix direction:** deploy Pages from the workflow (`wrangler pages deploy` after the worker step) and disable the Git integration, or use Pages branch-control "skip builds unless checks pass". Consult `cloudflare-docs` MCP before writing config — flags move. Update root `CLAUDE.md` §Architecture to match whichever shape lands.
-- **Done when:** a red verify run deploys nothing; ordering is worker-then-frontend (or documented as acceptable).
-
-### D2. Fix `worker/CLAUDE.md` guest-migration claim
-
-- **Where:** `worker/CLAUDE.md` (register/login bullets claim the server "migrates any guest scans to account"). No such code exists — `auth.ts` never touches `scans`; the real mechanism is the client replaying guest scans through `POST /api/scans` in seed mode (comments at `routes/scans.ts` ~154, `library-query.ts` ~384).
-- **Fix direction:** correct the two bullets to describe the client-replay mechanism. Doc-only change; the inventory is a contract per repo rules.
-
-### D3. Guard the sweeper's Google Books spend
-
-- **Where:** `worker/src/sweeper.ts` → `backfillEdition`/`materializeEdition` (`worker/src/enrichment.ts` ~699–724); daily counters already exist (`api_usage`, queried in `worker/src/routes/admin.ts` ~180–278).
-- **Problem:** The self-amplifying placeholder backlog (each series enrichment inserts ~10 placeholders, each of whose enrichment can spend a Google Books call) can drain the shared daily quota that interactive title search depends on. The admin board observes; nothing enforces.
-- **Fix direction:** before `backfillEdition`'s Google half, check the UTC-day Google count against a threshold (constant, e.g. comfortably below the daily quota) and skip with a log line when over. Sweeper-only — never gate interactive paths.
-- **Done when:** the guard exists, the threshold is a named constant with the reasoning in a comment, and the skip is visible in logs.
-
-### D4. Record post-merge in-flight outcomes in `enrichment_runs`
-
-- **Where:** `worker/src/enrichment.ts` ~1278 (`if (identity.kind === "in-flight") return;`).
-- **Read first:** `.claude/rules/enrichment.md` §Observability (every attempting call writes a row; anything that stops doing so "silently blinds" the board).
-- **Problem:** A run that did a full search, verification, and a **destructive merge**, then lost the post-merge re-claim, records nothing. Merges are the most consequential pipeline action and are invisible in telemetry on this path.
-- **Fix direction:** write a run row (outcome recording the merge) before the early return. Rare path, low risk.
-
-### D5. Re-enrich no-title works when they later gain a title
-
-- **Where:** `worker/src/enrichment.ts` ~1273–1277 (no-title path persists `done` at `CURRENT_ENRICHMENT_SCHEMA_VERSION` with nulls).
-- **Problem:** If the edition later gains a title (e.g. `/refresh` fills a NULL `books.title`), nothing re-enriches until the next schema bump. Low impact; cheapest fix is to have the metadata-refresh path flip the work back to `pending` when it fills a previously-NULL title.
-
-### D6. Require a scan for override/custom-field writes
-
-- **Where:** `worker/src/routes/books.ts` ~325–421 (`PATCH /api/books/override`, `PATCH /api/books/custom-fields`).
-- **Problem:** Not an auth leak (rows are per-user), but any authenticated user can accumulate unbounded rows against the whole shared catalogue; `DELETE /api/scans/:id` only garbage-collects rows for scanned books, and a scanless write succeeds silently with `{}`. Requiring an existing scan (404 otherwise) closes the growth vector and makes C5 near-unreachable.
-- **Done when:** scanless writes 404; `worker/CLAUDE.md` route docs updated. Check the frontend never legitimately writes pre-scan (the edit screen shouldn't, but verify the import wizard's paths).
-
-### D7. Unit tests for untested pure logic
-
-Per project policy only pure, Vue-free/D1-free logic gets unit tests — all of the below qualify and are currently uncovered:
-
-- `isIsbnFormat` (`worker/src/isbn.ts` ~42) — the one function there with no describe block; guards the scan-queue entry.
-- `summarizeRuns` (`worker/src/routes/admin.ts` ~38–73).
-- `claimScans`, `pickPrimarySibling`, `applyImportRating` (`worker/src/routes/import.ts` ~168–354) — the pieces the import-wizard concurrency guarantees rest on; need exporting.
-- `stats.ts` helpers: `extractYear`, `computeDecadeGenres`, `computeTranslationRatio`, `computeYearStats` (year bounds, `count < 10` cutoff, code-vs-label fallback).
-- `src/utils/cover.ts` `tintFor`/`initials` — note `initials` strips all non-ASCII ("Ärger" → "R", non-Latin title → "?"); write the test, then decide whether that behavior is a bug to fix here too.
-- `src/utils/book-display.ts` `formatDateTime`/`formatPublishDate` (three-branch date handling, regression-prone).
+| D1–D7 | **Done** — see `tasks_completed.md` (`fix/audit-process-hardening`). D1 still needs two Cloudflare-dashboard actions, named there |
+| E, F | Open — below |
 
 ---
 
@@ -181,9 +130,8 @@ A random unread pick on the home dashboard, optionally re-rollable and biasable 
 
 ## Suggested sequencing
 
-1. **A, B and C are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9; each task names its own.
+1. **A, B, C and D are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9; each task names its own. D1 additionally waits on two Cloudflare-dashboard actions, and D7's `initials`/`formatPublishDate` fixes are worth a glance at a placeholder cover and a book's publish date in the browser.
 2. **F1 + F2** — export and reading dates; F2 is time-sensitive (every Goodreads import until then loses history). This is the front of the queue.
-3. **D-block** alongside whatever touches the same area. Two of them got cheaper as a side effect of the C-block: D6 (require a scan for override/custom-field writes) now sits next to the merge rule C5 wrote into the edition-switch batch, and D2's doc correction is one file away from the route entries C3/C5/C7 already rewrote. E5's `fieldDefs` half is likewise one file from B1's watcher.
-4. **E-block and remaining F-items** by appetite.
+3. **E-block and remaining F-items** by appetite. E5's `fieldDefs` half is one file from B1's watcher.
 
 Notes for implementing agents: branch before multi-commit work; conventional commits; the Stop hook runs type-check/lint/tests for whatever you touch — don't pre-run them; update the two inventory files (`worker/CLAUDE.md`, `worker/migrations/CLAUDE.md`) whenever a route or schema change is part of the task; `to-do.md` at the repo root is the owner's personal notes, not this backlog — leave it alone.

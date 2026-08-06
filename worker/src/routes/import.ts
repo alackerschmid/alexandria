@@ -165,8 +165,11 @@ interface ImportRowResult {
  * incoming value. It writes nothing when: the book has no work to hang a rating on, the CSV row
  * carries no rating (Goodreads leaves unrated books at 0 — "no opinion", not "clear my rating"),
  * another row in this batch already claimed the work, or `seed` mode found the field already set.
+ *
+ * Exported for the unit tests: the claim bookkeeping is what the batch's per-work guarantee rests
+ * on, and it is pure apart from the statements it hands back unexecuted.
  */
-function applyImportRating(
+export function applyImportRating(
   db: D1Database,
   userId: number,
   workId: number | null,
@@ -232,7 +235,10 @@ type ImportUpdateResult = { outcome: "updated" } &
 // forms, or two editions of one work — and without this both would write, each having read a
 // `previous` from before the other's write, leaving Undo restoring the wrong value. The row that
 // loses the claim reports `duplicate` instead.
-function claimScans(claimedScanIds: Set<number>, ids: number[]): boolean {
+//
+// Exported for the unit tests — all-or-nothing is the whole contract, and a partial claim would be
+// invisible until two rows of one export happened to overlap.
+export function claimScans(claimedScanIds: Set<number>, ids: number[]): boolean {
   if (ids.some((id) => claimedScanIds.has(id))) return false;
   for (const id of ids) claimedScanIds.add(id);
   return true;
@@ -344,8 +350,8 @@ async function findWorkSiblingScans(
 // Which sibling the summary card points at: the copy the user actually has, else the oldest (both
 // callers' queries order by created_at). Only the card's identity hangs on this — the status write
 // covers every sibling regardless. Generic over the row shape, so /match's library-index row can use
-// it as well as the work path's sibling row.
-function pickPrimarySibling<T extends { owning_status: string }>(
+// it as well as the work path's sibling row. Exported for the unit tests.
+export function pickPrimarySibling<T extends { owning_status: string }>(
   siblings: T[],
 ): T {
   return (

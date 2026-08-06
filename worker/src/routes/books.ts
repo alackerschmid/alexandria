@@ -17,7 +17,7 @@ import {
   attachCustomFields,
   buildScanSelect,
   fetchCustomFields,
-  getBookByIsbn,
+  getScannedBookByIsbn,
   parseIntOr,
   parseTagArray,
   type OverrideField,
@@ -352,7 +352,9 @@ books.patch("/override", async (c) => {
   if (Object.keys(errors).length)
     return c.json({ error: "validation_failed", fields: errors }, 400);
 
-  const book = await getBookByIsbn(c.env.DB, isbn);
+  // No scan, no override: the 404 is the catalogue-miss answer on purpose — "we don't have that
+  // book" and "you don't have that book" are the same answer to a caller who has neither.
+  const book = await getScannedBookByIsbn(c.env.DB, userId, isbn);
   if (!book) return c.json({ error: "Book not found" }, 404);
   const locale = c.req.query("locale") ?? "en";
 
@@ -394,7 +396,9 @@ books.patch("/custom-fields", async (c) => {
   const isbn = normalizeIsbn(body.isbn);
 
   const [book, { results: ownedDefs }] = await Promise.all([
-    getBookByIsbn(c.env.DB, isbn),
+    // Same scan requirement as `/override` above, and the same 404 for a book this user hasn't
+    // scanned — a custom-field value is per-user data hanging off a book they must actually hold.
+    getScannedBookByIsbn(c.env.DB, userId, isbn),
     c.env.DB.prepare(
       "SELECT id, field_type, field_options FROM user_field_definitions WHERE user_id = ?",
     )

@@ -5,6 +5,8 @@ import {
   publishYear,
   bookYear,
   d1TimestampMs,
+  formatDateTime,
+  formatPublishDate,
 } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 
@@ -133,5 +135,95 @@ describe("d1TimestampMs", () => {
     expect(d1TimestampMs(undefined)).toBeNull();
     expect(d1TimestampMs("")).toBeNull();
     expect(d1TimestampMs("not a date")).toBeNull();
+  });
+});
+
+/**
+ * `formatDateTime` renders an *instant* (a scan's acquisition time, a review's written date) in the
+ * reader's own zone, so its output legitimately depends on the host timezone — the assertions below
+ * pin the parsing, the locale mapping and the field set without pinning a calendar day.
+ * `formatPublishDate` is the opposite case and is asserted literally; see its own block.
+ */
+describe("formatDateTime", () => {
+  const enOpts = {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  } as const;
+
+  it("reads the zone-less D1 timestamp as UTC before formatting", () => {
+    expect(formatDateTime("2026-07-28 12:00:00", "en")).toBe(
+      new Date(Date.UTC(2026, 6, 28, 12)).toLocaleDateString("en-GB", enOpts),
+    );
+  });
+
+  it("renders day, month name and year — and no time", () => {
+    expect(formatDateTime("2026-07-28 12:00:00", "en")).toMatch(
+      /^\d{1,2} \w+ 2026$/,
+    );
+  });
+
+  it("uses the locale's own format", () => {
+    // de-DE puts a period after the day; the mapping from the app's "de" is what this asserts.
+    expect(formatDateTime("2026-07-28 12:00:00", "de")).toMatch(
+      /^\d{1,2}\. \w+ 2026$/,
+    );
+  });
+
+  it("falls back to en-GB for an unknown locale", () => {
+    const value = "2026-07-28 12:00:00";
+    expect(formatDateTime(value, "fr")).toBe(formatDateTime(value, "en"));
+  });
+
+  it("returns null rather than a placeholder when there is no timestamp", () => {
+    // The callers render nothing at all for null; an "Invalid Date" string would reach the UI.
+    expect(formatDateTime(null, "en")).toBeNull();
+    expect(formatDateTime(undefined, "en")).toBeNull();
+    expect(formatDateTime("", "en")).toBeNull();
+    expect(formatDateTime("not a date", "en")).toBeNull();
+  });
+});
+
+describe("formatPublishDate", () => {
+  it("formats a full ISO date with a short month", () => {
+    expect(formatPublishDate("1965-08-09", "en")).toBe("9 Aug 1965");
+    expect(formatPublishDate("1965-08-09", "de")).toBe("9. Aug. 1965");
+  });
+
+  it("formats a year-month as month name plus year, with no invented day", () => {
+    expect(formatPublishDate("1965-08", "en")).toBe("August 1965");
+    expect(formatPublishDate("1965-08", "de")).toBe("August 1965");
+  });
+
+  it("keeps the day the string says, in every timezone", () => {
+    // Built as UTC midnight and formatted in UTC: rendering in the reader's zone showed this as
+    // 8 Aug everywhere west of UTC. The value is a calendar date, not an instant.
+    expect(formatPublishDate("1965-08-09", "en")).toContain("9");
+    expect(formatPublishDate("2026-01-01", "en")).toBe("1 Jan 2026");
+    expect(formatPublishDate("2026-12-31", "en")).toBe("31 Dec 2026");
+  });
+
+  it("returns anything else unchanged", () => {
+    // A bare year is the common case (Wikidata's original_pub_date), and Google Books also supplies
+    // free text — passing it through beats formatting it into something wrong.
+    expect(formatPublishDate("1965", "en")).toBe("1965");
+    expect(formatPublishDate("January 1, 2004", "en")).toBe("January 1, 2004");
+    expect(formatPublishDate("n.d.", "en")).toBe("n.d.");
+  });
+
+  it("returns an empty string for absent input", () => {
+    expect(formatPublishDate(null, "en")).toBe("");
+    expect(formatPublishDate(undefined, "en")).toBe("");
+    expect(formatPublishDate("", "en")).toBe("");
+  });
+
+  it("falls back to en-GB for an unknown locale", () => {
+    expect(formatPublishDate("1965-08-09", "fr")).toBe("9 Aug 1965");
+  });
+
+  it("does not reformat a date-shaped string with an out-of-range month", () => {
+    // "2026-13-01" matches the full-date regex, so Date.UTC rolls it into the next year. Asserted
+    // as the current behaviour, not as a desirable one — the column is upstream-supplied.
+    expect(formatPublishDate("2026-13-01", "en")).toBe("1 Jan 2027");
   });
 });

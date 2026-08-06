@@ -8,10 +8,13 @@ The finished half of the audit backlog (see `tasks.md` for what's still open, an
 | A2 | File deleted; it was never tracked, so there is no commit (see A2) |
 | B1–B5 | Commit `56444cb` on `fix/audit-high-severity` (branched off `main`) |
 | C1–C9 | `fix/audit-medium-severity` (branched off `fix/audit-high-severity`) |
+| D1–D7 | `fix/audit-process-hardening` (branched off `fix/audit-medium-severity`) |
 
 `fix/audit-high-severity` and `fix/wikidata-series-filter` both touch `sweeper.ts`, in disjoint hunks — they merge cleanly in either order, and neither is blocked.
 
 Manual QA still outstanding: B1–B4 and C6/C7 plus the frontend half of C9 are store/component code, which by project policy carries no unit tests. Each task's "Done when" names the browser pass it still wants.
+
+**D1 needs one action outside the repo before it takes effect**: automatic deployments must be turned off on the Cloudflare Pages project (Workers & Pages → `bookscan` → Settings → Build), and the `CLOUDFLARE_API_TOKEN` secret needs **Pages: Edit**. Until the first, both the workflow and the Git integration deploy the frontend on a push to `main` (redundant, not harmful); until the second, the new step fails the Deploy run after the worker has already shipped.
 
 ---
 
@@ -196,3 +199,86 @@ Each is one small, isolated fix; a single PR can take the lot.
 8. Sequence token as proposed, plus the failed-load half: a failure now calls `closeDetail()`, stripping `edition=` so the URL stops describing a dialog that isn't there and clicking the entry again is a retry. The page-level `loadError` banner was **not** reused — that replaces the whole series list with an error, which is the wrong scope for one detail row failing.
 9. Fixed by exporting `DETAIL_QUERY_PARAMS` from `useDetailRoute.ts` and having `index.vue`'s search watcher carry that set across, rather than swapping one hardcoded name for four — the param list has grown twice already (`scan`, then `view`), and this is the second place it has to be right.
 10. As proposed.
+
+---
+
+## D. Process, docs, and hardening
+
+### D1. Gate the Pages frontend deploy on the verify workflow
+
+- **Where:** `.github/workflows/deploy.yml` + the Cloudflare Pages Git integration (root `CLAUDE.md` §Architecture).
+- **Problem:** Verify failure withholds the worker + migrations, but Pages ships the frontend anyway — new UI against old API. Even on success the two deploys race (frontend typically live minutes before the worker).
+- **Fix direction:** deploy Pages from the workflow (`wrangler pages deploy` after the worker step) and disable the Git integration, or use Pages branch-control "skip builds unless checks pass". Consult `cloudflare-docs` MCP before writing config — flags move. Update root `CLAUDE.md` §Architecture to match whichever shape lands.
+- **Done when:** a red verify run deploys nothing; ordering is worker-then-frontend (or documented as acceptable).
+- **Implemented:** the workflow-owns-both shape (option 1). The frontend steps are appended to the **existing `deploy` job** rather than added as a second job — same-job sequencing is what guarantees worker-then-frontend without job plumbing, and it means a failed worker deploy stops the frontend from shipping at all. Steps: root `npm ci` → export `VITE_API_URL` → `npm run build-only` → `wrangler pages deploy --branch=main`. Three decisions worth knowing:
+  - **`VITE_API_URL` is read out of the root `wrangler.toml`** by a one-line `sed`, not restated in the workflow. Cloudflare's build environment was the only thing injecting `[vars]` into the Vite build; hard-coding the URL in the workflow would have made the same value live in two files, which is exactly the kind of drift the repo's inventory rule exists to prevent. The step fails the deploy if the assignment isn't found, rather than building a frontend with no API base (which silently falls back to a same-origin `/api` that doesn't exist in production). `wrangler.toml` carries a comment saying the shape is load-bearing.
+  - **Wrangler is run from `worker/node_modules/.bin`** — it is the worker's devDependency, the frontend has none of its own, and `npx wrangler` unpinned would fetch a fresh copy on every deploy. The command runs with the repo root as cwd so the root `wrangler.toml` (project name `bookscan`, `pages_build_output_dir = "dist"`) is the config wrangler picks up; no `--project-name`/directory flags needed.
+  - **`--branch=main` is explicit** because Actions checks out a detached HEAD, so wrangler cannot infer the branch, and only the production branch publishes to `bookscan.pages.dev`.
+  - **`build-only`, not `build`** — the latter re-runs the type-check the verify job just did.
+  - `setup-node`'s cache now covers both lockfiles.
+  - **Not done in the repo, because it can't be:** turning off automatic deployments on the Pages project, and adding **Pages: Edit** to `CLOUDFLARE_API_TOKEN`. Both are dashboard actions; the note at the top of this file records them. Root `CLAUDE.md` §Architecture was rewritten around the new shape, including a line saying what re-enabling Pages auto-deploy would undo.
+
+### D2. Fix `worker/CLAUDE.md` guest-migration claim
+
+- **Where:** `worker/CLAUDE.md` (register/login bullets claim the server "migrates any guest scans to account"). No such code exists — `auth.ts` never touches `scans`; the real mechanism is the client replaying guest scans through `POST /api/scans` in seed mode (comments at `routes/scans.ts` ~154, `library-query.ts` ~384).
+- **Fix direction:** correct the two bullets to describe the client-replay mechanism. Doc-only change; the inventory is a contract per repo rules.
+- **Implemented:** as proposed, and the claim was re-verified before rewriting (`routes/auth.ts` contains no reference to `scans` at all). The login bullet now names the actual mechanism end to end — `syncToAccount` in `src/stores/guest.ts` replaying each local scan through `POST /api/scans` with the fresh token, oldest first, failed ISBNs kept in `localStorage` and retried by `App.vue`'s watcher on the next authenticated load — and ties it to why that route writes `rating`/`review` in **seed** mode. The register bullet says plainly that nothing is migrated there and points at the login note rather than repeating it. `src/CLAUDE.md`'s own line was left alone: it credits `syncToAccount()`, i.e. the client, which is correct.
+
+### D3. Guard the sweeper's Google Books spend
+
+- **Where:** `worker/src/sweeper.ts` → `backfillEdition`/`materializeEdition` (`worker/src/enrichment.ts` ~699–724); daily counters already exist (`api_usage`, queried in `worker/src/routes/admin.ts` ~180–278).
+- **Problem:** The self-amplifying placeholder backlog (each series enrichment inserts ~10 placeholders, each of whose enrichment can spend a Google Books call) can drain the shared daily quota that interactive title search depends on. The admin board observes; nothing enforces.
+- **Fix direction:** before `backfillEdition`'s Google half, check the UTC-day Google count against a threshold (constant, e.g. comfortably below the daily quota) and skip with a log line when over. Sweeper-only — never gate interactive paths.
+- **Done when:** the guard exists, the threshold is a named constant with the reasoning in a comment, and the skip is visible in logs.
+- **Implemented:** in `backfillEdition`, gated on `source === "sweeper"` (`source` is now threaded through `backfillEditionsAndDiscovery`, which needed it and had it available one frame up). `SWEEPER_GOOGLE_BOOKS_BUDGET = 700` sits above the function with the amplification argument and the 1,000/day figure the admin gauge uses.
+  - **It drops the Google half rather than skipping the backfill.** `fetchBookMetadata` already treats a missing API key as "OpenLibrary only", so over budget the call passes `undefined` for the key: an unmetered OpenLibrary hit still usually yields a cover, and a total miss inserts no `books` row, which leaves the backfill retryable by any later run. Skipping outright would have marked the work `done` with no edition and no path back short of a schema bump — a permanent missing cover in exchange for a temporary quota problem.
+  - **The counter read is shared, not duplicated:** `googleBooksCallsToday(db, nowMs?)` and `usageDayStart(nowMs)` are new exports in `usage.ts` (which owns the `api_usage` writes and the hour bucket), and `GET /api/admin/usage` was switched over to both — its inline `Date.UTC(...)` day boundary and its identical fallback query are gone. The guard and the gauge now cannot disagree about what "today" is.
+  - **Known lag, documented at the helper:** `UsageRecorder` buffers until `flush()`, so calls made within the current tick aren't visible to the check. The overshoot is bounded by one tick's worth of calls, which is why a per-tick check is enough and no read-through was added.
+  - `.claude/rules/enrichment.md` gained a paragraph under §Cron sweeper, including the instruction not to extend the gate to any path a user is waiting on.
+
+### D4. Record post-merge in-flight outcomes in `enrichment_runs`
+
+- **Where:** `worker/src/enrichment.ts` ~1278 (`if (identity.kind === "in-flight") return;`).
+- **Read first:** `.claude/rules/enrichment.md` §Observability (every attempting call writes a row; anything that stops doing so "silently blinds" the board).
+- **Problem:** A run that did a full search, verification, and a **destructive merge**, then lost the post-merge re-claim, records nothing. Merges are the most consequential pipeline action and are invisible in telemetry on this path.
+- **Fix direction:** write a run row (outcome recording the merge) before the early return. Rare path, low risk.
+- **Implemented:** the row is written against the **surviving** work, which required carrying it out of `resolveWorkIdentity`: the `in-flight` variant of `IdentityOutcome` now has a `canonicalId` field, because the row this call started from was deleted by the merge and `enrichment_runs.work_id` has to name a work that still exists.
+  - **Outcome is `done`, not a new value.** A fourth outcome (`merged`) would have had to be threaded through `summarizeRuns`, `src/types/admin.ts`, `VitalsPanel`, the signal colours and both locale files — for a rare path, and it would still not have made merges visible *as merges*, since a merge that runs to completion also records plain `done`. Recording what the same merge records when it wins the re-claim keeps the two halves of one behaviour consistent; the comment at the site says so.
+  - §Observability in the rule file now names this path explicitly, so the invariant it states is true again rather than aspirational.
+
+### D5. Re-enrich no-title works when they later gain a title
+
+- **Where:** `worker/src/enrichment.ts` ~1273–1277 (no-title path persists `done` at `CURRENT_ENRICHMENT_SCHEMA_VERSION` with nulls).
+- **Problem:** If the edition later gains a title (e.g. `/refresh` fills a NULL `books.title`), nothing re-enriches until the next schema bump. Low impact; cheapest fix is to have the metadata-refresh path flip the work back to `pending` when it fills a previously-NULL title.
+- **Implemented — no code change; the premise was wrong, and this is the correction.** `POST /api/books/refresh` already force-schedules enrichment (`enrichWorkDetached(..., force = true, ...)`) on **every** call, not only when the metadata fetch changed something — that was a deliberate C-era decision for the Goodreads-import rows neither source knows. `force = true` bypasses the "already `done`, skip" check and resets the work to `pending`, so an edition that gains a title through the only path that can fill one *is* re-enriched immediately. The proposed fix (flip the work to `pending` when the title is filled) would have been strictly weaker than what the code already does.
+  - Verified rather than assumed: `books.title` is written in exactly two places — the INSERTs in `resolveEdition`/`materializeEdition`, and the `COALESCE` UPDATE in `/refresh`. `resolveEdition` returns an existing row untouched, so no other request path can fill a NULL title. `linkWork` does assign `book.work_id` in memory (`editions.ts` ~942), so the `if (book.work_id)` guard around the refresh route's enrichment call is not a hole either — that was the one way the gap could still have been real.
+  - What landed instead: a comment at the no-title branch recording why it deliberately lands on `done` at the current schema version (a titleless work re-queued forever would occupy batch slots and write a run row every two minutes), that `/refresh` is the recovery path, and that the one case genuinely outside it is a title corrected directly in D1 — which no request observes, and which the enrichment rule happens to recommend for same-title collisions. Closing *that* would need a marker column and a fourth sweeper query, which is not worth it for an operator action.
+
+### D6. Require a scan for override/custom-field writes
+
+- **Where:** `worker/src/routes/books.ts` ~325–421 (`PATCH /api/books/override`, `PATCH /api/books/custom-fields`).
+- **Problem:** Not an auth leak (rows are per-user), but any authenticated user can accumulate unbounded rows against the whole shared catalogue; `DELETE /api/scans/:id` only garbage-collects rows for scanned books, and a scanless write succeeds silently with `{}`. Requiring an existing scan (404 otherwise) closes the growth vector and makes C5 near-unreachable.
+- **Done when:** scanless writes 404; `worker/CLAUDE.md` route docs updated. Check the frontend never legitimately writes pre-scan (the edit screen shouldn't, but verify the import wizard's paths).
+- **Implemented:** `getBookByIsbn` in `library-query.ts` was **replaced** by `getScannedBookByIsbn(db, userId, isbn)` (a `books`⋈`scans` join) rather than adding a second check beside it — those two routes were its only callers, so keeping the unguarded version would have left a shared helper whose whole purpose is to be used the wrong way. Both routes 404 with the existing `{ error: "Book not found" }` body: "the catalogue doesn't have it" and "you don't have it" are deliberately one answer, since a caller with neither can't distinguish them anyway.
+  - **Frontend audit, as the task asked:** `BookDetail.vue` is the only caller of either route in the whole of `src/`, and it sends `props.book.isbn` — a book from the library list, i.e. one with a scan. The series page opens the same component with `readonly`, which hides every control that could save. The import wizard writes custom-field values through `POST /api/import/goodreads`'s `shelves_field_def_id`, never through this route. So nothing legitimate wrote pre-scan.
+  - **One doc claim went stale and was corrected**, per the repo's rule about contradicted docs: `worker/CLAUDE.md`'s edition-switch entry justified the custom-field merge rule with "`PATCH /api/books/custom-fields` needs no scan, so the user can already hold values on the target book". The clearing step is still needed — rows written before this change still exist, and it is also what keeps the move from violating UNIQUE `(user_id, book_id, field_def_id)` — but the reason is now historical, and the entry says that instead.
+
+### D7. Unit tests for untested pure logic
+
+Per project policy only pure, Vue-free/D1-free logic gets unit tests — all of the below qualify and are currently uncovered:
+
+- `isIsbnFormat` (`worker/src/isbn.ts` ~42) — the one function there with no describe block; guards the scan-queue entry.
+- `summarizeRuns` (`worker/src/routes/admin.ts` ~38–73).
+- `claimScans`, `pickPrimarySibling`, `applyImportRating` (`worker/src/routes/import.ts` ~168–354) — the pieces the import-wizard concurrency guarantees rest on; need exporting.
+- `stats.ts` helpers: `extractYear`, `computeDecadeGenres`, `computeTranslationRatio`, `computeYearStats` (year bounds, `count < 10` cutoff, code-vs-label fallback).
+- `src/utils/cover.ts` `tintFor`/`initials` — note `initials` strips all non-ASCII ("Ärger" → "R", non-Latin title → "?"); write the test, then decide whether that behavior is a bug to fix here too.
+- `src/utils/book-display.ts` `formatDateTime`/`formatPublishDate` (three-branch date handling, regression-prone).
+
+**Implemented — all six, 108 new assertions across three new spec files and two extended ones.** Three route-module helpers gained an `export` (each with a comment saying it is for the tests), as did `stats.ts`'s `RawRow` type and `admin.ts`'s `RunRow`. New: `worker/test/admin.spec.ts`, `worker/test/import.spec.ts`, `worker/test/stats.spec.ts`; extended: `worker/test/isbn.spec.ts`, `test/book-display.spec.ts`; new frontend: `test/cover.spec.ts`. Importing a route module into a test pulls in Hono and `jose`, which is fine under node — but it is the first time the worker's tests do it.
+
+**Two behaviours the tests turned up were fixed, both in `src/utils/`:**
+
+1. **`initials` mangled every non-ASCII title** — the ASCII whitelist dropped the umlaut and promoted the second letter ("Ärger" → "R"), and emptied a non-Latin title to "?". Now filters on `\p{L}`/`\p{N}` (any script) and indexes by code point rather than UTF-16 unit, so "Ärger" → "Ä", "海辺のカフカ" → "海", and an astral first letter is a whole character instead of half a surrogate pair. ASCII titles are unchanged, punctuation is still stripped ("Don't Panic" → "DP"), and "?" remains the answer when nothing survives.
+2. **`formatPublishDate` was a day early west of UTC** — the value is built as UTC midnight but was rendered in the reader's local zone, so `1965-08-09` displayed as 8 Aug for anyone at a negative offset. Both branches now pass `timeZone: "UTC"`. This is also what makes literal assertions possible at all; `formatDateTime` deliberately keeps local-zone rendering (it formats an instant the reader owns, not a calendar date), so its tests pin the UTC *parsing*, the locale mapping and the field set without pinning a calendar day.
+
+Notes on what the tests deliberately encode as current-behaviour-not-endorsement, so a future change is a decision rather than a surprise: `computeYearStats`' median takes the upper of two middles; `computeTranslationRatio` counts a row whose edition language isn't a resolvable code as translated; `formatPublishDate("2026-13-01")` rolls into 2027; `summarizeRuns` drops an unknown outcome from `byOutcome` while still counting it in `total`, and treats an unrecognised failure reason as non-transient (`RETRY_POLICY`'s own reading).
