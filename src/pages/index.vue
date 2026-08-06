@@ -697,7 +697,10 @@ import {
   type PackedRow,
 } from "@/utils/shelf-packing";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
-import { useDetailRoute } from "@/composables/useDetailRoute";
+import {
+  useDetailRoute,
+  DETAIL_QUERY_PARAMS,
+} from "@/composables/useDetailRoute";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -1161,13 +1164,18 @@ watch(
   { immediate: true },
 );
 
-// Keep URL in sync as search changes — preserve the book param if a detail is open
+// Keep URL in sync as search changes — carrying the detail params through, so changing the
+// search text while a book is open doesn't close it. The list used to name a single `book`
+// param that nothing writes; the live ones are `work`/`edition`/`scan`/`view`.
 watch(search, (val) => {
   const current = typeof route.query.q === "string" ? route.query.q : "";
   if (val === current) return;
   const next: Record<string, string> = {};
   if (val) next.q = val;
-  if (route.query.book) next.book = String(route.query.book);
+  for (const key of DETAIL_QUERY_PARAMS) {
+    if (typeof route.query[key] === "string")
+      next[key] = route.query[key] as string;
+  }
   router.replace({ query: next });
 });
 

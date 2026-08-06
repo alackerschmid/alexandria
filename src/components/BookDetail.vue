@@ -152,6 +152,7 @@
                   <DetailsPane
                     :book="book"
                     :refreshing="refreshing"
+                    :refresh-error="refreshError"
                     :guest="guest"
                     :readonly="readonly"
                     @filter="filterBy"
@@ -526,6 +527,8 @@ const formattedAdded = computed(
 
 const descriptionExpanded = ref(false);
 const refreshing = ref(false);
+/** The i18n key for a failed enrichment refresh, or null. Cleared on each attempt. */
+const refreshError = ref<string | null>(null);
 const editing = ref(false);
 const saving = ref(false);
 /** The i18n key for a save failure the mask can't pin on a field (network, 5xx), or null. */
@@ -880,6 +883,7 @@ async function readSavedRow(res: Response): Promise<Partial<BookWithOverrides>> 
 
 const refresh = async () => {
   refreshing.value = true;
+  refreshError.value = null;
   try {
     const res = await apiFetch(`/api/books/refresh?isbn=${props.book.isbn}`, {
       method: "POST",
@@ -888,6 +892,10 @@ const refresh = async () => {
     await res.json();
     emit("refreshed", { enrichment_status: "pending" as const });
     startEnrichmentPoll();
+  } catch {
+    // The throw used to escape a try/finally with no catch: an unhandled rejection, and no sign
+    // at all on the one retry a user has for a failed enrichment — the spinner simply stopped.
+    refreshError.value = "detail.refresh_error";
   } finally {
     refreshing.value = false;
   }

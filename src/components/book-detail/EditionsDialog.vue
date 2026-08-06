@@ -408,10 +408,17 @@ async function switchTo(isbn: string) {
   pendingSwitchIsbn.value = null;
   error.value = null;
   try {
-    const res = await apiFetch(`/api/scans/${props.book.id}/edition`, {
-      method: "PATCH",
-      body: JSON.stringify({ isbn }),
-    });
+    // `?locale=` for the same reason the two override PATCHes carry it: the reply is a full
+    // locale-joined `buildScanSelect` row, spread straight over the displayed book via
+    // `refreshed`. Omitted, the worker defaults to `en` and a German reader's `series_name`
+    // flips to English until the next full refetch.
+    const res = await apiFetch(
+      `/api/scans/${props.book.id}/edition?locale=${localeStore.locale}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ isbn }),
+      },
+    );
     if (res.status === 409) {
       error.value = "detail.switch_already_owned";
       return;

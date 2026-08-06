@@ -10,6 +10,7 @@ import {
 } from "../editions";
 import { normalizeIsbn, isValidIsbn } from "../isbn";
 import { rateLimitOrReject } from "../rate-limit";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 import { mapWithConcurrency } from "../concurrency";
 import type { UsageRecorder } from "../usage";
 import {
@@ -631,16 +632,19 @@ async function importRow(
 // one waitUntil per imported row here would spike Wikidata SPARQL traffic across the whole batch
 // at once instead of the sweeper's paced trickle.
 importRoutes.post("/goodreads", async (c) => {
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     rows?: ImportRowInput[];
     update?: boolean;
     // Request-level, not per-row — the client creates/reuses a single "Shelves" tag field once
     // per import session (see stores/import.ts) rather than per row.
     shelves_field_def_id?: number;
-  }>();
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   // Defaulted rather than checked for undefined: an absent `rows` is an empty batch, which the
   // size guard already rejects — and defaulting keeps `rows` an array for the checks below.
-  const rows = body.rows ?? [];
+  // A `rows` that isn't an array is the same non-batch, and defaulting it keeps `.some` below
+  // from throwing on e.g. a string (which has a `.length` the size guard would happily read).
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const update = body.update === true;
   const tooMany = batchSizeError(c, rows, MAX_BATCH_SIZE);
   if (tooMany) return tooMany;
@@ -739,8 +743,12 @@ interface LibraryIndexRow {
 }
 
 importRoutes.post("/match", async (c) => {
-  const body = await c.req.json<{ rows?: MatchRowInput[]; update?: boolean }>();
-  const rows = body.rows ?? [];
+  const body = await readJsonBody<{
+    rows?: MatchRowInput[];
+    update?: boolean;
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const update = body.update === true;
   const tooMany = batchSizeError(c, rows, MAX_MATCH_BATCH_SIZE);
   if (tooMany) return tooMany;
@@ -907,8 +915,9 @@ interface SuggestRowResult {
 }
 
 importRoutes.post("/suggest-isbn", async (c) => {
-  const body = await c.req.json<{ rows?: SuggestRowInput[] }>();
-  const rows = body.rows ?? [];
+  const body = await readJsonBody<{ rows?: SuggestRowInput[] }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  const rows = Array.isArray(body.rows) ? body.rows : [];
   const tooMany = batchSizeError(c, rows, MAX_SUGGEST_BATCH_SIZE);
   if (tooMany) return tooMany;
 

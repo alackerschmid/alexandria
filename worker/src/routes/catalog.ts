@@ -7,6 +7,7 @@ import {
   saveEditionCandidates,
 } from "../editions";
 import { rateLimitOrReject } from "../rate-limit";
+import { isbnForms } from "../isbn";
 
 export const works = new Hono<Env>();
 export const series = new Hono<Env>();
@@ -73,15 +74,27 @@ async function loadEditions(db: D1Database, userId: number, workId: string) {
       publisher: string | null;
     }>();
 
+  // The SQL NOT EXISTS above compares exact strings, so a candidate holding the *other* form of
+  // an ISBN this work is already materialized under survives it and shows as a second edition of
+  // the same physical book (and switching to it used to mint a duplicate `books` row). Filtered
+  // here rather than in SQL because the 10↔13 conversion is a checksum recomputation SQLite can't
+  // express. Only this work's own editions are considered — a row under a different work is
+  // deliberately still offered, exactly as before.
+  const materializedForms = new Set(
+    materialized.flatMap((r) => isbnForms(r.isbn)),
+  );
+
   const editions: EditionRow[] = [
     ...materialized.map((r) => ({ ...r, materialized: true })),
-    ...candidates.map((r) => ({
-      ...r,
-      author: null,
-      scan_id: null,
-      status: null,
-      materialized: false,
-    })),
+    ...candidates
+      .filter((r) => !materializedForms.has(r.isbn))
+      .map((r) => ({
+        ...r,
+        author: null,
+        scan_id: null,
+        status: null,
+        materialized: false,
+      })),
   ];
 
   const work = await db

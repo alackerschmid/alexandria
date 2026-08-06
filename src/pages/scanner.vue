@@ -1278,18 +1278,14 @@ async function loadLibraryIsbns() {
     guestStore.scans.forEach((b) => libraryBooks.set(b.isbn, b.status));
     return;
   }
-  // Paged like useLibraryData: a single capped request misses every book past the first page,
-  // and a missed book makes duplicate detection silently fall through to the server's 409.
+  // GET /api/scans/isbns, not a paged GET /api/scans: duplicate detection needs every ISBN the
+  // user owns (the capped single request this replaced missed everything past the first page),
+  // and the full scan row is far too heavy to fetch the whole library of on scanner mount.
   try {
-    const PAGE = 500;
-    // Same runaway guard as useLibraryData's MAX_PAGES: 40 pages = 20k books.
-    for (let offset = 0, page = 0; page < 40; page++, offset += PAGE) {
-      const res = await apiFetch(`/api/scans?limit=${PAGE}&offset=${offset}`);
-      if (!res.ok) return;
-      const data: { isbn: string; status: ReadStatus }[] = await res.json();
-      data.forEach((b) => libraryBooks.set(b.isbn, b.status));
-      if (data.length < PAGE) break;
-    }
+    const res = await apiFetch(`/api/scans/isbns`);
+    if (!res.ok) return;
+    const data: { isbn: string; status: ReadStatus }[] = await res.json();
+    data.forEach((b) => libraryBooks.set(b.isbn, b.status));
   } catch {}
 }
 

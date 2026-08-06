@@ -236,6 +236,7 @@
     "remove": "Entfernen",
     "edit": "Bearbeiten",
     "refresh": "Aktualisieren",
+    "refresh_error": "Aktualisierung fehlgeschlagen — bitte erneut versuchen",
     "overridden": "Manuell bearbeitet",
     "filter_by": "Bibliothek nach {field} filtern: {value}",
     "edit_save": "Änderungen speichern",

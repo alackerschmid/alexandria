@@ -1,4 +1,4 @@
-import { watch, nextTick, type Ref } from "vue";
+import { watch, nextTick, onScopeDispose, type Ref } from "vue";
 
 const FOCUSABLE_SELECTOR =
   'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -56,5 +56,14 @@ export function useFocusTrap(
       previouslyFocused?.focus?.();
       previouslyFocused = null;
     }
+  });
+
+  // The watcher only detaches the listener on an open→closed transition, so a host that unmounts
+  // while still open (the scanner's detected-book sheet under "Back to library", /import's
+  // ResolveDrawer) left a capture-phase keydown handler on `document` for the life of the tab —
+  // one per visit, each swallowing Escape app-wide via the stopPropagation above.
+  onScopeDispose(() => {
+    document.removeEventListener("keydown", onKeydown, true);
+    previouslyFocused = null;
   });
 }

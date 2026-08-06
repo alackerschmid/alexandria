@@ -298,23 +298,40 @@ function onSwitchEdition(payload: { isbn: string; scanId: number }) {
   openDetail(detailBook.value?.work_id ?? null, payload.isbn, payload.scanId);
 }
 
+// Supersede token for detail loads, same pattern as `useWorkEditions`: rapid edition switches
+// (or a Back that reopens a different entry) leave several of these in flight, and without it a
+// slower earlier response clobbers `detailBook` with the book the user has already navigated away
+// from. Incremented on every call; a response whose token is stale is dropped.
+let detailSeq = 0;
+
 async function loadDetailByIsbn(
   isbn: string,
   scanId: number | null,
   fallback: { title: string | null; cover_url: string | null } | null,
 ) {
+  const seq = ++detailSeq;
+  // A failed load used to return silently, leaving `edition=` in the URL with no dialog and no
+  // error — a state nothing could clear but editing the address bar. Stripping the params puts
+  // the page back where it was and makes clicking the entry again a retry.
+  const failed = () => {
+    if (seq === detailSeq) closeDetail();
+  };
+
   if (scanId != null) {
     const res = await apiFetch(
       `/api/scans/${scanId}?locale=${localeStore.locale}`,
-    );
-    if (!res.ok) return;
-    detailBook.value = (await res.json()) as Book;
+    ).catch(() => null);
+    if (!res?.ok) return failed();
+    const book = (await res.json()) as Book;
+    if (seq !== detailSeq) return;
+    detailBook.value = book;
     detailReadonly.value = false;
     return;
   }
-  const res = await apiFetch(`/api/books/lookup?isbn=${isbn}`);
-  if (!res.ok) return;
+  const res = await apiFetch(`/api/books/lookup?isbn=${isbn}`).catch(() => null);
+  if (!res?.ok) return failed();
   const raw = (await res.json()) as any;
+  if (seq !== detailSeq) return;
   detailBook.value = {
     id: raw.id,
     isbn: raw.isbn,

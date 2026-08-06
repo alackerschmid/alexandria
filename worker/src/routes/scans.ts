@@ -4,7 +4,7 @@ import { authMiddleware } from "../auth";
 import { resolveEdition, materializeEdition, linkWork } from "../editions";
 import { enrichWorkDetached } from "../enrichment";
 import {
-  SORT_CLAUSES,
+  sortClauseFor,
   buildScanSelect,
   fetchCustomFields,
   attachCustomFields,
@@ -21,6 +21,7 @@ import {
   upsertWorkRating,
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
+import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
 
 const scans = new Hono<Env>();
@@ -39,8 +40,7 @@ scans.get("/", async (c) => {
   );
   const offset = Math.max(parseIntOr(c.req.query("offset"), 0), 0);
   const locale = c.req.query("locale") ?? "en";
-  const orderClause =
-    SORT_CLAUSES[c.req.query("sort") ?? ""] ?? SORT_CLAUSES.date_desc;
+  const orderClause = sortClauseFor(c.req.query("sort"));
 
   const { results } = await c.env.DB.prepare(
     `${buildScanSelect(locale)} WHERE s.user_id = ? ORDER BY ${orderClause} LIMIT ? OFFSET ?`,
@@ -60,15 +60,34 @@ scans.get("/", async (c) => {
   );
 });
 
+// The scanner's duplicate-detection index: every ISBN the user owns with its reading status,
+// unpaginated. Deliberately not `GET /` with a big limit — that row is the full merged JOIN
+// (descriptions, JSON tag arrays, per-book custom field values), and the scanner needs *all* of
+// it on mount just to build an ISBN→status map, so paging the heavy row put a cost linear in
+// library size on the most latency-sensitive page in the app. Two columns per scan stays small
+// enough to send in one response at any realistic library size.
+// Registered before `/:id` so the literal path wins the match.
+scans.get("/isbns", async (c) => {
+  const userId = c.get("userId");
+  const { results } = await c.env.DB.prepare(
+    "SELECT b.isbn, s.status FROM scans s JOIN books b ON b.id = s.book_id WHERE s.user_id = ?",
+  )
+    .bind(userId)
+    .all<{ isbn: string; status: string }>();
+  return c.json(results);
+});
+
 scans.post("/", async (c) => {
-  const body = await c.req.json<{
+  const body = await readJsonBody<{
     isbn: string;
     status?: string;
     owning_status?: string;
     rating?: number | null;
     review?: string | null;
-  }>();
-  if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
+  }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  if (typeof body.isbn !== "string" || !body.isbn)
+    return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
   // Format-only check (not checksum): a scanner misread that gets one check digit wrong must
   // still queue as a pending scan rather than being hard-rejected — see resolveEdition's allowEmpty.
@@ -258,11 +277,8 @@ function validatePatchBody(
 }
 
 scans.patch("/:id", async (c) => {
-  const rawBody = await c.req.json();
-  if (typeof rawBody !== "object" || rawBody === null) {
-    return c.json({ error: "status or owning_status is required" }, 400);
-  }
-  const body = rawBody as PatchScanBody;
+  const body = await readJsonBody<PatchScanBody>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
   const hasStatus = "status" in body;
   const hasOwningStatus = "owning_status" in body;
   const hasRating = "rating" in body;
@@ -380,8 +396,10 @@ scans.patch("/:id/edition", async (c) => {
   const scanId = c.req.param("id");
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
-  const body = await c.req.json<{ isbn: string }>();
-  if (!body.isbn) return c.json({ error: "ISBN is required" }, 400);
+  const body = await readJsonBody<{ isbn: string }>(c);
+  if (!body) return c.json(INVALID_JSON_BODY, 400);
+  if (typeof body.isbn !== "string" || !body.isbn)
+    return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
@@ -448,19 +466,42 @@ scans.patch("/:id/edition", async (c) => {
       409,
     );
 
-  await db.batch([
-    db
-      .prepare("UPDATE scans SET book_id = ? WHERE id = ? AND user_id = ?")
-      .bind(targetBook.id, scanId, userId),
-    db
-      .prepare(
-        "UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?",
-      )
-      .bind(targetBook.id, userId, scan.book_id),
-    db
-      .prepare("DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?")
-      .bind(userId, scan.book_id),
-  ]);
+  try {
+    await db.batch([
+      db
+        .prepare("UPDATE scans SET book_id = ? WHERE id = ? AND user_id = ?")
+        .bind(targetBook.id, scanId, userId),
+      // Clear the target's own custom-field rows before moving the scan's across.
+      // `PATCH /api/books/custom-fields` needs no scan, so the user can already hold values on
+      // the target book; without this the move violates UNIQUE (user_id, book_id, field_def_id)
+      // and the whole batch throws an opaque 500 with the switch rolled back. Merge rule: the
+      // values follow the scan and win, matching the documented "custom field values follow the
+      // scan" behaviour — the target's rows are orphans of a book the user has no scan of.
+      db
+        .prepare(
+          "DELETE FROM book_custom_fields WHERE user_id = ? AND book_id = ?",
+        )
+        .bind(userId, targetBook.id),
+      db
+        .prepare(
+          "UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?",
+        )
+        .bind(targetBook.id, userId, scan.book_id),
+      db
+        .prepare("DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?")
+        .bind(userId, scan.book_id),
+    ]);
+  } catch (e) {
+    // The alreadyOwned SELECT above is check-then-act: a concurrent scan of the target edition
+    // lands between it and this UPDATE and trips UNIQUE (user_id, book_id). Same answer as the
+    // check itself gives, rather than a 500.
+    if (isUniqueConstraintError(e))
+      return c.json(
+        { error: "You already have this edition in your library" },
+        409,
+      );
+    throw e;
+  }
 
   const updated = await db
     .prepare(`${buildScanSelect(locale)} WHERE s.id = ?`)

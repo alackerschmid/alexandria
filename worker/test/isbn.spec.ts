@@ -5,6 +5,7 @@ import {
   isbn10To13,
   isbn13To10,
   alternateIsbnForm,
+  isbnForms,
 } from "../src/isbn";
 
 describe("normalizeIsbn", () => {
@@ -108,5 +109,30 @@ describe("alternateIsbnForm", () => {
   it("returns null for an invalid ISBN", () => {
     expect(alternateIsbnForm("0306406153")).toBeNull();
     expect(alternateIsbnForm("notanisbn")).toBeNull();
+  });
+});
+
+describe("isbnForms", () => {
+  it("returns both forms of an ISBN-13 with a 10-digit equivalent", () => {
+    expect(isbnForms("9780306406157")).toEqual([
+      "9780306406157",
+      "0306406152",
+    ]);
+  });
+
+  it("returns both forms of an ISBN-10", () => {
+    expect(isbnForms("0306406152")).toEqual(["0306406152", "9780306406157"]);
+  });
+
+  it("returns the input alone when there is no alternate form", () => {
+    expect(isbnForms("9791234567896")).toEqual(["9791234567896"]);
+    expect(isbnForms("notanisbn")).toEqual(["notanisbn"]);
+  });
+
+  // The two forms of one edition must compare equal wherever the editions subsystem asks "do we
+  // already have this?" — an ISBN-13 `books` row and an ISBN-10 candidate are one physical book.
+  it("makes the two forms of one edition mutually discoverable", () => {
+    const known = new Set(isbnForms("9780306406157"));
+    expect(known.has("0306406152")).toBe(true);
   });
 });

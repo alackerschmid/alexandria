@@ -98,6 +98,17 @@ export const SORT_CLAUSES: Record<string, string> = {
     "series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC",
 };
 
+// The only supported way to turn a `?sort=` query param into an ORDER BY clause. The clause is
+// interpolated into the SQL, so the lookup must not reach the prototype chain: plain indexing
+// resolves `?sort=constructor` to an inherited function, which is truthy (so a `??` fallback never
+// fires) and stringifies into the query as a syntax error → unhandled 500.
+export function sortClauseFor(sort: string | undefined): string {
+  // hasOwnProperty.call, not Object.hasOwn: the worker's tsconfig lib is es2021.
+  return sort && Object.prototype.hasOwnProperty.call(SORT_CLAUSES, sort)
+    ? SORT_CLAUSES[sort]
+    : SORT_CLAUSES.date_desc;
+}
+
 // book_id is included here solely for custom-field merging in JS; it is stripped before the response.
 // `ws` is the work's primary (lowest-ordinal) series row, picked per book via a correlated
 // rowid lookup. This keys the work_series read off b.work_id (using idx_work_series_work) so we

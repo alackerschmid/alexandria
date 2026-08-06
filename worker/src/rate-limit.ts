@@ -3,6 +3,17 @@ import type { Env } from "./types";
 
 export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
 
+// Cloudflare always sets CF-Connecting-IP in production, so this fallback only fires off-edge —
+// `wrangler dev`, a direct-to-origin request, a test. A literal "unknown" put every such caller in
+// one shared bucket, where a handful of local logins exhausted the 10/min budget for everyone
+// (including other dev sessions against the same D1). One random token per isolate keeps the limit
+// working as a runaway-loop guard without collapsing unrelated callers into a single counter.
+const FALLBACK_CLIENT_ID = `unknown-${crypto.randomUUID()}`;
+
+export function clientIp(c: Context<Env>): string {
+  return c.req.header("CF-Connecting-IP") ?? FALLBACK_CLIENT_ID;
+}
+
 // Fixed-window rate limiter backed by D1. `key` is caller-defined (e.g. `scan:<userId>`) so one
 // table can back multiple rate-limited routes without a schema change. Not exact under bursts at
 // a window boundary (a caller could in principle get up to ~2x the limit split across one) —

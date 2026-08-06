@@ -64,6 +64,12 @@ export async function hashPassword(password: string): Promise<string> {
   return `pbkdf2$${PBKDF2_ITERATIONS}$${toB64(salt)}$${toB64(key)}`;
 }
 
+// A well-formed PBKDF2 hash (all-zero salt and digest) that no password can match, for login's
+// "no such user" branch. Verifying against it spends the same ~100k iterations a real account
+// does, so response time no longer tells an attacker whether an email is registered. The
+// iteration count is interpolated so it tracks PBKDF2_ITERATIONS rather than drifting from it.
+export const DUMMY_PASSWORD_HASH = `pbkdf2$${PBKDF2_ITERATIONS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;
+
 export async function verifyPassword(
   password: string,
   stored: string,

@@ -26,6 +26,10 @@ export function useLibraryData() {
 
   async function fetchBooks(onLoaded?: () => void) {
     const seq = ++fetchSeq;
+    // Cleared per attempt, not only set on failure: `error` backs a banner on the library page
+    // that had no other way to go away, so one transient failure left it on screen for the rest
+    // of the session even after a successful refetch.
+    error.value = "";
     try {
       const collected: Book[] = [];
       let offset = 0;

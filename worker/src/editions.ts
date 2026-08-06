@@ -1,5 +1,5 @@
 import type { BookRow, BookMetadata } from "./types";
-import { alternateIsbnForm } from "./isbn";
+import { alternateIsbnForm, isbnForms, normalizeIsbn } from "./isbn";
 import { dedupeTrimmed } from "./library-query";
 import { outcomeForStatus } from "./usage";
 import type { UsageOutcome, UsageRecorder } from "./usage";
@@ -649,9 +649,11 @@ async function fetchEditionsForWorkKey(
   const out: OpenLibraryEdition[] = [];
   const seen = new Set<string>();
   for (const e of entries) {
-    const entryIsbn = (
-      (e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined
-    )?.replace(/[-\s]/g, "");
+    // normalizeIsbn, not a bare dash-strip: OpenLibrary reports the ISBN-10 check digit in either
+    // case, and a lowercase `x` never string-matches the uppercased ISBNs every route boundary
+    // produces — so such a candidate could never be recognised as an edition the user already has.
+    const raw = (e.isbn_13?.[0] ?? e.isbn_10?.[0]) as string | undefined;
+    const entryIsbn = raw ? normalizeIsbn(raw) : undefined;
     if (!entryIsbn || seen.has(entryIsbn)) continue;
     seen.add(entryIsbn);
     out.push({
@@ -680,7 +682,10 @@ export async function saveEditionCandidates(
       .prepare("SELECT isbn FROM books WHERE work_id = ?")
       .bind(workId)
       .all<{ isbn: string }>();
-    const known = new Set(existingBooks.map((b) => b.isbn));
+    // Both forms of every materialized ISBN: an edition stored as ISBN-13 and discovered by
+    // OpenLibrary as ISBN-10 is one edition, and storing the counterpart as a "candidate" makes
+    // the carousel show it twice.
+    const known = new Set(existingBooks.flatMap((b) => isbnForms(b.isbn)));
     const newEditions = related.filter((e) => !known.has(e.isbn));
 
     if (newEditions.length) {
@@ -742,9 +747,17 @@ export async function materializeEdition(
   apiKey?: string,
   usage?: UsageRecorder | null,
 ): Promise<BookRow | null> {
+  // Matched on both ISBN forms, not the exact string. `resolveEdition` and `POST /api/scans`
+  // already dedupe this way; this site didn't, so switching to an ISBN-10 candidate of an edition
+  // whose `books` row exists under the ISBN-13 form minted a second row for one physical book —
+  // with its own scan, overrides and enrichment.
+  const forms = isbnForms(isbn);
   let book = await db
-    .prepare("SELECT * FROM books WHERE isbn = ?")
-    .bind(isbn)
+    .prepare(
+      `SELECT * FROM books WHERE isbn IN (${forms.map(() => "?").join(", ")})
+       ORDER BY (isbn = ?) DESC LIMIT 1`,
+    )
+    .bind(...forms, isbn)
     .first<BookRow>();
   if (book) {
     if (!book.work_id) {
