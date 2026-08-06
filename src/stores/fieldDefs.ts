@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useAuthStore } from "@/stores/auth";
 
 const BASE = import.meta.env.VITE_API_URL || "";
@@ -93,6 +93,16 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
     loaded.value = false;
     tagValues.value = {};
   }
+
+  // The store instance outlives login/logout in the same tab, and load() early-returns once
+  // `loaded` is set — without this, the previous account's field definitions and tag values
+  // survive an account switch and render in the next user's edit form. Same pattern as the
+  // token watcher in stores/preferences.ts.
+  const authStore = useAuthStore();
+  watch(
+    () => authStore.token,
+    () => reset(),
+  );
 
   async function update(
     id: number,

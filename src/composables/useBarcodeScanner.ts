@@ -20,6 +20,13 @@ export function useBarcodeScanner(options: {
   const { container, onDetect, onError, requiredHits = 2 } = options;
 
   let started = false;
+  // Quagga.init is async (camera negotiation): a stop() arriving while it's still in flight —
+  // the page unmounting right after mount — must win, or the late callback starts a stream
+  // with the detection handler already unregistered and the camera stays on until reload.
+  // Each start() takes a new token; stop() invalidates it; a callback holding a stale token
+  // releases the stream it just acquired instead of starting it.
+  let initSeq = 0;
+  let activeInit: number | null = null;
   // Require N consecutive reads of the same code before firing — filters noise
   // without adding perceptible delay at typical camera frame rates.
   const detectionBuffer: string[] = [];
@@ -43,7 +50,9 @@ export function useBarcodeScanner(options: {
   };
 
   function start() {
-    if (!container.value || started) return;
+    if (!container.value || started || activeInit !== null) return;
+    const token = ++initSeq;
+    activeInit = token;
 
     Quagga.init(
       {
@@ -63,6 +72,12 @@ export function useBarcodeScanner(options: {
         locate: true,
       },
       (err: unknown) => {
+        if (activeInit !== token) {
+          // stop() superseded this init; release the stream it acquired and do not start.
+          if (!err) Quagga.stop();
+          return;
+        }
+        activeInit = null;
         if (err) {
           console.error(err);
           onError(err);
@@ -78,6 +93,8 @@ export function useBarcodeScanner(options: {
 
   function stop() {
     Quagga.offDetected(onQuaggaDetected);
+    // Invalidate an in-flight init — its callback releases the stream itself (see start).
+    activeInit = null;
     if (started) {
       Quagga.stop();
       started = false;

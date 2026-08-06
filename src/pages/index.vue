@@ -958,9 +958,18 @@ const pagedBooks = computed<Book[]>(() => {
   return filteredBooks.value.slice(start, start + pageSize.value);
 });
 
-// Reset to page 1 whenever the visible set or view changes.
-watch([filteredBooks, sortDirection, groupBy, perPage], () => {
+// Reset to page 1 when the query or view changes. Deliberately the pipeline *inputs*, not
+// filteredBooks itself: that array's identity changes on every optimistic write (a status
+// cycle, a rating, an enrichment-poll merge — the edition-grouping computed tracks essentially
+// every property of every book), which threw the reader back to page 1 mid-browse.
+watch([search, onlyOwned, groupEditions, sortDirection, groupBy, perPage], () => {
   currentPage.value = 1;
+});
+
+// If the visible set shrinks under the current page (a delete, an optimistic write dropping a
+// book out of the filter), clamp to the last page instead of resetting.
+watch(totalPages, (total) => {
+  if (currentPage.value > total) currentPage.value = total;
 });
 
 function changePage(p: number) {

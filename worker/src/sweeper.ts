@@ -39,6 +39,11 @@ export async function scheduled(
   env: Bindings,
   ctx: ExecutionContext,
 ): Promise<void> {
+  // Prunes run first, ahead of the fallible link/enrichment phases: they are cheap indexed
+  // DELETEs, and running them last meant a throw anywhere above skipped all four — every tick,
+  // if the throw was deterministic.
+  await prune(env);
+
   const { results: unlinked } = await env.DB.prepare(
     "SELECT * FROM books WHERE work_id IS NULL LIMIT ?",
   )
@@ -47,7 +52,17 @@ export async function scheduled(
 
   if (unlinked.length) {
     console.log(`[sweeper] linking ${unlinked.length} book(s) with no work`);
-    for (const book of unlinked) await linkWork(env.DB, book);
+    for (const book of unlinked) {
+      try {
+        await linkWork(env.DB, book);
+      } catch (e) {
+        // Per-book isolation: this SELECT re-serves the same head rows every tick, so one book
+        // that deterministically fails to link would otherwise throw out of the handler at the
+        // same point every 2 minutes — no linking, no enrichment, ever. (Works enrichment has a
+        // retry state machine; linking deliberately stays this simple.)
+        console.error(`[sweeper] linkWork failed for book ${book.id}:`, e);
+      }
+    }
   }
 
   // Two separate queries so each is served by a partial index (a single OR query can fall
@@ -128,19 +143,30 @@ export async function scheduled(
   // handful of distinct (hour, provider, operation) buckets, so it collapses to one small batch
   // write instead of a D1 round-trip in front of every SPARQL response.
   const usage = new UsageRecorder(env.DB);
-  for (const [i, w] of results.entries()) {
-    await enrichWork(
-      env.DB,
-      w.id,
-      false,
-      env.GOOGLE_BOOKS_API_KEY,
-      "sweeper",
-      usage,
-    );
-    if (i < results.length - 1) await sleep(DELAY_MS);
+  try {
+    for (const [i, w] of results.entries()) {
+      await enrichWork(
+        env.DB,
+        w.id,
+        false,
+        env.GOOGLE_BOOKS_API_KEY,
+        "sweeper",
+        usage,
+      );
+      if (i < results.length - 1) await sleep(DELAY_MS);
+    }
+  } finally {
+    // finally, not after the loop: enrichWork catches its own errors, but anything that does
+    // escape (a D1 hiccup between works) must not also drop every counter recorded this tick —
+    // api_usage is what the admin quota gauge measures, and it can't self-heal an undercount.
+    ctx.waitUntil(usage.flush());
   }
-  ctx.waitUntil(usage.flush());
+}
 
+// The four retention DELETEs, in one place so the tick can run them ahead of everything
+// fallible. Each is self-healing (rows just wait for the next tick), so they share the
+// handler's error handling rather than carrying their own.
+async function prune(env: Bindings): Promise<void> {
   // Keep enrichment_runs from growing unbounded — cheap given idx_enrichment_runs_created.
   await env.DB.prepare(
     `DELETE FROM enrichment_runs WHERE created_at < datetime('now', '-${RUNS_RETENTION_DAYS} days')`,

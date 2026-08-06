@@ -1278,11 +1278,17 @@ async function loadLibraryIsbns() {
     guestStore.scans.forEach((b) => libraryBooks.set(b.isbn, b.status));
     return;
   }
+  // Paged like useLibraryData: a single capped request misses every book past the first page,
+  // and a missed book makes duplicate detection silently fall through to the server's 409.
   try {
-    const res = await apiFetch(`/api/scans?limit=500`);
-    if (res.ok) {
+    const PAGE = 500;
+    // Same runaway guard as useLibraryData's MAX_PAGES: 40 pages = 20k books.
+    for (let offset = 0, page = 0; page < 40; page++, offset += PAGE) {
+      const res = await apiFetch(`/api/scans?limit=${PAGE}&offset=${offset}`);
+      if (!res.ok) return;
       const data: { isbn: string; status: ReadStatus }[] = await res.json();
       data.forEach((b) => libraryBooks.set(b.isbn, b.status));
+      if (data.length < PAGE) break;
     }
   } catch {}
 }
@@ -1668,9 +1674,12 @@ const saveBook = async () => {
     const { result, id } = await postScan(queued);
     sessionScanned.add(book.isbn);
     libraryBooks.set(book.isbn, status);
-    // result === "duplicate" → already in the library; nothing to add to the session.
+    // result === "duplicate" → already in the library; nothing to add to the session, but say
+    // so — the local index can be stale, and a silently closing sheet reads as "saved".
     if (result === "saved") {
       recordSession(book, status, id);
+    } else {
+      showToast(t("scanner.toast_already_in_library"), "warning");
     }
   } catch {
     if (!navigator.onLine) {
