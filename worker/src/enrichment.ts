@@ -215,14 +215,37 @@ async function runSparql(
 }
 
 // Title (+ optional author) → matched work QID and its primary series, if any.
-// Wikidata's own class graph puts book, novel and film series *under* literary work (verified:
+// Wikidata's own class graph puts book, novel and film series *under* written work (verified:
 // Q277759 "book series", Q1667921 "novel series" and Q24856 "film series" all reach Q47461344 through
 // P279*), so the P31 allow-filter below cannot tell a series item from a single book. That matters
 // because a German edition is often catalogued under its *series* name — six volumes all titled
 // "Star wars - Wächter der Macht" — and the series item then outranks every real book in the text
-// search, after which mergeWorks collapses six distinct volumes onto one QID. Excluding the two
-// families that actually turn up costs nothing: none of the works this app resolved correctly reach
-// either class.
+// search, after which mergeWorks collapses six distinct volumes onto one QID.
+//
+// So the default pass rejects an item if **any** of its P31 types reaches Q7725310. That is
+// deliberately blunt, and it over-rejects: a single novel Wikidata *additionally* types as a
+// trilogy/dylogy/limited series is thrown out with the series. Four of this library's own works
+// failed exactly that way — Cryptonomicon and Reamde (P31 literary work + literary trilogy/dylogy),
+// Watchmen (literary work + limited series) and Daemon (written work + novel series).
+//
+// **Do not try to fix that by weakening the type test.** It cannot be done: Daemon's type set
+// (written work + novel series) is *identical* to that of genuine series like Q1195086 "The Once and
+// Future King" and Q60969361 "Beartown", and a rule admitting one admits the other. Measured against
+// live Wikidata: "at least one non-series type" readmits 1048 series items (Q464928 "Auf der Suche
+// nach der verlorenen Zeit" among them, whose German label then verifies at 1.000 against a volume
+// titled with it); adding a direct-membership check for the unambiguous series classes still leaves
+// 115 (Q182099 "Xanth", 46 volumes). Structural signals don't separate them either — Cryptonomicon
+// has 3 P527 parts and 3 items pointing at it with P179, the same shape as a real trilogy.
+//
+// What *does* separate them is the label, so that is where the exception lives. When the strict pass
+// finds nothing, `fetchBookInfo` runs once more with the type filter dropped and accepts a candidate
+// only on **exact** normalized title equality (`exactTitleMatcher` — no prefix containment, which is
+// the sole mechanism behind every wrong merge here). All four books match their item's label exactly;
+// "Das Spiel der Götter (12)" does not match "Das Spiel der Götter", and ILIUM does not match
+// "Ilium/Olympos". This cannot reintroduce the merge: two works can only both match one label exactly
+// if their normalized titles are equal, and `workMatchKey` (title|author) has already made those a
+// single work before enrichment runs. The retry deliberately does **not** use the stripped title —
+// stripping the ordinal is precisely what would turn a volume into an exact match for its series.
 const SERIES_OF_CREATIVE_WORKS = "Q7725310";
 const WIKIMEDIA_LIST_ARTICLE = "Q13406463";
 
@@ -249,6 +272,24 @@ export function pickVerifiedQid(
   for (const qid of candidates) {
     for (const label of labels.get(qid) ?? []) {
       if (score(label) >= QID_TITLE_THRESHOLD) return qid;
+    }
+  }
+  return null;
+}
+
+/**
+ * `pickVerifiedQid`'s strict twin, for the series-typed retry described above: same rank-order walk,
+ * but a candidate is only this book if one of its names *is* the searched title, exactly. Pure.
+ */
+export function pickExactQid(
+  title: string,
+  candidates: readonly string[],
+  labels: ReadonlyMap<string, Iterable<string>>,
+): string | null {
+  const isExact = exactTitleMatcher(title);
+  for (const qid of candidates) {
+    for (const label of labels.get(qid) ?? []) {
+      if (isExact(label)) return qid;
     }
   }
   return null;
@@ -316,6 +357,9 @@ async function fetchBookInfo(
   usage: UsageRecorder | null | undefined,
   title: string,
   author: string,
+  // The series-typed retry: drop the type filter, and demand an exact title match instead. Never
+  // call this with a stripped title — see the comment above SERIES_OF_CREATIVE_WORKS.
+  { exactOnly = false }: { exactOnly?: boolean } = {},
 ): Promise<{
   workQid: string;
   authorQid: string | null;
@@ -338,7 +382,7 @@ async function fetchBookInfo(
         ?titleRank wikibase:apiOrdinal true.
       }
       ?work wdt:P31/wdt:P279* wd:Q47461344.
-      FILTER NOT EXISTS { ?work wdt:P31/wdt:P279* wd:${SERIES_OF_CREATIVE_WORKS} }
+      ${exactOnly ? "" : `FILTER NOT EXISTS { ?work wdt:P31/wdt:P279* wd:${SERIES_OF_CREATIVE_WORKS} }`}
       FILTER NOT EXISTS { ?work wdt:P31 wd:${WIKIMEDIA_LIST_ARTICLE} }
       ${authorBlock}
       OPTIONAL { ?work rdfs:label ?workLabelEn. FILTER(LANG(?workLabelEn) = "en") }
@@ -393,17 +437,14 @@ async function fetchBookInfo(
       ];
     }),
   );
+  const pick = exactOnly ? pickExactQid : pickVerifiedQid;
   const workQid =
-    pickVerifiedQid(title, candidates, fastLabels) === candidates[0]
+    pick(title, candidates, fastLabels) === candidates[0]
       ? candidates[0]
-      : pickVerifiedQid(
-          title,
-          candidates,
-          await fetchWorkLabels(usage, candidates),
-        );
+      : pick(title, candidates, await fetchWorkLabels(usage, candidates));
   if (!workQid) {
     console.log(
-      `[fetchBookInfo] no candidate's own name matches "${title}" — treating as not found rather than trusting the search rank. Candidates: ${candidates.join(", ")}`,
+      `[fetchBookInfo] no candidate's own name matches "${title}"${exactOnly ? " exactly" : ""} — treating as not found rather than trusting the search rank. Candidates: ${candidates.join(", ")}`,
     );
     return null;
   }
@@ -927,6 +968,15 @@ async function resolveWorkIdentity(
       );
       info = await fetchBookInfo(usage, strippedTitle, author);
     }
+  }
+  // Last resort: the item may be a single work Wikidata also types as a series (Cryptonomicon,
+  // Reamde, Watchmen, Daemon), which the type filter cannot tell from a real series. Retry without
+  // it, accepting only an exact title match — on the *original* title, never the stripped one.
+  if (!info) {
+    console.log(
+      `[enrichWork] no results for "${title}", retrying series-typed items with an exact title match`,
+    );
+    info = await fetchBookInfo(usage, title, author, { exactOnly: true });
   }
   console.log(
     `[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? "null"} seriesQid=${info?.series?.seriesQid ?? "null"}`,

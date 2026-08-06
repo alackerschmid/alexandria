@@ -60,6 +60,8 @@ const {
   confirmReviewItem,
   skipReviewItem,
   undoSkipReviewItem,
+  skipAllReviewItems,
+  undoAllSkippedReviewItems,
   retrySearchUnavailable,
   toggleImportedEdition,
   closeImportedEdition,
@@ -634,6 +636,37 @@ const tabs = computed(() => [
               @click="retrySearchUnavailable()"
             >
               {{ t("import.review.retry_search") }}
+            </AppButton>
+          </div>
+          <!-- Bulk skip/undo: the counterpart to AttentionRow's per-row actions, for a queue the
+               user has decided not to work through book by book. Nothing is written server-side,
+               so neither needs a confirm — Undo all reverses a mis-click in one click.
+               Both are disabled while the retry above is in flight: that pass writes `pending`
+               back onto every row it fails to resolve, so a bulk skip issued mid-pass is silently
+               reverted for exactly the rows it touches. The store refuses it too. -->
+          <div
+            v-if="reviewQueue.length > 0"
+            class="flex items-center justify-end gap-2 px-6 md:px-8 py-4 border-b border-charcoal-border"
+          >
+            <AppButton
+              v-if="counts.skipped > 0"
+              variant="ghost"
+              size="sm"
+              :disabled="retryingSearch"
+              class="flex-none"
+              @click="undoAllSkippedReviewItems()"
+            >
+              {{ t("import.review.undo_all", { n: counts.skipped }) }}
+            </AppButton>
+            <AppButton
+              v-if="reviewRemaining > 0"
+              variant="secondary"
+              size="sm"
+              :disabled="retryingSearch"
+              class="flex-none"
+              @click="skipAllReviewItems()"
+            >
+              {{ t("import.review.skip_all", { n: reviewRemaining }) }}
             </AppButton>
           </div>
           <p

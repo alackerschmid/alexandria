@@ -7,6 +7,7 @@ import {
   LONG_COOLDOWN_MINUTES,
   type FailureReason,
   pickVerifiedQid,
+  pickExactQid,
 } from "../src/enrichment";
 
 describe("classifyError", () => {
@@ -141,5 +142,71 @@ describe("pickVerifiedQid", () => {
 
   it("returns null when a candidate has no labels at all", () => {
     expect(pickVerifiedQid("Dune", ["Q190192"], labels([]))).toBeNull();
+  });
+});
+
+describe("pickExactQid", () => {
+  const labels = (entries: [string, string[]][]) => new Map(entries);
+
+  // The series-typed retry runs with the type guard dropped, so this is the only thing between a
+  // series item and a merge. Every case below is a real one from the production library.
+
+  it("accepts the four works Wikidata also types as a series", () => {
+    // Single novels carrying a trilogy/dylogy/limited-series/novel-series co-type. Their own label
+    // *is* the searched title, which is what makes them safe to accept without the type guard.
+    for (const [title, qid] of [
+      ["Cryptonomicon", "Q534975"],
+      ["Reamde", "Q7301391"],
+      ["Watchmen", "Q128444"],
+      ["Daemon", "Q5208252"],
+    ] as const) {
+      expect(pickExactQid(title, [qid], labels([[qid, [title]]]))).toBe(qid);
+    }
+  });
+
+  it("still matches across languages", () => {
+    expect(
+      pickExactQid(
+        "Unendlicher Spaß",
+        ["Q1077445"],
+        labels([["Q1077445", ["Infinite Jest", "Unendlicher Spaß"]]]),
+      ),
+    ).toBe("Q1077445");
+  });
+
+  it("rejects a volume against its series item", () => {
+    // The whole point. Under titleScorer these score 1.000 by prefix containment, which is how eight
+    // Malazan volumes collapsed onto Q458982 in the first place.
+    expect(
+      pickExactQid(
+        "Das Spiel der Götter (12)",
+        ["Q458982"],
+        labels([["Q458982", ["Malazan Book of the Fallen", "Das Spiel der Götter"]]]),
+      ),
+    ).toBeNull();
+    expect(
+      pickExactQid("ILIUM", ["Q692326"], labels([["Q692326", ["Ilium/Olympos"]]])),
+    ).toBeNull();
+  });
+
+  it("rejects the subtitled edition titleScorer deliberately accepts", () => {
+    // The one behavioural difference worth stating: forgiveness is the risk here, not the goal.
+    expect(
+      pickExactQid(
+        "Infinite Jest (30th Anniversary Edition)",
+        ["Q1077445"],
+        labels([["Q1077445", ["Infinite Jest"]]]),
+      ),
+    ).toBeNull();
+  });
+
+  it("ignores case, diacritics and whitespace, as normalizeStr does", () => {
+    expect(
+      pickExactQid(
+        "  unendlicher  SPASS ",
+        ["Q1077445"],
+        labels([["Q1077445", ["Unendlicher Spass"]]]),
+      ),
+    ).toBe("Q1077445");
   });
 });
