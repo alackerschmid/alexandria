@@ -4,11 +4,19 @@ import { dedupeTrimmed } from "./library-query";
 import { outcomeForStatus } from "./usage";
 import type { UsageOutcome, UsageRecorder } from "./usage";
 
+/**
+ * Every outbound HTTP call in this module goes through here, so this is where they are counted
+ * against the invocation's subrequest budget — see `UsageRecorder.countFetch`. Counting here rather
+ * than at the call sites is what makes the count exact: a new call site cannot forget, and calls
+ * whose *telemetry* is skipped (the OpenLibrary work-description read) are still metered.
+ */
 async function fetchWithTimeout(
   url: string,
+  usage: UsageRecorder | null | undefined,
   opts: RequestInit = {},
   timeoutMs = 4000,
 ): Promise<Response> {
+  usage?.countFetch();
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -86,7 +94,7 @@ async function fetchGoogleBooksJson(
     // throws — that's one call to Google, whatever went wrong afterwards.
     let recorded = false;
     try {
-      const res = await fetchWithTimeout(url);
+      const res = await fetchWithTimeout(url, usage);
       status = res.status;
       record(outcomeForStatus(status));
       recorded = true;
@@ -161,9 +169,13 @@ async function fetchFromGoogleBooks(
 // work record instead. Best-effort: failures/timeouts just leave the description null.
 async function fetchOpenLibraryWorkDescription(
   workKey: string,
+  usage?: UsageRecorder | null,
 ): Promise<string | null> {
   try {
-    const res = await fetchWithTimeout(`https://openlibrary.org${workKey}.json`);
+    const res = await fetchWithTimeout(
+      `https://openlibrary.org${workKey}.json`,
+      usage,
+    );
     const work: any = await res.json();
     return typeof work.description === "string"
       ? work.description
@@ -185,10 +197,10 @@ async function fetchOpenLibraryBibkey(
 ): Promise<[any, any]> {
   try {
     const pair = await Promise.all([
-      fetchWithTimeout(`${base}&jscmd=data`).then(
+      fetchWithTimeout(`${base}&jscmd=data`, usage).then(
         (r) => r.json() as Promise<any>,
       ),
-      fetchWithTimeout(`${base}&jscmd=details`)
+      fetchWithTimeout(`${base}&jscmd=details`, usage)
         .then((r) => r.json() as Promise<any>)
         .catch(() => ({})),
     ]);
@@ -220,7 +232,7 @@ async function fetchFromOpenLibrary(
       : (book.description?.value ?? null);
   const workKey = details?.works?.[0]?.key;
   if (!description && workKey)
-    description = await fetchOpenLibraryWorkDescription(workKey);
+    description = await fetchOpenLibraryWorkDescription(workKey, usage);
 
   return {
     title: book.title ?? null,
@@ -577,6 +589,7 @@ export async function fetchOpenLibraryEditions(
   try {
     const editionRes = await fetchWithTimeout(
       `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
+      usage,
     );
     if (editionRes.status === 404) return []; // ISBN unknown to OpenLibrary — nothing to expand from, not an error
     if (!editionRes.ok) {
@@ -622,6 +635,7 @@ async function fetchEditionsForWorkKey(
   try {
     editionsRes = await fetchWithTimeout(
       `https://openlibrary.org${workKey}/editions.json?limit=200`,
+      usage,
     );
   } catch (e) {
     usage?.record("openlibrary", "editions", "error");

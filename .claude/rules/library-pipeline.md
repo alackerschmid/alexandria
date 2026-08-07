@@ -27,8 +27,10 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
 - `useLibraryData.ts` — the page's server data: paginated `GET /api/scans` (with a sequence
   guard against overlapping fetches) + `GET /api/series` membership map, exposing
   `serverBooks`/`seriesMemberships`/`error`
-- `useLibrarySearch.ts` — text and filter search (`status:unread` and friends) against real
-  per-edition fields
+- `useLibrarySearch.ts` — text and filter search (`status:unread` and friends). Most of what it
+  matches is per-edition; `review` is the exception — it comes from the `work_ratings` join and
+  is identical across every edition of a work, which is why including it in the free-text match
+  is safe upstream of collapsing (see below)
 - `useEditionGrouping.ts` — collapses same-work editions into one synthetic card per work.
   **Must run downstream of search**, so filters match real per-edition fields rather than a
   collapsed card's representative values

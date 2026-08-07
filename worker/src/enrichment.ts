@@ -5,7 +5,7 @@ import {
   normalizeAuthorKey,
   discoverEditionsFromOpenLibrary,
 } from "./editions";
-import { titleScorer } from "./title-match";
+import { exactTitleMatcher, titleScorer } from "./title-match";
 import {
   googleBooksCallsToday,
   outcomeForStatus,
@@ -17,6 +17,8 @@ import {
 export const CURRENT_ENRICHMENT_SCHEMA_VERSION = 5;
 
 const WIKIDATA_ENDPOINT = "https://query.wikidata.org/sparql";
+// The plain Action API, for the entity search that used to run federated inside the SPARQL query.
+const WIKIDATA_ACTION_API = "https://www.wikidata.org/w/api.php";
 const WIKIDATA_UA =
   "BookScan/1.0 (https://bookscan.pages.dev; contact@bookscan.pages.dev)";
 
@@ -25,8 +27,18 @@ export type FailureReason =
 
 // Which SPARQL query a `runSparql` call is, for the `api_usage` counters. One per query function,
 // matching the cost profile the sweeper's BATCH_SIZE comment reasons about.
+// `entity_search` is the odd one out: it is a plain Action API call, not SPARQL. It shares this
+// union (and so the `api_usage` operation namespace) because it is the same unit of work the
+// `SERVICE wikibase:mwapi` block used to do inside `book_search` — keeping it countable separately
+// is what makes the split visible on the board.
+// The title→QID lookup is three operations rather than one, and they are counted apart on purpose:
+// each is a different failure mode, and the board is where that shows. `entity_search` is the mwapi
+// candidate search, `book_search` the type/author filter over it, `book_hydrate` the labels/series
+// read over the survivors — the filter is the expensive one, so a future regression has an address.
 type SparqlOperation =
   | "book_search"
+  | "book_hydrate"
+  | "entity_search"
   | "labels"
   | "work_details"
   | "series_members"
@@ -114,13 +126,10 @@ export function classifyError(e: unknown): FailureReason {
   return e instanceof SparqlError ? e.kind : "network";
 }
 
-function escapeSparql(v: string): string {
-  return v
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, String.raw`\"`)
-    .replace(/\n/g, String.raw`\n`)
-    .replace(/\r/g, String.raw`\r`);
-}
+// `escapeSparql` used to live here, for the title and author strings the federated search embedded
+// in the query. Nothing embeds user text in SPARQL any more: the searched strings go through
+// `encodeURIComponent` into an Action API URL, and the only thing reaching a query is a QID already
+// shape-checked against /^Q\d+$/. Don't reintroduce string interpolation into a query without it.
 
 function qidFromUri(uri: string | undefined): string | null {
   return uri ? (uri.split("/").pop() ?? null) : null;
@@ -130,22 +139,21 @@ function parseOrdinal(v: string | undefined): number | null {
   return v != null && v !== "" && !isNaN(Number(v)) ? Number(v) : null;
 }
 
-// Returns [] when the query succeeds but has no results.
+// One request to Wikidata — SPARQL endpoint or Action API — carrying the timeout, the 429 retry and
+// the failure classification that both paths have to agree on.
 // Throws on network errors, timeouts, or HTTP errors — callers should let this propagate
 // so enrichWork's catch block can set enrichment_failed_at (retryable) rather than
 // treating the failure as a permanent "not found" (which would set series_checked_at).
-async function runSparql(
+async function fetchWikidataJson(
   usage: UsageRecorder | null | undefined,
   operation: SparqlOperation,
-  query: string,
+  url: string,
   timeoutMs = 25_000,
-): Promise<any[]> {
-  const url = `${WIKIDATA_ENDPOINT}?query=${encodeURIComponent(query)}&format=json`;
-  console.log(
-    "[SPARQL] Running query:",
-    query.replace(/\s+/g, " ").trim().slice(0, 200),
-  );
+): Promise<any> {
   const once = async () => {
+    // Counted here, per attempt, for the same reason `fetchWithTimeout` does it: this is the only
+    // place a Wikidata request is actually made, so the subrequest meter cannot drift from reality.
+    usage?.countFetch();
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -159,11 +167,11 @@ async function runSparql(
     } catch (e: any) {
       if (e?.name === "AbortError")
         throw new SparqlError(
-          `[SPARQL] timed out after ${timeoutMs}ms`,
+          `[wikidata:${operation}] timed out after ${timeoutMs}ms`,
           "timeout",
         );
       throw new SparqlError(
-        `[SPARQL] network error: ${e?.message ?? e}`,
+        `[wikidata:${operation}] network error: ${e?.message ?? e}`,
         "network",
       );
     } finally {
@@ -187,7 +195,9 @@ async function runSparql(
   let res = await attempt();
   if (res.status === 429) {
     const retry = Number(res.headers.get("Retry-After")) || 5;
-    console.warn(`[SPARQL] Rate limited (HTTP 429), retrying after ${retry}s`);
+    console.warn(
+      `[wikidata:${operation}] Rate limited (HTTP 429), retrying after ${retry}s`,
+    );
     await new Promise((r) => setTimeout(r, Math.min(retry, 10) * 1000));
     res = await attempt();
   }
@@ -203,15 +213,149 @@ async function runSparql(
         ? Number(res.headers.get("Retry-After")) || undefined
         : undefined;
     throw new SparqlError(
-      `[SPARQL] HTTP ${res.status} ${res.statusText}`,
+      `[wikidata:${operation}] HTTP ${res.status} ${res.statusText}`,
       kind,
       retryAfter,
     );
   }
-  const data: any = await res.json();
+  return await res.json();
+}
+
+/** Returns [] when the query succeeds but has no results. */
+async function runSparql(
+  usage: UsageRecorder | null | undefined,
+  operation: SparqlOperation,
+  query: string,
+  timeoutMs = 25_000,
+): Promise<any[]> {
+  console.log(
+    "[SPARQL] Running query:",
+    query.replace(/\s+/g, " ").trim().slice(0, 200),
+  );
+  const data = await fetchWikidataJson(
+    usage,
+    operation,
+    `${WIKIDATA_ENDPOINT}?query=${encodeURIComponent(query)}&format=json`,
+    timeoutMs,
+  );
   const rows: any[] = data?.results?.bindings ?? [];
   console.log(`[SPARQL] Got ${rows.length} rows`);
   return rows;
+}
+
+// How deep into the text-relevance ranking to look. Deliberately far deeper than the ten candidates
+// that get hydrated: the right book is often not in the top ten *entity* hits for a common word — the
+// novel "Sphere" and Hesse's "Siddhartha" both sit outside it, behind the shape, the concept and the
+// place — and the old federated query effectively searched this deep too (hits ranked past 800 were
+// observed) before its trailing LIMIT took the first ten *surviving* items. Measured: at 50, all of
+// Sphere/Siddhartha/Imperium/Revival/It/11.22.63 resolve, and none did at 10.
+const ENTITY_SEARCH_LIMIT = 50;
+
+// How many survivors get the full labels/series read, and so how many can be label-verified. It is
+// also what bounds `fetchWorkLabels` to 10 × MAX_LABEL_ROWS_PER_ITEM.
+//
+// Named after the old query's trailing `LIMIT 10` but not identical to it: that limit capped *rows*,
+// and a candidate with three `P179` statements ate three of the ten slots, so the number of distinct
+// works reaching verification was often far below ten. This caps distinct works, which means a
+// lower-ranked candidate can now be verified where before it never entered the list — a recall gain,
+// and the reason `fetchWorkLabels`' worst case is now routinely reachable rather than theoretical.
+const MAX_CANDIDATES = 10;
+
+/**
+ * mwapi `list=search`, called straight against the Action API instead of through
+ * `SERVICE wikibase:mwapi`.
+ *
+ * **This split is why a title search is affordable at all.** Inside WDQS the service streamed every
+ * hit it could find into the surrounding `P31/P279*` walk — hits ranked past 800 were observed for
+ * "Macbeth" — and the query's own `LIMIT 10` only applied once all of that work was done. Measured
+ * against the works this instance had permanently stuck (every one of which Wikidata holds and ranks
+ * *first*): Macbeth 4.5s vs 38–53s, Meditations 3.7s vs >65s, The Iliad 10.0s vs an HTTP 502. A title
+ * that already worked, "Dune - Der Wüstenplanet.", went 17.0s → 4.3s. Bounding the service with
+ * `mwapi:srlimit` did **not** help (20/5/3 all still exceeded 65s), so the federation itself was the
+ * cost, not the candidate count.
+ *
+ * Returns QIDs in **search-rank order**, which is load-bearing: `pickVerifiedQid` walks candidates in
+ * that order and the first verified one wins, so the caller must preserve it.
+ */
+async function searchEntityQids(
+  usage: UsageRecorder | null | undefined,
+  srsearch: string,
+  limit = ENTITY_SEARCH_LIMIT,
+): Promise<string[]> {
+  const url =
+    `${WIKIDATA_ACTION_API}?action=query&list=search&format=json` +
+    `&srlimit=${limit}&srsearch=${encodeURIComponent(srsearch)}`;
+  const qids = parseEntitySearchQids(
+    await fetchWikidataJson(usage, "entity_search", url),
+  );
+  console.log(`[entity_search] "${srsearch}" → ${qids.join(", ") || "no hits"}`);
+  return qids;
+}
+
+/**
+ * `list=search`'s hits as shape-checked QIDs, in rank order — **or a throw**, because the Action API
+ * reports failure differently from the SPARQL endpoint and the difference is dangerous here.
+ *
+ * `fetchWikidataJson` classifies on HTTP status, which is all the SPARQL endpoint needs. The Action
+ * API answers **HTTP 200** with an `error` envelope and no `query.search` key at all — verified live:
+ * a title over 300 characters gives `cirrussearch-query-too-long`, query-service lag gives `maxlag`,
+ * and CirrusSearch load-shedding gives `cirrussearch-too-busy-error`. Reading that as an empty hit
+ * list would make an upstream wobble indistinguishable from "Wikidata has no such book", and the
+ * caller acts on that difference: no candidates means `not_found`, which persists as
+ * `enrichment_status = 'done'` with a NULL qid, `next_retry_at` NULL and the schema version current —
+ * a state **no sweeper query serves again**. That is precisely how 28 works became permanently
+ * unenrichable under the old federated query, so it must not be reintroduced from the other side.
+ *
+ * An unexpected *shape* throws for the same reason: only an explicit empty `search` array is a real
+ * "no hits". Pure, and exported for the unit tests — the QID pattern is also the only guard left on
+ * text reaching a SPARQL `VALUES` block, now that nothing is escaped into a query.
+ */
+export function parseEntitySearchQids(json: any): string[] {
+  const error = json?.error;
+  if (error) {
+    const code = String(error.code ?? "unknown");
+    // Server-side pressure, not a broken request: `maxlag` and the too-busy/read-only family all
+    // clear on their own, so they get `rate_limited`'s short backoff. Anything else is this build's
+    // fault (a malformed or over-long search) and gets `other`, whose cap is deliberately tight.
+    const kind: FailureReason = /maxlag|too-busy|readonly|read-only/i.test(code)
+      ? "rate_limited"
+      : "other";
+    throw new SparqlError(
+      `[entity_search] Action API error: ${code} — ${error.info ?? ""}`.trim(),
+      kind,
+    );
+  }
+  const hits = json?.query?.search;
+  if (!Array.isArray(hits)) {
+    throw new SparqlError(
+      "[entity_search] response carried no search array",
+      "other",
+    );
+  }
+  return hits
+    .map((h) => h?.title)
+    .filter(
+      (t: unknown): t is string => typeof t === "string" && /^Q\d+$/.test(t),
+    );
+}
+
+/**
+ * The candidates to verify: those the filter query kept, **in the order the search ranked them**,
+ * capped at `max`.
+ *
+ * Pure and separately tested because it is the only thing carrying rank order now that the query's
+ * `ORDER BY ASC(?titleRank)` is gone, and losing it is silent. `pickVerifiedQid` takes the *first*
+ * candidate that verifies, so reading the order off the SPARQL response instead — which returns
+ * solutions in any order it likes — would let one book resolve to different QIDs on two runs, and
+ * `mergeWorks` destroys a different work row for each. It would also turn the cap into "an arbitrary
+ * ten survivors" rather than the ten best-ranked.
+ */
+export function rankSurvivors(
+  searchOrder: readonly string[],
+  eligible: ReadonlySet<string>,
+  max: number,
+): string[] {
+  return searchOrder.filter((q) => eligible.has(q)).slice(0, max);
 }
 
 // Title (+ optional author) → matched work QID and its primary series, if any.
@@ -324,8 +468,8 @@ async function fetchWorkLabels(
 ): Promise<Map<string, Set<string>>> {
   if (!qids.length) return new Map();
   // One subquery per candidate, because SPARQL has no per-group limit and a subquery's own LIMIT is
-  // how you get one. The qids are shape-checked (`/^Q\d+$/`) where the candidate list is built, and
-  // that list is capped at 10 by the search query's own LIMIT, so the response stays bounded by
+  // how you get one. The qids are shape-checked (`/^Q\d+$/`) in `searchEntityQids`, and the candidate
+  // list is capped at `MAX_CANDIDATES`, so the response stays bounded by
   // 10 × MAX_LABEL_ROWS_PER_ITEM — the same ceiling the single shared budget had, now split fairly.
   const blocks = qids.map(
     (q) => `
@@ -353,10 +497,33 @@ async function fetchWorkLabels(
   return out;
 }
 
+/**
+ * Entity searches for one `resolveWorkIdentity` call, issued once per distinct search string.
+ *
+ * Keyed on the string rather than on (title, author) because that is what makes the identical author
+ * search across all three passes — and the identical title search across the strict and `exactOnly`
+ * passes — collapse into one request each. The promise is cached, not the result, so two passes racing
+ * the same string still share a single fetch.
+ */
+type SearchCache = Map<string, Promise<string[]>>;
+
+function cachedSearch(
+  usage: UsageRecorder | null | undefined,
+  cache: SearchCache,
+  srsearch: string,
+): Promise<string[]> {
+  const hit = cache.get(srsearch);
+  if (hit) return hit;
+  const pending = searchEntityQids(usage, srsearch);
+  cache.set(srsearch, pending);
+  return pending;
+}
+
 async function fetchBookInfo(
   usage: UsageRecorder | null | undefined,
   title: string,
   author: string,
+  searchCache: SearchCache,
   // The series-typed retry: drop the type filter, and demand an exact title match instead. Never
   // call this with a stripped title — see the comment above SERIES_OF_CREATIVE_WORKS.
   { exactOnly = false }: { exactOnly?: boolean } = {},
@@ -365,25 +532,98 @@ async function fetchBookInfo(
   authorQid: string | null;
   series: SeriesHit | null;
 } | null> {
+  console.log("[fetchBookInfo] querying Wikidata for:", { title, author });
+
+  // Both searches at once — they are independent, and the author set is only ever used to constrain
+  // the work set. Same two mwapi searches the query used to run federated: the title, and the author
+  // narrowed to humans. `haswbstatement:P31=Q5` stays on the author search for the same reason it
+  // always was there — "Homer" the poet has to outrank "Homer" the Simpson.
+  //
+  // Both go through `searchCache`, which is per `resolveWorkIdentity` call, because that caller makes
+  // up to three passes over the same book: the author string is identical in all three, and the title
+  // is identical in the strict and `exactOnly` passes. Without the cache a not-found work spends six
+  // searches on three distinct queries — pure waste against the sweeper's subrequest ceiling, which
+  // one tick of BATCH_SIZE works is already close to.
+  const [titleQids, authorQids] = await Promise.all([
+    cachedSearch(usage, searchCache, title),
+    author
+      ? cachedSearch(usage, searchCache, `${author} haswbstatement:P31=Q5`)
+      : Promise.resolve([]),
+  ]);
+  if (!titleQids.length) {
+    console.log("[fetchBookInfo] search returned no candidates");
+    return null;
+  }
+  // An author was searched for and Wikidata knows no such person: the old query inner-joined
+  // `?work wdt:P50 ?author` against that empty set and returned nothing, so this does too.
+  if (author && !authorQids.length) {
+    console.log(`[fetchBookInfo] no Wikidata person matches "${author}"`);
+    return null;
+  }
+
+  // ── Stage A: which candidates are even eligible ────────────────────────────
+  // Types and author only, no OPTIONALs, so nothing multiplies across the candidate set. That is the
+  // whole reason the search can afford to be 50 deep: the labels and series reads are what cost, and
+  // measured over 50 candidates they cost 22-23s against this stage's 6-7s. Hydrating only the
+  // survivors (stage B) brought the same lookups to ~7s total.
+  //
+  // The author join stays an inner join against the searched author's items, exactly as the federated
+  // query had it, so a same-titled book by someone else is dropped here. That matters more than it
+  // looks: `titleScorer` has a prefix-containment shortcut, so "Meditations" scores 1.000 against
+  // *Meditations on First Philosophy* — the author is what tells Marcus Aurelius from Descartes.
   const authorBlock = author
-    ? `SERVICE wikibase:mwapi {
-         bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
-                          mwapi:srsearch "${escapeSparql(author)} haswbstatement:P31=Q5".
-         ?author wikibase:apiOutputItem mwapi:title.
-       }
+    ? `VALUES ?author { ${authorQids.map((q) => `wd:${q}`).join(" ")} }
        ?work wdt:P50 ?author.`
     : "";
-  const query = `
-    SELECT ?work ?titleRank ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe ?workLabelEn ?workLabelDe WHERE {
-      SERVICE wikibase:mwapi {
-        bd:serviceParam wikibase:api "Search"; wikibase:endpoint "www.wikidata.org";
-                         mwapi:srsearch "${escapeSparql(title)}".
-        ?work wikibase:apiOutputItem mwapi:title.
-        ?titleRank wikibase:apiOrdinal true.
-      }
+  const eligible = await runSparql(
+    usage,
+    "book_search",
+    `
+    SELECT DISTINCT ?work WHERE {
+      VALUES ?work { ${titleQids.map((q) => `wd:${q}`).join(" ")} }
       ?work wdt:P31/wdt:P279* wd:Q47461344.
       ${exactOnly ? "" : `FILTER NOT EXISTS { ?work wdt:P31/wdt:P279* wd:${SERIES_OF_CREATIVE_WORKS} }`}
       FILTER NOT EXISTS { ?work wdt:P31 wd:${WIKIMEDIA_LIST_ARTICLE} }
+      ${authorBlock}
+    }`.trim(),
+  );
+
+  // Rank order and the cap both live in `rankSurvivors` — see its docblock for why reading the order
+  // off the SPARQL response would be a correctness bug rather than a style choice.
+  const ranked = rankSurvivors(
+    titleQids,
+    new Set(
+      eligible
+        .map((r) => qidFromUri(r.work?.value))
+        .filter((q): q is string => !!q),
+    ),
+    MAX_CANDIDATES,
+  );
+  if (!ranked.length) {
+    // Says which filters actually ran: the series-type guard is dropped on the `exactOnly` pass, and
+    // `author` is "" for an edition with no author, so a fixed sentence here would misdescribe two of
+    // the three passes — in the one log line someone reads when a work won't resolve.
+    const applied = [
+      exactOnly ? "written work" : "non-series written work",
+      author ? `by "${author}"` : "(no author to match on)",
+    ].join(" ");
+    console.log(
+      `[fetchBookInfo] none of ${titleQids.length} candidates is a ${applied}`,
+    );
+    return null;
+  }
+
+  // ── Stage B: the payload, for the survivors only ───────────────────────────
+  const rows = await runSparql(
+    usage,
+    "book_hydrate",
+    `
+    SELECT ?work ?author ?series ?ordinal ?seriesLabelEn ?seriesLabelDe ?workLabelEn ?workLabelDe WHERE {
+      VALUES ?work { ${ranked.map((q) => `wd:${q}`).join(" ")} }
+      ${/* Deliberately no author clause at all when none was searched: `?author` then stays unbound
+            and `authorQid` comes back null, which is what the federated query did and what
+            `resolveWorkIdentity` expects. Binding it via OPTIONAL instead would return an arbitrary
+            one of the work's authors — not the searched one — and multiply the hydrate rows. */ ""}
       ${authorBlock}
       OPTIONAL { ?work rdfs:label ?workLabelEn. FILTER(LANG(?workLabelEn) = "en") }
       OPTIONAL { ?work rdfs:label ?workLabelDe. FILTER(LANG(?workLabelDe) = "de") }
@@ -394,18 +634,16 @@ async function fetchBookInfo(
         OPTIONAL { ?series rdfs:label ?seriesLabelEn. FILTER(LANG(?seriesLabelEn) = "en") }
         OPTIONAL { ?series rdfs:label ?seriesLabelDe. FILTER(LANG(?seriesLabelDe) = "de") }
       }
-    } ORDER BY ASC(?titleRank) LIMIT 10`.trim();
-
-  console.log("[fetchBookInfo] querying Wikidata for:", { title, author });
-  const rows = await runSparql(usage, "book_search", query);
+    }`.trim(),
+  );
   if (!rows.length) {
-    console.log("[fetchBookInfo] no rows returned");
+    console.log("[fetchBookInfo] survivors returned no rows");
     return null;
   }
-  // Rows grouped by hit, a Map so the keys stay in search-rank order — the top one is only a
-  // *candidate* until one of its own labels says it is this book (see pickVerifiedQid). Grouping once
-  // rather than re-deriving the qid per read is also what scopes the author and series rows below to
-  // the chosen work structurally, instead of by repeating the predicate.
+  // Rows grouped by hit. The top candidate is only a *candidate* until one of its own labels says it
+  // is this book (see pickVerifiedQid). Grouping once rather than re-deriving the qid per read is
+  // also what scopes the author and series rows below to the chosen work structurally, instead of by
+  // repeating the predicate.
   const byQid = new Map<string, any[]>();
   for (const r of rows) {
     const qid = qidFromUri(r.work?.value);
@@ -415,7 +653,9 @@ async function fetchBookInfo(
     if (existing) existing.push(r);
     else byQid.set(qid, [r]);
   }
-  const candidates = [...byQid.keys()];
+  // Still in search-rank order (`ranked` carries it); a survivor that came back with no usable row
+  // drops out here rather than sitting in the list as a candidate that can never verify.
+  const candidates = ranked.filter((q) => byQid.has(q));
   if (!candidates.length) {
     console.log("[fetchBookInfo] no rows carried a usable work URI:", rows[0]);
     return null;
@@ -959,14 +1199,20 @@ async function resolveWorkIdentity(
   const author = splitAuthors(ed?.author ?? null)[0] ?? "";
   console.log(`[enrichWork] looking up: title="${title}" author="${author}"`);
 
-  let info = await fetchBookInfo(usage, title, author);
+  // One cache across all three passes below, so the entity searches they share cost one request
+  // each rather than one per pass: the author string is the same every time, and the title is the
+  // same in the strict and `exactOnly` passes. Scoped to this call — search results are ranked
+  // per query string and nothing here should outlive the work being enriched.
+  const searchCache: SearchCache = new Map();
+
+  let info = await fetchBookInfo(usage, title, author, searchCache);
   if (!info) {
     const strippedTitle = title.replace(/\s*[([{].*?[)\]}]/g, "").trim();
     if (strippedTitle && strippedTitle !== title) {
       console.log(
         `[enrichWork] no results for "${title}", retrying with stripped title "${strippedTitle}"`,
       );
-      info = await fetchBookInfo(usage, strippedTitle, author);
+      info = await fetchBookInfo(usage, strippedTitle, author, searchCache);
     }
   }
   // Last resort: the item may be a single work Wikidata also types as a series (Cryptonomicon,
@@ -976,7 +1222,9 @@ async function resolveWorkIdentity(
     console.log(
       `[enrichWork] no results for "${title}", retrying series-typed items with an exact title match`,
     );
-    info = await fetchBookInfo(usage, title, author, { exactOnly: true });
+    info = await fetchBookInfo(usage, title, author, searchCache, {
+      exactOnly: true,
+    });
   }
   console.log(
     `[enrichWork] fetchBookInfo result: workQid=${info?.workQid ?? "null"} seriesQid=${info?.series?.seriesQid ?? "null"}`,

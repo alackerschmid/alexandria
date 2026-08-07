@@ -201,7 +201,14 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, nextTick, onMounted, watch } from "vue";
+import {
+  ref,
+  computed,
+  nextTick,
+  onMounted,
+  onScopeDispose,
+  watch,
+} from "vue";
 import { useRoute } from "vue-router";
 import { useApi } from "@/composables/useApi";
 import { useDeleteScan } from "@/composables/useDeleteScan";
@@ -303,6 +310,15 @@ function onSwitchEdition(payload: { isbn: string; scanId: number }) {
 // slower earlier response clobbers `detailBook` with the book the user has already navigated away
 // from. Incremented on every call; a response whose token is stale is dropped.
 let detailSeq = 0;
+
+// Unmount counts as a supersede. A detail load in flight when the user navigates away is not
+// cancelled, so if it then fails, `failed()` would call `closeDetail()` — and `useDetailRoute`
+// builds that from the *live* route, so it would strip `work`/`edition`/`scan`/`view` from
+// whatever page the user is on now (closing a detail they since opened on /library) and push a
+// spurious history entry. Bumping the token here makes every in-flight load stale instead.
+onScopeDispose(() => {
+  detailSeq++;
+});
 
 async function loadDetailByIsbn(
   isbn: string,

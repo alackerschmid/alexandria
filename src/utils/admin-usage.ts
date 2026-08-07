@@ -236,9 +236,20 @@ function relativeFormatter(bcp47: string): Intl.RelativeTimeFormat {
   return fmt;
 }
 
-/** Milliseconds since an ms-epoch instant, or null when there isn't one. */
-export function ageMs(atMs: number | null, nowMs: number): number | null {
-  return atMs === null ? null : nowMs - atMs;
+/**
+ * Milliseconds since an ms-epoch instant, or null when there isn't one.
+ *
+ * Accepts `undefined` as well as `null` deliberately. Every caller's timestamp arrives from a blind
+ * `as` cast of an API payload, so a field that is merely *absent* — an older or newer worker, a
+ * renamed key — reaches here as `undefined` whatever the type says. Treating it as a number produced
+ * `NaN`, which `Intl.RelativeTimeFormat` rejects with a RangeError from inside a render, blanking the
+ * page instead of one cell.
+ */
+export function ageMs(
+  atMs: number | null | undefined,
+  nowMs: number,
+): number | null {
+  return atMs == null ? null : nowMs - atMs;
 }
 
 /**
@@ -246,7 +257,7 @@ export function ageMs(atMs: number | null, nowMs: number): number | null {
  * the caller can show its own "never" string.
  */
 export function relativeTime(
-  atMs: number | null,
+  atMs: number | null | undefined,
   nowMs: number,
   bcp47: string,
 ): string | null {

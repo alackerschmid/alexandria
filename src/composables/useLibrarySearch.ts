@@ -313,11 +313,18 @@ export function useLibrarySearch(options: {
       });
     }
     if (text) {
+      // `review` is on every row already (the work_ratings JOIN), so searching it costs one more
+      // string compare per book and no round-trip. It stays in the free-text match rather than
+      // getting a `review:` key — you look for a phrase you wrote, not for "has a review".
       list = list.filter(
         (b) =>
           b.title?.toLowerCase().includes(text) ||
           authorNames(b).some((n) => n.toLowerCase().includes(text)) ||
-          b.isbn.includes(text),
+          // `text` is lowercased and `books.isbn` is stored uppercased (`normalizeIsbn`), so
+          // this has to lower the haystack too — otherwise an ISBN-10 with an `X` check digit
+          // (~1 in 11 of them) is unfindable while the same book's ISBN-13 works.
+          b.isbn.toLowerCase().includes(text) ||
+          b.review?.toLowerCase().includes(text),
       );
     }
 
@@ -343,19 +350,17 @@ export function useLibrarySearch(options: {
 
     const entries: SuggestionFacet[] = [];
 
-    // Only suggest statuses that actually exist in the current filtered pool
+    // Only suggest statuses that actually exist in the current filtered pool.
+    // Driven off STATUS_ORDER so a new status is suggestable the moment it's filterable —
+    // a hand-kept second list here is what left `status:dnf` searchable but never offered.
     const presentStatuses = new Set(pool.map((b) => statusOf(b)));
-    for (const [val, label] of [
-      ["read", t("book.read")],
-      ["reading", t("book.reading")],
-      ["unread", t("book.unread")],
-    ] as [string, string][]) {
-      if (presentStatuses.has(val as ReadStatus))
+    for (const val of STATUS_ORDER) {
+      if (presentStatuses.has(val))
         entries.push({
           kind: "facet",
           token: `status:${val}`,
           icon: "mdi-progress-check",
-          label,
+          label: t(`book.${val}`),
           typeLabel: statusLabel,
         });
     }

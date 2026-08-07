@@ -195,6 +195,14 @@ describe("formatPublishDate", () => {
     expect(formatPublishDate("1965-08", "de")).toBe("August 1965");
   });
 
+  // Guards the guard. Every assertion below about UTC-pinned formatting is vacuous unless the
+  // suite runs *behind* UTC — which is where the bug reproduces and where neither CI (UTC) nor
+  // development (CET) sits. vitest.config.ts pins TZ for that reason; this fails if the pin is
+  // removed or moved to UTC, rather than letting the block go quietly inert.
+  it("runs behind UTC, so these assertions can fail", () => {
+    expect(new Date(Date.UTC(2026, 0, 1)).getDate()).not.toBe(1);
+  });
+
   it("keeps the day the string says, in every timezone", () => {
     // Built as UTC midnight and formatted in UTC: rendering in the reader's zone showed this as
     // 8 Aug everywhere west of UTC. The value is a calendar date, not an instant.

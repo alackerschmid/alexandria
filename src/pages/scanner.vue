@@ -1196,7 +1196,12 @@ const DEFAULT_OWNING_STATUS: OwningStatus = "owned";
 
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
-const selectedStatus = ref<ReadStatus>("read");
+// Every path into the preview sheet re-reads `defaultScanStatus` before the picker is shown, so
+// this initial value is never the one rendered — but a hardcoded "read" here is the same latent
+// wrong default as the one `scanAgain` used to carry, and it reads as an intentional override.
+const selectedStatus = ref<ReadStatus>(
+  libraryDefaultsStore.defaultScanStatus,
+);
 const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
 const selectedRating = ref<number | null>(null);
 const flash = ref(false);
@@ -1258,8 +1263,18 @@ function recordSession(book: BookPreview, status: ReadStatus, scanId?: number) {
   });
 }
 
+// "3 min ago" has to keep counting while the scanner sits open — a scanning session runs for
+// as long as a shelf takes. Reading `Date.now()` straight out of the template is not reactive,
+// so every entry froze at the value it had when the list last re-rendered for another reason.
+const nowTick = ref(Date.now());
+const nowTickTimer = window.setInterval(
+  () => (nowTick.value = Date.now()),
+  30_000,
+);
+onBeforeUnmount(() => clearInterval(nowTickTimer));
+
 function sessionTime(ts: number): string {
-  const mins = Math.floor((Date.now() - ts) / 60_000);
+  const mins = Math.floor((nowTick.value - ts) / 60_000);
   if (mins < 1) return t("scanner.time_now");
   return t("scanner.time_min_ago", { n: mins });
 }
@@ -1427,13 +1442,14 @@ const submitTitleSearch = async () => {
     if (authorQuery.value.trim()) qs.set("author", authorQuery.value.trim());
     if (publisherQuery.value.trim())
       qs.set("publisher", publisherQuery.value.trim());
-    const endpoint = isGuest.value
-      ? `${API_BASE}/api/books/guest-search?${qs}`
-      : `${API_BASE}/api/books/search?${qs}`;
-    const headers: Record<string, string> = isGuest.value
-      ? {}
-      : { Authorization: `Bearer ${authStore.token}` };
-    const res = await fetch(endpoint, { headers });
+    // Guest mode is pre-auth, so it stays a bare `fetch` (like `guest.ts`'s `syncToAccount`):
+    // apiFetch would add a Content-Type header, turning a simple cross-origin GET into a
+    // preflighted one on the app's most latency-sensitive page. The authenticated call goes
+    // through apiFetch so an expired token logs the user out instead of looping on a generic
+    // "search failed".
+    const res = isGuest.value
+      ? await fetch(`${API_BASE}/api/books/guest-search?${qs}`)
+      : await apiFetch(`/api/books/search?${qs}`);
     if (!res.ok) {
       searchState.value = "error";
       return;
@@ -1496,13 +1512,11 @@ const {
 
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
-    const endpoint = isGuest.value
-      ? `${API_BASE}/api/books/guest-lookup?isbn=${isbn}`
-      : `${API_BASE}/api/books/lookup?isbn=${isbn}`;
-    const headers: Record<string, string> = isGuest.value
-      ? {}
-      : { Authorization: `Bearer ${authStore.token}` };
-    const res = await fetch(endpoint, { headers });
+    // Same split as submitTitleSearch: bare fetch for the pre-auth guest endpoint, apiFetch
+    // (401 → logout) for the authenticated one.
+    const res = isGuest.value
+      ? await fetch(`${API_BASE}/api/books/guest-lookup?isbn=${isbn}`)
+      : await apiFetch(`/api/books/lookup?isbn=${isbn}`);
     if (res.ok) {
       const book = await res.json();
       if (book.notFound) return null;
@@ -1575,11 +1589,17 @@ function postScanRequest(
   );
 }
 
+// Thrown for a 429 so `saveBook` can tell "slow down" from a generic failure — the two want
+// different toasts, and a duplicate scanned past the rate limit surfaces here rather than as
+// the 409 it would have been inside the budget.
+class RateLimitedError extends Error {}
+
 async function postScan(
   book: QueuedBook,
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
   const res = await postScanRequest(book);
   if (res.status === 409) return { result: "duplicate" };
+  if (res.status === 429) throw new RateLimitedError();
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
   const saved = await res.json();
   return { result: "saved", id: saved?.id };
@@ -1619,6 +1639,15 @@ async function drainQueue() {
   }
   if (authExpired) {
     showToast(t("scanner.toast_session_expired"), "warning");
+  } else if (remaining.length) {
+    // Anything left behind that isn't an expired session is almost always the scan rate limit
+    // (a duplicate costs quota, so re-scanning an owned shelf offline can overrun it). Say so:
+    // the queue is only retried on the next `online` event or scanner mount, and a caller who
+    // is already online gets neither, so silence here reads as "everything synced".
+    showToast(
+      t("scanner.toast_sync_partial", { n: remaining.length }),
+      "warning",
+    );
   }
   writeQueue(remaining);
 }
@@ -1677,7 +1706,7 @@ const saveBook = async () => {
     } else {
       showToast(t("scanner.toast_already_in_library"), "warning");
     }
-  } catch {
+  } catch (e) {
     if (!navigator.onLine) {
       enqueueBook(queued);
       sessionScanned.add(book.isbn);
@@ -1685,7 +1714,14 @@ const saveBook = async () => {
       recordSession(book, status);
       showToast(t("scanner.toast_will_sync"), "warning");
     } else {
-      showToast(t("scanner.toast_failed"), "error");
+      // Keep the sheet in `preview` either way — the book isn't saved and the user's status,
+      // owning and rating picks are still on screen to retry with.
+      showToast(
+        e instanceof RateLimitedError
+          ? t("scanner.toast_rate_limited")
+          : t("scanner.toast_failed"),
+        "error",
+      );
       scanState.value = "preview";
       return;
     }
@@ -1698,7 +1734,7 @@ const saveBook = async () => {
 
 const scanAgain = () => {
   detectedBook.value = null;
-  selectedStatus.value = "read";
+  selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
   selectedOwning.value = DEFAULT_OWNING_STATUS;
   selectedRating.value = null;
   clearManualFields();

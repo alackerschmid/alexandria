@@ -77,6 +77,26 @@ scans.get("/isbns", async (c) => {
   return c.json(results);
 });
 
+// Does this user already hold a scan of this ISBN? Answered before any external metadata fetch —
+// a duplicate scan is a cheap, common case (e.g. rescanning a shelf) and this costs only local
+// D1 reads. Checked under both ISBN forms: the same edition may already be stored under its
+// ISBN-10 or its ISBN-13 form.
+async function userAlreadyHasIsbn(
+  db: D1Database,
+  userId: number,
+  isbn: string,
+): Promise<boolean> {
+  const altIsbn = alternateIsbnForm(isbn);
+  const { results: existingBooks } = await db
+    .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
+    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
+    .all<{ id: number }>();
+  for (const existingBook of existingBooks) {
+    if (await findExistingScan(db, userId, existingBook.id)) return true;
+  }
+  return false;
+}
+
 scans.post("/", async (c) => {
   const body = await readJsonBody<{
     isbn: string;
@@ -119,21 +139,13 @@ scans.post("/", async (c) => {
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
 
-  // Check for an existing scan of this ISBN before consuming rate-limit quota or touching
-  // external metadata APIs — a duplicate scan is a cheap, common case (e.g. rescanning a shelf)
-  // and shouldn't cost the user part of their scan-rate budget. Checked under both ISBN forms:
-  // the same edition may already be stored under its ISBN-10 or ISBN-13 form.
-  const altIsbn = alternateIsbnForm(isbn);
-  const { results: existingBooks } = await db
-    .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
-    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
-    .all<{ id: number }>();
-  for (const existingBook of existingBooks) {
-    if (await findExistingScan(db, userId, existingBook.id)) {
-      return c.json({ error: "Already in your list" }, 409);
-    }
-  }
-
+  // The limiter runs first, and a duplicate is charged like any other scan. The duplicate
+  // check below costs up to three D1 queries, and the original design answered its 409 ahead
+  // of the limiter so that rescanning an owned book wouldn't burn quota — which left a client
+  // free to replay an owned ISBN indefinitely and keep the worker doing that work unmetered.
+  // Ordering it this way is what actually stops it: an over-budget caller pays the limiter's
+  // single write and nothing else. Inside the budget the answer is still the 409, which covers
+  // every real rescan (30/min is ~one book every 2s).
   const blocked = await rateLimitOrReject(
     c,
     `scan:${userId}`,
@@ -142,6 +154,9 @@ scans.post("/", async (c) => {
     "Too many scans — please slow down",
   );
   if (blocked) return blocked;
+
+  if (await userAlreadyHasIsbn(db, userId, isbn))
+    return c.json({ error: "Already in your list" }, 409);
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, {

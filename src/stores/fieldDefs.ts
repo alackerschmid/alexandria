@@ -1,8 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, watch } from "vue";
 import { useAuthStore } from "@/stores/auth";
-
-const BASE = import.meta.env.VITE_API_URL || "";
+import { useApi } from "@/composables/useApi";
 
 export interface FieldDef {
   id: number;
@@ -19,13 +18,7 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
   // Distinct tag values per tag-field id, populated lazily for autocomplete.
   const tagValues = ref<Record<number, string[]>>({});
 
-  function authHeaders() {
-    const authStore = useAuthStore();
-    return {
-      Authorization: `Bearer ${authStore.token}`,
-      "Content-Type": "application/json",
-    };
-  }
+  const { apiFetch } = useApi();
 
   // Bumped on every account switch, so a load that started under the previous token can't apply
   // its result afterwards — it would re-install that account's defs *and* set `loaded`, which
@@ -36,11 +29,8 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
   async function load() {
     if (loaded.value) return;
     const seq = revision;
-    const authStore = useAuthStore();
     try {
-      const res = await fetch(`${BASE}/api/field-definitions`, {
-        headers: { Authorization: `Bearer ${authStore.token}` },
-      });
+      const res = await apiFetch("/api/field-definitions");
       if (res.ok) {
         const data = await res.json();
         if (seq !== revision) return;
@@ -53,9 +43,7 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
   async function loadTagValues(id: number) {
     const seq = revision;
     try {
-      const res = await fetch(`${BASE}/api/field-definitions/${id}/values`, {
-        headers: authHeaders(),
-      });
+      const res = await apiFetch(`/api/field-definitions/${id}/values`);
       if (res.ok) {
         const data = await res.json();
         if (seq !== revision) return; // same account-switch guard as load()
@@ -75,12 +63,9 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
 
   async function deleteTagValueEverywhere(id: number, value: string) {
     try {
-      const res = await fetch(
-        `${BASE}/api/field-definitions/${id}/values?value=${encodeURIComponent(value)}`,
-        {
-          method: "DELETE",
-          headers: authHeaders(),
-        },
+      const res = await apiFetch(
+        `/api/field-definitions/${id}/values?value=${encodeURIComponent(value)}`,
+        { method: "DELETE" },
       );
       if (!res.ok) return { ok: false };
       tagValues.value = {
@@ -127,14 +112,9 @@ export const useFieldDefsStore = defineStore("fieldDefs", () => {
       options?: string[];
     },
   ) {
-    const authStore = useAuthStore();
     try {
-      const res = await fetch(`${BASE}/api/field-definitions/${id}`, {
+      const res = await apiFetch(`/api/field-definitions/${id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${authStore.token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(changes),
       });
       if (res.ok) {

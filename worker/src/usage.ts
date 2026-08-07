@@ -99,9 +99,36 @@ const UPSERT = `INSERT INTO api_usage (hour_start, provider, operation, success,
  */
 export class UsageRecorder {
   private readonly buckets = new Map<string, Bucket>();
+  private fetches = 0;
 
   /** `db` is nullable so the fetch helpers can run in contexts without a handle (unit tests). */
   constructor(private readonly db: D1Database | null | undefined) {}
+
+  /** External HTTP requests made so far in this invocation — see `countFetch`. */
+  get externalCalls(): number {
+    return this.fetches;
+  }
+
+  /**
+   * One outbound HTTP request, counted for the **subrequest budget** rather than for the board.
+   *
+   * Deliberately separate from `record`, and called from the two fetch helpers themselves
+   * (`fetchWithTimeout`, `fetchWikidataJson`) rather than from their callers:
+   *
+   * - `record` counts *units of work* at the granularity the board reads, which is not 1:1 with
+   *   requests — `fetchOpenLibraryBibkey` issues two fetches and records one `isbn_lookup`, and the
+   *   work-description fetch records nothing at all. Metering off it would undercount.
+   * - Counting inside the helpers means a new call site cannot forget to be counted, which is the
+   *   property a budget needs. It also counts unconditionally, including calls whose telemetry the
+   *   caller skips.
+   *
+   * Free-plan Workers allow **50 external subrequests** per invocation (Cloudflare services like D1
+   * have their own 1,000, so queries don't compete). `externalCalls` is what `sweeper.ts` meters its
+   * batch against; nothing else should read it.
+   */
+  countFetch(): void {
+    this.fetches++;
+  }
 
   record(
     provider: UsageProvider,

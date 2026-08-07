@@ -9,7 +9,10 @@
     >
       <div class="text-xs text-text-secondary leading-relaxed">
         <span>{{
-          $t("guest.banner", { used: guestStore.scans.length, max: 3 })
+          $t("guest.banner", {
+            used: guestStore.scans.length,
+            max: MAX_GUEST_SCANS,
+          })
         }}</span>
         <span class="block text-text-secondary/60 mt-0.5">{{
           $t("guest.create_account")
@@ -680,7 +683,7 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
-import { useGuestStore } from "@/stores/guest";
+import { useGuestStore, MAX_GUEST_SCANS } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";

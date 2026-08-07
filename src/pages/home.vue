@@ -437,7 +437,7 @@ import { useToast } from "@/composables/useToast";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { STATUS_META } from "@/composables/useBookStatus";
 import { BCP47 } from "@/plugins/i18n";
-import type { CollectionStats } from "@/types/stats";
+import { emptyRatingDistribution, type CollectionStats } from "@/types/stats";
 import type { GroupBy } from "@/types/library";
 import { languageDisplayFormatter } from "@/utils/language";
 
@@ -488,6 +488,9 @@ function normalizeStats(payload: any): CollectionStats {
     medianYear: payload?.medianYear ?? null,
     yearKnownCount: payload?.yearKnownCount ?? 0,
     genreCount: payload?.genreCount ?? 0,
+    avgRating: payload?.avgRating ?? null,
+    ratedCount: payload?.ratedCount ?? 0,
+    ratingDistribution: payload?.ratingDistribution ?? emptyRatingDistribution(),
     translationRatio: payload?.translationRatio ?? null,
     randomFirstLine: payload?.randomFirstLine ?? null,
   };

@@ -8,31 +8,37 @@
 /** `neutral` is "no reading yet" (loading or failed), not a fourth severity. */
 export type SignalLevel = "neutral" | "ok" | "warning" | "critical";
 
-// One row per level rather than three parallel switches: `Record<SignalLevel, …>` makes a new
-// level a type error until all three classes are given, which three switches could not.
+// One row per level rather than four parallel switches: `Record<SignalLevel, …>` makes a new
+// level a type error until all four classes are given, which four switches could not. `borderL` is
+// the left-edge form the drill-down lists rule their rows with — Tailwind needs the literal class,
+// so it is written out rather than derived from `border`.
 const SIGNAL: Record<
   SignalLevel,
-  { text: string; bg: string; border: string }
+  { text: string; bg: string; border: string; borderL: string }
 > = {
   neutral: {
     text: "text-text-secondary",
     bg: "bg-charcoal-border",
     border: "border-charcoal-border",
+    borderL: "border-l-charcoal-border",
   },
   ok: {
     text: "text-signal-ok",
     bg: "bg-signal-ok",
     border: "border-signal-ok",
+    borderL: "border-l-signal-ok",
   },
   warning: {
     text: "text-signal-warn",
     bg: "bg-signal-warn",
     border: "border-signal-warn",
+    borderL: "border-l-signal-warn",
   },
   critical: {
     text: "text-signal-critical",
     bg: "bg-signal-critical",
     border: "border-signal-critical",
+    borderL: "border-l-signal-critical",
   },
 };
 
@@ -40,6 +46,16 @@ export const signalText = (level: SignalLevel): string => SIGNAL[level].text;
 export const signalBg = (level: SignalLevel): string => SIGNAL[level].bg;
 export const signalBorder = (level: SignalLevel): string =>
   SIGNAL[level].border;
+export const signalBorderL = (level: SignalLevel): string =>
+  SIGNAL[level].borderL;
+
+/**
+ * A failure's colour, from the `transient` flag the worker ships with every reason: upstream
+ * pressure reads amber, a query bug reads plain. Three surfaces show that split side by side (the
+ * panel's reason chips, the run list, the works list), so it resolves here rather than three times.
+ */
+export const transientText = (transient: boolean): string =>
+  transient ? signalText("warning") : "text-text-primary";
 
 /** google_books leads on the accent because it's the one with a cap to watch. */
 const PROVIDER_BG: Record<string, string> = {
@@ -48,12 +64,16 @@ const PROVIDER_BG: Record<string, string> = {
   wikidata: "bg-chart-muted",
 };
 
-/** `works.enrichment_status`, as the enrichment bar's segments. */
-const STATUS_BG: Record<string, string> = {
-  done: "bg-signal-ok",
-  pending: "bg-chart-total",
-  failed: "bg-signal-critical",
-  exhausted: "bg-chart-muted",
+/**
+ * `works.enrichment_status`, as the enrichment bar's segments (`bg`) and as the left edge of the
+ * rows in the drill-down behind them (`borderL`). One row per status so the bar and the list it
+ * opens cannot colour the same state differently.
+ */
+const STATUS: Record<string, { bg: string; borderL: string }> = {
+  done: { bg: "bg-signal-ok", borderL: "border-l-signal-ok" },
+  pending: { bg: "bg-chart-total", borderL: "border-l-chart-total" },
+  failed: { bg: "bg-signal-critical", borderL: "border-l-signal-critical" },
+  exhausted: { bg: "bg-chart-muted", borderL: "border-l-chart-muted" },
 };
 
 /** `enrichment_runs.outcome`, as the run bar's segments — `failed` matches the status above. */
@@ -72,8 +92,12 @@ const OUTCOME_BG: Record<string, string> = {
 export const providerBg = (provider: string): string =>
   PROVIDER_BG[provider] ?? "bg-chart-muted";
 
+/** Unknown statuses fall back together, so the swatch and the row edge still agree on one. */
 export const statusBg = (status: string): string =>
-  STATUS_BG[status] ?? "bg-chart-muted";
+  STATUS[status]?.bg ?? "bg-chart-muted";
+
+export const statusBorderL = (status: string): string =>
+  STATUS[status]?.borderL ?? "border-l-chart-muted";
 
 export const outcomeBg = (outcome: string): string =>
   OUTCOME_BG[outcome] ?? "bg-chart-muted";

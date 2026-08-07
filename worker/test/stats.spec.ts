@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   computeDecadeGenres,
+  computeRatingStats,
   computeTranslationRatio,
   computeYearStats,
   extractYear,
@@ -300,5 +301,65 @@ describe("computeTranslationRatio", () => {
 
   it("returns null for no rows at all", () => {
     expect(computeTranslationRatio([])).toBeNull();
+  });
+});
+
+describe("computeRatingStats", () => {
+  it("reports a dense 0-10 distribution with zero-count buckets", () => {
+    const { ratingDistribution } = computeRatingStats([{ rating: 7, count: 2 }]);
+    expect(ratingDistribution).toHaveLength(11);
+    expect(ratingDistribution.map((d) => d.rating)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
+    expect(ratingDistribution[7]).toEqual({ rating: 7, count: 2 });
+    expect(ratingDistribution[0]).toEqual({ rating: 0, count: 0 });
+  });
+
+  it("weights the average by each bucket's count", () => {
+    const { avgRating, ratedCount } = computeRatingStats([
+      { rating: 10, count: 3 },
+      { rating: 6, count: 1 },
+    ]);
+    expect(ratedCount).toBe(4);
+    expect(avgRating).toBe(9);
+  });
+
+  it("rounds the average to one decimal", () => {
+    expect(
+      computeRatingStats([
+        { rating: 8, count: 1 },
+        { rating: 7, count: 2 },
+      ]).avgRating,
+    ).toBe(7.3);
+  });
+
+  // 0 is a real rating, not "unrated" — the SQL filters NULLs out, so every row that arrives here
+  // counts, and a library of nothing but 0s must average 0 rather than null.
+  it("treats a rating of 0 as rated", () => {
+    expect(computeRatingStats([{ rating: 0, count: 2 }])).toMatchObject({
+      avgRating: 0,
+      ratedCount: 2,
+    });
+  });
+
+  it("returns a null average and an empty-but-dense distribution for no ratings", () => {
+    const stats = computeRatingStats([]);
+    expect(stats.avgRating).toBeNull();
+    expect(stats.ratedCount).toBe(0);
+    // toHaveLength first: `.every()` alone is vacuously true on `[]`, so it would pass for an
+    // early return that skipped the dense shape — which is exactly the case this test names.
+    expect(stats.ratingDistribution).toHaveLength(11);
+    expect(stats.ratingDistribution.every((d) => d.count === 0)).toBe(true);
+  });
+
+  it("drops out-of-scale and non-integer ratings rather than skewing the average", () => {
+    const stats = computeRatingStats([
+      { rating: 11, count: 5 },
+      { rating: -1, count: 5 },
+      { rating: 4.5, count: 5 },
+      { rating: 4, count: 1 },
+    ]);
+    expect(stats.ratedCount).toBe(1);
+    expect(stats.avgRating).toBe(4);
   });
 });

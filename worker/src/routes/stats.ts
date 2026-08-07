@@ -40,6 +40,7 @@ type CustomFieldRow = {
   field_value: string | null;
 };
 type FirstLineRow = { title: string; first_line: string };
+export type RatingRow = { rating: number; count: number };
 type StatsResponse = {
   total: number;
   byStatus: { read: number; reading: number; unread: number; dnf: number };
@@ -71,6 +72,9 @@ type StatsResponse = {
   medianYear: number | null;
   yearKnownCount: number;
   genreCount: number;
+  avgRating: number | null;
+  ratedCount: number;
+  ratingDistribution: { rating: number; count: number }[];
   translationRatio: {
     pct: number;
     translatedCount: number;
@@ -301,6 +305,41 @@ export function computeDecadeGenres(rows: RawRow[]) {
     .sort((a, b) => parseInt(a.decade, 10) - parseInt(b.decade, 10));
 }
 
+/** The rating scale, as the number of buckets the distribution always reports (0–10 inclusive). */
+export const RATING_SCALE_MAX = 10;
+
+/** The all-zero distribution. The dense shape is a contract (see `computeRatingStats`), so every
+ *  fallback has to produce 11 buckets rather than an empty array a consumer can't index. */
+export const emptyRatingDistribution = () =>
+  Array.from({ length: RATING_SCALE_MAX + 1 }, (_, rating) => ({
+    rating,
+    count: 0,
+  }));
+
+// Ratings are per **work**, so the SQL counts distinct works rather than scans — owning two
+// editions of a book you rated 8 must not weight that 8 twice. The distribution is dense: every
+// value 0..10 is present, zero-count included, so a histogram doesn't have to fill its own gaps.
+export function computeRatingStats(ratingRows: RatingRow[]) {
+  const counts = new Map<number, number>();
+  for (const r of ratingRows) {
+    if (!Number.isInteger(r.rating) || r.rating < 0 || r.rating > RATING_SCALE_MAX)
+      continue;
+    counts.set(r.rating, (counts.get(r.rating) ?? 0) + r.count);
+  }
+  const ratingDistribution = emptyRatingDistribution().map((d) => ({
+    ...d,
+    count: counts.get(d.rating) ?? 0,
+  }));
+  const ratedCount = ratingDistribution.reduce((sum, d) => sum + d.count, 0);
+  const weighted = ratingDistribution.reduce(
+    (sum, d) => sum + d.rating * d.count,
+    0,
+  );
+  const avgRating =
+    ratedCount > 0 ? Math.round((weighted / ratedCount) * 10) / 10 : null;
+  return { avgRating, ratedCount, ratingDistribution };
+}
+
 // Translation ratio: edition language (ISO code) vs work's original language. Prefers a direct
 // ISO-code comparison (language_of_work_code, backfilled by the schema-version sweeper); falls
 // back to the older English-label comparison for rows the sweeper hasn't reached yet.
@@ -390,6 +429,9 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
     medianYear: input.medianYear ?? null,
     yearKnownCount: input.yearKnownCount ?? 0,
     genreCount: input.genreCount ?? 0,
+    avgRating: input.avgRating ?? null,
+    ratedCount: input.ratedCount ?? 0,
+    ratingDistribution: input.ratingDistribution ?? emptyRatingDistribution(),
     translationRatio: input.translationRatio ?? null,
     randomFirstLine: input.randomFirstLine ?? null,
   };
@@ -399,8 +441,13 @@ stats.get("/", async (c) => {
   const userId = c.get("userId");
   const locale = (c.req.query("locale") ?? "en").slice(0, 5);
 
-  const [{ results }, seriesResult, customFieldResult, firstLineResult] =
-    await Promise.all([
+  const [
+    { results },
+    seriesResult,
+    customFieldResult,
+    firstLineResult,
+    ratingResult,
+  ] = await Promise.all([
       c.env.DB.prepare(
         `
       SELECT s.status                                                        AS status,
@@ -473,6 +520,22 @@ stats.get("/", async (c) => {
       )
         .bind(userId)
         .all<FirstLineRow>(),
+
+      // COUNT(DISTINCT b.work_id), not COUNT(*): the rating hangs off the work, so a user who
+      // owns two editions of one book would otherwise contribute that rating twice.
+      c.env.DB.prepare(
+        `
+      SELECT wr.rating AS rating, COUNT(DISTINCT b.work_id) AS count
+      FROM scans s
+      JOIN books b ON s.book_id = b.id
+      JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
+      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+        AND wr.rating IS NOT NULL
+      GROUP BY wr.rating
+    `,
+      )
+        .bind(userId)
+        .all<RatingRow>(),
     ]);
 
   const rows = results;
@@ -490,6 +553,9 @@ stats.get("/", async (c) => {
   const { yearKnownCount, medianYear, decades } = computeYearStats(rows);
   const decadeGenres = computeDecadeGenres(rows);
   const translationRatio = computeTranslationRatio(rows);
+  const { avgRating, ratedCount, ratingDistribution } = computeRatingStats(
+    ratingResult.results,
+  );
 
   // Random first line (for the home page spotlight)
   const firstLineRow = firstLineResult.results[0];
@@ -528,6 +594,9 @@ stats.get("/", async (c) => {
       medianYear,
       yearKnownCount,
       genreCount,
+      avgRating,
+      ratedCount,
+      ratingDistribution,
       translationRatio,
       randomFirstLine,
     }),

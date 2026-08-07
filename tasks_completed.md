@@ -9,6 +9,7 @@ The finished half of the audit backlog (see `tasks.md` for what's still open, an
 | B1–B5 | Commit `56444cb` on `fix/audit-high-severity` (branched off `main`) |
 | C1–C9 | `fix/audit-medium-severity` (branched off `fix/audit-high-severity`) |
 | D1–D7 | `fix/audit-process-hardening` (branched off `fix/audit-medium-severity`) |
+| E3, E5, E6, E7 | `feat/e-block-polish` (branched off `fix/audit-process-hardening`) |
 
 `fix/audit-high-severity` and `fix/wikidata-series-filter` both touch `sweeper.ts`, in disjoint hunks — they merge cleanly in either order, and neither is blocked.
 
@@ -282,3 +283,71 @@ Per project policy only pure, Vue-free/D1-free logic gets unit tests — all of 
 2. **`formatPublishDate` was a day early west of UTC** — the value is built as UTC midnight but was rendered in the reader's local zone, so `1965-08-09` displayed as 8 Aug for anyone at a negative offset. Both branches now pass `timeZone: "UTC"`. This is also what makes literal assertions possible at all; `formatDateTime` deliberately keeps local-zone rendering (it formats an instant the reader owns, not a calendar date), so its tests pin the UTC *parsing*, the locale mapping and the field set without pinning a calendar day.
 
 Notes on what the tests deliberately encode as current-behaviour-not-endorsement, so a future change is a decision rather than a surprise: `computeYearStats`' median takes the upper of two middles; `computeTranslationRatio` counts a row whose edition language isn't a resolvable code as translated; `formatPublishDate("2026-13-01")` rolls into 2027; `summarizeRuns` drops an unknown outcome from `byOutcome` while still counting it in `total`, and treats an unrecognised failure reason as non-transient (`RETRY_POLICY`'s own reading).
+
+---
+
+## E. Improvements to existing features
+
+E1, E3, E5, E6 and E7 shipped on `feat/e-block-polish` (branched off `fix/audit-process-hardening`). **E2 (admin write actions) and E4 (integer/date custom field stats) were dropped from the backlog rather than built** — they are gone from `tasks.md` and are not recorded here as work.
+
+Manual QA outstanding: these touch frontend surfaces that carry no unit tests by project policy — the library search dropdown (E3), free-text search matching review bodies (E1), the scanner's title search and lookup (E5), the scanner session list and the guest banner (E7), and a screen-reader pass over the rating row (E7).
+
+### E1. Surface ratings: stats, sort, review search
+
+Three small strokes; can be one PR or three.
+
+1. **Rating stats:** `worker/src/routes/stats.ts` (~40–77 response shape) has no `work_ratings` join. Add `avgRating` + a 0–10 distribution to `StatsResponse` (`src/types/stats.ts`), computed in SQL. Feeds F3.
+2. **Server rating sort:** add `rating_desc` (and `_asc`) to `SORT_CLAUSES` (`worker/src/library-query.ts` ~90–99 — `work_ratings` is already in the JOIN), plus the option in `LibraryDisplaySettings` and the sort param docs in `worker/CLAUDE.md`. Decide NULL placement (NULLS LAST) deliberately.
+3. **Review search:** include `b.review` in the free-text match in `src/composables/useLibrarySearch.ts` ~315–322 — the text is already on every client-side row. Read `.claude/rules/library-pipeline.md` first (the search→collapse→group order is load-bearing).
+
+- **Implemented (1) as its own query rather than a join onto the main stats row.** `GET /api/stats` gained `avgRating`, `ratedCount` and `ratingDistribution`; the SQL is a fifth entry in the existing `Promise.all`, and the arithmetic lives in an exported pure `computeRatingStats` beside the file's other unit-tested helpers. Two decisions worth knowing:
+  - **It counts `DISTINCT b.work_id`, not scans.** Every other stat in the file is per-scan, but a rating hangs off the *work* (`work_ratings`, keyed `(user_id, work_id)`), so a user holding two editions of a book they rated 8 would have weighted that 8 twice. This is the one place in `stats.ts` where the unit is the work.
+  - **The distribution is dense** — always 11 buckets, `rating` 0–10 ascending, zero counts included — so F3's histogram doesn't have to fill its own gaps. `computeRatingStats` also drops out-of-scale or non-integer ratings defensively; `isValidRating` gates every write, so that is belt-and-braces, not a known bad-data case.
+  - **Nothing renders it yet.** `home.vue` is a fixed-height teaser whose layout is tuned to its current tiles, and the rating histogram is explicitly F3's scope; the field is API-only for now, which is what "Feeds F3" asked for. `normalizeStats` defaults the three fields so an older worker can't blank the page.
+- **Implemented (2) server-side only — the `LibraryDisplaySettings` half of the task is based on a false premise.** `SORT_CLAUSES` gained `rating_desc`/`rating_asc`, both leading with `wr.rating IS NULL` so **unrated books sort last in both directions** (SQLite defaults NULLs first in ASC, which would open "worst first" with every book the user never rated); `worker/CLAUDE.md`'s sort-param list and a unit test both record that.
+  - But `LibraryDisplaySettings` has no sort-by control to add an option to, and **the library page never sends `?sort=` at all**: `useLibraryData` fetches every page at the default `date_desc` and the entire visible ordering is client-side (`groupBy` × `sortDirection`). `rating` is already a group-by dimension there, so the user-facing capability exists by another route. The new clauses are an API-contract addition — real, correct and tested, but not something the app itself exercises today. Worth knowing before someone "wires up the new sort option" and finds nothing to wire it to.
+- **Implemented (3) as written.** `b.review` joined the free-text match in `useLibrarySearch`'s `baseFiltered`. It stays part of the free-text match rather than getting its own `review:` key — you search for a phrase you wrote, not for "has a review" — and it costs one extra string compare per book with no round-trip, since `review` already rides the `work_ratings` JOIN on every row. The pipeline order is unaffected: this is still a per-edition field compared before `useEditionGrouping` collapses anything.
+
+### E3. Finish DNF
+
+- `status:dnf` is filterable but never suggested: add it to the facet-suggestion loop in `src/composables/useLibrarySearch.ts` ~348–352 (compare `STATUS_VALUES` — don't hardcode a second list).
+- README §Features still says "Unread, Reading, or Read" — update while there. (See also E6.)
+- **Implemented:** the hardcoded three-entry array is gone; the loop now iterates `STATUS_ORDER` (the same constant `STATUS_VALUES` is built from) and derives each label from the `book.<status>` locale key, which is what every status picker in the app already does. Two consequences worth knowing:
+  - **The suggestion order changed** from read → reading → unread to `STATUS_ORDER`'s unread → reading → read → dnf. The dropdown now matches the pickers rather than contradicting them, but it is a visible change and not purely an addition.
+  - **The list stays pool-filtered.** `presentStatuses` is unchanged, so `status:dnf` is only offered to a library that actually contains a DNF book — a user who has never used the status sees exactly what they see today.
+  - README's status line was corrected as part of E6's pass rather than separately.
+
+### E5. Route hand-rolled `fetch` through `apiFetch`
+
+- **Where:** `src/stores/fieldDefs.ts` ~34/46/65/108; `src/pages/scanner.vue` ~1428–1434, ~1497–1503.
+- **Problem:** violates the documented invariant (src/CLAUDE.md) and loses 401→logout — an expired token on the scanner's title search surfaces as a generic error loop instead of logging out. Note the deliberate exceptions: `guest.ts` `syncToAccount` and `login.vue` are pre-auth/explicit-token and stay raw.
+- **Implemented:** all four `fieldDefs` calls converted; the store's `BASE` constant and its `authHeaders()` helper are both gone, and `useApi()` is resolved once at store-setup level beside the existing `useAuthStore()`. The account-switch `revision` guard is untouched and still correct — a 401 now logs out, which trips the token watcher, which calls `reset()`, which bumps `revision`, so an in-flight load still cannot install the previous account's defs.
+- **The scanner's two call sites were split rather than converted wholesale**, which is a deviation from the task as written. Each was a three-statement `endpoint`/`headers`/`fetch` dance branching on `isGuest`; each is now a single ternary — `apiFetch` for the authenticated endpoint, a bare `fetch` for the guest one:
+  - The guest endpoints (`guest-lookup`, `guest-search`) are public and send **no headers at all**, which keeps them simple cross-origin GETs. `apiFetch` unconditionally sets `Content-Type: application/json`, which would make them preflighted — the worker's CORS middleware sets no `maxAge`, so browsers cache a preflight for only ~5 s and a guest scanning a shelf would pay an extra round trip per book, on the app's most latency-sensitive page. The task named `guest.ts`/`login.vue` as the pre-auth exceptions; these are the same category, and `landing.vue`'s `books/sample` is a fourth.
+  - The authenticated halves are the ones that actually had the bug, and they now get 401 → logout.
+  - `src/CLAUDE.md`'s `apiFetch` invariant was rewritten to enumerate all the remaining raw `fetch`es and say *why* each stays raw, so the next audit does not re-file this.
+
+### E6. README refresh
+
+The feature list has drifted both directions: it under-sells (no DNF, no ratings/reviews, no owning-status model, no editions carousel, no admin board) and the status list is stale. One pass over `README.md` §Features + §To be implemented, ideally after F1/F2 land so the to-be-implemented list shrinks honestly.
+
+- **Implemented — one pass, taken before F1/F2 rather than after**, since the drift was already user-visible and the "To be implemented" list can be trimmed again when those land (noted in `tasks.md`'s sequencing). **Later correction:** F2 was subsequently dropped from the backlog, and the README entry this pass added for it was removed at the same time — so the item count below is now four, not five.
+  - §Features gained six entries — ownership status (all five values named, with the wishlist/lent-out framing), ratings and reviews (half-star 0–10, Markdown, per work rather than per copy), editions, smart search (with `status:dnf` as one of the examples), appearance, and the admin board — and corrected three: reading status now lists DNF, custom fields now list all five types (`text`/`integer`/`date`/`select`/`tag`, not "text, numbers, or dropdowns"), and Goodreads import now mentions ratings. The offline scan queue was folded into the scanning bullet, where a reader looking for it would actually be.
+  - §To be implemented now has five items instead of three: export split into CSV **and** JSON, reading dates + books-read-per-year added (F2), the stats item sharpened into "a dedicated statistics page" (F3), edition management kept, and an installable/offline-capable app added (F5) — worded to say plainly that the queue works offline today but only once the page is loaded, so it does not read as a claim that the app is already a PWA.
+  - Every claim was checked against code rather than against the previous README: owning values from `src/locales/en.json` `owning.*`, field types from the `POST /api/field-definitions` contract, appearance options from `settings.appearance.*`.
+
+### E7. Minor UX polish (batchable)
+
+- `sessionTime` freeze: `src/pages/scanner.vue` ~1261–1265 renders relative times from non-reactive `Date.now()`; use a ticking ref (30 s interval, cleared on unmount).
+- `scanAgain` resets `selectedStatus` to hardcoded `"read"` (~1696) instead of `libraryDefaultsStore.defaultScanStatus`.
+- Guest banner hardcodes `{ max: 3 }` (`src/pages/index.vue` ~12) — export `MAX_GUEST_SCANS` from `src/stores/guest.ts`.
+- `RatingStars` a11y: `src/components/RatingStars.vue` ~63–74 — half-star buttons announce a bare number; add `role="radiogroup"` + "7 of 10"-style labels.
+- Duplicate-scan pre-check runs up to 3 D1 queries before the rate limit (`worker/src/routes/scans.ts` ~107–116, deliberate for 409-before-quota UX): cheap mitigation is charging the limiter when the dup check misses.
+
+**Implemented — all five.**
+
+1. **`sessionTime`** reads a `nowTick` ref refreshed on a 30 s `window.setInterval`, cleared in the existing `onBeforeUnmount`. Known cost, accepted: the tick re-renders the scanner component every 30 s whether or not the session list is on screen. Gating the interval on `sessionBooks.length` was considered and dropped as more moving parts than the render is worth.
+2. **`scanAgain`** now uses `libraryDefaultsStore.defaultScanStatus`, matching the three other reset sites in the file (`selectCandidate`, the detection handler, and the offline-queue replay). The hardcoded `"read"` was the only one left.
+3. **`MAX_GUEST_SCANS`** is exported from `src/stores/guest.ts` and imported by `index.vue`'s banner. The store already used the constant for `remaining`/`isAtLimit`, so this was purely the banner reading a copy of it.
+4. **`RatingStars`** interactive rows are now a `radiogroup` labelled with `detail.rate_book`, each half-star button `role="radio"` with `aria-checked` bound to the current rating and an `aria-label` of `detail.rating_value_aria` ("{n} of 10" / "{n} von 10", new in both locales). Display-only rows are untouched — they render no buttons and are usually nested inside one, so a radiogroup role there would be a lie.
+5. **The duplicate-scan pre-check now charges the limiter**, and because this changed a documented invariant it was decided explicitly rather than inferred. The task text ("charging the limiter when the dup check misses") is ambiguous between counting-only and counting-and-rejecting; **counting and rejecting** was chosen, with the owner's agreement. A follow-up commit (`70e1571`) then went further and moved the dup check *below* `rateLimitOrReject` entirely, which is the shipped state: the limiter runs first, and an over-budget caller never reaches the lookup at all. The dup check is still ahead of `resolveEdition`, so no external metadata fetch happens for a duplicate. Inside the budget the answer is unchanged; past it, a duplicate gets the `429`. Rationale: 30/min is ~one book every 2 s, which covers every real rescan, whereas the previous ordering left a path doing up to three D1 queries per request that no limiter ever saw. `worker/CLAUDE.md`'s rate-limiting paragraph was rewritten to describe the new ordering and why the old one changed.

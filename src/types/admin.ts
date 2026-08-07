@@ -1,5 +1,16 @@
 /** Response shapes for `/api/admin/*` — the admin status board. */
 
+/**
+ * One fetched surface: its payload, whether a request is in flight, and the last failure. Every
+ * section and dialog on the board is one of these, so `AdminSection` can own the load/fail/retry
+ * convention for all of them.
+ */
+export type Section<T> = {
+  data: T | null;
+  loading: boolean;
+  error: string | null;
+};
+
 export type AdminOverview = {
   totalUsers: number;
   newUsers7d: number;
@@ -31,6 +42,67 @@ export type AdminOverview = {
     /** ms-epoch of the most recent `enrichment_runs` row; null if there are none. */
     lastRunAt: number | null;
   };
+};
+
+/**
+ * One failed `enrichment_runs` row, as `GET /api/admin/runs` returns it — the drill-down behind the
+ * vitals panel's failure counts. Every timestamp is ms-epoch, like the rest of `/api/admin/*`.
+ */
+export type AdminRunRow = {
+  id: number;
+  workId: number;
+  /** `works.canonical_title`, falling back to any edition's title; null if neither exists. */
+  workTitle: string | null;
+  startedAt: number;
+  durationMs: number;
+  failureReason: string | null;
+  /** Same `RETRY_POLICY` judgement the summary's `failureReasons` carry. */
+  transient: boolean;
+  source: string;
+  /**
+   * The work as it stands *now*, not as it was at run time — whether a failure is still being
+   * retried is the question a failed run raises. Null when the work row is gone (a merge).
+   */
+  workStatus: string | null;
+  workAttempts: number | null;
+  /** When the sweeper will pick the work up again; null = due immediately. */
+  workNextRetryAt: number | null;
+};
+
+export type AdminRuns = {
+  /** The window the list covers — fixed at the summary's 24h, so the two always agree. */
+  hours: number;
+  /** Matching rows in the window, before the limit — so a truncated list can say so. */
+  total: number;
+  runs: AdminRunRow[];
+};
+
+/**
+ * One `works` row, as `GET /api/admin/works` returns it — the drill-down behind the vitals panel's
+ * enrichment bar. Every timestamp is ms-epoch, like the rest of `/api/admin/*`.
+ */
+export type AdminWorkRow = {
+  id: number;
+  /** `canonical_title`, falling back to any edition's title; null if neither exists. */
+  title: string | null;
+  /** `works.enrichment_status` — `pending` | `done` | `failed` | `exhausted`. */
+  status: string;
+  attempts: number;
+  /** The last failure's reason; null for a work that has never failed. */
+  failureReason: string | null;
+  transient: boolean;
+  /** Null when Wikidata never matched this work — often the diagnosis by itself. */
+  wikidataQid: string | null;
+  /** Last failure or last success, whichever is later; null if never attempted. */
+  lastAttemptAt: number | null;
+  /** When the sweeper picks it up again; null = due immediately (or not scheduled). */
+  nextRetryAt: number | null;
+};
+
+export type AdminWorks = {
+  /** Works matching the status filter, before the limit — so a truncated list can say so. */
+  total: number;
+  works: AdminWorkRow[];
 };
 
 /**

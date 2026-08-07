@@ -348,6 +348,12 @@ books.patch("/override", async (c) => {
     return c.json({ error: "ISBN required" }, 400);
   const isbn = normalizeIsbn(rawIsbn);
 
+  // `validateOverrides` uses `field in input`, and `in` throws a TypeError on a primitive — so a
+  // body carrying `"changes": "x"` (or a number, or a boolean) was an unhandled 500 rather than a
+  // 400, reachable by any authenticated caller since this runs ahead of the ownership check.
+  if (changes != null && typeof changes !== "object")
+    return c.json({ error: "changes must be an object" }, 400);
+
   const { values: validated, errors } = validateOverrides(changes);
   if (Object.keys(errors).length)
     return c.json({ error: "validation_failed", fields: errors }, 400);
@@ -394,6 +400,11 @@ books.patch("/custom-fields", async (c) => {
   if (typeof body.isbn !== "string" || !body.isbn)
     return c.json({ error: "ISBN required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
+  // Same reason as `/override`'s `changes` guard: without this, `"values": "x"` is a
+  // `.flatMap is not a function` 500 and `"values": [null]` a null-property read, both from an
+  // ordinary authenticated request. Entry shapes are checked in the flatMap below.
+  if (body.values != null && !Array.isArray(body.values))
+    return c.json({ error: "values must be an array" }, 400);
 
   const [book, { results: ownedDefs }] = await Promise.all([
     // Same scan requirement as `/override` above, and the same 404 for a book this user hasn't
@@ -413,6 +424,7 @@ books.patch("/custom-fields", async (c) => {
   // integer (the UI sanitizes keystrokes, but a direct API call bypasses that) — either way
   // an invalid value is silently cleared rather than stored, same as an orphaned select value.
   const values = (body.values ?? []).flatMap((v) => {
+    if (!v || typeof v !== "object") return [];
     const def = defsById.get(v.field_def_id);
     if (!def) return [];
     const trimmed = (v.value ?? "").trim();
