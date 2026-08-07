@@ -1196,7 +1196,12 @@ const DEFAULT_OWNING_STATUS: OwningStatus = "owned";
 
 const scanState = ref<ScanState>("scanning");
 const detectedBook = ref<BookPreview | null>(null);
-const selectedStatus = ref<ReadStatus>("read");
+// Every path into the preview sheet re-reads `defaultScanStatus` before the picker is shown, so
+// this initial value is never the one rendered — but a hardcoded "read" here is the same latent
+// wrong default as the one `scanAgain` used to carry, and it reads as an intentional override.
+const selectedStatus = ref<ReadStatus>(
+  libraryDefaultsStore.defaultScanStatus,
+);
 const selectedOwning = ref<OwningStatus>(DEFAULT_OWNING_STATUS);
 const selectedRating = ref<number | null>(null);
 const flash = ref(false);
