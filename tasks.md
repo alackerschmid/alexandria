@@ -18,7 +18,8 @@ Conventions used below:
 | B1–B5 | **Done** — see `tasks_completed.md` (`56444cb`, `fix/audit-high-severity`) |
 | C1–C9 | **Done** — see `tasks_completed.md` (`fix/audit-medium-severity`) |
 | D1–D7 | **Done** — see `tasks_completed.md` (`fix/audit-process-hardening`). D1 still needs two Cloudflare-dashboard actions, named there |
-| E, F | Open — below |
+| E3, E5, E6, E7 | **Done** — see `tasks_completed.md` (`feat/e-block-polish`) |
+| E1, E2, E4, F | Open — below |
 
 ---
 
@@ -41,32 +42,10 @@ Three small strokes; can be one PR or three.
   3. **Deliberately out of scope:** `is_admin` promotion from the UI — keeping that manual is a safety property, not an omission.
 - **Done when:** both actions exist behind `adminMiddleware`, `worker/CLAUDE.md` route inventory updated, and the "set by hand" notes in both CLAUDE.md files corrected.
 
-### E3. Finish DNF
-
-- `status:dnf` is filterable but never suggested: add it to the facet-suggestion loop in `src/composables/useLibrarySearch.ts` ~348–352 (compare `STATUS_VALUES` — don't hardcode a second list).
-- README §Features still says "Unread, Reading, or Read" — update while there. (See also E6.)
-
 ### E4. Make integer/date custom fields pay rent
 
 - **Where:** `worker/src/routes/stats.ts` ~452 (`ufd.field_type NOT IN ('date','integer')`), `src/composables/useLibrarySearch.ts` ~447 (facet suggestions skip them).
 - **Scope:** a separate `customNumericFields` stats block — sum/avg/min/max for integers, year-bucketed counts for dates — rendered on the stats surface (pairs naturally with F3). Values are stored as strings; validate/cast in SQL defensively (`CAST` + `GLOB` guard) since historical rows may predate the current validation.
-
-### E5. Route hand-rolled `fetch` through `apiFetch`
-
-- **Where:** `src/stores/fieldDefs.ts` ~34/46/65/108; `src/pages/scanner.vue` ~1428–1434, ~1497–1503.
-- **Problem:** violates the documented invariant (src/CLAUDE.md) and loses 401→logout — an expired token on the scanner's title search surfaces as a generic error loop instead of logging out. Note the deliberate exceptions: `guest.ts` `syncToAccount` and `login.vue` are pre-auth/explicit-token and stay raw.
-
-### E6. README refresh
-
-The feature list has drifted both directions: it under-sells (no DNF, no ratings/reviews, no owning-status model, no editions carousel, no admin board) and the status list is stale. One pass over `README.md` §Features + §To be implemented, ideally after F1/F2 land so the to-be-implemented list shrinks honestly.
-
-### E7. Minor UX polish (batchable)
-
-- `sessionTime` freeze: `src/pages/scanner.vue` ~1261–1265 renders relative times from non-reactive `Date.now()`; use a ticking ref (30 s interval, cleared on unmount).
-- `scanAgain` resets `selectedStatus` to hardcoded `"read"` (~1696) instead of `libraryDefaultsStore.defaultScanStatus`.
-- Guest banner hardcodes `{ max: 3 }` (`src/pages/index.vue` ~12) — export `MAX_GUEST_SCANS` from `src/stores/guest.ts`.
-- `RatingStars` a11y: `src/components/RatingStars.vue` ~63–74 — half-star buttons announce a bare number; add `role="radiogroup"` + "7 of 10"-style labels.
-- Duplicate-scan pre-check runs up to 3 D1 queries before the rate limit (`worker/src/routes/scans.ts` ~107–116, deliberate for 409-before-quota UX): cheap mitigation is charging the limiter when the dup check misses.
 
 ---
 
@@ -130,8 +109,8 @@ A random unread pick on the home dashboard, optionally re-rollable and biasable 
 
 ## Suggested sequencing
 
-1. **A, B, C and D are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9; each task names its own. D1 additionally waits on two Cloudflare-dashboard actions, and D7's `initials`/`formatPublishDate` fixes are worth a glance at a placeholder cover and a book's publish date in the browser.
+1. **A, B, C, D and E3/E5/E6/E7 are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9, and now for the E-block's four frontend surfaces; each task names its own. D1 additionally waits on two Cloudflare-dashboard actions, and D7's `initials`/`formatPublishDate` fixes are worth a glance at a placeholder cover and a book's publish date in the browser.
 2. **F1 + F2** — export and reading dates; F2 is time-sensitive (every Goodreads import until then loses history). This is the front of the queue.
-3. **E-block and remaining F-items** by appetite. E5's `fieldDefs` half is one file from B1's watcher.
+3. **E1, E2, E4 and the remaining F-items** by appetite. E6 (README) has had one pass, but F1/F2 landing should shrink its "To be implemented" list again.
 
 Notes for implementing agents: branch before multi-commit work; conventional commits; the Stop hook runs type-check/lint/tests for whatever you touch — don't pre-run them; update the two inventory files (`worker/CLAUDE.md`, `worker/migrations/CLAUDE.md`) whenever a route or schema change is part of the task; `to-do.md` at the repo root is the owner's personal notes, not this backlog — leave it alone.
