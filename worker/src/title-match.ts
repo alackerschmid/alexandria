@@ -97,6 +97,24 @@ export function titleScorer(title: string): (other: string) => number {
   return (other) => diceScore(prepared, normalizeTitle(other));
 }
 
+/**
+ * Normalized equality and nothing else — no prefix containment, no bigram tolerance.
+ *
+ * `titleScorer` exists to be forgiving, and its prefix rule is what lets a *volume* match its
+ * *series*: "Das Spiel der Götter (12)" scores a flat 1.000 against "Das Spiel der Götter", and
+ * `ILIUM` against "Ilium/Olympos". That is the single mechanism behind every wrong merge the
+ * enrichment guard was built for, and it is exactly what this drops — the extra text a volume
+ * carries is the evidence, so any of it means no match. Enrichment uses this to accept a
+ * series-*typed* Wikidata item, where a forgiving comparison would be actively unsafe.
+ */
+export function exactTitleMatcher(title: string): (other: string) => boolean {
+  const prepared = normalizeTitle(title);
+  return (other) => {
+    const candidate = normalizeTitle(other);
+    return !!prepared && !!candidate && prepared.norm === candidate.norm;
+  };
+}
+
 export interface TitleMatchCandidate {
   scanId: number;
   bookId: number;

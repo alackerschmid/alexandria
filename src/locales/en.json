@@ -527,6 +527,8 @@
       "resolve_heading": "Resolve match",
       "undo": "Undo",
       "skipped_note": "Skipped — won't be imported",
+      "skip_all": "Skip all {n}",
+      "undo_all": "Undo {n} skips",
       "reason_no_isbn": "No ISBN in the export — pick an edition",
       "reason_invalid_isbn": "ISBN couldn't be validated — pick an edition",
       "reason_cancelled": "Import cancelled before this book was reached — pick an edition",

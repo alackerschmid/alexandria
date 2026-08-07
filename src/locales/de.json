@@ -527,6 +527,8 @@
       "resolve_heading": "Treffer klären",
       "undo": "Rückgängig",
       "skipped_note": "Übersprungen — wird nicht importiert",
+      "skip_all": "Alle {n} überspringen",
+      "undo_all": "{n} Übersprungene zurückholen",
       "reason_no_isbn": "Keine ISBN im Export — wähle eine Ausgabe",
       "reason_invalid_isbn": "ISBN nicht validierbar — wähle eine Ausgabe",
       "reason_cancelled": "Import abgebrochen, bevor dieses Buch erreicht wurde — wähle eine Ausgabe",
