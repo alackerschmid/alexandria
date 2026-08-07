@@ -3,20 +3,45 @@ import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
 import { UsageRecorder } from "./usage";
 
-// How many works to enrich per cron tick. A typical work costs ~3-6 external calls, which keeps a
-// batch under the Workers free-plan ceiling of 50 subrequests per invocation (7 x 6 = 42). The tail
-// is higher — the paren-stripped title retry, the QID label-verification fallback (only when the
-// en/de labels riding the search query don't decide it) and the edition-backfill chain can stack to
-// ~11 on one work — so the ceiling is a budget, not a guarantee: a batch of pathological works can
-// blow it, failing those fetches for the tick and re-queuing the works through the retry policy.
+// The most works a tick will *consider*. It is no longer what keeps the tick inside the subrequest
+// limit — `fitsInBudget` does that, by metering the calls actually spent (see SUBREQUEST_BUDGET) —
+// so this is now purely a throughput knob, and raising it costs nothing but wall-clock time when the
+// works turn out to be cheap.
+//
+// Cheap and expensive works differ by ~10x, which is why a fixed count was the wrong instrument: a
+// work that already has a QID skips the search entirely (~1-2 calls, and the whole schema-backfill
+// population is this kind), while one that needs identity costs ~6-7 and a pathological one ~15.
+// Seven expensive works would exceed the free plan's 50; seven cheap ones use a fifth of it.
+//
 // Throughput matters after a bulk import (a Goodreads library adds hundreds of pending works at
-// once, each showing a "series lookup pending" badge until it drains) — but the per-invocation
-// subrequest ceiling caps how far this can go, so the cron interval is the other half of the
-// lever: see `crons` in wrangler.toml.
+// once, each showing a "series lookup pending" badge until it drains). The cron interval is the
+// other half of that lever: see `crons` in wrangler.toml.
 const BATCH_SIZE = 7;
 // Books with no work link get their own budget so a large unlinked backlog can't crowd out
 // enrichment (and vice versa) — linking is cheap, enrichment is not.
 const LINK_BATCH_SIZE = 5;
+
+/**
+ * The tick's external-subrequest allowance, and the cost it assumes the next work might have.
+ *
+ * **Free-plan Workers get 50 external subrequests per invocation.** Cloudflare services (D1) have a
+ * separate 1,000, so the tick's queries don't compete — this budget is only about calls to Wikidata,
+ * Google Books and OpenLibrary, which is exactly what `UsageRecorder.countFetch` counts.
+ *
+ * `WORST_CASE_PER_WORK` is deliberately the *worst* case, not the typical one, because the check runs
+ * before a work starts and cannot know which kind it got. A work that already has a QID costs ~1-2
+ * (`resolveWorkIdentity` returns early and never searches); one that needs identity costs ~6-7, and
+ * one that finds nothing until the third pass, then backfills an edition, reaches ~15. Reserving 15
+ * means a tick admits ~3 works in the worst case and all 7 whenever the early ones were cheap — the
+ * meter adapts, which a fixed BATCH_SIZE could not.
+ *
+ * `SUBREQUEST_BUDGET` keeps 5 in hand below the platform's 50: the count is exact for calls made
+ * through the two fetch helpers, and nothing else in the tick makes an external request today, but a
+ * redirect chain counts twice against the platform limit and is invisible from here.
+ */
+export const SUBREQUEST_BUDGET = 45;
+export const WORST_CASE_PER_WORK = 15;
+
 // Politeness delay between works so we don't burst Wikidata.
 const DELAY_MS = 500;
 // How long enrichment_runs history is kept before being pruned each tick.
@@ -31,6 +56,23 @@ const RATE_LIMIT_PRUNE_GRACE_MS = 5 * 60_000;
 const USAGE_RETENTION_DAYS = 90;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Whether the next work can be started without risking the invocation's subrequest limit. The first
+ * work always runs: refusing to start any work at all would stall the queue permanently, and one
+ * work can only exceed the platform limit if `WORST_CASE_PER_WORK` is wrong by 3x.
+ */
+export function fitsInBudget(usage: UsageRecorder, index: number): boolean {
+  if (index === 0) return true;
+  const spent = usage.externalCalls;
+  if (spent + WORST_CASE_PER_WORK <= SUBREQUEST_BUDGET) return true;
+  console.log(
+    `[sweeper] stopping after ${index} work(s): ${spent} external calls spent, ` +
+    `${SUBREQUEST_BUDGET - spent} left and a work can need ${WORST_CASE_PER_WORK}. ` +
+    `The rest stay due for the next tick.`,
+  );
+  return false;
+}
 
 // Background sweeper: drains the backlog of un-enriched works — series-member placeholders that
 // were never touched, plus works whose enrichment failed (retried with a cap + backoff).
@@ -153,6 +195,11 @@ export async function scheduled(
   const usage = new UsageRecorder(env.DB);
   try {
     for (const [i, w] of results.entries()) {
+      // Stop before a work that can't fit rather than after one that didn't: an overrun throws
+      // mid-enrichment, and `enrichWork` books that as a *failure* — a healthy work marked `failed`,
+      // its attempt count advanced toward `exhausted`, for no reason but our own arithmetic. A work
+      // left unstarted is simply still due, and the next tick (two minutes) takes it.
+      if (!fitsInBudget(usage, i)) break;
       await enrichWork(
         env.DB,
         w.id,

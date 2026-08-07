@@ -25,10 +25,16 @@ recorder, because `usageMiddleware`'s flush has already fired by then. The sweep
 
 - If the work **already has a `wikidata_qid`** (a series-member placeholder, or a
   force-refresh): skip the search/merge and go straight to `fetchWorkDetails(workQid)`.
-- Otherwise: `fetchBookInfo(title, author)` (SPARQL: title+author search → **verified** work QID +
-  primary series — see "Which QID counts as this book's"; a search hit no label confirms is treated
-  as not found) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as
-  placeholder works with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
+- Otherwise: `fetchBookInfo(title, author, searchCache)` (**three requests** — entity search, filter,
+  hydrate; see "How `fetchBookInfo` finds candidates" below — → **verified** work QID + primary
+  series, per "Which QID counts as this book's"; a search hit no label confirms is treated as not
+  found) → `upsertSeries` + `populateSeriesMembers` (fills in all series entries as placeholder works
+  with `wikidata_qid` + `canonical_title`) → `fetchWorkDetails(workQid)`.
+
+  `resolveWorkIdentity` makes up to three passes (original title → paren-stripped title →
+  `exactOnly`) and threads **one `searchCache`** through all of them, so the author search (identical
+  every pass) and the title search (identical in passes 1 and 3) cost one request each rather than
+  one per pass.
 
 Either path then calls `backfillEdition(db, workId, workQid, apiKey)` — for an identified work
 with no linked edition it resolves a representative ISBN from Wikidata (`P747` editions →
@@ -45,9 +51,57 @@ stored `openlibrary_work_id` when its seed-ISBN path comes up empty.
 
 Finally it writes genres/pub date/awards/nominations back to `works`.
 
+## How `fetchBookInfo` finds candidates — three requests, never one federated query
+
+The title→QID lookup is **an Action API search, then a filter query, then a hydrate query**, and it
+must stay that shape:
+
+1. `searchEntityQids` — mwapi `list=search` against `https://www.wikidata.org/w/api.php`, `srlimit`
+   `ENTITY_SEARCH_LIMIT` (50). Twice, in parallel: the title, and the author narrowed with
+   `haswbstatement:P31=Q5`. Counted as `entity_search`.
+2. **filter** (`book_search`) — `VALUES ?work { … }` over those QIDs with the type allow-filter, the
+   two `FILTER NOT EXISTS` guards and the author inner join. **No `OPTIONAL`s**, so nothing
+   multiplies across 50 candidates. The first `MAX_CANDIDATES` (10) survivors, *in search-rank
+   order*, go on.
+3. **hydrate** (`book_hydrate`) — labels and the series statement for those ≤10 only.
+
+**This used to be one query with `SERVICE wikibase:mwapi` inside it, and that is what made 28 works
+permanently unenrichable.** The federated form streams every hit the search can find into the
+surrounding `P31/P279*` walk — hits ranked past 800 were observed for "Macbeth" — and the trailing
+`LIMIT 10` only applies once all of it is done. Measured against live Wikidata: Macbeth 37.7–53.4s
+(three runs, all successful), Meditations >65s, The Iliad an HTTP 502 — against `runSparql`'s 25s
+abort. The queries were never unanswerable; the worker was giving up less than half way through, and
+`wikidata_qid IS NULL` on those rows meant "never collected", not "no match".
+
+Two things that look like fixes and are not: `mwapi:srlimit` inside the SERVICE (tried at 20/5/3 —
+all still exceeded 65s, so the federation itself is the cost, not the candidate count), and dropping
+the `FILTER NOT EXISTS` guards (38.9s, still over budget, and those guards are load-bearing — see
+below). Splitting it gives ~4–10s for the same answers, and a title that already worked went
+17.0s → 4.3s.
+
+Why the split is also three requests rather than two: hydrating all 50 candidates in one VALUES query
+costs 22–23s (Sphere, Siddhartha) because the label and series `OPTIONAL`s multiply; filtering first
+and hydrating ten costs ~7s for the same result. Searching only 10 deep instead would be faster still
+and **wrong** — the novel *Sphere* and Hesse's *Siddhartha* both sit outside the top ten entity hits
+for their own titles, behind the shape, the concept and the place.
+
+Consequences worth keeping in mind:
+
+- **Rank order comes from the search, not from a SPARQL response.** A `VALUES` query returns
+  solutions in any order it likes and `pickVerifiedQid` takes the *first* candidate that verifies, so
+  the order is carried in the QID array. Reading it back off the response would make the same book
+  enrich differently on two runs.
+- **No user text reaches a SPARQL query any more** — the searched strings go into an Action API URL
+  via `encodeURIComponent`, and the only thing interpolated into a query is a QID already checked
+  against `/^Q\d+$/`. `escapeSparql` is gone; don't reintroduce interpolation without it.
+- The author join stays an **inner** join on the searched author's items. It is not redundant next to
+  the label check: `titleScorer`'s prefix-containment shortcut scores "Meditations" 1.000 against
+  *Meditations on First Philosophy*, so the author is the only thing telling Marcus Aurelius from
+  Descartes.
+
 ## Which QID counts as this book's
 
-`fetchBookInfo`'s SPARQL is an **mwapi full-text search ranked by text relevance**, so its top hit
+The candidate list arrives **ranked by mwapi text relevance**, so its top hit
 is only a candidate. Accepting it unverified is what merged distinct books onto one work — the
 sequel ("The Monster Baru Cormorant" → the Traitor item), the German sequel title ("Der Herr des
 Wüstenplaneten" → Dune), the duology item ("Ilium/Olympos"), the novel series ("Star wars - Wächter
@@ -88,12 +142,12 @@ Bond films*). Two guards, both needed — neither catches all five:
   merge ("Unendlicher Spaß" → Q1077445 *Infinite Jest*) happens through the item's German label, so
   an en/de restriction would reject correct hits in other languages. The threshold sits in a
   measured gap — tightest correct hit 0.909, closest wrong one 0.732. The all-language labels query
-  is only the **fallback**: the search query carries each hit's en/de labels itself (no row
-  multiplication — one label per language), and a top-ranked candidate they verify is accepted
-  without the extra round trip, which keeps the sweeper's subrequest budget where its `BATCH_SIZE`
-  comment assumes. Only a *top-ranked* fast hit is decisive — a lower-ranked one still goes through
-  the full fetch, since a higher-ranked candidate could verify through another language and rank
-  order must win.
+  is only the **fallback**: the **hydrate** request (step 3 above) carries each candidate's en/de
+  labels itself (no row multiplication — one label per language), and a top-ranked candidate they
+  verify is accepted without the extra round trip, which is one request saved out of the ~6 a
+  resolving work now spends — see `BATCH_SIZE`'s recount in `sweeper.ts`. Only a *top-ranked* fast hit
+  is decisive — a lower-ranked one still goes through the full fetch, since a higher-ranked candidate
+  could verify through another language and rank order must win.
 
 Nothing matching is a normal outcome: it stores nulls and lands on `done` with `wikidata_qid IS
 NULL`, which is strictly better than a confidently wrong merge. Note that `ILIUM` vs "Ilium/Olympos"
@@ -166,6 +220,25 @@ it drains through Q1 from then on.
 Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs`
 rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
 
+**The tick meters its own subrequests; `BATCH_SIZE` does not bound them.** Free-plan Workers get **50
+external subrequests per invocation** (Cloudflare services like D1 have a separate 1,000, so the
+tick's queries don't compete). Per-work cost varies ~10x — a work that already has a QID skips the
+search entirely at ~1-2 calls, which is the whole schema-backfill population; one needing identity
+costs ~6-7; a pathological one ~15 — so a fixed work count is the wrong instrument. `fitsInBudget`
+(unit-tested) checks `UsageRecorder.externalCalls` before each work and stops the batch when the next
+one's worst case wouldn't fit, leaving the rest due for the next tick.
+
+Two properties that are load-bearing:
+
+- **It stops *before* an overrun, not after.** An overrun throws mid-enrichment and `enrichWork` books
+  that as a failure — a healthy work marked `failed` with its attempt count advanced toward
+  `exhausted`, for no reason but our arithmetic. A work left unstarted is simply still due.
+- **The meter lives in the fetch helpers** (`fetchWithTimeout`, `fetchWikidataJson`), not at their
+  call sites, so a new outbound call cannot forget to be counted. It is deliberately *not* the
+  `api_usage` counters: those count units of work at the granularity the board reads, which is not
+  1:1 with requests (`fetchOpenLibraryBibkey` makes two fetches and records one; the OpenLibrary
+  work-description read records nothing), so metering off them would undercount.
+
 **The sweeper has a Google Books budget; interactive paths do not.** `backfillEdition` is the one
 place enrichment spends the metered daily quota, and the backlog it serves is self-amplifying, so
 past `SWEEPER_GOOGLE_BOOKS_BUDGET` (700 of 1,000/day, checked via `googleBooksCallsToday`) a
@@ -184,11 +257,17 @@ post-merge re-claim: it records `done` against the surviving work — same as wh
 re-claim — rather than returning silently, because a run that performed a destructive merge is the
 last one that should be missing from the history.
 
-`GET /api/admin/overview` reads a 24h summary of it (outcome counts, failure reasons, avg + p95
-duration) for the `/admin` board's vitals panel — the table's only read surface. Everything else
-is a direct query. A busy day writes ~5k rows (`BATCH_SIZE` × 30 × 24), so any new read has to
-aggregate in SQL rather than pull the rows out. Telemetry writes are best-effort (wrapped so a
-logging failure can't fail the enrichment itself).
+Two endpoints read it, both for the `/admin` board: `GET /api/admin/overview` takes a 24h **summary**
+(outcome counts, failure reasons, avg + p95 duration) for the vitals panel, and
+`GET /api/admin/runs` returns the **individual rows** behind one of those failure counts, for the
+drill-down the panel's counts open. Everything else is a direct query.
+
+A busy day writes ~5k rows (`BATCH_SIZE` × 30 × 24), so an **aggregate** read has to aggregate in SQL
+rather than pull the rows out — that is what `/overview` does. A row-level read is fine, but it must
+be bounded and ordered: `/runs` filters to one outcome inside the 24h window, orders by the indexed
+`created_at` and caps at `MAX_LIST_LIMIT`. Both routes share the window constant so the list and the
+count that opens it can't be measuring different spans. Telemetry writes are best-effort (wrapped so
+a logging failure can't fail the enrichment itself).
 
 `MAX(created_at)` over the whole table is also the board's **liveness signal for the cron**: paired
 with a count of currently-due works, it's the only way to tell a stalled sweeper from a draining

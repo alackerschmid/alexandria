@@ -8,6 +8,8 @@ import {
   type FailureReason,
   pickVerifiedQid,
   pickExactQid,
+  parseEntitySearchQids,
+  rankSurvivors,
 } from "../src/enrichment";
 
 describe("classifyError", () => {
@@ -208,5 +210,103 @@ describe("pickExactQid", () => {
         labels([["Q1077445", ["Unendlicher Spass"]]]),
       ),
     ).toBe("Q1077445");
+  });
+});
+
+describe("parseEntitySearchQids", () => {
+  const hits = (...titles: unknown[]) => ({
+    query: { search: titles.map((title) => ({ title })) },
+  });
+
+  it("returns the hits' QIDs in the order the search ranked them", () => {
+    // Rank order is the contract: `pickVerifiedQid` takes the first candidate that verifies.
+    expect(parseEntitySearchQids(hits("Q130283", "Q7941656", "Q320363"))).toEqual(
+      ["Q130283", "Q7941656", "Q320363"],
+    );
+  });
+
+  it("treats an explicitly empty result as a real zero-hit answer", () => {
+    expect(parseEntitySearchQids({ query: { search: [] } })).toEqual([]);
+  });
+
+  it("drops anything that isn't a bare QID", () => {
+    // The pattern is the only guard left on text that reaches a SPARQL VALUES block, so a hit title
+    // carrying query syntax must not survive it.
+    expect(
+      parseEntitySearchQids(
+        hits(
+          "Q42",
+          "Q1 } UNION { ?work wdt:P31 wd:Q5 . VALUES ?x {",
+          "Property:P31",
+          "Main Page",
+          "q42",
+          "Q",
+          "Q12x",
+          42,
+          null,
+          undefined,
+        ),
+      ),
+    ).toEqual(["Q42"]);
+  });
+
+  /**
+   * The Action API answers HTTP 200 with an `error` envelope, so `fetchWikidataJson`'s status-based
+   * classification cannot see these. Reading them as "no hits" would persist the work as done-with-
+   * no-QID and no sweeper query would ever serve it again — the exact permanent-stall this pipeline
+   * was rewritten to escape. All four codes below are real, observed against the live API.
+   */
+  describe("throws rather than reporting zero hits", () => {
+    const cases: [string, string, FailureReason][] = [
+      ["query-service lag", "maxlag", "rate_limited"],
+      ["search load-shedding", "cirrussearch-too-busy-error", "rate_limited"],
+      ["wiki in read-only mode", "readonly", "rate_limited"],
+      ["a title over 300 chars", "cirrussearch-query-too-long", "other"],
+    ];
+
+    for (const [label, code, kind] of cases) {
+      it(`${label} → ${kind}`, () => {
+        try {
+          parseEntitySearchQids({ error: { code, info: "…" } });
+          throw new Error("expected a throw");
+        } catch (e) {
+          expect(e).toBeInstanceOf(SparqlError);
+          expect((e as SparqlError).kind).toBe(kind);
+        }
+      });
+    }
+
+    it("an unexpected shape, since only an empty array means no hits", () => {
+      for (const json of [{}, { query: {} }, { query: { search: null } }, null]) {
+        expect(() => parseEntitySearchQids(json)).toThrow(SparqlError);
+      }
+    });
+  });
+});
+
+describe("rankSurvivors", () => {
+  it("orders by the search ranking, not by the set it filters against", () => {
+    // The eligible set arrives from a SPARQL response, which has no meaningful order; feeding it in
+    // reverse must not change the outcome.
+    const searchOrder = ["Q1", "Q2", "Q3", "Q4"];
+    const eligible = new Set(["Q4", "Q2"]);
+    expect(rankSurvivors(searchOrder, eligible, 10)).toEqual(["Q2", "Q4"]);
+  });
+
+  it("keeps the best-ranked `max`, not an arbitrary `max`", () => {
+    const searchOrder = Array.from({ length: 12 }, (_, i) => `Q${i + 1}`);
+    expect(rankSurvivors(searchOrder, new Set(searchOrder), 10)).toEqual(
+      searchOrder.slice(0, 10),
+    );
+  });
+
+  it("drops an eligible QID that was never a search hit", () => {
+    // It could only get there through a bug, and it has no rank — so it has no place in a list
+    // whose whole meaning is rank order.
+    expect(rankSurvivors(["Q1"], new Set(["Q1", "Q999"]), 10)).toEqual(["Q1"]);
+  });
+
+  it("returns nothing when no candidate survived", () => {
+    expect(rankSurvivors(["Q1", "Q2"], new Set(), 10)).toEqual([]);
   });
 });
