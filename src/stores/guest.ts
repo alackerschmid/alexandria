@@ -4,7 +4,8 @@ import { NEXT_STATUS } from "@/composables/useBookStatus";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
 
 const STORAGE_KEY = "guest_scans";
-const MAX_GUEST_SCANS = 3;
+/** The guest-mode scan cap. Exported so the banner quotes the real number, not a copy of it. */
+export const MAX_GUEST_SCANS = 3;
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 function load(): Book[] {
