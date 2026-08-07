@@ -343,19 +343,17 @@ export function useLibrarySearch(options: {
 
     const entries: SuggestionFacet[] = [];
 
-    // Only suggest statuses that actually exist in the current filtered pool
+    // Only suggest statuses that actually exist in the current filtered pool.
+    // Driven off STATUS_ORDER so a new status is suggestable the moment it's filterable —
+    // a hand-kept second list here is what left `status:dnf` searchable but never offered.
     const presentStatuses = new Set(pool.map((b) => statusOf(b)));
-    for (const [val, label] of [
-      ["read", t("book.read")],
-      ["reading", t("book.reading")],
-      ["unread", t("book.unread")],
-    ] as [string, string][]) {
-      if (presentStatuses.has(val as ReadStatus))
+    for (const val of STATUS_ORDER) {
+      if (presentStatuses.has(val))
         entries.push({
           kind: "facet",
           token: `status:${val}`,
           icon: "mdi-progress-check",
-          label,
+          label: t(`book.${val}`),
           typeLabel: statusLabel,
         });
     }
