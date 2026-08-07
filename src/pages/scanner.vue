@@ -1258,8 +1258,18 @@ function recordSession(book: BookPreview, status: ReadStatus, scanId?: number) {
   });
 }
 
+// "3 min ago" has to keep counting while the scanner sits open — a scanning session runs for
+// as long as a shelf takes. Reading `Date.now()` straight out of the template is not reactive,
+// so every entry froze at the value it had when the list last re-rendered for another reason.
+const nowTick = ref(Date.now());
+const nowTickTimer = window.setInterval(
+  () => (nowTick.value = Date.now()),
+  30_000,
+);
+onBeforeUnmount(() => clearInterval(nowTickTimer));
+
 function sessionTime(ts: number): string {
-  const mins = Math.floor((Date.now() - ts) / 60_000);
+  const mins = Math.floor((nowTick.value - ts) / 60_000);
   if (mins < 1) return t("scanner.time_now");
   return t("scanner.time_min_ago", { n: mins });
 }
@@ -1427,13 +1437,14 @@ const submitTitleSearch = async () => {
     if (authorQuery.value.trim()) qs.set("author", authorQuery.value.trim());
     if (publisherQuery.value.trim())
       qs.set("publisher", publisherQuery.value.trim());
-    const endpoint = isGuest.value
-      ? `${API_BASE}/api/books/guest-search?${qs}`
-      : `${API_BASE}/api/books/search?${qs}`;
-    const headers: Record<string, string> = isGuest.value
-      ? {}
-      : { Authorization: `Bearer ${authStore.token}` };
-    const res = await fetch(endpoint, { headers });
+    // Guest mode is pre-auth, so it stays a bare `fetch` (like `guest.ts`'s `syncToAccount`):
+    // apiFetch would add a Content-Type header, turning a simple cross-origin GET into a
+    // preflighted one on the app's most latency-sensitive page. The authenticated call goes
+    // through apiFetch so an expired token logs the user out instead of looping on a generic
+    // "search failed".
+    const res = isGuest.value
+      ? await fetch(`${API_BASE}/api/books/guest-search?${qs}`)
+      : await apiFetch(`/api/books/search?${qs}`);
     if (!res.ok) {
       searchState.value = "error";
       return;
@@ -1496,13 +1507,11 @@ const {
 
 async function lookupBook(isbn: string): Promise<BookPreview | null> {
   try {
-    const endpoint = isGuest.value
-      ? `${API_BASE}/api/books/guest-lookup?isbn=${isbn}`
-      : `${API_BASE}/api/books/lookup?isbn=${isbn}`;
-    const headers: Record<string, string> = isGuest.value
-      ? {}
-      : { Authorization: `Bearer ${authStore.token}` };
-    const res = await fetch(endpoint, { headers });
+    // Same split as submitTitleSearch: bare fetch for the pre-auth guest endpoint, apiFetch
+    // (401 → logout) for the authenticated one.
+    const res = isGuest.value
+      ? await fetch(`${API_BASE}/api/books/guest-lookup?isbn=${isbn}`)
+      : await apiFetch(`/api/books/lookup?isbn=${isbn}`);
     if (res.ok) {
       const book = await res.json();
       if (book.notFound) return null;
@@ -1698,7 +1707,7 @@ const saveBook = async () => {
 
 const scanAgain = () => {
   detectedBook.value = null;
-  selectedStatus.value = "read";
+  selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
   selectedOwning.value = DEFAULT_OWNING_STATUS;
   selectedRating.value = null;
   clearManualFields();
