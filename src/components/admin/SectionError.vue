@@ -2,7 +2,10 @@
   <!-- One section's fetch failed. The other two loaded independently and stay live, so this
        says which request broke rather than replacing the whole board with an error page. -->
   <section>
-    <div class="flex justify-between items-center mb-3.5">
+    <!-- The heading row is suppressed inside a dialog, which already carries the same title as its
+         own <h2> two elements up: repeating it gave a failed drill-down two identically-named
+         headings in one 80dvh panel, at two different type scales. -->
+    <div v-if="!titled" class="flex justify-between items-center mb-3.5">
       <SectionHeading :title="title" />
       <span
         class="font-mono text-[10px] tracking-[0.14em] uppercase text-signal-critical border border-signal-critical px-2 py-0.5"
@@ -44,6 +47,8 @@ defineProps<{
   /** The failing request and its status, e.g. "GET /api/admin/usage — 500". */
   detail: string;
   retrying: boolean;
+  /** Set when the surrounding surface already shows `title`, so this drops its own heading row. */
+  titled?: boolean;
 }>();
 
 const emit = defineEmits<{ retry: [] }>();

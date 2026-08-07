@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { summarizeRuns, type RunRow } from "../src/routes/admin";
+import {
+  buildRunFilters,
+  listLimit,
+  summarizeRuns,
+  type RunRow,
+} from "../src/routes/admin";
 
 const row = (
   outcome: string,
@@ -114,5 +119,62 @@ describe("summarizeRuns", () => {
 
   it("rounds the average to whole milliseconds", () => {
     expect(summarizeRuns([row("done", 3, 1000)], 0).avgDurationMs).toBe(333);
+  });
+});
+
+describe("buildRunFilters", () => {
+  // Spelled out rather than imported: the 24h window is the contract between this list and the
+  // summary that opens it, so the test should fail if it silently moves.
+  const BASE =
+    "created_at >= datetime('now', '-24 hours') AND outcome = 'failed'";
+
+  it("windows the failures when no reason is given", () => {
+    expect(buildRunFilters(undefined)).toEqual({ where: BASE, binds: [] });
+  });
+
+  it("binds a reason rather than interpolating it", () => {
+    expect(buildRunFilters("timeout")).toEqual({
+      where: `${BASE} AND failure_reason = ?`,
+      binds: ["timeout"],
+    });
+  });
+
+  it("matches a NULL reason under 'other', like the summary does", () => {
+    // `summarizeRuns` buckets a reasonless failure under 'other', so the chip that says "Other 2"
+    // has to open onto those two rows.
+    const { where, binds } = buildRunFilters("other");
+    expect(where).toBe(
+      `${BASE} AND (failure_reason IS NULL OR failure_reason = 'other')`,
+    );
+    expect(binds).toEqual([]);
+  });
+
+  it("binds a reason this build has never heard of", () => {
+    // Reasons are written by the worker and an older build's value survives in the table; the
+    // summary still lists it, so the drill-down still has to be able to select it.
+    expect(buildRunFilters("gremlins").binds).toEqual(["gremlins"]);
+  });
+});
+
+describe("listLimit", () => {
+  it("defaults when the param is absent or unparseable", () => {
+    for (const raw of [undefined, "", "abc", "NaN"]) {
+      expect(listLimit(raw)).toBe(50);
+    }
+  });
+
+  it("caps a caller asking for more than the maximum", () => {
+    expect(listLimit("200")).toBe(200);
+    expect(listLimit("201")).toBe(200);
+    expect(listLimit("1000000")).toBe(200);
+  });
+
+  it("floors at 1, because LIMIT 0 renders an empty list under a non-zero count", () => {
+    expect(listLimit("0")).toBe(1);
+    expect(listLimit("-5")).toBe(1);
+  });
+
+  it("passes a value inside the range through", () => {
+    expect(listLimit("25")).toBe(25);
   });
 });

@@ -33,9 +33,28 @@
         @retry="loadOverview"
       >
         <template #default="{ data }">
-          <VitalsPanel :overview="data" />
+          <VitalsPanel
+            :overview="data"
+            @inspect="runDrill.inspect"
+            @inspect-works="workDrill.inspect"
+          />
         </template>
       </AdminSection>
+
+      <RunDetailDialog
+        v-model="runDrill.open.value"
+        :reason="runDrill.filter.value"
+        :section="runDrill.section"
+        @filter="runDrill.inspect"
+        @retry="runDrill.reload"
+      />
+      <WorkListDialog
+        v-model="workDrill.open.value"
+        :status="workDrill.filter.value"
+        :section="workDrill.section"
+        @filter="workDrill.inspect"
+        @retry="workDrill.reload"
+      />
 
       <template v-if="usage.data && !usage.error">
         <UsageChart
@@ -72,9 +91,18 @@ import UsageChart from "@/components/admin/UsageChart.vue";
 import EndpointTable from "@/components/admin/EndpointTable.vue";
 import UserRoster from "@/components/admin/UserRoster.vue";
 import AdminSection from "@/components/admin/AdminSection.vue";
+import RunDetailDialog from "@/components/admin/RunDetailDialog.vue";
+import WorkListDialog from "@/components/admin/WorkListDialog.vue";
 import { useApi } from "@/composables/useApi";
 import { useAdminFormat } from "@/composables/useAdminFormat";
-import type { AdminOverview, AdminUsage, AdminUserRow } from "@/types/admin";
+import type {
+  AdminOverview,
+  AdminRuns,
+  AdminUsage,
+  AdminUserRow,
+  AdminWorks,
+  Section,
+} from "@/types/admin";
 import {
   DEFAULT_USAGE_HOURS,
   GOOGLE_BOOKS_DAILY_QUOTA,
@@ -99,8 +127,6 @@ const { t } = useI18n();
 const { formatHour, formatRelative } = useAdminFormat();
 const router = useRouter();
 
-type Section<T> = { data: T | null; loading: boolean; error: string | null };
-
 const overview = reactive<Section<AdminOverview>>({
   data: null,
   loading: false,
@@ -116,7 +142,6 @@ const users = reactive<Section<AdminUserRow[]>>({
   loading: false,
   error: null,
 });
-
 const hours = ref(DEFAULT_USAGE_HOURS);
 
 /**
@@ -157,6 +182,69 @@ const loadUsage = () =>
   load(usage, `/api/admin/usage?hours=${hours.value}`, (p) => p as AdminUsage);
 const loadUsers = () =>
   load(users, "/api/admin/users", (p) => (p.users ?? []) as AdminUserRow[]);
+
+/**
+ * One drill-down behind the vitals panel: a dialog fetched when a count is clicked and re-fetched
+ * per filter, rather than on the board's Refresh — nothing pays for a dialog nobody has opened.
+ *
+ * `inspect` drops the previous list before re-filtering: it belongs to another filter, and holding
+ * it visible under a new heading would misattribute rows to a reason that didn't produce them.
+ */
+function useDrillDown<T>(pathFor: (filter: string | null) => string) {
+  const open = ref(false);
+  const filter = ref<string | null>(null);
+  // The generic defeats `reactive`'s return-type inference; the shape is unchanged by the wrapper.
+  const section = reactive<Section<T>>({
+    data: null,
+    loading: false,
+    error: null,
+  }) as Section<T>;
+
+  /**
+   * Which request the section is currently showing. Clearing `data` only orders the *synchronous*
+   * part: these lists are the board's slowest reads (an unindexed sort over `works`, a join over a
+   * day of runs), so a request for the previous filter can land after a newer one and repaint its
+   * rows under the new filter's chip and total — the exact misattribution `inspect` clears data to
+   * avoid. A superseded response is dropped instead.
+   */
+  let generation = 0;
+
+  const reload = async () => {
+    const mine = ++generation;
+    const staging = reactive<Section<T>>({
+      data: null,
+      loading: false,
+      error: null,
+    }) as Section<T>;
+    section.loading = true;
+    section.error = null;
+    await load(staging, pathFor(filter.value), (p) => p as T);
+    if (mine !== generation) return;
+    section.data = staging.data;
+    section.error = staging.error;
+    section.loading = false;
+  };
+
+  function inspect(next: string | null) {
+    filter.value = next;
+    section.data = null;
+    open.value = true;
+    void reload();
+  }
+
+  return { open, filter, section, reload, inspect };
+}
+
+const runDrill = useDrillDown<AdminRuns>((reason) =>
+  reason
+    ? `/api/admin/runs?reason=${encodeURIComponent(reason)}`
+    : "/api/admin/runs",
+);
+const workDrill = useDrillDown<AdminWorks>((status) =>
+  status
+    ? `/api/admin/works?status=${encodeURIComponent(status)}`
+    : "/api/admin/works",
+);
 
 // Fired together, awaited together only so the Refresh button can show a single busy state.
 const loadAll = () => Promise.all([loadOverview(), loadUsage(), loadUsers()]);

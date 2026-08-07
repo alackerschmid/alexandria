@@ -4,7 +4,11 @@
  * this build has never heard of still has to render as something — "New Provider" rather than a
  * raw `new_provider` or a missing-key warning.
  */
-export function humanizeToken(token: string): string {
+export function humanizeToken(token: string | null | undefined): string {
+  // A missing token is the same "outran the frontend" case one notch further along: the column itself
+  // is absent from the payload, not just its value unknown. It renders as nothing rather than
+  // throwing out of the computed that called it.
+  if (!token) return "";
   return (
     token
       .split(/[_-]+/)

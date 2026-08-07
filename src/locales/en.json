@@ -709,7 +709,9 @@
     "settings_description": "API usage, enrichment health and the user roster.",
     "settings_button": "Open board",
     "loading": "Loading",
+    "close": "Close",
     "refresh": "Refresh",
+    "untitled_work": "untitled work",
     "range": {
       "hours": "last {hours}h",
       "days": "last {days} days"
@@ -765,7 +767,47 @@
         "failed": "failed"
       },
       "sweeper": "{due} queued · last run {ago}",
-      "sweeper_never": "{due} queued · no runs on record"
+      "sweeper_never": "{due} queued · no runs on record",
+      "inspect_failed": "Show the failed runs",
+      "inspect_reason": "Show the runs that failed this way",
+      "inspect_works": "Show the works that are {status}"
+    },
+    "works": {
+      "title": "Works by enrichment state",
+      "meta": "{count} work | {count} works",
+      "clear_filter": "Show works in every state",
+      "empty": "No works in this state.",
+      "no_qid": "no Wikidata match",
+      "never": "never",
+      "due_now": "due now",
+      "truncated": "showing {shown} of {total}",
+      "col": {
+        "last_attempt": "Last try",
+        "work": "Work",
+        "status": "State",
+        "attempts": "Tries",
+        "reason": "Last failure",
+        "next_retry": "Next try"
+      },
+      "qid_unknown": "never got an answer"
+    },
+    "runs": {
+      "title": "Failed runs",
+      "meta": "last {hours}h · {count} run | last {hours}h · {count} runs",
+      "clear_filter": "Show every failed run",
+      "empty": "No failed runs in this window.",
+      "work_gone": "work no longer exists",
+      "attempts": "{count} attempt | {count} attempts",
+      "retry_due": "retry due",
+      "retry_at": "retry {when}",
+      "truncated": "showing the {shown} most recent of {total}",
+      "col": {
+        "time": "Started",
+        "work": "Work",
+        "duration": "Duration",
+        "reason": "Reason",
+        "source": "Trigger"
+      }
     },
     "chart": {
       "title": "Calls per hour",
@@ -790,7 +832,9 @@
         "labels": "Labels",
         "work_details": "Work details",
         "series_members": "Series members",
-        "edition_isbn": "Edition ISBN"
+        "edition_isbn": "Edition ISBN",
+        "entity_search": "Entity search",
+        "book_hydrate": "Book details"
       },
       "reason": {
         "timeout": "Timeout",
@@ -798,6 +842,13 @@
         "http_5xx": "HTTP 5xx",
         "network": "Network",
         "other": "Other"
+      },
+      "source": {
+        "scan": "Scan",
+        "lookup": "Lookup",
+        "refresh": "Refresh",
+        "sweeper": "Sweeper",
+        "unknown": "Unknown"
       }
     },
     "table": {

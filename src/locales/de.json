@@ -709,7 +709,9 @@
     "settings_description": "API-Nutzung, Anreicherungsstatus und Nutzerliste.",
     "settings_button": "Board öffnen",
     "loading": "Wird geladen",
+    "close": "Schließen",
     "refresh": "Aktualisieren",
+    "untitled_work": "Werk ohne Titel",
     "range": {
       "hours": "letzte {hours} Std.",
       "days": "letzte {days} Tage"
@@ -765,7 +767,47 @@
         "failed": "fehlgeschlagen"
       },
       "sweeper": "{due} in Warteschlange · letzter Lauf {ago}",
-      "sweeper_never": "{due} in Warteschlange · keine Läufe verzeichnet"
+      "sweeper_never": "{due} in Warteschlange · keine Läufe verzeichnet",
+      "inspect_failed": "Fehlgeschlagene Läufe anzeigen",
+      "inspect_reason": "Läufe mit diesem Fehler anzeigen",
+      "inspect_works": "Werke im Status „{status}“ anzeigen"
+    },
+    "works": {
+      "title": "Werke nach Anreicherungsstatus",
+      "meta": "{count} Werk | {count} Werke",
+      "clear_filter": "Werke in allen Status anzeigen",
+      "empty": "Keine Werke in diesem Status.",
+      "no_qid": "kein Wikidata-Treffer",
+      "never": "nie",
+      "due_now": "jetzt fällig",
+      "truncated": "{shown} von {total} werden angezeigt",
+      "col": {
+        "last_attempt": "Letzter Versuch",
+        "work": "Werk",
+        "status": "Status",
+        "attempts": "Versuche",
+        "reason": "Letzter Fehler",
+        "next_retry": "Nächster Versuch"
+      },
+      "qid_unknown": "keine Antwort erhalten"
+    },
+    "runs": {
+      "title": "Fehlgeschlagene Läufe",
+      "meta": "letzte {hours} Std. · {count} Lauf | letzte {hours} Std. · {count} Läufe",
+      "clear_filter": "Alle fehlgeschlagenen Läufe anzeigen",
+      "empty": "Keine fehlgeschlagenen Läufe in diesem Zeitraum.",
+      "work_gone": "Werk existiert nicht mehr",
+      "attempts": "{count} Versuch | {count} Versuche",
+      "retry_due": "Wiederholung fällig",
+      "retry_at": "Wiederholung {when}",
+      "truncated": "die {shown} neuesten von {total} werden angezeigt",
+      "col": {
+        "time": "Start",
+        "work": "Werk",
+        "duration": "Dauer",
+        "reason": "Grund",
+        "source": "Auslöser"
+      }
     },
     "chart": {
       "title": "Aufrufe pro Stunde",
@@ -790,7 +832,9 @@
         "labels": "Bezeichnungen",
         "work_details": "Werkdetails",
         "series_members": "Reihenbände",
-        "edition_isbn": "Ausgaben-ISBN"
+        "edition_isbn": "Ausgaben-ISBN",
+        "entity_search": "Entitätssuche",
+        "book_hydrate": "Buchdetails"
       },
       "reason": {
         "timeout": "Zeitüberschreitung",
@@ -798,6 +842,13 @@
         "http_5xx": "HTTP 5xx",
         "network": "Netzwerk",
         "other": "Sonstiges"
+      },
+      "source": {
+        "scan": "Scan",
+        "lookup": "Abfrage",
+        "refresh": "Aktualisierung",
+        "sweeper": "Sweeper",
+        "unknown": "Unbekannt"
       }
     },
     "table": {
