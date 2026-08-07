@@ -119,21 +119,28 @@ scans.post("/", async (c) => {
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
 
-  // Check for an existing scan of this ISBN before consuming rate-limit quota or touching
-  // external metadata APIs — a duplicate scan is a cheap, common case (e.g. rescanning a shelf)
-  // and shouldn't cost the user part of their scan-rate budget. Checked under both ISBN forms:
-  // the same edition may already be stored under its ISBN-10 or ISBN-13 form.
+  // Check for an existing scan of this ISBN before touching external metadata APIs — a
+  // duplicate scan is a cheap, common case (e.g. rescanning a shelf) and answering it takes
+  // only local D1 reads. Checked under both ISBN forms: the same edition may already be stored
+  // under its ISBN-10 or ISBN-13 form.
   const altIsbn = alternateIsbnForm(isbn);
   const { results: existingBooks } = await db
     .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
     .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
     .all<{ id: number }>();
+  let duplicate = false;
   for (const existingBook of existingBooks) {
     if (await findExistingScan(db, userId, existingBook.id)) {
-      return c.json({ error: "Already in your list" }, 409);
+      duplicate = true;
+      break;
     }
   }
 
+  // Charged on the duplicate path too. The check above costs up to three D1 queries, and it
+  // used to `return 409` before the limiter was ever consulted — so replaying an owned ISBN
+  // was an unmetered way to keep the worker doing database work. A duplicate still reads as a
+  // 409 rather than a 429 for as long as the caller is inside the budget, which covers every
+  // real rescan (30/min is ~one book every 2s); past it, the limit wins.
   const blocked = await rateLimitOrReject(
     c,
     `scan:${userId}`,
@@ -142,6 +149,7 @@ scans.post("/", async (c) => {
     "Too many scans — please slow down",
   );
   if (blocked) return blocked;
+  if (duplicate) return c.json({ error: "Already in your list" }, 409);
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
