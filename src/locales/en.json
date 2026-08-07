@@ -643,6 +643,8 @@
     "toast_will_sync": "Will sync later",
     "toast_failed": "Failed to save",
     "toast_session_expired": "Session expired — sign in again to sync pending books",
+    "toast_rate_limited": "Scanning too fast — wait a moment and try again",
+    "toast_sync_partial": "{n} scan(s) couldn't sync yet — they'll retry shortly",
     "toast_invalid_isbn": "Enter a valid 10 or 13-digit ISBN",
     "camera_error": "Couldn't access the camera — check permissions, or enter the ISBN manually below",
     "back_library": "Library",

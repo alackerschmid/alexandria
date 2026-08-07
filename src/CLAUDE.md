@@ -30,11 +30,14 @@ ask the `inventory` subagent rather than expecting a list here.
   `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user
   out on a 401 (opt out with `{ on401: "ignore" }`; `{ token }` overrides the store's token,
   for a call that has to outlive logout). All authenticated frontend calls go through it —
-  don't hand-roll `fetch`. The raw `fetch`es that remain are **pre-auth by construction**:
-  `login.vue`, `stores/guest.ts`'s `syncToAccount` (explicit token, mid-login), and the three
-  public endpoints — `landing.vue`'s `books/sample` and the scanner's `guest-lookup` /
-  `guest-search`. Those three send no headers at all, so they stay simple cross-origin GETs
-  instead of picking up a preflight from `apiFetch`'s `Content-Type`.
+  don't hand-roll `fetch`. Exactly four call sites remain raw, for two different reasons:
+  - **No session to draw on.** `login.vue` (authenticating) and `stores/guest.ts`'s
+    `syncToAccount` (an authenticated `POST /api/scans` per guest scan, but mid-login — the
+    token is a parameter, not yet in the store). `syncToAccount` predates `apiFetch`'s
+    `{ token }` override and could move onto it; `login.vue` could not.
+  - **Deliberately header-less**, so they stay simple cross-origin GETs rather than picking up
+    a preflight from `apiFetch`'s unconditional `Content-Type`: the three public endpoints,
+    `landing.vue`'s `books/sample` and the scanner's `guest-lookup` / `guest-search`.
 - **`MarkdownText` is the only `v-html` in the app.** It renders through `utils/markdown.ts`,
   which sanitizes with DOMPurify behind a fixed tag/attribute allowlist; images are dropped
   deliberately, since a remote `<img>` in a review would leak the reader's IP the same way a

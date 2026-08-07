@@ -1589,11 +1589,17 @@ function postScanRequest(
   );
 }
 
+// Thrown for a 429 so `saveBook` can tell "slow down" from a generic failure — the two want
+// different toasts, and a duplicate scanned past the rate limit surfaces here rather than as
+// the 409 it would have been inside the budget.
+class RateLimitedError extends Error {}
+
 async function postScan(
   book: QueuedBook,
 ): Promise<{ result: "saved" | "duplicate"; id?: number }> {
   const res = await postScanRequest(book);
   if (res.status === 409) return { result: "duplicate" };
+  if (res.status === 429) throw new RateLimitedError();
   if (!res.ok) throw new Error((await res.json()).error ?? "Failed to save");
   const saved = await res.json();
   return { result: "saved", id: saved?.id };
@@ -1633,6 +1639,15 @@ async function drainQueue() {
   }
   if (authExpired) {
     showToast(t("scanner.toast_session_expired"), "warning");
+  } else if (remaining.length) {
+    // Anything left behind that isn't an expired session is almost always the scan rate limit
+    // (a duplicate costs quota, so re-scanning an owned shelf offline can overrun it). Say so:
+    // the queue is only retried on the next `online` event or scanner mount, and a caller who
+    // is already online gets neither, so silence here reads as "everything synced".
+    showToast(
+      t("scanner.toast_sync_partial", { n: remaining.length }),
+      "warning",
+    );
   }
   writeQueue(remaining);
 }
@@ -1691,7 +1706,7 @@ const saveBook = async () => {
     } else {
       showToast(t("scanner.toast_already_in_library"), "warning");
     }
-  } catch {
+  } catch (e) {
     if (!navigator.onLine) {
       enqueueBook(queued);
       sessionScanned.add(book.isbn);
@@ -1699,7 +1714,14 @@ const saveBook = async () => {
       recordSession(book, status);
       showToast(t("scanner.toast_will_sync"), "warning");
     } else {
-      showToast(t("scanner.toast_failed"), "error");
+      // Keep the sheet in `preview` either way — the book isn't saved and the user's status,
+      // owning and rating picks are still on screen to retry with.
+      showToast(
+        e instanceof RateLimitedError
+          ? t("scanner.toast_rate_limited")
+          : t("scanner.toast_failed"),
+        "error",
+      );
       scanState.value = "preview";
       return;
     }

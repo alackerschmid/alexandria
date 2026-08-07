@@ -643,6 +643,8 @@
     "toast_will_sync": "Wird später synchronisiert",
     "toast_failed": "Speichern fehlgeschlagen",
     "toast_session_expired": "Sitzung abgelaufen — melde dich erneut an, um ausstehende Bücher zu synchronisieren",
+    "toast_rate_limited": "Zu schnell gescannt — warte kurz und versuche es erneut",
+    "toast_sync_partial": "{n} Scan(s) konnten noch nicht synchronisiert werden — sie werden erneut versucht",
     "toast_invalid_isbn": "Gib eine gültige 10- oder 13-stellige ISBN ein",
     "camera_error": "Kamera konnte nicht verwendet werden — prüfe die Berechtigungen oder gib die ISBN unten manuell ein",
     "back_library": "Bibliothek",

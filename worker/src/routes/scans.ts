@@ -139,13 +139,13 @@ scans.post("/", async (c) => {
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
 
-  const duplicate = await userAlreadyHasIsbn(db, userId, isbn);
-
-  // Charged on the duplicate path too. The check above costs up to three D1 queries, and it
-  // used to `return 409` before the limiter was ever consulted — so replaying an owned ISBN
-  // was an unmetered way to keep the worker doing database work. A duplicate still reads as a
-  // 409 rather than a 429 for as long as the caller is inside the budget, which covers every
-  // real rescan (30/min is ~one book every 2s); past it, the limit wins.
+  // The limiter runs first, and a duplicate is charged like any other scan. The duplicate
+  // check below costs up to three D1 queries, and the original design answered its 409 ahead
+  // of the limiter so that rescanning an owned book wouldn't burn quota — which left a client
+  // free to replay an owned ISBN indefinitely and keep the worker doing that work unmetered.
+  // Ordering it this way is what actually stops it: an over-budget caller pays the limiter's
+  // single write and nothing else. Inside the budget the answer is still the 409, which covers
+  // every real rescan (30/min is ~one book every 2s).
   const blocked = await rateLimitOrReject(
     c,
     `scan:${userId}`,
@@ -154,7 +154,9 @@ scans.post("/", async (c) => {
     "Too many scans — please slow down",
   );
   if (blocked) return blocked;
-  if (duplicate) return c.json({ error: "Already in your list" }, 409);
+
+  if (await userAlreadyHasIsbn(db, userId, isbn))
+    return c.json({ error: "Already in your list" }, 409);
 
   // allowEmpty: a drained offline-queue scan must succeed even if the book can't be resolved.
   const book = await resolveEdition(db, isbn, c.env.GOOGLE_BOOKS_API_KEY, {

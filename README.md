@@ -27,7 +27,7 @@ The result is a searchable library with statistics you can actually enjoy browsi
 - **Ownership status** — separate from reading status: Owned, Lent out, Want, Unowned, or Unknown, so a wishlist and a lent-out shelf live in the same library
 - **Ratings and reviews** — a half-star 0–10 rating and a Markdown review per book, shared across every edition you own of the same work
 - **Editions** — one work, many editions: see the other editions of a book you own and switch your copy to the right one
-- **Smart search** — free-text plus structured filters (`status:dnf`, `author:le guin`, `series:…`, any custom field) with autocomplete, grouping and sorting
+- **Smart search** — free-text plus structured filters (`status:dnf`, `author:"le guin"`, `series:…`, any custom field) with autocomplete, grouping and sorting
 - **Library statistics** — total titles, read/unread counts, top authors, language distribution, median publication year, and page stats
 - **Goodreads import** — bring in your existing library from a Goodreads CSV export, reading status, ratings and shelves included
 - **Custom fields** — add your own metadata to any book (text, number, date, dropdown, or tags)
@@ -67,4 +67,4 @@ Some of the features I'm aiming to implement in the future are:
 - reading dates, and a books-read-per-year view to go with them
 - a dedicated statistics page with more granular support for playing with and visualizing collection data
 - richer edition management on top of the existing works/editions model
-- an installable, offline-capable app (the scan queue works offline today, but only once the page is loaded)
+- a fully offline-capable app — the app already installs to a home screen, and the scan queue survives losing signal, but only once the page is loaded
