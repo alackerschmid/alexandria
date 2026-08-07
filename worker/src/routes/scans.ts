@@ -77,6 +77,26 @@ scans.get("/isbns", async (c) => {
   return c.json(results);
 });
 
+// Does this user already hold a scan of this ISBN? Answered before any external metadata fetch —
+// a duplicate scan is a cheap, common case (e.g. rescanning a shelf) and this costs only local
+// D1 reads. Checked under both ISBN forms: the same edition may already be stored under its
+// ISBN-10 or its ISBN-13 form.
+async function userAlreadyHasIsbn(
+  db: D1Database,
+  userId: number,
+  isbn: string,
+): Promise<boolean> {
+  const altIsbn = alternateIsbnForm(isbn);
+  const { results: existingBooks } = await db
+    .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
+    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
+    .all<{ id: number }>();
+  for (const existingBook of existingBooks) {
+    if (await findExistingScan(db, userId, existingBook.id)) return true;
+  }
+  return false;
+}
+
 scans.post("/", async (c) => {
   const body = await readJsonBody<{
     isbn: string;
@@ -119,22 +139,7 @@ scans.post("/", async (c) => {
   const db = c.env.DB;
   const locale = c.req.query("locale") ?? "en";
 
-  // Check for an existing scan of this ISBN before touching external metadata APIs — a
-  // duplicate scan is a cheap, common case (e.g. rescanning a shelf) and answering it takes
-  // only local D1 reads. Checked under both ISBN forms: the same edition may already be stored
-  // under its ISBN-10 or ISBN-13 form.
-  const altIsbn = alternateIsbnForm(isbn);
-  const { results: existingBooks } = await db
-    .prepare(`SELECT id FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
-    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
-    .all<{ id: number }>();
-  let duplicate = false;
-  for (const existingBook of existingBooks) {
-    if (await findExistingScan(db, userId, existingBook.id)) {
-      duplicate = true;
-      break;
-    }
-  }
+  const duplicate = await userAlreadyHasIsbn(db, userId, isbn);
 
   // Charged on the duplicate path too. The check above costs up to three D1 queries, and it
   // used to `return 409` before the limiter was ever consulted — so replaying an owned ISBN
