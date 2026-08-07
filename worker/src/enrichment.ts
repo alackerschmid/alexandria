@@ -5,7 +5,7 @@ import {
   normalizeAuthorKey,
   discoverEditionsFromOpenLibrary,
 } from "./editions";
-import { titleScorer } from "./title-match";
+import { exactTitleMatcher, titleScorer } from "./title-match";
 import {
   googleBooksCallsToday,
   outcomeForStatus,
