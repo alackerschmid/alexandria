@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, useId } from "vue";
+import { useI18n } from "vue-i18n";
 import { ratingStars, RATING_COLOR, RATING_TRACK, STAR_PATH } from "@/composables/useRating";
 
 // The 5-star (half-star) rating row, shared by every surface that shows or edits a rating: the
@@ -15,6 +16,10 @@ import { ratingStars, RATING_COLOR, RATING_TRACK, STAR_PATH } from "@/composable
 // double-tap, has no visible cue, and was redundant everywhere an explicit clear existed.
 // Display-only rows render no buttons, because they are usually nested inside a button (which
 // can't contain another button).
+//
+// An interactive row is exposed as a radiogroup of ten radios: the half-star buttons are a
+// single-select over 0-10, and each one announces "7 of 10" rather than a bare "7", which a
+// screen reader otherwise reads with no scale and no indication of which value is current.
 
 const props = withDefaults(
   defineProps<{
@@ -29,12 +34,20 @@ const emit = defineEmits<{ "update:rating": [rating: number | null] }>();
 
 const GAP_CLASS = { sm: "gap-0", md: "gap-0.5", lg: "gap-0.5" } as const;
 
+const { t } = useI18n();
 const uid = useId();
 const data = computed(() => ratingStars(props.rating, props.size));
+
+const valueLabel = (n: number) => t("detail.rating_value_aria", { n });
 </script>
 
 <template>
-  <span class="inline-flex items-center" :class="GAP_CLASS[size]">
+  <span
+    class="inline-flex items-center"
+    :class="GAP_CLASS[size]"
+    :role="interactive ? 'radiogroup' : undefined"
+    :aria-label="interactive ? $t('detail.rate_book') : undefined"
+  >
     <span
       v-for="s in data.stars"
       :key="s.n"
@@ -62,13 +75,17 @@ const data = computed(() => ratingStars(props.rating, props.size));
       <template v-if="interactive">
         <button
           type="button"
-          :aria-label="String(s.halfValue)"
+          role="radio"
+          :aria-checked="rating === s.halfValue"
+          :aria-label="valueLabel(s.halfValue)"
           class="absolute inset-y-0 left-0 w-1/2 p-0 border-0 bg-transparent cursor-pointer"
           @click="emit('update:rating', s.halfValue)"
         />
         <button
           type="button"
-          :aria-label="String(s.fullValue)"
+          role="radio"
+          :aria-checked="rating === s.fullValue"
+          :aria-label="valueLabel(s.fullValue)"
           class="absolute inset-y-0 right-0 w-1/2 p-0 border-0 bg-transparent cursor-pointer"
           @click="emit('update:rating', s.fullValue)"
         />

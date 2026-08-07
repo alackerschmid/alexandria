@@ -307,6 +307,7 @@
     "rating": "Bewertung",
     "of_ten": "/10",
     "rate_book": "Buch bewerten",
+    "rating_value_aria": "{n} von 10",
     "clear_rating": "Bewertung löschen",
     "review": "Rezension / Notizen",
     "review_add": "Hinzufügen",

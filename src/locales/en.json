@@ -307,6 +307,7 @@
     "rating": "Rating",
     "of_ten": "/10",
     "rate_book": "Rate this book",
+    "rating_value_aria": "{n} of 10",
     "clear_rating": "Clear rating",
     "review": "Review / Notes",
     "review_add": "Add",
