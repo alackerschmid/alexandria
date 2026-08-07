@@ -30,7 +30,7 @@ ask the `inventory` subagent rather than expecting a list here.
   `VITE_API_URL`, sets `Content-Type` + `Authorization` from the auth store, and logs the user
   out on a 401 (opt out with `{ on401: "ignore" }`; `{ token }` overrides the store's token,
   for a call that has to outlive logout). All authenticated frontend calls go through it —
-  don't hand-roll `fetch`. Exactly four call sites remain raw, for two different reasons:
+  don't hand-roll `fetch`. Exactly five call sites remain raw, for two different reasons:
   - **No session to draw on.** `login.vue` (authenticating) and `stores/guest.ts`'s
     `syncToAccount` (an authenticated `POST /api/scans` per guest scan, but mid-login — the
     token is a parameter, not yet in the store). `syncToAccount` predates `apiFetch`'s

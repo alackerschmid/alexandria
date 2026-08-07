@@ -16,5 +16,11 @@ export default defineConfig({
     include: ["test/**/*.spec.ts"],
     environment: "node",
     passWithNoTests: true,
+    // Pinned *west* of UTC on purpose. The date helpers in `utils/book-display.ts` exist to stop
+    // a calendar date rendering a day early for readers behind UTC, and every environment this
+    // suite otherwise runs in — CI on UTC, development on CET — is east of or equal to UTC, where
+    // the bug cannot reproduce. Without this the `timeZone: "UTC"` options could be deleted
+    // outright and the whole suite would stay green. Do not "simplify" this to UTC.
+    env: { TZ: "America/New_York" },
   },
 });

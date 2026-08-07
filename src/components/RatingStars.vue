@@ -62,6 +62,15 @@ const tabbableValue = computed(() =>
 
 function onKeydown(e: KeyboardEvent) {
   if (!props.interactive) return;
+  // Auto-repeat is dropped. On the book-detail surfaces every emit is one `PATCH /api/scans/:id`
+  // (RecordControls/RatingDialog -> the host's `useScanStatus.setRating`, which has no debounce
+  // or in-flight gate and doesn't read `rating` back from the response), so a held arrow key
+  // fired ~15-25 writes and left the server free to settle on an intermediate value. One step
+  // per physical press: the row is ten options wide, and Home/End still cross it in one.
+  if (e.repeat) {
+    e.preventDefault();
+    return;
+  }
   const list = values.value;
   const step =
     e.key === "ArrowRight" || e.key === "ArrowDown"
