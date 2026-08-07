@@ -123,7 +123,7 @@
     "search_results": "{n} results",
     "search_no_matches": "No matches",
     "search_show_more": "+{n} more",
-    "search_placeholder_smart": "Search by title, author, ISBN — or type a prefix",
+    "search_placeholder_smart": "Search by title, author, ISBN, review — or type a prefix",
     "search_field_label": "Search library",
     "clear_search": "Clear search",
     "remove_filter": "Remove filter: {token}",

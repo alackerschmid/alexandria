@@ -264,6 +264,14 @@ describe("sortClauseFor", () => {
     expect(sortClauseFor("title_asc")).toBe(SORT_CLAUSES.title_asc);
   });
 
+  // Both rating clauses lead with `wr.rating IS NULL` so unrated books sort last in *either*
+  // direction; SQLite's default puts NULLs first in ASC, which would open "worst first" with
+  // every book the user never rated.
+  it("puts unrated books last in both rating directions", () => {
+    expect(SORT_CLAUSES.rating_asc).toMatch(/^wr\.rating IS NULL,/);
+    expect(SORT_CLAUSES.rating_desc).toMatch(/^wr\.rating IS NULL,/);
+  });
+
   it("falls back to date_desc for an unknown key", () => {
     expect(sortClauseFor("garbage")).toBe(SORT_CLAUSES.date_desc);
   });

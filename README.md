@@ -64,7 +64,6 @@ Built on Cloudflare's edge infrastructure — Cloudflare Pages for the frontend 
 
 Some of the features I'm aiming to implement in the future are:
 - library export to CSV and JSON (Goodreads CSV import already works)
-- reading dates, and a books-read-per-year view to go with them
 - a dedicated statistics page with more granular support for playing with and visualizing collection data
 - richer edition management on top of the existing works/editions model
 - a fully offline-capable app — the app already installs to a home screen, and the scan queue survives losing signal, but only once the page is loaded

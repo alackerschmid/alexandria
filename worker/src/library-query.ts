@@ -116,6 +116,12 @@ export const SORT_CLAUSES: Record<string, string> = {
   author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE, s.id ASC",
   series_asc:
     "series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC",
+  // NULLS LAST in *both* directions, deliberately: an unrated book isn't a bad book, so it
+  // belongs at the end of "worst first" just as much as at the end of "best first". SQLite
+  // sorts NULL first in ASC, hence the explicit `IS NULL` leading term rather than relying on
+  // the default. `wr` is already in buildScanSelect's JOIN.
+  rating_desc: "wr.rating IS NULL, wr.rating DESC, s.id DESC",
+  rating_asc: "wr.rating IS NULL, wr.rating ASC, s.id ASC",
 };
 
 // The only supported way to turn a `?sort=` query param into an ORDER BY clause. The clause is
