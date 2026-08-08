@@ -19,7 +19,11 @@ app.use("/api/*", async (c, next) => {
   return cors({
     origin,
     allowHeaders: ["Content-Type", "Authorization"],
-    allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    // Must list every verb any router mounts — hono's cors replaces its default list rather than
+    // merging, so a verb missing here is refused at the browser preflight in production (where
+    // the Pages origin differs from the worker's) while dev, being same-origin, never preflights.
+    // PUT is `PUT /api/auth/preferences`.
+    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     exposeHeaders: ["Content-Type", "Retry-After"],
   })(c, next);
 });
