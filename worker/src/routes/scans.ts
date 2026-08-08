@@ -22,7 +22,7 @@ import {
 } from "../library-query";
 import { rateLimitOrReject } from "../rate-limit";
 import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
-import { normalizeIsbn, isValidIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
+import { normalizeIsbn, isIsbnFormat, alternateIsbnForm } from "../isbn";
 
 const scans = new Hono<Env>();
 
@@ -191,15 +191,28 @@ scans.post("/", async (c) => {
   // A rating can never fail the scan itself: `allowEmpty` above exists so a drained offline scan
   // always succeeds, and an unlinked book (no work to hang the rating on) must not undo that.
   if ((initialRating != null || initialReview != null) && book.work_id) {
-    await db.batch(
-      upsertWorkRating(
-        db,
-        userId,
-        book.work_id,
-        { rating: initialRating, review: initialReview },
-        "seed",
-      ),
-    );
+    // Log-and-drop on failure, exactly as the unlinked-book branch below does. The scan row is
+    // already committed at this point, so letting this batch throw turned a saved scan into a 500:
+    // the client books the scan as failed and retries, the retry answers 409, and the rating is
+    // lost anyway. Reachable without any D1 fault — a detached enrichment run merging this work
+    // away between `resolveEdition` and here fails the FK.
+    try {
+      await db.batch(
+        upsertWorkRating(
+          db,
+          userId,
+          book.work_id,
+          { rating: initialRating, review: initialReview },
+          "seed",
+        ),
+      );
+    } catch (e) {
+      console.error(
+        "[POST /api/scans] rating/review dropped, work_ratings write failed, isbn:",
+        isbn,
+        e,
+      );
+    }
   } else if (initialRating != null || initialReview != null) {
     console.error(
       "[POST /api/scans] rating/review dropped, book has no work link, isbn:",
@@ -416,7 +429,12 @@ scans.patch("/:id/edition", async (c) => {
   if (typeof body.isbn !== "string" || !body.isbn)
     return c.json({ error: "ISBN is required" }, 400);
   const isbn = normalizeIsbn(body.isbn);
-  if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
+  // Shape, not checksum — the same relaxation POST /api/scans applies, for the same reason.
+  // `work_edition_isbns` candidates are stored with normalization only, so an OpenLibrary edition
+  // with a mistyped check digit is offered by the editions carousel; a checksum gate here made it
+  // a permanent dead end, 400ing with a message blaming the user for a value they never typed.
+  // `isKnownEdition` below is the real authorization.
+  if (!isIsbnFormat(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
   const scan = await db
     .prepare("SELECT book_id FROM scans WHERE id = ? AND user_id = ?")
@@ -470,6 +488,7 @@ scans.patch("/:id/edition", async (c) => {
     isbn,
     workId,
     c.env.GOOGLE_BOOKS_API_KEY,
+    c.get("usage"),
   );
   if (!targetBook)
     return c.json({ error: "Failed to resolve target edition" }, 500);
@@ -525,9 +544,17 @@ scans.patch("/:id/edition", async (c) => {
           "UPDATE book_custom_fields SET book_id = ? WHERE user_id = ? AND book_id = ?",
         )
         .bind(targetBook.id, userId, scan.book_id),
+      // Both books' overrides, not just the source's. The user can already hold override rows on
+      // the *target* book for the same reason they can hold custom-field values on it — writes
+      // keyed by ISBN needed no scan before the ownership check landed. Clearing only the source
+      // left those applying to the moved scan, so the switch surfaced a stale title/cover with
+      // `title_overridden: true` that the user never set for this edition, contradicting the
+      // documented rule that an edition switch drops per-user metadata overrides.
       db
-        .prepare("DELETE FROM book_overrides WHERE user_id = ? AND book_id = ?")
-        .bind(userId, scan.book_id),
+        .prepare(
+          "DELETE FROM book_overrides WHERE user_id = ? AND book_id IN (?, ?)",
+        )
+        .bind(userId, scan.book_id, targetBook.id),
     ]);
   } catch (e) {
     // The alreadyOwned SELECT above is check-then-act: a concurrent scan of the target edition
