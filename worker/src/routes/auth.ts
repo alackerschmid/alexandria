@@ -10,6 +10,7 @@ import {
 import { rateLimitOrReject, clientIp } from "../rate-limit";
 import { parsePreferences, sanitizePreferences } from "../preferences";
 import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
+import { isUniqueConstraintError } from "../library-query";
 
 const auth = new Hono<Env>();
 
@@ -51,8 +52,8 @@ auth.post("/register", async (c) => {
       .bind(email, hash)
       .run();
     userId = result.meta.last_row_id;
-  } catch (e: any) {
-    if (e.message?.includes("UNIQUE constraint failed")) {
+  } catch (e) {
+    if (isUniqueConstraintError(e)) {
       return c.json(
         { error: "An account with that email already exists" },
         409,
@@ -255,8 +256,8 @@ auth.patch("/me", authMiddleware, async (c) => {
       .prepare(`UPDATE users SET ${sets.join(", ")} WHERE id = ?`)
       .bind(...binds, userId)
       .run();
-  } catch (e: any) {
-    if (e.message?.includes("UNIQUE constraint failed")) {
+  } catch (e) {
+    if (isUniqueConstraintError(e)) {
       return c.json({ error: "That email address is already in use" }, 409);
     }
     return c.json({ error: "Failed to update account" }, 500);
