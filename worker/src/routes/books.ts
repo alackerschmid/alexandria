@@ -423,10 +423,15 @@ books.patch("/custom-fields", async (c) => {
   // renamed/removed since the form loaded), and an integer field's must actually be an
   // integer (the UI sanitizes keystrokes, but a direct API call bypasses that) — either way
   // an invalid value is silently cleared rather than stored, same as an orphaned select value.
-  const values = (body.values ?? []).flatMap((v) => {
-    if (!v || typeof v !== "object") return [];
+  // Collected into a Map keyed by field_def_id, so a body naming the same field twice resolves to
+  // one INSERT (last entry wins) instead of two. `book_custom_fields` is UNIQUE on
+  // (user_id, book_id, field_def_id), so the duplicate used to fail the whole batch and surface as
+  // an opaque 500 on an otherwise ordinary authenticated request.
+  const values = new Map<number, string | null>();
+  for (const v of body.values ?? []) {
+    if (!v || typeof v !== "object") continue;
     const def = defsById.get(v.field_def_id);
-    if (!def) return [];
+    if (!def) continue;
     const trimmed = (v.value ?? "").trim();
     const isValid =
       !trimmed ||
@@ -435,17 +440,17 @@ books.patch("/custom-fields", async (c) => {
         : def.field_type === "integer"
           ? /^-?\d+$/.test(trimmed)
           : true);
-    return [{ field_def_id: v.field_def_id, value: isValid ? trimmed || null : null }];
-  });
+    values.set(v.field_def_id, isValid ? trimmed || null : null);
+  }
 
   await c.env.DB.batch([
     c.env.DB.prepare(
       "DELETE FROM book_custom_fields WHERE user_id = ? AND book_id = ?",
     ).bind(userId, book.id),
-    ...values.map((v) =>
+    ...[...values].map(([fieldDefId, value]) =>
       c.env.DB.prepare(
         "INSERT INTO book_custom_fields (user_id, book_id, field_def_id, field_value) VALUES (?, ?, ?, ?)",
-      ).bind(userId, book.id, v.field_def_id, v.value),
+      ).bind(userId, book.id, fieldDefId, value),
     ),
   ]);
 

@@ -218,10 +218,18 @@ describe("upsertWorkRating", () => {
     expect(calls[0].binds).toEqual([1, 7, null, null]);
   });
 
-  it("always refreshes updated_at — mergeWorks resolves conflicts by comparing it", () => {
+  // updated_at moves only on a real change. Stamping it unconditionally re-dated a row that a
+  // seed write had deliberately left alone — the client presents this column as the review's
+  // written date, and mergeWorks resolves genuine conflicts by comparing it, so a spurious bump
+  // both misreports the date and lets an untouched side win against a genuinely newer edit.
+  it("refreshes updated_at only when a value actually changes", () => {
     const { db, calls } = fakeDb();
     upsertWorkRating(db, 1, 7, { rating: 8 }, "overwrite");
-    expect(calls[0].sql).toContain("updated_at = CURRENT_TIMESTAMP");
+    expect(calls[0].sql).toContain("THEN CURRENT_TIMESTAMP");
+    expect(calls[0].sql).toContain("ELSE work_ratings.updated_at");
+    // The guard compares the same expressions the columns are assigned, so it cannot drift from
+    // them, and uses NULL-safe `IS NOT` so clearing a field to NULL still counts as a change.
+    expect(calls[0].sql).toContain("excluded.rating IS NOT work_ratings.rating");
   });
 
   it("follows every write with a delete so a fully-cleared entry leaves no tombstone", () => {

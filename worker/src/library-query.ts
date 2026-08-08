@@ -446,22 +446,39 @@ export function upsertWorkRating(
 
   // An omitted field must not overwrite a stored one, so it falls back to the existing value in
   // both modes; a supplied field wins outright in "overwrite" and only fills a gap in "seed".
-  const assign = (col: string, supplied: boolean) => {
-    if (!supplied) return `${col} = work_ratings.${col}`;
+  // Kept as bare value expressions (not `col = …`) so `updated_at` can compare the same
+  // expression against the stored value — see below.
+  const valueExpr = (col: string, supplied: boolean) => {
+    if (!supplied) return `work_ratings.${col}`;
     return mode === "seed"
-      ? `${col} = COALESCE(work_ratings.${col}, excluded.${col})`
-      : `${col} = excluded.${col}`;
+      ? `COALESCE(work_ratings.${col}, excluded.${col})`
+      : `excluded.${col}`;
   };
+  const ratingExpr = valueExpr("rating", hasRating);
+  const reviewExpr = valueExpr("review", hasReview);
 
   return [
     db
       .prepare(
+        // `updated_at` moves only when a column's value actually changes. It used to be stamped
+        // unconditionally, which in "seed" mode is precisely the case that changes nothing — seed's
+        // whole contract is that it leaves a populated row alone. A guest scan syncing months later
+        // therefore re-dated a January review as written in August (the client presents this column
+        // as the review's written date), and handed the untouched side an artificially fresh
+        // timestamp that would win a genuine conflict in mergeWorks' field-by-field merge.
+        // SQLite evaluates every SET expression against the pre-update row, and `IS NOT` is
+        // NULL-safe, so comparing the assignment expressions is exact.
         `INSERT INTO work_ratings (user_id, work_id, rating, review)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(user_id, work_id) DO UPDATE SET
-           ${assign("rating", hasRating)},
-           ${assign("review", hasReview)},
-           updated_at = CURRENT_TIMESTAMP`,
+           rating = ${ratingExpr},
+           review = ${reviewExpr},
+           updated_at = CASE
+             WHEN ${ratingExpr} IS NOT work_ratings.rating
+               OR ${reviewExpr} IS NOT work_ratings.review
+             THEN CURRENT_TIMESTAMP
+             ELSE work_ratings.updated_at
+           END`,
       )
       .bind(userId, workId, rating, review),
     db
