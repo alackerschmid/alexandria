@@ -145,9 +145,13 @@ interface ImportRowResult {
   // explicit flag rather than something the client infers from `isbn` vs `book.isbn`, which would
   // be wrong for a book stored under the other ISBN form.
   matched_via_work?: true;
-  // Present only alongside `matched_via_work` — the *other* sibling scans whose status this row
-  // also wrote, each with its own pre-update value. Undo has to restore all of them, not just
-  // `scan_id`; the rating needs no equivalent, being one per-work value.
+  // Present on **any** "updated" row whose work has more than one copy — the ISBN path fans the
+  // status out too, so this does *not* imply `matched_via_work`. (It once did; gating handling of
+  // this field on that flag — the inference the old wording invited — would leave every
+  // ISBN-matched sibling scan on an imported status with no card tracking it, so neither Undo nor
+  // cancel could restore it.) Each entry is another copy whose status this row wrote, with its own
+  // pre-update value: Undo has to restore all of them, not just `scan_id`. The rating needs no
+  // equivalent, being one per-work value.
   sibling_updates?: { scan_id: number; previous_status: string }[];
   // Present only for "imported" rows that added a *second* edition of a work the user already
   // owns — the import wrote owning_status "unknown" on this new scan while another edition sits

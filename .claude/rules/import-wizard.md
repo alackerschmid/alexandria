@@ -135,8 +135,12 @@ surviving ones as a warning-coloured note; the edition-swap path in `changeImpor
 deliberately **discards** the field, because there the sibling it finds is the item's own prior
 scan, which that path then deletes.
 
-`matched_via_work: true` + `sibling_updates: [{ scan_id, previous_status }]` (on `updated` only)
-mark the **work-level update** path — see below.
+`matched_via_work: true` (on `updated` only) marks the **work-level update** path — see below.
+`sibling_updates: [{ scan_id, previous_status }]` rides along with it, but is **not** exclusive to
+it: the ISBN path fans the status out across every copy too (see the fan-out paragraph below), so
+any `updated` row whose work has more than one copy carries it. Gating sibling handling on
+`matched_via_work` would strand every ISBN-matched sibling on an imported status with no card
+tracking it, so neither Undo nor cancel could restore it.
 
 Rate-limited to ~600 rows/min per user (`import:<userId>`, same `rate_limits` table, charged
 via `checkRateLimit`'s `cost` param as `rows.length` rather than 1 per request).
