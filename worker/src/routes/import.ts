@@ -907,6 +907,26 @@ importRoutes.post("/match", async (c) => {
         continue;
       }
 
+      // A rating needs a work to hang on — `applyImportRating` writes nothing when `work_id` is
+      // NULL — so a matched-but-unlinked book silently swallowed the CSV's rating while the status
+      // half of the same row was written normally, with nothing telling the user. The ISBN path
+      // links first for exactly this reason; this makes the third update path agree. Gated on the
+      // row actually carrying a rating: an unlinked scan is rare and a status-only row has no
+      // reason to spend the read plus write.
+      if (primary.work_id == null && validated.rating != null) {
+        // The real `books` row, not the index row: the index carries the *override-merged* title,
+        // and keying a work on that would hand this book a different match_key than every other
+        // path derives for it.
+        const bookRow = await db
+          .prepare("SELECT * FROM books WHERE id = ?")
+          .bind(primary.book_id)
+          .first<BookRow>();
+        if (bookRow) {
+          await linkWork(db, bookRow);
+          primary.work_id = bookRow.work_id;
+        }
+      }
+
       results.push({
         ...(await applyImportUpdate(
           db,
