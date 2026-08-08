@@ -42,7 +42,6 @@
     "greeting_night": "Gute Nacht, {name}.",
     "meta": "{date} · {count} Bücher · {unread} ungelesen",
     "scan_cta": "Buch scannen",
-    "scan_sub": "Per Barcode hinzufügen",
     "recently_added": "Zuletzt hinzugefügt",
     "go_to_library": "Zur Bibliothek",
     "nav_home": "Start",
@@ -76,12 +75,6 @@
     "oddity_sole_language": "Dein einziges Buch auf {language}",
     "pages_short": "{count} S.",
     "see_all_stats": "Alle Statistiken ansehen",
-    "time_just_now": "Gerade eben",
-    "time_hours_ago": "Vor {n}h",
-    "time_yesterday": "Gestern",
-    "time_days_ago": "Vor {n} Tagen",
-    "time_weeks_ago": "Vor {n}W",
-    "time_months_ago": "Vor {n}M",
     "start_scanning": "Ein Buch scannen"
   },
   "stats": {

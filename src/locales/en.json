@@ -42,7 +42,6 @@
     "greeting_night": "Good night, {name}.",
     "meta": "{date} · {count} books · {unread} unread",
     "scan_cta": "Scan",
-    "scan_sub": "Add by barcode",
     "recently_added": "Recently added",
     "go_to_library": "Library",
     "nav_home": "Home",
@@ -76,12 +75,6 @@
     "oddity_sole_language": "Your only book in {language}",
     "pages_short": "{count}pp",
     "see_all_stats": "See all statistics",
-    "time_just_now": "Just now",
-    "time_hours_ago": "{n}h ago",
-    "time_yesterday": "Yesterday",
-    "time_days_ago": "{n} days ago",
-    "time_weeks_ago": "{n}w ago",
-    "time_months_ago": "{n}mo ago",
     "start_scanning": "Scan a book"
   },
   "stats": {
