@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { mobileNav: true, requiresAuth: true },
     },
     {
+      path: "/stats",
+      name: "stats",
+      component: () => import("@/pages/stats.vue"),
+      meta: { mobileNav: true, requiresAuth: true },
+    },
+    {
       path: "/settings",
       name: "settings",
       component: () => import("@/pages/settings.vue"),

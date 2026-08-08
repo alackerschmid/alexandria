@@ -20,7 +20,8 @@ Conventions used below:
 | D1–D7 | **Done** — see `tasks_completed.md` (`fix/audit-process-hardening`). D1 still needs two Cloudflare-dashboard actions, named there |
 | E1, E3, E5, E6, E7 | **Done** — see `tasks_completed.md` (`feat/e-block-polish`) |
 | E2, E4 | **Dropped** — removed from the backlog, not built |
-| F | Open — below |
+| F3 | **Done** — `/stats` shipped on `feat/stats-page`; manual QA pass still owed (see the task) |
+| F (rest) | Open — below |
 
 ---
 
@@ -36,11 +37,34 @@ Conventions used below:
   - **Frontend:** replace the decoy's `@click.prevent` with a blob download; both locales.
 - **Done when:** a library exports to CSV, that CSV re-imports through the existing wizard cleanly, JSON contains every field including overrides/ratings/reviews/custom fields, and `worker/CLAUDE.md` lists the route. No migration needed.
 
-### F3. Dedicated `/stats` page (M)
+### F3. Dedicated `/stats` page (M) — **Done** (`feat/stats-page`)
 
-- **Today:** `home.vue` is a fixed-height teaser; `worker/src/routes/stats.ts` already computes ~10 breakdown dimensions (publishers, forms, subjects, countries, decades, decade×genre) the dashboard shows 5–6 of.
-- **Scope:** a `/stats` route reusing `getBreakdown`/`useGroupDimensions`; full-length bars, decade histogram, pages histogram, rating distribution. Mostly frontend; put any new computation helpers in `src/utils/` as pure functions so they're unit-testable (policy). Nav entry in header + mobile tab bar; both locales.
-- **Already served by the API:** E1 added `avgRating`, `ratedCount` and `ratingDistribution` (11 dense buckets, 0–10) to `GET /api/stats` and nothing renders them yet — the rating histogram is a pure frontend job.
+Built from the `Stats v2` / `Stats mobile v2` mockups, which went beyond the original scope; every
+block in them was built. Beyond the plan as written:
+
+- **Worker:** one `LEFT JOIN work_ratings` + three columns on the existing main query backed four
+  new blocks — `pageBuckets`/`totalPages`, `genreRatings`, `catalogueGaps`, `owningStatus`, plus
+  `countryCount`. `topAuthors` raised 6 → 15; `decades` uncapped (a histogram can't take a
+  top-N-by-count slice). No migration.
+- **Pure helpers:** `src/utils/stats-view.ts` (extracted from `home.vue`, which now shares it) and
+  `src/utils/series-completeness.ts`. Series completeness needed no new API — `GET /api/series`
+  already carries the `owned` flag `useShelfGroups` uses.
+- **`MobileTabBar` had a live bug**, not just a latent one: it sliced two side slots out of a
+  filtered list and indexed `[0]`/`[1]`, so a fourth section silently dropped Settings. Now driven
+  by an explicit `MOBILE_SLOT_PRIORITY`, with Settings given a second route in via the account menu.
+- **`missing:` search key** (`cover|year|genre|pages`) added so the catalogue-gap rows have
+  somewhere to link — no other key expresses absence.
+
+**Deliberately not built:** the mockup's All/Read/Unread scope pills (page is unscoped, matching
+what the API does).
+
+**Known divergence worth a follow-up:** a gap row's count is gated on
+`owning_status IN ('owned','lent_out')` but its library link isn't, so the linked view can list
+more books than the count. No single `owning:` value expresses "owned or lent out"; documented in
+`CatalogueGaps.vue`.
+
+**Still owed:** a manual QA pass under a non-default paper/typeface preset, and on a real phone
+(the layout was checked at 430px in a desktop browser).
 
 ### F4. "Want this" from the series page + wishlist view (S/M)
 

@@ -17,10 +17,12 @@ stats.use("*", authMiddleware);
 // translation fallback — lives in those helpers and is regression-prone.
 export type RawRow = {
   status: string;
+  owning_status: string;
   author: string | null;
   authors_json: string | null;
   language: string | null;
   pages: number | null;
+  cover_url: string | null;
   publish_date: string | null;
   publisher: string | null;
   original_pub_date: string | null;
@@ -30,6 +32,13 @@ export type RawRow = {
   countries_of_origin: string | null;
   language_of_work: string | null;
   language_of_work_code: string | null;
+  // Work-level columns. `work_id` is NULL for a book that was never linked — which is itself an
+  // enrichment gap, since enrichment hangs off the work. `rating` rides the same LEFT JOIN
+  // `buildScanSelect` uses, so it repeats across every owned edition of one work: any aggregate
+  // over it has to dedupe by `work_id` first (see `dedupeByWork`).
+  work_id: number | null;
+  enrichment_status: string | null;
+  rating: number | null;
 };
 
 type SeriesRow = { label: string; count: number };
@@ -54,6 +63,14 @@ type StatsResponse = {
   forms: { label: string; count: number }[];
   subjects: { label: string; count: number }[];
   countries: { label: string; count: number }[];
+  countryCount: number;
+  owningStatus: {
+    owned: number;
+    lent_out: number;
+    unowned: number;
+    want: number;
+    unknown: number;
+  };
   decades: { label: string; count: number }[];
   decadeGenres: {
     decade: string;
@@ -69,12 +86,27 @@ type StatsResponse = {
   }[];
   avgPages: number | null;
   totalPagesRead: number | null;
+  totalPages: number;
+  pagesKnownCount: number;
+  pageBuckets: { label: string; count: number }[];
   medianYear: number | null;
   yearKnownCount: number;
   genreCount: number;
   avgRating: number | null;
   ratedCount: number;
   ratingDistribution: { rating: number; count: number }[];
+  genreRatings: {
+    best: { label: string; avg: number; count: number } | null;
+    worst: { label: string; avg: number; count: number } | null;
+  };
+  catalogueGaps: {
+    noCover: number;
+    noPageCount: number;
+    noGenre: number;
+    noYear: number;
+    enrichmentPending: number;
+    readUnrated: number;
+  };
   translationRatio: {
     pct: number;
     translatedCount: number;
@@ -149,7 +181,11 @@ function computeTopAuthors(rows: RawRow[]) {
       authorCounts.set(norm, (authorCounts.get(norm) ?? 0) + 1);
     }
   }
-  const topAuthors = topCounts(authorCounts, 6).map(({ label, count }) => ({
+  // 15, matching every other breakdown list — the stats page's collection breakdown expands to
+  // the full list it was given, and a 6-entry cap made "author" the one dimension that stopped
+  // short of the others for no reason the UI could explain. `authorCount` remains the true
+  // distinct total, so a capped list can still say what it's a slice of.
+  const topAuthors = topCounts(authorCounts, 15).map(({ label, count }) => ({
     label: authorLabels.get(label)!,
     count,
   }));
@@ -222,7 +258,143 @@ function computeCountries(rows: RawRow[]) {
       countryCounts.set(c, (countryCounts.get(c) ?? 0) + 1);
     }
   }
-  return topCounts(countryCounts, 15);
+  // The count is the *distinct* total, not the list length — the list is capped at 15 and the
+  // stats page's "N more" row is the difference between the two.
+  return {
+    countries: topCounts(countryCounts, 15),
+    countryCount: countryCounts.size,
+  };
+}
+
+/** One row per work, for aggregates over a work-level value (`rating`).
+ *
+ *  `scans` is unique on `(user_id, book_id)`, not on the work, so a user who owns two editions
+ *  of one book contributes two rows carrying the *same* `work_ratings` row through the LEFT
+ *  JOIN. Averaging over the raw rows would weight that one rating twice — the trap the ratings
+ *  query already sidesteps with `COUNT(DISTINCT b.work_id)`. Rows with no `work_id` can't
+ *  carry a rating at all, so they're dropped rather than each counted as their own work. */
+export function dedupeByWork(rows: RawRow[]): RawRow[] {
+  const seen = new Set<number>();
+  const out: RawRow[] = [];
+  for (const r of rows) {
+    if (r.work_id == null || seen.has(r.work_id)) continue;
+    seen.add(r.work_id);
+    out.push(r);
+  }
+  return out;
+}
+
+/** The page-length bands, as `[label, exclusive upper bound]`. The last band is open-ended. */
+export const PAGE_BUCKETS: readonly (readonly [string, number])[] = [
+  ["<200", 200],
+  ["200-350", 350],
+  ["350-500", 500],
+  ["500-750", 750],
+  ["750+", Infinity],
+];
+
+// The length histogram, over every owned book with a known page count. `totalPages` spans the
+// whole collection — distinct from `totalPagesRead`, which is the read-only sum and stays as is.
+export function computePageBuckets(rows: RawRow[]) {
+  const counts = PAGE_BUCKETS.map(([label]) => ({ label, count: 0 }));
+  let totalPages = 0;
+  let knownCount = 0;
+  for (const r of rows) {
+    const p = r.pages;
+    if (p == null || p <= 0) continue;
+    knownCount++;
+    totalPages += p;
+    const i = PAGE_BUCKETS.findIndex(([, max]) => p < max);
+    counts[i === -1 ? counts.length - 1 : i].count++;
+  }
+  return { pageBuckets: counts, totalPages, pagesKnownCount: knownCount };
+}
+
+/** A genre needs this many rated works before it can be called best- or worst-rated. Mirrors the
+ *  `count < 10` floor in `computeDecadeGenres`: without it a single 10/10 book wins outright. */
+export const GENRE_RATING_MIN_SAMPLE = 5;
+
+// Best- and worst-rated genre. Deduped by work first (see `dedupeByWork`), and a book counts
+// toward every genre it carries — the same many-to-one shape `computeGenreCounts` uses.
+export function computeGenreRatings(rows: RawRow[]) {
+  const sums = new Map<string, { sum: number; count: number }>();
+  for (const r of dedupeByWork(rows)) {
+    if (r.rating == null || !r.genres) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(r.genres);
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(parsed)) continue;
+    for (const g of parsed) {
+      if (typeof g !== "string") continue;
+      const label = titleCase(g);
+      const entry = sums.get(label) ?? { sum: 0, count: 0 };
+      entry.sum += r.rating;
+      entry.count++;
+      sums.set(label, entry);
+    }
+  }
+  const ranked = [...sums.entries()]
+    .filter(([, v]) => v.count >= GENRE_RATING_MIN_SAMPLE)
+    .map(([label, v]) => ({
+      label,
+      avg: Math.round((v.sum / v.count) * 10) / 10,
+      count: v.count,
+    }))
+    // Ties break on the label so the answer is stable across requests rather than
+    // depending on Map insertion order, i.e. on the order D1 happened to return rows in.
+    .sort((a, b) => b.avg - a.avg || a.label.localeCompare(b.label));
+  if (ranked.length === 0) return { best: null, worst: null };
+  const best = ranked[0];
+  // Index arithmetic rather than `.at(-1)`: the worker's TS lib target predates
+  // Array.prototype.at, and bumping it for one call site is not this change's business.
+  // eslint-disable-next-line unicorn/prefer-at
+  const worst = ranked[ranked.length - 1];
+  // One qualifying genre is its own best and worst, which reads as a bug in the UI.
+  return ranked.length === 1 ? { best, worst: null } : { best, worst };
+}
+
+// The catalogue-gap counts, each of which the frontend turns into a library deep-link.
+// `noGenre` and `noYear` are passed in rather than recomputed — they're already produced by
+// `computeGenreCounts` and `computeYearStats`, and two counts of the same thing would drift.
+export function computeCatalogueGaps(
+  rows: RawRow[],
+  known: { noGenre: number; yearKnownCount: number },
+) {
+  let noCover = 0;
+  let noPageCount = 0;
+  let enrichmentPending = 0;
+  let readUnrated = 0;
+  for (const r of rows) {
+    if (!r.cover_url) noCover++;
+    if (r.pages == null || r.pages <= 0) noPageCount++;
+    // A book with no work link has never been enriched and never will be until one exists, so
+    // it belongs in this count as much as a work still sitting on `pending` does.
+    if (r.work_id == null || r.enrichment_status === "pending") enrichmentPending++;
+    if (r.status === "read" && r.rating == null) readUnrated++;
+  }
+  return {
+    noCover,
+    noPageCount,
+    noGenre: known.noGenre,
+    noYear: rows.length - known.yearKnownCount,
+    enrichmentPending,
+    readUnrated,
+  };
+}
+
+// Owning-status counts, so the breakdown picker's `owning` dimension has data behind it.
+// Only `owned`/`lent_out` can appear — every other value is excluded by the query's gate — but
+// the shape stays total so the client never has to guess at a missing key.
+export function computeOwningCounts(rows: RawRow[]) {
+  const counts = { owned: 0, lent_out: 0, unowned: 0, want: 0, unknown: 0 };
+  for (const r of rows) {
+    if (r.owning_status in counts) counts[r.owning_status as keyof typeof counts]++;
+    else counts.unknown++;
+  }
+  return counts;
 }
 
 function computePageStats(rows: RawRow[]) {
@@ -257,7 +429,11 @@ export function computeYearStats(rows: RawRow[]) {
     const label = `${Math.floor(y / 10) * 10}s`;
     decadeCounts.set(label, (decadeCounts.get(label) ?? 0) + 1);
   }
-  const decades = topCounts(decadeCounts, 15);
+  // Uncapped, unlike every other breakdown: the stats page draws these as a chronological
+  // histogram, and a top-15-by-count slice silently drops whichever decades are sparse — which
+  // in a histogram reads as "you own nothing from the 1970s" rather than as a truncation.
+  // `extractYear` bounds years to 100..2100, so the set can't exceed ~200 entries.
+  const decades = topCounts(decadeCounts, decadeCounts.size);
 
   return { years, yearKnownCount, medianYear, decades };
 }
@@ -420,18 +596,38 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
     forms: input.forms ?? [],
     subjects: input.subjects ?? [],
     countries: input.countries ?? [],
+    countryCount: input.countryCount ?? 0,
+    owningStatus: input.owningStatus ?? {
+      owned: 0,
+      lent_out: 0,
+      unowned: 0,
+      want: 0,
+      unknown: 0,
+    },
     decades: input.decades ?? [],
     decadeGenres: input.decadeGenres ?? [],
     topSeries: input.topSeries ?? [],
     customFields: input.customFields ?? [],
     avgPages: input.avgPages ?? null,
     totalPagesRead: input.totalPagesRead ?? null,
+    totalPages: input.totalPages ?? 0,
+    pagesKnownCount: input.pagesKnownCount ?? 0,
+    pageBuckets: input.pageBuckets ?? [],
     medianYear: input.medianYear ?? null,
     yearKnownCount: input.yearKnownCount ?? 0,
     genreCount: input.genreCount ?? 0,
     avgRating: input.avgRating ?? null,
     ratedCount: input.ratedCount ?? 0,
     ratingDistribution: input.ratingDistribution ?? emptyRatingDistribution(),
+    genreRatings: input.genreRatings ?? { best: null, worst: null },
+    catalogueGaps: input.catalogueGaps ?? {
+      noCover: 0,
+      noPageCount: 0,
+      noGenre: 0,
+      noYear: 0,
+      enrichmentPending: 0,
+      readUnrated: 0,
+    },
     translationRatio: input.translationRatio ?? null,
     randomFirstLine: input.randomFirstLine ?? null,
   };
@@ -451,12 +647,17 @@ stats.get("/", async (c) => {
       c.env.DB.prepare(
         `
       SELECT s.status                                                        AS status,
+             s.owning_status                                                 AS owning_status,
              b.author                                                        AS author,
              ${AUTHORS_JSON_SUBQUERY}                                       AS authors_json,
              COALESCE(o.language, b.language)                               AS language,
              COALESCE(o.number_of_pages_median, b.number_of_pages_median)   AS pages,
+             COALESCE(o.cover_url, b.cover_url)                             AS cover_url,
              COALESCE(o.publish_date, b.publish_date)                       AS publish_date,
              COALESCE(o.publisher, b.publisher)                             AS publisher,
+             b.work_id                                                       AS work_id,
+             wk.enrichment_status                                            AS enrichment_status,
+             wr.rating                                                       AS rating,
              wk.original_pub_date                                           AS original_pub_date,
              wk.genres                                                      AS genres,
              wk.form_of_work                                                AS form_of_work,
@@ -468,6 +669,7 @@ stats.get("/", async (c) => {
       JOIN books b ON s.book_id = b.id
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
       LEFT JOIN works wk ON wk.id = b.work_id
+      LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
       WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
     `,
       )
@@ -548,11 +750,18 @@ stats.get("/", async (c) => {
   const publishers = computeStringFieldCounts(rows, "publisher");
   const forms = computeStringFieldCounts(rows, "form_of_work");
   const subjects = computeStringFieldCounts(rows, "main_subject");
-  const countries = computeCountries(rows);
+  const { countries, countryCount } = computeCountries(rows);
+  const owningStatus = computeOwningCounts(rows);
   const { avgPages, totalPagesRead } = computePageStats(rows);
+  const { pageBuckets, totalPages, pagesKnownCount } = computePageBuckets(rows);
   const { yearKnownCount, medianYear, decades } = computeYearStats(rows);
   const decadeGenres = computeDecadeGenres(rows);
   const translationRatio = computeTranslationRatio(rows);
+  const genreRatings = computeGenreRatings(rows);
+  const catalogueGaps = computeCatalogueGaps(rows, {
+    noGenre: uncategorizedGenreCount,
+    yearKnownCount,
+  });
   const { avgRating, ratedCount, ratingDistribution } = computeRatingStats(
     ratingResult.results,
   );
@@ -585,18 +794,25 @@ stats.get("/", async (c) => {
       forms,
       subjects,
       countries,
+      countryCount,
+      owningStatus,
       decades,
       decadeGenres,
       topSeries,
       customFields,
       avgPages,
       totalPagesRead,
+      totalPages,
+      pagesKnownCount,
+      pageBuckets,
       medianYear,
       yearKnownCount,
       genreCount,
       avgRating,
       ratedCount,
       ratingDistribution,
+      genreRatings,
+      catalogueGaps,
       translationRatio,
       randomFirstLine,
     }),

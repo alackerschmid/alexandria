@@ -85,6 +85,7 @@ export function useSearchSuggestions(options: {
     { key: "year", icon: "mdi-calendar-range", label: t("library.group_year") },
     { key: "subject", icon: "mdi-lightbulb-outline", label: t("library.group_subject") },
     { key: "location", icon: "mdi-map-marker-outline", label: t("library.group_location") },
+    { key: "missing", icon: "mdi-help-circle-outline", label: t("library.filter_missing") },
     ...customFieldMetas.value
       .filter((m) => m.def.type !== "date" && m.def.type !== "integer")
       .map((m) => ({ key: m.slug, icon: cfIcon(m.def.type), label: m.def.name })),

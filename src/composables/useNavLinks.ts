@@ -9,9 +9,10 @@ export interface NavLink {
   activeIcon: string;
 }
 
-// Single source of truth for the app's primary destinations, shared by the
-// desktop header nav (shows all of them) and the mobile bottom tab bar
-// (shows the scan action plus whichever 2 of these aren't the current section).
+// Single source of truth for the app's primary destinations, shared by the desktop header nav
+// (shows all of them) and the mobile bottom tab bar (shows the scan action flanked by two of
+// these). The bar picks its two slots by explicit priority, so this list can grow without
+// silently pushing a destination off the bar — see MOBILE_SLOT_PRIORITY in MobileTabBar.vue.
 export function useNavLinks() {
   const { t } = useI18n();
 
@@ -36,6 +37,13 @@ export function useNavLinks() {
       label: t("home.nav_scan"),
       icon: "mdi-barcode",
       activeIcon: "mdi-barcode",
+    },
+    {
+      name: "stats",
+      to: "/stats",
+      label: t("stats.nav_label"),
+      icon: "mdi-chart-box-outline",
+      activeIcon: "mdi-chart-box",
     },
     {
       name: "settings",

@@ -437,9 +437,17 @@ import { useToast } from "@/composables/useToast";
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { STATUS_META } from "@/composables/useBookStatus";
 import { BCP47 } from "@/plugins/i18n";
-import { emptyRatingDistribution, type CollectionStats } from "@/types/stats";
+import type { CollectionStats } from "@/types/stats";
 import type { GroupBy } from "@/types/library";
 import { languageDisplayFormatter } from "@/utils/language";
+import {
+  colorRamp as buildColorRamp,
+  formatCount,
+  getBreakdown as breakdownFor,
+  normalizeStats,
+  pctOf as pctOfTotal,
+  rampColor,
+} from "@/utils/stats-view";
 
 const { t } = useI18n();
 const authStore = useAuthStore();
@@ -459,46 +467,6 @@ const {
   showToast,
 } = useToast();
 const randomQuote = ref<{ title: string; firstLine: string } | null>(null);
-
-function normalizeStats(payload: any): CollectionStats {
-  return {
-    total: payload?.total ?? 0,
-    byStatus: {
-      read: payload?.byStatus?.read ?? 0,
-      reading: payload?.byStatus?.reading ?? 0,
-      unread: payload?.byStatus?.unread ?? 0,
-      dnf: payload?.byStatus?.dnf ?? 0,
-    },
-    genres: payload?.genres ?? [],
-    uncategorizedGenreCount: payload?.uncategorizedGenreCount ?? 0,
-    languages: payload?.languages ?? [],
-    languageCount: payload?.languageCount ?? 0,
-    topAuthors: payload?.topAuthors ?? [],
-    authorCount: payload?.authorCount ?? 0,
-    publishers: payload?.publishers ?? [],
-    forms: payload?.forms ?? [],
-    subjects: payload?.subjects ?? [],
-    countries: payload?.countries ?? [],
-    decades: payload?.decades ?? [],
-    decadeGenres: payload?.decadeGenres ?? [],
-    topSeries: payload?.topSeries ?? [],
-    customFields: payload?.customFields ?? [],
-    avgPages: payload?.avgPages ?? null,
-    totalPagesRead: payload?.totalPagesRead ?? null,
-    medianYear: payload?.medianYear ?? null,
-    yearKnownCount: payload?.yearKnownCount ?? 0,
-    genreCount: payload?.genreCount ?? 0,
-    avgRating: payload?.avgRating ?? null,
-    ratedCount: payload?.ratedCount ?? 0,
-    ratingDistribution: payload?.ratingDistribution ?? emptyRatingDistribution(),
-    translationRatio: payload?.translationRatio ?? null,
-    randomFirstLine: payload?.randomFirstLine ?? null,
-  };
-}
-
-function formatCount(value: number | null | undefined): string {
-  return value == null ? "—" : value.toLocaleString();
-}
 
 // ── First-name onboarding ─────────────────────────────────────────────────────
 
@@ -560,70 +528,23 @@ const metaLine = computed(() => {
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 
-const colorRamp = computed<string[]>(() =>
-  themeStore.isDark
-    ? [
-        "rgb(var(--v-theme-primary))",
-        "#b8afa6",
-        "#8a8078",
-        "#5c544e",
-        "#3a3631",
-        "#2a2724",
-      ]
-    : [
-        "rgb(var(--v-theme-primary))",
-        "#8a7a70",
-        "#5c5249",
-        "#3d3631",
-        "#2a2421",
-        "#c9c3bb",
-      ],
-);
+const colorRamp = computed<string[]>(() => buildColorRamp(themeStore.isDark));
 
 // ── Dimension data helper ─────────────────────────────────────────────────────
 
 const langFmt = computed(() => languageDisplayFormatter(localeStore.locale));
 
+// The dashboard renders `status` itself, with the fixed STATUS_META colors rather than the
+// categorical ramp, so it keeps passing that dimension through as empty.
 function getBreakdown(
   mode: GroupBy,
   stats: CollectionStats,
 ): { label: string; count: number }[] {
-  switch (mode) {
-    case "genre":
-      return stats.genres;
-    case "language":
-      return stats.languages.map((l) => ({
-        label: langFmt.value(l.code),
-        count: l.count,
-      }));
-    case "author":
-      return stats.topAuthors;
-    case "series":
-      return stats.topSeries;
-    case "publisher":
-      return stats.publishers;
-    case "form":
-      return stats.forms;
-    case "country":
-      return stats.countries;
-    case "decade":
-      return stats.decades;
-    case "subject":
-      return stats.subjects;
-    case "status":
-      return []; // handled separately with fixed colors
-    case "none":
-      return [];
-    default: {
-      const m = (mode as string).match(/^cf:(\d+)$/);
-      if (m)
-        return (
-          stats.customFields.find((cf) => cf.fieldDefId === Number(m[1]))
-            ?.values ?? []
-        );
-      return [];
-    }
-  }
+  if (mode === "status") return [];
+  return breakdownFor(mode, stats, {
+    language: langFmt.value,
+    status: (key) => t(`book.${key}`),
+  });
 }
 
 // ── At a glance ───────────────────────────────────────────────────────────────
@@ -635,8 +556,7 @@ const glanceData = computed(() => {
   if (!statsData.value) return [];
   const { total, byStatus } = statsData.value;
   const ramp = colorRamp.value;
-  const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
-  const pctStr = (n: number) => pctOf(n) + "%";
+  const pctStr = (n: number) => `${pctOfTotal(n, total)}%`;
 
   if (glanceMode.value === "status") {
     return [
@@ -672,14 +592,14 @@ const glanceData = computed(() => {
   const otherCount = total - topTotal;
   const segs = top.map((item, i) => ({
     label: item.label,
-    color: ramp[i] ?? ramp.at(-1),
+    color: rampColor(ramp, i),
     pctWidth: pctStr(item.count),
     pctLabel: pctStr(item.count),
   }));
   if (otherCount > 0)
     segs.push({
       label: t("home.glance_other"),
-      color: ramp[5] ?? ramp[4],
+      color: rampColor(ramp, 5),
       pctWidth: pctStr(otherCount),
       pctLabel: pctStr(otherCount),
     });
@@ -738,7 +658,7 @@ const mostRepresentedData = computed(() => {
         ? "rgb(var(--v-theme-primary))"
         : mostRepMode.value === "author"
           ? "var(--color-chart-muted)"
-          : (ramp[i] ?? ramp.at(-1)),
+          : rampColor(ramp, i),
   }));
 });
 
@@ -747,7 +667,7 @@ const mostRepresentedData = computed(() => {
 const statTiles = computed(() => {
   if (!statsData.value) return [];
   const { total, byStatus } = statsData.value;
-  const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
+  const pctOf = (n: number) => pctOfTotal(n, total);
   const totalColor = "var(--color-chart-total)";
   return [
     {
