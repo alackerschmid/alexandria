@@ -21,6 +21,7 @@ Conventions used below:
 | E1, E3, E5, E6, E7 | **Done** — see `tasks_completed.md` (`feat/e-block-polish`) |
 | E2, E4 | **Dropped** — removed from the backlog, not built |
 | F3 | **Done** — `/stats` shipped on `feat/stats-page`; manual QA pass still owed (see the task) |
+| F3b | **Done** — home reworked to match on `feat/home-rework`; manual QA pass still owed (see the task) |
 | F (rest) | Open — below |
 
 ---
@@ -66,6 +67,33 @@ more books than the count. No single `owning:` value expresses "owned or lent ou
 **Still owed:** a manual QA pass under a non-default paper/typeface preset, and on a real phone
 (the layout was checked at 430px in a desktop browser).
 
+### F3b. Home page rework (M) — **Done** (`feat/home-rework`)
+
+`/stats` absorbed eight of home's ~12 blocks, leaving home a smaller, worse copy of it. The two
+pages now split by **mode**: `/stats` aggregates and never names a book, home particularises and
+shows almost no numbers. Stated as an invariant in `src/CLAUDE.md`.
+
+- **Removed:** both dimension pickers, the five status tiles (Read/Reading/DNF is the reading
+  framing being moved away from — the counts survive in the meta line and as `/stats`'s `status`
+  breakdown), median year, average length, the trio items, the decade×genre rotator, and the
+  `md:h-screen overflow-hidden` shell. Home scrolls now; covers need room.
+- **Built:** `src/components/home/{ShelfSpotlight,RecentlyAdded,ShelfGaps,ShelfOddities}.vue`.
+- **Worker:** `computeExemplars` + a 5-book `spotlight` pool on the existing queries — two extra
+  columns on the main SELECT, no new query, no migration. `randomFirstLine` retained.
+- **No `date_read`/`date_started` and no "currently reading" anywhere**, deliberately. "Recently
+  added" stays: acquisition is the core collection event, and the Goodreads import backdating
+  `created_at` from "Date Added" is arguably correct.
+
+**Known divergence:** the recently-added strip is unscoped — `GET /api/scans` has no `?scope=`,
+so it can include `want`/`unknown` books while the rest of the page is scoped. For an
+import-only library that is the friendlier miss (the strip still shows books). Same class as the
+`CatalogueGaps.vue` one above. Home also makes three requests where it made one; they run in
+parallel and `?limit=12` is far lighter than the library's 500-row page.
+
+**Still owed:** the whole manual QA pass — see the checklist the implementing agent reported
+(light/dark and a non-default preset, <840px, the no-network "show me another" cycle, every book
+link opening the detail on `/library`, an empty and an import-only library).
+
 ### F4. "Want this" from the series page + wishlist view (S/M)
 
 - **Today:** `owning_status = 'want'` is fully modeled and filterable (`owning:want`), but the only way in is scanning a book you hold and flipping the pill. The natural feeder — the series page's Missing volumes — opens the detail read-only with all controls hidden (`src/pages/series.vue` ~325–339 sets `detailReadonly = true`; `BookDetail.vue` gates on `!readonly`).
@@ -92,7 +120,7 @@ Existing base: `EditionsPane`/`EditionsDialog`, `useWorkEditions`, `work_edition
 
 ### F8. "What should I read next?" spotlight (S)
 
-A random unread pick on the home dashboard, optionally re-rollable and biasable by a facet. Precedent: `randomFirstLine` in `stats.ts` (`ORDER BY RANDOM() LIMIT 1`). Small, fun, on-brand for "statistics you can actually enjoy browsing".
+A random unread pick on the home dashboard, optionally re-rollable and biasable by a facet. Most of the machinery now exists: F3b's `spotlight` pool is `ORDER BY RANDOM() LIMIT 5` with client-side re-rolling already built (`ShelfSpotlight.vue`), so this is that query gated on `status = 'unread'` plus a second block — not a new mechanism. Small, fun, on-brand for "statistics you can actually enjoy browsing".
 
 ---
 

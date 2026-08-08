@@ -78,6 +78,17 @@ ask the `inventory` subagent rather than expecting a list here.
   none and so always reads the owned collection. Series completeness is deliberately outside
   that switch — `/api/series` has its own ownership gate, so the block reads "owned only" under
   any wider scope rather than mixing an owned-derived figure into all-scope numbers.
+- **`/stats` aggregates; home particularises.** Both pages are about the same subject — the
+  collection — so they split by *mode*, not by subject. `/stats` shows distributions, averages
+  and completeness and never names a single book; `/home` shows individual books and almost no
+  numbers ("your oldest book is Frankenstein, 1818" against "median year 1980"). That is the test
+  for anything added to either later: a distribution belongs on stats, a named book belongs on
+  home. They share one payload (`/api/stats`) and one view-model module
+  (`utils/stats-view.ts`), and one persisted collection scope — home reads
+  `useStatsDefaultsStore().scope` rather than defaulting to `owned` on its own, or an import-only
+  library (`owning_status = 'unknown'` throughout) would show a blank home while `/stats` offers
+  the fix. **Home never hosts `BookDetail`** — every book on it is a deep link into `/library`
+  via `utils/book-link.ts`; see that file for why.
 - **`stores/preferences.ts` is the single owner of every persisted preference.** The
   appearance/locale/library-default stores are thin wrappers over it — never touch
   `localStorage` directly.
