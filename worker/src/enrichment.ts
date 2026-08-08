@@ -1010,6 +1010,21 @@ async function mergeWorks(
   from: number,
   into: number,
 ): Promise<void> {
+  // The loser's match_key has to be read *before* the batch and carried over as a value. It is the
+  // only key `linkWork` resolves by, and the loser is always the row that has one (a work that
+  // already carries a QID returns early from resolveWorkIdentity and never merges), so deleting it
+  // with the row retired a dedup key still in active use: a later scan of a *different* edition of
+  // the same book found nothing for that key and minted a rival work, splitting the user's rating
+  // and the enriched data across two cards. It converges only if enrichment happens to resolve the
+  // new work to the same QID — for a book Wikidata does not match, never.
+  //
+  // Read first, and applied *after* the DELETE below, because match_key is UNIQUE: writing it onto
+  // the survivor while the loser still holds it would fail the batch.
+  const loser = await db
+    .prepare("SELECT match_key FROM works WHERE id = ?")
+    .bind(from)
+    .first<{ match_key: string | null }>();
+
   await db.batch([
     db
       .prepare("UPDATE books SET work_id = ? WHERE work_id = ?")
@@ -1061,6 +1076,11 @@ async function mergeWorks(
     // Instead D1's FK enforcement fails the whole batch if the repoint above is ever removed or
     // reordered after it — a loud tripwire rather than silent data loss.
     db.prepare("DELETE FROM works WHERE id = ?").bind(from),
+    // After the DELETE, per the note above. COALESCE so the survivor's own key wins when it has
+    // one; only a survivor with none (the usual case — a QID-first placeholder) adopts the loser's.
+    db
+      .prepare("UPDATE works SET match_key = COALESCE(match_key, ?) WHERE id = ?")
+      .bind(loser?.match_key ?? null, into),
   ]);
 }
 
@@ -1181,6 +1201,15 @@ async function resolveWorkIdentity(
   workId: number,
   w: WorkRow,
   usage?: UsageRecorder | null,
+  /**
+   * Called the instant `mergeWorks` returns, before anything that could throw runs afterwards.
+   * `enrichWork` only learns `canonicalId`/`merged` from the *returned* outcome, so a throw
+   * between the merge and the return left its catch writing the failure to `workId` — a row
+   * `mergeWorks` had just deleted. The status UPDATE then matched nothing, the surviving work kept
+   * a non-NULL `enrichment_started_at` blocking re-claims for the full TTL, and the
+   * `enrichment_runs` row pointed at a work id that no longer existed.
+   */
+  onMerge?: (canonicalId: number) => void,
 ): Promise<IdentityOutcome> {
   if (w.wikidata_qid) {
     console.log(
@@ -1265,6 +1294,7 @@ async function resolveWorkIdentity(
     await mergeWorks(db, workId, existing.id);
     canonicalId = existing.id;
     merged = true;
+    onMerge?.(canonicalId);
     // The claim taken earlier was on workId, which mergeWorks just deleted. Re-claim the
     // canonical row so a second concurrent enrichWork that resolves to the same existing
     // work can't race this one on the series/detail writes below.
@@ -1333,8 +1363,14 @@ async function resolveWorkIdentity(
 
 // Gives an identified work a cover edition (if unowned) and pre-discovers related OpenLibrary
 // editions via the Wikidata-linked work id. Independent operations on different tables, run
-// concurrently. Both best-effort: a discovery failure must not turn a successful enrichment
-// into a failed one (backfillEdition has no failure mode of its own).
+// concurrently. Both best-effort: neither may turn a successful enrichment into a failed one.
+//
+// backfillEdition emphatically *does* have a failure mode -- it runs the `edition_isbn` SPARQL
+// query, which propagates SparqlError on timeout/429/5xx exactly like every other one -- and the
+// claim that it does not is what left it uncaught. A flake there discarded an already-fetched,
+// fully-resolved set of details, booked the work as a genuine failure, and advanced it toward
+// `exhausted`; three such flakes retired a perfectly healthy work for two days having thrown away
+// three complete Wikidata reads.
 async function backfillEditionsAndDiscovery(
   db: D1Database,
   canonicalId: number,
@@ -1345,7 +1381,15 @@ async function backfillEditionsAndDiscovery(
   usage?: UsageRecorder | null,
 ): Promise<void> {
   const backfill = workQid
-    ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage)
+    ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage).catch(
+        (e) => {
+          console.error(
+            "[enrichWork] edition backfill failed for work",
+            canonicalId,
+            e,
+          );
+        },
+      )
     : Promise.resolve();
   const discovery = details?.openlibraryWorkId
     ? discoverEditionsFromOpenLibrary(
@@ -1562,7 +1606,10 @@ export async function enrichWork(
         .bind(workId)
         .run();
 
-    const identity = await resolveWorkIdentity(db, workId, w, usage);
+    const identity = await resolveWorkIdentity(db, workId, w, usage, (id) => {
+      canonicalId = id;
+      merged = true;
+    });
     if (identity.kind === "no-title") {
       // Lands on `done` at the current schema version, so neither sweeper query serves this work
       // again — deliberate: nothing about it will have changed on the next tick, and a titleless
