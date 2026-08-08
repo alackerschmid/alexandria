@@ -573,7 +573,12 @@ export function computeCatalogueGaps(
 export function computeOwningCounts(rows: RawRow[]) {
   const counts = { owned: 0, lent_out: 0, unowned: 0, want: 0, unknown: 0 };
   for (const r of rows) {
-    if (r.owning_status in counts) counts[r.owning_status as keyof typeof counts]++;
+    // hasOwnProperty, not `in`: `in` reaches Object.prototype, so an owning_status of
+    // "constructor"/"toString" would pass the guard and increment an inherited member — yielding
+    // NaN and a junk key in the response instead of falling through to `unknown`. Same reason
+    // `scopeClauseFor` and `sortClauseFor` do their lookups this way.
+    if (Object.prototype.hasOwnProperty.call(counts, r.owning_status))
+      counts[r.owning_status as keyof typeof counts]++;
     else counts.unknown++;
   }
   return counts;
@@ -859,7 +864,7 @@ stats.get("/", async (c) => {
         `
       SELECT s.status                                                        AS status,
              s.owning_status                                                 AS owning_status,
-             b.title                                                         AS title,
+             COALESCE(o.title, b.title)                                      AS title,
              b.isbn                                                          AS isbn,
              b.author                                                        AS author,
              ${AUTHORS_JSON_SUBQUERY}                                       AS authors_json,
@@ -926,7 +931,7 @@ stats.get("/", async (c) => {
       c.env.DB.prepare(
         `
       SELECT b.isbn                                                          AS isbn,
-             b.title                                                          AS title,
+             COALESCE(o.title, b.title)                                       AS title,
              b.work_id                                                        AS work_id,
              b.author                                                         AS author,
              wk.first_line                                                    AS first_line,

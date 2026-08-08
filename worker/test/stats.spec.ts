@@ -604,6 +604,24 @@ describe("computeOwningCounts", () => {
     const counts = computeOwningCounts([row({ owning_status: "borrowed" })]);
     expect(counts.unknown).toBe(1);
   });
+
+  // The same prototype-safety rule `scopeClauseFor` is pinned on: an `in` check reaches
+  // Object.prototype, so these names would pass the guard and increment an inherited member —
+  // producing NaN and an undeclared key instead of counting as unknown.
+  it.each(["constructor", "toString", "valueOf", "hasOwnProperty"])(
+    "files the prototype name %s under unknown",
+    (name) => {
+      const counts = computeOwningCounts([row({ owning_status: name })]);
+      expect(counts.unknown).toBe(1);
+      expect(Object.keys(counts)).toEqual([
+        "owned",
+        "lent_out",
+        "unowned",
+        "want",
+        "unknown",
+      ]);
+    },
+  );
 });
 
 describe("computeExemplars", () => {
