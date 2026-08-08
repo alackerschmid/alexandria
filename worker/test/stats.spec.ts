@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeCatalogueGaps,
   computeDecadeGenres,
+  computeExemplars,
   computeGenreRatings,
   computeOwningCounts,
   computePageBuckets,
@@ -20,6 +21,8 @@ function row(overrides: Partial<RawRow> = {}): RawRow {
   return {
     status: "read",
     owning_status: "owned",
+    title: null,
+    isbn: "",
     author: null,
     authors_json: null,
     language: null,
@@ -591,5 +594,109 @@ describe("computeOwningCounts", () => {
     // silently vanished would make the breakdown disagree with `total`.
     const counts = computeOwningCounts([row({ owning_status: "borrowed" })]);
     expect(counts.unknown).toBe(1);
+  });
+});
+
+describe("computeExemplars", () => {
+  it("dates the oldest book by the work's year, not the reprint's", () => {
+    // The `extractYear` contract, applied where it matters most: a 2019 reprint of Frankenstein
+    // is the oldest book on the shelf, and saying "your oldest book is from 2019" would be the
+    // whole block reading as wrong.
+    const { oldest } = computeExemplars([
+      row({
+        isbn: "1",
+        title: "Frankenstein",
+        original_pub_date: "1818",
+        publish_date: "2019-07-01",
+      }),
+      row({ isbn: "2", title: "Dune", original_pub_date: "1965" }),
+    ]);
+    expect(oldest?.title).toBe("Frankenstein");
+    expect(oldest?.year).toBe(1818);
+  });
+
+  it("ignores a year outside the bounds rather than crowning it oldest", () => {
+    const { oldest } = computeExemplars([
+      row({ isbn: "1", title: "Bad data", original_pub_date: "0" }),
+      row({ isbn: "2", title: "Dune", original_pub_date: "1965" }),
+    ]);
+    expect(oldest?.title).toBe("Dune");
+  });
+
+  it("breaks an oldest tie on isbn so the block doesn't reshuffle between requests", () => {
+    const both = [
+      row({ isbn: "9780002", title: "Second", original_pub_date: "1818" }),
+      row({ isbn: "9780001", title: "First", original_pub_date: "1818" }),
+    ];
+    expect(computeExemplars(both).oldest?.title).toBe("First");
+    // Same rows, opposite order in from D1 — same answer out.
+    expect(computeExemplars([...both].reverse()).oldest?.title).toBe("First");
+  });
+
+  it("picks the longest book by page count, ties broken on isbn", () => {
+    const { longest } = computeExemplars([
+      row({ isbn: "9780003", title: "Short", pages: 120 }),
+      row({ isbn: "9780002", title: "Long B", pages: 1216 }),
+      row({ isbn: "9780001", title: "Long A", pages: 1216 }),
+    ]);
+    expect(longest?.title).toBe("Long A");
+    expect(longest?.pages).toBe(1216);
+  });
+
+  it("names the only book in its language", () => {
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en" }),
+      row({ isbn: "2", title: "B", language: "en" }),
+      row({ isbn: "3", title: "L'Étranger", language: "fr" }),
+    ]);
+    expect(soleLanguage?.title).toBe("L'Étranger");
+    expect(soleLanguage?.language).toBe("fr");
+  });
+
+  it("leaves soleLanguage null when no language has exactly one book", () => {
+    // The monolingual library — the common case, and the reason the row hides rather than
+    // announcing "your only book in English" about a shelf that is entirely English.
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", language: "en" }),
+      row({ isbn: "2", language: "en" }),
+      row({ isbn: "3", language: "de" }),
+      row({ isbn: "4", language: "de" }),
+    ]);
+    expect(soleLanguage).toBeNull();
+  });
+
+  it("leaves soleLanguage null for a one-book library", () => {
+    // Trivially true of the only book there is, and it would just repeat the `oldest` row.
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en", original_pub_date: "1990" }),
+    ]);
+    expect(soleLanguage).toBeNull();
+  });
+
+  it("returns every exemplar null for an empty library", () => {
+    expect(computeExemplars([])).toEqual({
+      oldest: null,
+      longest: null,
+      soleLanguage: null,
+    });
+  });
+
+  it("returns null for an exemplar nothing can answer", () => {
+    // Books with no year and no page count: the block still renders whatever it can fill.
+    const exemplars = computeExemplars([
+      row({ isbn: "1", language: "en" }),
+      row({ isbn: "2", language: "fr" }),
+    ]);
+    expect(exemplars.oldest).toBeNull();
+    expect(exemplars.longest).toBeNull();
+    expect(exemplars.soleLanguage).not.toBeNull();
+  });
+
+  it("ignores a zero page count rather than calling it the longest book", () => {
+    const { longest } = computeExemplars([
+      row({ isbn: "1", pages: 0 }),
+      row({ isbn: "2", pages: 0 }),
+    ]);
+    expect(longest).toBeNull();
   });
 });
