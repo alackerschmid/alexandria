@@ -453,7 +453,19 @@ async function importRow(
       if (matchedScan && matchedBook) {
         if (!update) return { isbn: isbn13, outcome: "duplicate" };
 
-        if (!matchedBook.work_id) await linkWork(db, matchedBook);
+        if (!matchedBook.work_id) {
+          await linkWork(db, matchedBook);
+          // Re-read the work's rating: `getExistingScan` joined it through `books.work_id`, which
+          // was still NULL at that point, so it reported null for a work that may well already
+          // carry a rating — ratings outlive scans, so a book re-added after being deleted still
+          // has one. Left stale, an incoming CSV rating overwrote the real stored value and
+          // `previous.rating` reported null, so Undo destroyed it rather than restoring it.
+          matchedScan.rating = await existingWorkRating(
+            db,
+            userId,
+            matchedBook.work_id,
+          );
+        }
         // The row named this edition, so it stays the primary — but a reading status is a statement
         // about the book, so every other copy of the work takes it too, exactly as on the work-match
         // path below. Without this the same export would update one copy for a row naming the exact
@@ -833,60 +845,80 @@ importRoutes.post("/match", async (c) => {
 
   const results: MatchRowResult[] = [];
   for (const row of rows) {
-    const validated = validateMatchRow(row);
-    if (!validated) {
+    // Per-row isolation, as `/goodreads`'s `importRow` has. This loop awaits `applyImportUpdate`,
+    // and therefore a real `db.batch`; without a catch, a throw on row k propagated out of the
+    // handler as a 500 and discarded the whole `results` array — including rows 0..k-1 whose scan
+    // statuses and work_ratings had already been written. The client then marked every row of the
+    // batch `no_match`, leaving those committed writes with no card pointing at them, so neither
+    // Undo nor cancel could restore them. Reporting `no_match` for the failed row keeps the
+    // response positional and lets the rows that did write report their scan_id and previous.
+    try {
+      const validated = validateMatchRow(row);
+      if (!validated) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      const match = pickBestMatchPrepared(
+        { title: validated.title, author: validated.author },
+        candidates,
+      );
+      if (!match) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      const matched = byScanId.get(match.scanId);
+      if (!matched) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      // Every copy of the matched work, primary first. Same rule as the /goodreads work path — one
+      // book the user has twice still takes one reading status — and free here: the whole library is
+      // already in memory, so the siblings cost no query. A work-less scan is its own only copy;
+      // grouping unlinked books together would be wrong (see `workSiblings` on the client).
+      const copies =
+        matched.work_id == null ? [matched] : byWorkId.get(matched.work_id)!;
+      // The row named a title, not an edition, so it only identifies a *copy* when one outscored its
+      // siblings. On a tie the card points at an owned copy, else the oldest — the same choice the
+      // ISBN work path makes for the same reason: the card is an editor for one scan, and the copy
+      // on the user's shelf is the one they mean. The status write covers all of them either way.
+      const primary = match.identifiedCopy
+        ? matched
+        : pickPrimarySibling(copies);
+      const scans: UpdatableScan[] = [
+        primary,
+        ...copies.filter((r) => r !== primary),
+      ].map((r) => ({ ...r, id: r.scan_id }));
+
+      if (
+        !update ||
+        !claimScans(
+          claimedScanIds,
+          scans.map((s) => s.id),
+        )
+      ) {
+        results.push({ outcome: "duplicate" });
+        continue;
+      }
+
+      results.push({
+        ...(await applyImportUpdate(
+          db,
+          userId,
+          scans,
+          bookSummary(primary),
+          validated.status,
+          validated.rating,
+          ratedWorkIds,
+        )),
+        confidence: match.score,
+      });
+    } catch (e) {
+      console.error("[POST /api/import/match] row failed:", e);
       results.push({ outcome: "no_match" });
-      continue;
     }
-
-    const match = pickBestMatchPrepared(
-      { title: validated.title, author: validated.author },
-      candidates,
-    );
-    if (!match) {
-      results.push({ outcome: "no_match" });
-      continue;
-    }
-
-    const matched = byScanId.get(match.scanId);
-    if (!matched) {
-      results.push({ outcome: "no_match" });
-      continue;
-    }
-
-    // Every copy of the matched work, primary first. Same rule as the /goodreads work path — one book
-    // the user has twice still takes one reading status — and free here: the whole library is already
-    // in memory, so the siblings cost no query. A work-less scan is its own only copy; grouping
-    // unlinked books together would be wrong (see `workSiblings` on the client).
-    const copies =
-      matched.work_id == null ? [matched] : byWorkId.get(matched.work_id)!;
-    // The row named a title, not an edition, so it only identifies a *copy* when one outscored its
-    // siblings. On a tie the card points at an owned copy, else the oldest — the same choice the ISBN
-    // work path makes for the same reason: the card is an editor for one scan, and the copy on the
-    // user's shelf is the one they mean. The status write covers all of them either way.
-    const primary = match.identifiedCopy ? matched : pickPrimarySibling(copies);
-    const scans: UpdatableScan[] = [
-      primary,
-      ...copies.filter((r) => r !== primary),
-    ].map((r) => ({ ...r, id: r.scan_id }));
-
-    if (!update || !claimScans(claimedScanIds, scans.map((s) => s.id))) {
-      results.push({ outcome: "duplicate" });
-      continue;
-    }
-
-    results.push({
-      ...(await applyImportUpdate(
-        db,
-        userId,
-        scans,
-        bookSummary(primary),
-        validated.status,
-        validated.rating,
-        ratedWorkIds,
-      )),
-      confidence: match.score,
-    });
   }
 
   return c.json({ results });
