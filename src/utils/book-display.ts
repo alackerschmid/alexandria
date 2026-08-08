@@ -120,6 +120,47 @@ export function bookYear(
 }
 
 /**
+ * 4-digit year of the **work** — when it was written — preferring the original publication date
+ * and falling back to the edition's. The opposite precedence to `bookYear`, deliberately: that
+ * one answers "which printing is this", this one answers "when is this book from", so a 2019
+ * reprint of a 1954 novel is a 1954 book here and a 2019 edition there.
+ *
+ * The client-side mirror of the worker's `extractYear` (`routes/stats.ts`), which is what the
+ * `/stats` decade histogram buckets by — so anything claiming to filter or group by the same
+ * decades has to come through here, or it silently drops every book placed by the fallback.
+ * `original_pub_date` comes from Wikidata enrichment and is null for most of an unenriched
+ * library, which is exactly when the two answers diverge most.
+ *
+ * The mirror leans on a writer contract: `yearFrom` (`worker/src/enrichment.ts`) is the sole
+ * writer of `works.original_pub_date` and emits exactly four digits or NULL — which is why the
+ * `||` fallback here (falsy-only) matches `extractYear`'s parse-failure fallback in practice,
+ * and why zero-padded early years ("0500") resolve identically on both sides. One latent
+ * difference remains, on the `publish_date` half: `YEAR_RE` is word-boundary anchored while
+ * `extractYear`'s regex is not, so a MARC-style date like "c1990" would be bucketed by the
+ * histogram but dropped here. OpenLibrary's `publish_date` passes through unnormalised
+ * (`editions.ts`), so nothing rules such values out — none exist in the catalogue today
+ * (verified across all distinct values), so this is recorded rather than defended against.
+ */
+export function workYear(
+  book: Pick<Book, "publish_date" | "original_pub_date">,
+): string {
+  return publishYear(book.original_pub_date || book.publish_date);
+}
+
+/**
+ * The `year:` search token's predicate: a **prefix** match on the work year, so `year:1954` is
+ * a year and `year:195` is the 1950s — which is what the `/stats` decade histogram deep-links
+ * to. Deliberately not a substring match: that also matched `year:200` against a book from
+ * 1200. Lives here rather than in `useLibrarySearch` so the semantics are pinned by unit test.
+ */
+export function matchesYearPrefix(
+  book: Pick<Book, "publish_date" | "original_pub_date">,
+  prefix: string,
+): boolean {
+  return workYear(book).startsWith(prefix);
+}
+
+/**
  * A D1 `datetime('now')` timestamp as ms-epoch, or null when it's absent/unparseable.
  *
  * D1 stores these as `YYYY-MM-DD HH:MM:SS` in UTC with **no zone marker**, which `Date.parse`

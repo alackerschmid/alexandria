@@ -4,26 +4,27 @@
     :style="{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }"
   >
     <router-link
-      :to="sideLinks[0].to"
+      v-for="(link, i) in sideLinks"
+      :key="link.name"
+      :to="link.to"
       class="flex flex-col items-center gap-1 flex-1 py-1 transition-colors"
-      :class="
-        isActive(sideLinks[0].name) ? 'text-orange-neon' : 'text-text-secondary'
-      "
+      :class="[
+        isActive(link.name) ? 'text-orange-neon' : 'text-text-secondary',
+        // The scan button is the middle child, so the first slot renders before it and the
+        // second after. Without this a one-slot bar would put its link on the wrong side.
+        i === 0 ? 'order-1' : 'order-3',
+      ]"
     >
       <v-icon
-        :icon="
-          isActive(sideLinks[0].name)
-            ? sideLinks[0].activeIcon
-            : sideLinks[0].icon
-        "
+        :icon="isActive(link.name) ? link.activeIcon : link.icon"
         size="20"
       />
       <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{
-        sideLinks[0].label
+        link.label
       }}</span>
     </router-link>
 
-    <div class="flex flex-col items-center gap-1 flex-1 py-1">
+    <div class="order-2 flex flex-col items-center gap-1 flex-1 py-1">
       <router-link
         to="/scanner"
         class="flex flex-col items-center justify-center -mt-7 w-16 h-16 rounded-full shrink-0 shadow-[0_8px_22px_var(--tw-shadow-color)] shadow-orange-neon/40"
@@ -33,26 +34,6 @@
         <v-icon icon="mdi-barcode" size="30" style="color: #111110" />
       </router-link>
     </div>
-
-    <router-link
-      :to="sideLinks[1].to"
-      class="flex flex-col items-center gap-1 flex-1 py-1 transition-colors"
-      :class="
-        isActive(sideLinks[1].name) ? 'text-orange-neon' : 'text-text-secondary'
-      "
-    >
-      <v-icon
-        :icon="
-          isActive(sideLinks[1].name)
-            ? sideLinks[1].activeIcon
-            : sideLinks[1].icon
-        "
-        size="20"
-      />
-      <span class="font-mono text-[8px] tracking-[0.12em] uppercase">{{
-        sideLinks[1].label
-      }}</span>
-    </router-link>
   </nav>
 </template>
 
@@ -65,16 +46,33 @@ const route = useRoute();
 const { navLinks } = useNavLinks();
 const isActive = (name: string) => route.name === name;
 
-// The bottom bar always centers the scan action; the two side slots show
-// whichever of Home/Library/Settings isn't the current section (the series
-// detail page is reached from Library, so it counts as the library section).
+/**
+ * Which destinations may occupy the bar's two side slots, best first.
+ *
+ * Explicit, and deliberately not "whatever `navLinks` filters down to": the old code sliced the
+ * filtered list and indexed `[0]`/`[1]`, so the moment that list didn't reduce to exactly two
+ * entries a destination vanished with nothing to say so — which is what adding a fourth section
+ * did. Naming the priority here means a new nav entry changes the bar only if it is put in this
+ * list, and where it lands is a decision someone made rather than an accident of array order.
+ *
+ * `settings` is last on purpose: it is the least-visited of the four and, unlike the other
+ * three, has a second mobile route in via the header's account menu. `scanner` is absent
+ * because it owns the centre button.
+ */
+const MOBILE_SLOT_PRIORITY = ["dashboard", "library", "stats", "settings"];
+
+// The bottom bar always centers the scan action; the two side slots show the highest-priority
+// destinations that aren't the current section (the series detail page is reached from Library,
+// so it counts as the library section).
 const currentSection = computed(() =>
   route.name === "series" ? "library" : route.name,
 );
 
-const sideLinks = computed(() =>
-  navLinks.value.filter(
-    (l) => l.name !== "scanner" && l.name !== currentSection.value,
-  ),
-);
+const sideLinks = computed(() => {
+  const byName = new Map(navLinks.value.map((l) => [l.name, l]));
+  return MOBILE_SLOT_PRIORITY.filter((name) => name !== currentSection.value)
+    .map((name) => byName.get(name))
+    .filter((l) => l !== undefined)
+    .slice(0, 2);
+});
 </script>

@@ -13,7 +13,7 @@ ask the `inventory` subagent rather than expecting a list here.
 
 | Directory | Holds |
 | --- | --- |
-| `src/pages/` | Route-level components — `landing` (`/`), `home` (`/home`), `index` (`/library`), `series/:id`, `settings`, `import`, `welcome`, `login`, `scanner`, `privacy`, `admin` (`/admin`, `requiresAdmin`), `NotFound` |
+| `src/pages/` | Route-level components — `landing` (`/`), `home` (`/home`), `index` (`/library`), `series/:id`, `stats`, `settings`, `import`, `welcome`, `login`, `scanner`, `privacy`, `admin` (`/admin`, `requiresAdmin`), `NotFound` |
 | `src/components/` | App chrome and shared primitives, plus `book-detail/`, `import/`, `settings/` and `admin/` subfolders |
 | `src/composables/` | Shared logic extracted from pages (API client, library pipeline, status/rating writes, polling, focus trap) |
 | `src/stores/` | Pinia — cross-page state: auth/guest session, field definitions, preferences, theme/accent/locale |
@@ -63,6 +63,32 @@ ask the `inventory` subagent rather than expecting a list here.
   `useScanStatus({ books: () => allBooks.value })` from a page that holds a list, or the
   collapsed work-card and the edition carousel drift apart until the next refetch. Nothing
   clears a rating implicitly: it survives every status change.
+- **`MobileTabBar` picks its two side slots from `MOBILE_SLOT_PRIORITY`, not from whatever
+  `useNavLinks` filters down to.** It used to slice the filtered list and index `[0]`/`[1]`, so
+  any list not reducing to exactly two entries dropped a destination with nothing to say so.
+  Adding a nav entry changes the bar only if you put it in that list. `settings` sits last there
+  and has a second mobile route in via the header's account menu — keep that pairing if you
+  reorder it, or Settings becomes unreachable on mobile from some pages.
+- **`stats-view.ts` holds the shared statistics view-model.** `/stats` and the home dashboard
+  both read `/api/stats`, so `normalizeStats` (the version-tolerance layer), `getBreakdown`,
+  `colorRamp` and the percentage helpers live there rather than in either page. A new
+  `CollectionStats` field needs a default in `normalizeStats` or an older worker blanks the page.
+  `/stats` additionally owns an ownership **scope** (`StatsScope`, persisted via
+  `stores/statsDefaults.ts`) that it passes to the API as `?scope=`; the home dashboard sends
+  none and so always reads the owned collection. Series completeness is deliberately outside
+  that switch — `/api/series` has its own ownership gate, so the block reads "owned only" under
+  any wider scope rather than mixing an owned-derived figure into all-scope numbers.
+- **`/stats` aggregates; home particularises.** Both pages are about the same subject — the
+  collection — so they split by *mode*, not by subject. `/stats` shows distributions, averages
+  and completeness and never names a single book; `/home` shows individual books and almost no
+  numbers ("your oldest book is Frankenstein, 1818" against "median year 1980"). That is the test
+  for anything added to either later: a distribution belongs on stats, a named book belongs on
+  home. They share one payload (`/api/stats`) and one view-model module
+  (`utils/stats-view.ts`), and one persisted collection scope — home reads
+  `useStatsDefaultsStore().scope` rather than defaulting to `owned` on its own, or an import-only
+  library (`owning_status = 'unknown'` throughout) would show a blank home while `/stats` offers
+  the fix. **Home never hosts `BookDetail`** — every book on it is a deep link into `/library`
+  via `utils/book-link.ts`; see that file for why.
 - **`stores/preferences.ts` is the single owner of every persisted preference.** The
   appearance/locale/library-default stores are thin wrappers over it — never touch
   `localStorage` directly.

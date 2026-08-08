@@ -1,10 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
+  computeCatalogueGaps,
   computeDecadeGenres,
+  computeExemplars,
+  computeGenreRatings,
+  computeOwningCounts,
+  computePageBuckets,
   computeRatingStats,
   computeTranslationRatio,
   computeYearStats,
+  dedupeByWork,
   extractYear,
+  scopeClauseFor,
+  SCOPE_CLAUSES,
   type RawRow,
 } from "../src/routes/stats";
 
@@ -12,10 +20,14 @@ import {
 function row(overrides: Partial<RawRow> = {}): RawRow {
   return {
     status: "read",
+    owning_status: "owned",
+    title: null,
+    isbn: "",
     author: null,
     authors_json: null,
     language: null,
     pages: null,
+    cover_url: null,
     publish_date: null,
     publisher: null,
     original_pub_date: null,
@@ -25,8 +37,16 @@ function row(overrides: Partial<RawRow> = {}): RawRow {
     countries_of_origin: null,
     language_of_work: null,
     language_of_work_code: null,
+    work_id: null,
+    enrichment_status: null,
+    rating: null,
     ...overrides,
   };
+}
+
+/** Shorthand for a rated, genre-tagged work — the shape `computeGenreRatings` cares about. */
+function rated(workId: number, rating: number, genres: string[]): RawRow {
+  return row({ work_id: workId, rating, genres: JSON.stringify(genres) });
 }
 
 describe("extractYear", () => {
@@ -72,6 +92,36 @@ describe("extractYear", () => {
   it("reads a leading year out of a partial ISO original date", () => {
     // parseInt stops at the first non-digit, which is what makes "1954-01-01" work here.
     expect(extractYear(row({ original_pub_date: "1954-01-01" }))).toBe(1954);
+  });
+});
+
+describe("scopeClauseFor", () => {
+  it("pins the clauses themselves, not just the routing between them", () => {
+    // Self-referential assertions (`scopeClauseFor(x) === SCOPE_CLAUSES.x`) stay green if the
+    // two values are swapped or 'lent_out' is dropped from the gate — and the default clause is
+    // what the home dashboard reads, since it sends no ?scope=. Same pattern as the
+    // SORT_CLAUSES content assertions in library-query.spec.ts.
+    expect(SCOPE_CLAUSES.owned).toBe("s.owning_status IN ('owned', 'lent_out')");
+    expect(SCOPE_CLAUSES.all).toBe("1 = 1");
+  });
+
+  it("defaults to the owned gate", () => {
+    expect(scopeClauseFor(undefined)).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("")).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("nonsense")).toBe(SCOPE_CLAUSES.owned);
+  });
+
+  it("resolves the scopes it knows", () => {
+    expect(scopeClauseFor("owned")).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("all")).toBe(SCOPE_CLAUSES.all);
+  });
+
+  it("does not reach the prototype chain", () => {
+    // The clause is interpolated into the SQL, so an inherited property would stringify a
+    // function into the query as a 500 — the exact bug `sortClauseFor` was fixed for.
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(scopeClauseFor(key)).toBe(SCOPE_CLAUSES.owned);
+    }
   });
 });
 
@@ -132,11 +182,15 @@ describe("computeYearStats", () => {
     );
   });
 
-  it("caps the decade list at 15 entries", () => {
+  it("does not cap the decade list", () => {
+    // Deliberately uncapped, unlike every other breakdown: the stats page draws these as a
+    // chronological histogram, where a top-15-by-count slice would drop the sparse decades and
+    // read as "you own nothing from the 1970s" rather than as a truncation. `extractYear`
+    // bounds years to 100..2100, so the set is inherently small.
     const rows = Array.from({ length: 20 }, (_, i) =>
       row({ original_pub_date: String(1800 + i * 10) }),
     );
-    expect(computeYearStats(rows).decades).toHaveLength(15);
+    expect(computeYearStats(rows).decades).toHaveLength(20);
   });
 });
 
@@ -361,5 +415,297 @@ describe("computeRatingStats", () => {
     ]);
     expect(stats.ratedCount).toBe(1);
     expect(stats.avgRating).toBe(4);
+  });
+});
+
+describe("dedupeByWork", () => {
+  it("keeps one row per work", () => {
+    // Two owned editions of the same work carry the same work_ratings row through the LEFT
+    // JOIN. This is the primitive that stops that rating being counted twice.
+    const rows = [
+      row({ work_id: 1, rating: 8 }),
+      row({ work_id: 1, rating: 8 }),
+      row({ work_id: 2, rating: 4 }),
+    ];
+    expect(dedupeByWork(rows).map((r) => r.work_id)).toEqual([1, 2]);
+  });
+
+  it("drops rows with no work link rather than treating each as its own work", () => {
+    expect(dedupeByWork([row(), row(), row({ work_id: 3 })])).toHaveLength(1);
+  });
+});
+
+describe("computePageBuckets", () => {
+  it("bands each known page count and sums the whole collection", () => {
+    const result = computePageBuckets([
+      row({ pages: 120 }),
+      row({ pages: 300 }),
+      row({ pages: 420 }),
+      row({ pages: 600 }),
+      row({ pages: 900 }),
+    ]);
+    expect(result.pageBuckets).toEqual([
+      { label: "<200", count: 1 },
+      { label: "200-350", count: 1 },
+      { label: "350-500", count: 1 },
+      { label: "500-750", count: 1 },
+      { label: "750+", count: 1 },
+    ]);
+    expect(result.totalPages).toBe(2340);
+    expect(result.pagesKnownCount).toBe(5);
+  });
+
+  it("puts a boundary value in the band above it", () => {
+    // The bands are half-open: 200 is the first page of "200-350", not the last of "<200".
+    const result = computePageBuckets([row({ pages: 200 }), row({ pages: 350 })]);
+    expect(result.pageBuckets[0].count).toBe(0);
+    expect(result.pageBuckets[1].count).toBe(1);
+    expect(result.pageBuckets[2].count).toBe(1);
+  });
+
+  it("ignores unknown and non-positive page counts", () => {
+    // Google Books returns 0 for unknown; ingestion nulls it, but not every legacy row was.
+    const result = computePageBuckets([row(), row({ pages: 0 }), row({ pages: -3 })]);
+    expect(result.totalPages).toBe(0);
+    expect(result.pagesKnownCount).toBe(0);
+    expect(result.pageBuckets.every((b) => b.count === 0)).toBe(true);
+  });
+});
+
+describe("computeGenreRatings", () => {
+  const five = (workBase: number, rating: number, genre: string) =>
+    Array.from({ length: 5 }, (_, i) => rated(workBase + i, rating, [genre]));
+
+  it("ranks genres that clear the sample floor", () => {
+    const result = computeGenreRatings([
+      ...five(100, 9, "philosophy"),
+      ...five(200, 3, "thriller"),
+    ]);
+    expect(result.best).toEqual({ label: "Philosophy", avg: 9, count: 5 });
+    expect(result.worst).toEqual({ label: "Thriller", avg: 3, count: 5 });
+  });
+
+  it("ignores genres below the sample floor", () => {
+    // A lone 10/10 must not outrank a genre with a real track record.
+    const result = computeGenreRatings([
+      ...five(100, 7, "history"),
+      rated(300, 10, ["poetry"]),
+    ]);
+    expect(result.best?.label).toBe("History");
+    expect(result.worst).toBeNull();
+  });
+
+  it("does not double-weight a rating the user owns two editions of", () => {
+    // Both rows are work 1: one 10 alongside five 5s must average 5.8, not 6.7.
+    const result = computeGenreRatings([
+      rated(1, 10, ["essays"]),
+      rated(1, 10, ["essays"]),
+      ...five(10, 5, "essays"),
+    ]);
+    expect(result.best).toEqual({ label: "Essays", avg: 5.8, count: 6 });
+  });
+
+  it("counts a book toward every genre it carries", () => {
+    const result = computeGenreRatings(
+      Array.from({ length: 5 }, (_, i) => rated(i, 8, ["sci-fi", "fantasy"])),
+    );
+    expect(result.best?.count).toBe(5);
+    expect(result.worst?.count).toBe(5);
+  });
+
+  it("reports no worst when only one genre qualifies", () => {
+    const result = computeGenreRatings(five(100, 6, "drama"));
+    expect(result.best?.label).toBe("Drama");
+    expect(result.worst).toBeNull();
+  });
+
+  it("returns the empty shape when nothing qualifies", () => {
+    expect(computeGenreRatings([row(), rated(1, 5, ["poetry"])])).toEqual({
+      best: null,
+      worst: null,
+    });
+  });
+
+  it("skips unrated works and unparseable genre JSON", () => {
+    const result = computeGenreRatings([
+      ...five(100, 6, "history"),
+      row({ work_id: 900, rating: 10, genres: "{not json" }),
+      row({ work_id: 901, genres: JSON.stringify(["history"]) }),
+    ]);
+    expect(result.best).toEqual({ label: "History", avg: 6, count: 5 });
+  });
+});
+
+describe("computeCatalogueGaps", () => {
+  it("counts each gap independently", () => {
+    const rows = [
+      row({ cover_url: "https://x/1.jpg", pages: 300, work_id: 1, enrichment_status: "done" }),
+      row({ cover_url: null, pages: 300, work_id: 2, enrichment_status: "done" }),
+      row({ cover_url: "https://x/3.jpg", pages: null, work_id: 3, enrichment_status: "pending" }),
+    ];
+    const gaps = computeCatalogueGaps(rows, { noGenre: 7, yearKnownCount: 2 });
+    expect(gaps.noCover).toBe(1);
+    expect(gaps.noPageCount).toBe(1);
+    expect(gaps.enrichmentPending).toBe(1);
+    expect(gaps.noGenre).toBe(7);
+    expect(gaps.noYear).toBe(1);
+  });
+
+  it("treats a book with no work link as an enrichment gap", () => {
+    // Enrichment hangs off the work, so an unlinked book is not merely 'not done' — it has no
+    // route to being enriched at all until a work exists.
+    const gaps = computeCatalogueGaps([row({ work_id: null })], {
+      noGenre: 0,
+      yearKnownCount: 0,
+    });
+    expect(gaps.enrichmentPending).toBe(1);
+  });
+
+  it("counts read-but-unrated only for read books", () => {
+    const gaps = computeCatalogueGaps(
+      [
+        row({ status: "read", work_id: 1, rating: null }),
+        row({ status: "read", work_id: 2, rating: 8 }),
+        row({ status: "unread", work_id: 3, rating: null }),
+      ],
+      { noGenre: 0, yearKnownCount: 3 },
+    );
+    expect(gaps.readUnrated).toBe(1);
+  });
+
+  it("treats a zero page count as missing", () => {
+    const gaps = computeCatalogueGaps([row({ pages: 0 })], {
+      noGenre: 0,
+      yearKnownCount: 1,
+    });
+    expect(gaps.noPageCount).toBe(1);
+  });
+});
+
+describe("computeOwningCounts", () => {
+  it("counts the ownership states the query admits", () => {
+    const counts = computeOwningCounts([
+      row({ owning_status: "owned" }),
+      row({ owning_status: "owned" }),
+      row({ owning_status: "lent_out" }),
+    ]);
+    expect(counts).toEqual({
+      owned: 2,
+      lent_out: 1,
+      unowned: 0,
+      want: 0,
+      unknown: 0,
+    });
+  });
+
+  it("files an unrecognized value under unknown rather than dropping it", () => {
+    // The shape is total so the client never has to guess at a missing key, and a count that
+    // silently vanished would make the breakdown disagree with `total`.
+    const counts = computeOwningCounts([row({ owning_status: "borrowed" })]);
+    expect(counts.unknown).toBe(1);
+  });
+});
+
+describe("computeExemplars", () => {
+  it("dates the oldest book by the work's year, not the reprint's", () => {
+    // The `extractYear` contract, applied where it matters most: a 2019 reprint of Frankenstein
+    // is the oldest book on the shelf, and saying "your oldest book is from 2019" would be the
+    // whole block reading as wrong.
+    const { oldest } = computeExemplars([
+      row({
+        isbn: "1",
+        title: "Frankenstein",
+        original_pub_date: "1818",
+        publish_date: "2019-07-01",
+      }),
+      row({ isbn: "2", title: "Dune", original_pub_date: "1965" }),
+    ]);
+    expect(oldest?.title).toBe("Frankenstein");
+    expect(oldest?.year).toBe(1818);
+  });
+
+  it("ignores a year outside the bounds rather than crowning it oldest", () => {
+    const { oldest } = computeExemplars([
+      row({ isbn: "1", title: "Bad data", original_pub_date: "0" }),
+      row({ isbn: "2", title: "Dune", original_pub_date: "1965" }),
+    ]);
+    expect(oldest?.title).toBe("Dune");
+  });
+
+  it("breaks an oldest tie on isbn so the block doesn't reshuffle between requests", () => {
+    const both = [
+      row({ isbn: "9780002", title: "Second", original_pub_date: "1818" }),
+      row({ isbn: "9780001", title: "First", original_pub_date: "1818" }),
+    ];
+    expect(computeExemplars(both).oldest?.title).toBe("First");
+    // Same rows, opposite order in from D1 — same answer out.
+    expect(computeExemplars([...both].reverse()).oldest?.title).toBe("First");
+  });
+
+  it("picks the longest book by page count, ties broken on isbn", () => {
+    const { longest } = computeExemplars([
+      row({ isbn: "9780003", title: "Short", pages: 120 }),
+      row({ isbn: "9780002", title: "Long B", pages: 1216 }),
+      row({ isbn: "9780001", title: "Long A", pages: 1216 }),
+    ]);
+    expect(longest?.title).toBe("Long A");
+    expect(longest?.pages).toBe(1216);
+  });
+
+  it("names the only book in its language", () => {
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en" }),
+      row({ isbn: "2", title: "B", language: "en" }),
+      row({ isbn: "3", title: "L'Étranger", language: "fr" }),
+    ]);
+    expect(soleLanguage?.title).toBe("L'Étranger");
+    expect(soleLanguage?.language).toBe("fr");
+  });
+
+  it("leaves soleLanguage null when no language has exactly one book", () => {
+    // The monolingual library — the common case, and the reason the row hides rather than
+    // announcing "your only book in English" about a shelf that is entirely English.
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", language: "en" }),
+      row({ isbn: "2", language: "en" }),
+      row({ isbn: "3", language: "de" }),
+      row({ isbn: "4", language: "de" }),
+    ]);
+    expect(soleLanguage).toBeNull();
+  });
+
+  it("leaves soleLanguage null for a one-book library", () => {
+    // Trivially true of the only book there is, and it would just repeat the `oldest` row.
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en", original_pub_date: "1990" }),
+    ]);
+    expect(soleLanguage).toBeNull();
+  });
+
+  it("returns every exemplar null for an empty library", () => {
+    expect(computeExemplars([])).toEqual({
+      oldest: null,
+      longest: null,
+      soleLanguage: null,
+    });
+  });
+
+  it("returns null for an exemplar nothing can answer", () => {
+    // Books with no year and no page count: the block still renders whatever it can fill.
+    const exemplars = computeExemplars([
+      row({ isbn: "1", language: "en" }),
+      row({ isbn: "2", language: "fr" }),
+    ]);
+    expect(exemplars.oldest).toBeNull();
+    expect(exemplars.longest).toBeNull();
+    expect(exemplars.soleLanguage).not.toBeNull();
+  });
+
+  it("ignores a zero page count rather than calling it the longest book", () => {
+    const { longest } = computeExemplars([
+      row({ isbn: "1", pages: 0 }),
+      row({ isbn: "2", pages: 0 }),
+    ]);
+    expect(longest).toBeNull();
   });
 });

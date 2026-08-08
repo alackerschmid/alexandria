@@ -1,16 +1,18 @@
 <template>
+  <!-- Home scrolls. The old `md:h-screen overflow-hidden` shell fitted a grid of numbers into one
+       viewport; this page shows covers, which need room. -->
   <div
-    class="bg-charcoal min-h-screen md:h-screen flex flex-col overflow-hidden"
+    class="bg-charcoal min-h-screen flex flex-col"
     :class="{ 'blur-sm': firstnameDialog }"
   >
     <AppHeader />
 
-    <!-- Top band: greeting + scan CTA -->
-    <div class="shrink-0 px-6 md:px-14 pt-5 pb-3 md:py-8">
+    <!-- Welcome band -->
+    <div class="shrink-0 w-full max-w-300 mx-auto px-6 md:px-10 pt-5 md:pt-8 pb-3">
       <div
         class="flex flex-col md:flex-row md:items-end md:justify-between gap-6 md:gap-16"
       >
-        <div>
+        <div class="min-w-0">
           <p
             class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon mb-4"
           >
@@ -64,301 +66,110 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
+    <div v-if="loading" class="flex-1 flex items-center justify-center py-20">
       <v-progress-circular indeterminate color="primary" size="24" width="2" />
     </div>
 
-    <!-- Empty state -->
+    <!-- Empty states. Two of them, matching `/stats`: a genuinely empty library, and one whose
+         books all sit outside the current collection scope — a Goodreads import writes every row
+         at owning_status "unknown", where "scan your first book" would be plainly false. -->
     <div
       v-else-if="statsData && statsData.total === 0"
-      class="flex-1 flex flex-col items-center justify-center gap-3 px-6"
+      class="flex-1 flex flex-col items-center justify-center gap-3 px-6 py-20"
     >
-      <p class="font-heading font-bold text-3xl text-text-primary text-center">
-        {{ $t("home.dashboard_empty_heading") }}
-      </p>
-      <p class="text-sm text-text-secondary text-center max-w-xs">
-        {{ $t("home.dashboard_empty_body") }}
-      </p>
+      <!-- Also gated on the scope: after a failed refetch the payload can lag the pill, and a
+           switch-to-all button while the preference already reads All would be inert. -->
+      <template v-if="unscopedCount > 0 && scope === 'owned'">
+        <p class="font-heading font-bold text-3xl text-text-primary text-center">
+          {{ $t("home.empty_scoped_heading") }}
+        </p>
+        <p class="text-sm text-text-secondary text-center max-w-sm">
+          {{ $t("home.empty_scoped_body", { count: unscopedCount }) }}
+        </p>
+        <AppButton class="mt-2" @click="scope = 'all'">
+          {{ $t("home.empty_scoped_action") }}
+        </AppButton>
+      </template>
+      <template v-else>
+        <p class="font-heading font-bold text-3xl text-text-primary text-center">
+          {{ $t("home.dashboard_empty_heading") }}
+        </p>
+        <p class="text-sm text-text-secondary text-center max-w-xs">
+          {{ $t("home.dashboard_empty_body") }}
+        </p>
+      </template>
     </div>
 
-    <!-- Dashboard -->
+    <!-- Content. pb-28 on mobile clears the fixed bottom tab bar. -->
     <div
       v-else-if="statsData"
-      class="flex-1 md:min-h-0 overflow-y-auto px-6 md:px-14 pb-28 md:pb-8 flex flex-col gap-5"
+      class="flex-1 w-full max-w-300 mx-auto px-6 md:px-10 pb-28 md:pb-10 flex flex-col gap-6 md:gap-8"
     >
-      <!-- Random first line spotlight -->
-      <div v-if="randomQuote" class="shrink-0">
-        <p
-          class="font-mono text-[15px] md:text-[17px] text-text-primary leading-snug"
-        >
-          "{{ randomQuote.firstLine }}"
-        </p>
-        <p
-          class="font-mono text-[10px] tracking-[0.15em] uppercase text-text-secondary mt-1.5"
-        >
-          — {{ randomQuote.title }}
-        </p>
-      </div>
+      <!-- From the shelf -->
+      <section v-if="spotlightPool.length" class="pt-2">
+        <h2 class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon mb-4">{{ $t("home.shelf_title") }}</h2>
+        <ShelfSpotlight :books="spotlightPool" />
+      </section>
 
-      <!-- Stat tiles: 2×3 mobile, 5-col desktop -->
+      <!-- Recently added -->
+      <section v-if="recent.length" class="pt-5 border-t border-charcoal-border">
+        <header class="flex justify-between items-baseline gap-3 mb-4">
+          <h2
+            class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon"
+          >
+            {{ $t("home.recently_added") }}
+          </h2>
+          <router-link
+            :to="{ name: 'library' }"
+            class="font-mono text-[10px] tracking-[0.14em] text-text-secondary hover:text-text-primary transition-colors"
+          >
+            {{ $t("home.recent_all", { count: statsData.total.toLocaleString() }) }}
+            &rarr;
+          </router-link>
+        </header>
+        <RecentlyAdded :books="recent" />
+      </section>
+
+      <!-- Gaps + oddities -->
       <div
-        class="grid grid-cols-2 md:grid-cols-5 border-t border-l border-charcoal-border shrink-0"
+        v-if="gapRows.length || hasOddities"
+        class="flex flex-col md:flex-row gap-6 md:gap-9 pt-5 border-t border-charcoal-border"
       >
-        <div
-          v-for="tile in statTiles"
-          :key="tile.key"
-          class="border-r border-b border-charcoal-border px-[18px] py-[16px] md:px-[22px] md:py-[18px] flex flex-col"
+        <section v-if="gapRows.length" class="flex-1 min-w-0">
+          <h2 class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon mb-1.5">{{ $t("home.gaps_title") }}</h2>
+          <ShelfGaps :rows="gapRows" />
+          <router-link
+            v-if="incompleteSeries.length > GAP_ROWS"
+            :to="{ name: 'stats' }"
+            class="inline-block mt-3.5 font-mono text-[10px] tracking-[0.14em] uppercase text-orange-neon hover:opacity-70 transition-opacity"
+          >
+            {{ $t("home.gaps_all", { count: incompleteSeries.length }) }} &rarr;
+          </router-link>
+        </section>
+
+        <!-- The divider between the two columns belongs to whichever one is second, so a page
+             with no series gaps doesn't draw a rule against the row's own top border. -->
+        <section
+          v-if="hasOddities"
+          class="w-full md:flex-none"
+          :class="
+            gapRows.length
+              ? 'md:w-82.5 border-t border-charcoal-border pt-5 md:border-t-0 md:pt-0 md:border-l md:border-charcoal-border md:pl-9'
+              : 'md:w-full'
+          "
         >
-          <div class="flex items-center gap-2 mb-3">
-            <span
-              class="w-[7px] h-[7px] rounded-full shrink-0"
-              :style="{ background: tile.color }"
-            ></span>
-            <span
-              class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary"
-              >{{ tile.label }}</span
-            >
-          </div>
-          <div class="flex items-baseline gap-2 mb-3">
-            <span
-              class="font-heading font-bold text-[1.8rem] md:text-[2.4rem] leading-none text-text-primary"
-              >{{ tile.value }}</span
-            >
-            <span class="font-mono text-[9px] text-text-secondary">{{
-              tile.pctLabel
-            }}</span>
-          </div>
-          <div class="h-[3px] bg-charcoal-border relative">
-            <div
-              class="absolute left-0 top-0 bottom-0 transition-[width] duration-700"
-              :style="{ width: tile.barWidth, background: tile.color }"
-            ></div>
-          </div>
-        </div>
+          <h2 class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon mb-1.5">{{ $t("home.oddities_title") }}</h2>
+          <ShelfOddities :exemplars="statsData.exemplars" />
+        </section>
       </div>
 
-      <!-- Two columns -->
-      <div class="flex flex-col md:flex-row gap-5 md:gap-9 flex-1 md:min-h-0">
-        <!-- Left: at-a-glance + by-the-numbers -->
-        <div class="flex-1 min-w-0 flex flex-col gap-5">
-          <!-- Collection at a glance -->
-          <div
-            class="border border-charcoal-border px-[22px] py-[18px] md:px-[26px] md:py-[22px] shrink-0"
-          >
-            <div class="flex justify-between items-baseline mb-4">
-              <span
-                class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon"
-                >{{ $t("home.glance_title") }}</span
-              >
-              <AppSelect
-                v-model="glanceMode"
-                :options="dimensionOptions"
-                :min-width="140"
-              />
-            </div>
-            <div class="flex h-3 gap-0.5 mb-4">
-              <div
-                v-for="seg in glanceData"
-                :key="seg.label"
-                class="transition-[width] duration-500"
-                :style="{ width: seg.pctWidth, background: seg.color }"
-              ></div>
-            </div>
-            <div class="grid grid-cols-2 md:grid-cols-3 gap-y-2 gap-x-5">
-              <div
-                v-for="seg in glanceData"
-                :key="seg.label"
-                class="flex items-center gap-2"
-              >
-                <span
-                  class="w-2 h-2 shrink-0"
-                  :style="{ background: seg.color }"
-                ></span>
-                <span
-                  class="flex-1 min-w-0 text-[11px] text-text-primary truncate"
-                  >{{ seg.label }}</span
-                >
-                <span class="font-mono text-[10px] text-text-secondary">{{
-                  seg.pctLabel
-                }}</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- By the numbers -->
-          <div
-            class="flex flex-col md:flex-row gap-5 md:gap-0 flex-1 md:min-h-0"
-          >
-            <div class="md:w-[280px] md:shrink-0 flex flex-col justify-start">
-              <p
-                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mb-2.5 md:mb-[clamp(2px,0.5svh,10px)]"
-              >
-                {{ $t("home.median_year") }}
-              </p>
-              <p
-                v-if="statsData.medianYear != null"
-                class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
-              >
-                {{ statsData.medianYear }}
-              </p>
-              <p
-                v-else
-                class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
-              >
-                —
-              </p>
-              <p class="text-[13px] text-text-secondary leading-snug mt-3 md:mt-[clamp(2px,0.6svh,12px)]">
-                {{ $t("home.median_year_desc") }}
-              </p>
-              <p
-                class="font-mono text-[8px] tracking-[0.22em] uppercase text-text-secondary mt-4 pt-4 md:mt-[clamp(6px,1.6svh,16px)] md:pt-[clamp(6px,1.6svh,16px)] border-t border-charcoal-border mb-2.5 md:mb-[clamp(2px,0.5svh,10px)]"
-              >
-                {{ $t("home.avg_length") }}
-              </p>
-              <p class="flex items-baseline gap-2">
-                <span
-                  v-if="statsData.avgPages != null"
-                  class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-[0.85] tracking-[-0.02em] text-text-primary"
-                  >{{ formatCount(statsData.avgPages) }}</span
-                >
-                <span
-                  v-else
-                  class="font-heading font-bold text-[3.5rem] md:text-[clamp(1.5rem,5.2svh,82px)] leading-none text-text-secondary"
-                  >—</span
-                >
-                <span
-                  v-if="statsData.avgPages != null"
-                  class="font-heading font-bold text-[14px] text-orange-neon"
-                  >{{ $t("home.unit_pp") }}</span
-                >
-              </p>
-              <p class="text-[13px] text-text-secondary leading-snug mt-3 md:mt-[clamp(2px,0.6svh,12px)]">
-                {{ $t("home.avg_length_desc") }}
-              </p>
-            </div>
-            <div
-              class="md:flex-1 border-t md:border-t-0 border-charcoal-border pt-4 md:pt-0 md:pl-9 flex flex-col justify-start"
-            >
-              <div
-                v-for="item in trioItems"
-                :key="item.key"
-                class="flex items-baseline justify-between py-[13px] md:py-[clamp(2px,0.8svh,13px)] border-b border-charcoal-border"
-              >
-                <span
-                  class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary"
-                  >{{ item.kicker }}</span
-                >
-                <span class="flex items-baseline gap-1.5">
-                  <span
-                    class="font-heading font-bold text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
-                    >{{ item.value ?? "—" }}</span
-                  >
-                  <span
-                    v-if="item.unit"
-                    class="font-heading font-bold text-[14px] text-orange-neon"
-                    >{{ item.unit }}</span
-                  >
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right: top authors -->
-        <div
-          class="md:w-[330px] md:shrink-0 border-t md:border-t-0 md:border-l border-charcoal-border pt-5 md:pt-0 md:pl-9 flex flex-col"
-        >
-          <div
-            class="flex justify-between items-baseline mb-5 md:mb-[clamp(8px,1.5svh,20px)]"
-          >
-            <span
-              class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon"
-              >{{ $t("home.most_represented") }}</span
-            >
-            <AppSelect
-              v-model="mostRepMode"
-              :options="dimensionOptions"
-              :min-width="140"
-            />
-          </div>
-          <div class="flex flex-col gap-4 md:gap-[clamp(6px,1.2svh,16px)]">
-            <div
-              v-for="(item, i) in mostRepresentedData"
-              :key="item.name"
-              :class="i >= 4 ? 'hidden md:block' : ''"
-            >
-              <div class="flex justify-between items-baseline mb-[7px]">
-                <span
-                  class="font-heading font-bold text-[14px] text-text-primary"
-                  >{{ item.name }}</span
-                >
-                <span class="font-mono text-[11px] text-text-secondary">{{
-                  item.count
-                }}</span>
-              </div>
-              <div class="h-[3px] bg-charcoal-border relative">
-                <div
-                  class="absolute left-0 top-0 bottom-0"
-                  :style="{ width: item.barWidth, background: item.color }"
-                ></div>
-              </div>
-            </div>
-          </div>
-          <!-- Translation ratio -->
-          <div
-            v-if="statsData.translationRatio"
-            class="mt-5 pt-2 md:mt-[clamp(8px,1.5svh,20px)] md:pt-[clamp(4px,0.8svh,8px)] border-t border-charcoal-border"
-          >
-            <div class="flex items-baseline justify-between">
-              <span
-                class="font-mono text-[9px] tracking-[0.2em] uppercase text-text-secondary"
-                >{{ $t("home.translation_ratio") }}</span
-              >
-              <span class="flex items-baseline gap-1.5">
-                <span
-                  class="font-heading font-bold text-[28px] md:text-[clamp(13px,2svh,28px)] leading-none text-text-primary"
-                  >{{ statsData.translationRatio.pct }}</span
-                >
-                <span
-                  class="font-heading font-bold text-[14px] text-orange-neon"
-                  >%</span
-                >
-              </span>
-            </div>
-            <div class="h-[3px] bg-charcoal-border relative mt-2">
-              <div
-                class="absolute left-0 top-0 bottom-0"
-                :style="{
-                  width: statsData.translationRatio.pct + '%',
-                  background: 'rgb(var(--v-theme-primary))',
-                }"
-              ></div>
-            </div>
-          </div>
-
-          <!-- Decade × genre rotator -->
-          <div
-            v-if="currentDecadeGenre"
-            class="mt-5 pt-4 md:mt-[clamp(8px,1.5svh,20px)] md:pt-[clamp(6px,1.2svh,16px)] border-t border-charcoal-border"
-          >
-            <transition name="fade" mode="out-in">
-              <p
-                :key="currentDecadeGenre.decade"
-                class="text-[13px] text-text-secondary leading-snug"
-              >
-                {{
-                  $t("home.decade_genre_line", {
-                    decade: currentDecadeGenre.decade,
-                    genre: currentDecadeGenre.genre,
-                    count: currentDecadeGenre.count,
-                    total: currentDecadeGenre.total_count,
-                  })
-                }}
-              </p>
-            </transition>
-          </div>
-        </div>
-      </div>
+      <!-- The other half of the split: home names books, `/stats` counts them. -->
+      <router-link
+        :to="{ name: 'stats' }"
+        class="self-center mt-2 font-mono text-[10px] tracking-[0.2em] uppercase text-orange-neon hover:opacity-70 transition-opacity"
+      >
+        {{ $t("home.see_all_stats") }} &rarr;
+      </router-link>
     </div>
 
     <!-- First-name onboarding dialog -->
@@ -422,83 +233,55 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
+import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useAuthStore } from "@/stores/auth";
-import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
+import { useStatsDefaultsStore } from "@/stores/statsDefaults";
 import AppHeader from "@/components/AppHeader.vue";
-import AppSelect from "@/components/AppSelect.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppButton from "@/components/AppButton.vue";
+import ShelfSpotlight from "@/components/home/ShelfSpotlight.vue";
+import RecentlyAdded from "@/components/home/RecentlyAdded.vue";
+import ShelfGaps from "@/components/home/ShelfGaps.vue";
+import ShelfOddities from "@/components/home/ShelfOddities.vue";
 import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
-import { useGroupDimensions } from "@/composables/useGroupDimensions";
-import { STATUS_META } from "@/composables/useBookStatus";
+import type { SeriesMemberships } from "@/composables/useShelfGroups";
 import { BCP47 } from "@/plugins/i18n";
-import { emptyRatingDistribution, type CollectionStats } from "@/types/stats";
-import type { GroupBy } from "@/types/library";
-import { languageDisplayFormatter } from "@/utils/language";
+import type { Book } from "@/types/book";
+import type { CollectionStats, SpotlightBook } from "@/types/stats";
+import { countOutsideScope, normalizeStats } from "@/utils/stats-view";
+import { createFetchSequencer } from "@/utils/fetch-seq";
+import { summarizeSeries } from "@/utils/series-completeness";
+
+/** Covers in the recently-added strip. Deliberately small — this is a landing page, not the
+ *  library, and the strip scrolls rather than paginating. */
+const RECENT_LIMIT = 12;
+/** Series named before the block defers to `/stats` for the rest. */
+const GAP_ROWS = 4;
 
 const { t } = useI18n();
 const authStore = useAuthStore();
-const themeStore = useThemeStore();
 const localeStore = useLocaleStore();
 const fieldDefsStore = useFieldDefsStore();
+// One collection-scope preference, two collection surfaces: home must not default to `owned`
+// independently, or an import-only library shows a blank home while `/stats` offers the fix.
+const { scope } = storeToRefs(useStatsDefaultsStore());
 const { apiFetch } = useApi();
-const { dimensionOptions } = useGroupDimensions();
+const { visible: errorToast, message: errorMessage, showToast } = useToast();
 
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const statsData = ref<CollectionStats | null>(null);
+const recent = ref<Book[]>([]);
+const memberships = ref<SeriesMemberships>({});
 const loading = ref(false);
-const {
-  visible: errorToast,
-  message: errorMessage,
-  showToast,
-} = useToast();
-const randomQuote = ref<{ title: string; firstLine: string } | null>(null);
-
-function normalizeStats(payload: any): CollectionStats {
-  return {
-    total: payload?.total ?? 0,
-    byStatus: {
-      read: payload?.byStatus?.read ?? 0,
-      reading: payload?.byStatus?.reading ?? 0,
-      unread: payload?.byStatus?.unread ?? 0,
-      dnf: payload?.byStatus?.dnf ?? 0,
-    },
-    genres: payload?.genres ?? [],
-    uncategorizedGenreCount: payload?.uncategorizedGenreCount ?? 0,
-    languages: payload?.languages ?? [],
-    languageCount: payload?.languageCount ?? 0,
-    topAuthors: payload?.topAuthors ?? [],
-    authorCount: payload?.authorCount ?? 0,
-    publishers: payload?.publishers ?? [],
-    forms: payload?.forms ?? [],
-    subjects: payload?.subjects ?? [],
-    countries: payload?.countries ?? [],
-    decades: payload?.decades ?? [],
-    decadeGenres: payload?.decadeGenres ?? [],
-    topSeries: payload?.topSeries ?? [],
-    customFields: payload?.customFields ?? [],
-    avgPages: payload?.avgPages ?? null,
-    totalPagesRead: payload?.totalPagesRead ?? null,
-    medianYear: payload?.medianYear ?? null,
-    yearKnownCount: payload?.yearKnownCount ?? 0,
-    genreCount: payload?.genreCount ?? 0,
-    avgRating: payload?.avgRating ?? null,
-    ratedCount: payload?.ratedCount ?? 0,
-    ratingDistribution: payload?.ratingDistribution ?? emptyRatingDistribution(),
-    translationRatio: payload?.translationRatio ?? null,
-    randomFirstLine: payload?.randomFirstLine ?? null,
-  };
-}
-
-function formatCount(value: number | null | undefined): string {
-  return value == null ? "—" : value.toLocaleString();
-}
+// Set once per page load and *not* replaced by a locale refetch — the quote shouldn't change
+// under the reader because they switched language.
+const spotlightPool = ref<SpotlightBook[]>([]);
 
 // ── First-name onboarding ─────────────────────────────────────────────────────
 
@@ -522,7 +305,7 @@ const saveFirstname = async () => {
   savingFirstname.value = false;
 };
 
-// ── Derived ───────────────────────────────────────────────────────────────────
+// ── Header ────────────────────────────────────────────────────────────────────
 
 const greeting = computed(() => {
   const hour = new Date().getHours();
@@ -545,7 +328,11 @@ const greeting = computed(() => {
   return t(`home.${key}`, { name });
 });
 
+// The status tiles are gone; the two counts they were worth survive here, and the full status
+// breakdown lives on `/stats`.
 const metaLine = computed(() => {
+  const s = statsData.value;
+  if (!s) return "";
   const locale = BCP47[localeStore.locale] ?? "en-GB";
   const dateStr = new Date().toLocaleDateString(locale, {
     weekday: "long",
@@ -554,340 +341,78 @@ const metaLine = computed(() => {
   });
   return t("home.meta", {
     date: dateStr,
-    count: (statsData.value?.total ?? 0).toLocaleString(),
+    count: s.total.toLocaleString(),
+    unread: s.byStatus.unread.toLocaleString(),
   });
 });
 
-// ── Color helpers ─────────────────────────────────────────────────────────────
+const unscopedCount = computed(() => countOutsideScope(statsData.value));
 
-const colorRamp = computed<string[]>(() =>
-  themeStore.isDark
-    ? [
-        "rgb(var(--v-theme-primary))",
-        "#b8afa6",
-        "#8a8078",
-        "#5c544e",
-        "#3a3631",
-        "#2a2724",
-      ]
-    : [
-        "rgb(var(--v-theme-primary))",
-        "#8a7a70",
-        "#5c5249",
-        "#3d3631",
-        "#2a2421",
-        "#c9c3bb",
-      ],
+// ── Blocks ────────────────────────────────────────────────────────────────────
+
+const incompleteSeries = computed(() =>
+  summarizeSeries(memberships.value).rows.filter((r) => !r.complete),
 );
 
-// ── Dimension data helper ─────────────────────────────────────────────────────
+const gapRows = computed(() => incompleteSeries.value.slice(0, GAP_ROWS));
 
-const langFmt = computed(() => languageDisplayFormatter(localeStore.locale));
-
-function getBreakdown(
-  mode: GroupBy,
-  stats: CollectionStats,
-): { label: string; count: number }[] {
-  switch (mode) {
-    case "genre":
-      return stats.genres;
-    case "language":
-      return stats.languages.map((l) => ({
-        label: langFmt.value(l.code),
-        count: l.count,
-      }));
-    case "author":
-      return stats.topAuthors;
-    case "series":
-      return stats.topSeries;
-    case "publisher":
-      return stats.publishers;
-    case "form":
-      return stats.forms;
-    case "country":
-      return stats.countries;
-    case "decade":
-      return stats.decades;
-    case "subject":
-      return stats.subjects;
-    case "status":
-      return []; // handled separately with fixed colors
-    case "none":
-      return [];
-    default: {
-      const m = (mode as string).match(/^cf:(\d+)$/);
-      if (m)
-        return (
-          stats.customFields.find((cf) => cf.fieldDefId === Number(m[1]))
-            ?.values ?? []
-        );
-      return [];
-    }
-  }
-}
-
-// ── At a glance ───────────────────────────────────────────────────────────────
-
-const glanceMode = ref<GroupBy>("genre");
-const mostRepMode = ref<GroupBy>("author");
-
-const glanceData = computed(() => {
-  if (!statsData.value) return [];
-  const { total, byStatus } = statsData.value;
-  const ramp = colorRamp.value;
-  const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
-  const pctStr = (n: number) => pctOf(n) + "%";
-
-  if (glanceMode.value === "status") {
-    return [
-      {
-        label: t("book.read"),
-        color: STATUS_META.read.themeColor,
-        pctWidth: pctStr(byStatus.read),
-        pctLabel: pctStr(byStatus.read),
-      },
-      {
-        label: t("book.unread"),
-        color: STATUS_META.unread.themeColor,
-        pctWidth: pctStr(byStatus.unread),
-        pctLabel: pctStr(byStatus.unread),
-      },
-      {
-        label: t("book.reading"),
-        color: STATUS_META.reading.themeColor,
-        pctWidth: pctStr(byStatus.reading),
-        pctLabel: pctStr(byStatus.reading),
-      },
-      {
-        label: t("book.dnf"),
-        color: STATUS_META.dnf.themeColor,
-        pctWidth: pctStr(byStatus.dnf),
-        pctLabel: pctStr(byStatus.dnf),
-      },
-    ].filter((s) => s.pctWidth !== "0%");
-  }
-
-  const top = getBreakdown(glanceMode.value, statsData.value).slice(0, 5);
-  const topTotal = top.reduce((s, a) => s + a.count, 0);
-  const otherCount = total - topTotal;
-  const segs = top.map((item, i) => ({
-    label: item.label,
-    color: ramp[i] ?? ramp.at(-1),
-    pctWidth: pctStr(item.count),
-    pctLabel: pctStr(item.count),
-  }));
-  if (otherCount > 0)
-    segs.push({
-      label: t("home.glance_other"),
-      color: ramp[5] ?? ramp[4],
-      pctWidth: pctStr(otherCount),
-      pctLabel: pctStr(otherCount),
-    });
-  return segs;
+const hasOddities = computed(() => {
+  const e = statsData.value?.exemplars;
+  return !!(e && (e.oldest || e.longest || e.soleLanguage));
 });
 
-// ── Most represented (right column) ──────────────────────────────────────────
+// ── Data ──────────────────────────────────────────────────────────────────────
 
-const mostRepresentedData = computed(() => {
-  if (!statsData.value) return [];
-  const { byStatus, total } = statsData.value;
-  const ramp = colorRamp.value;
-  const barWidth = (count: number, max: number) =>
-    max > 0 ? Math.round((count / max) * 100) + "%" : "0%";
+// Sequenced for the same reason as /stats: a scope or locale switch can re-trigger load()
+// while the previous request set is still in flight, and the stale set must not overwrite the
+// fresh one (`scope=all` is systematically the slower stats query, so it tends to land last).
+const nextLoad = createFetchSequencer();
 
-  if (mostRepMode.value === "status") {
-    const items = [
-      {
-        label: t("book.read"),
-        count: byStatus.read,
-        color: STATUS_META.read.themeColor,
-      },
-      {
-        label: t("book.unread"),
-        count: byStatus.unread,
-        color: STATUS_META.unread.themeColor,
-      },
-      {
-        label: t("book.reading"),
-        count: byStatus.reading,
-        color: STATUS_META.reading.themeColor,
-      },
-      {
-        label: t("book.dnf"),
-        count: byStatus.dnf,
-        color: STATUS_META.dnf.themeColor,
-      },
-    ].filter((s) => s.count > 0);
-    const max = total > 0 ? total : 1;
-    return items.map((s) => ({
-      name: s.label,
-      count: s.count,
-      barWidth: barWidth(s.count, max),
-      color: s.color,
-    }));
-  }
-
-  const items = getBreakdown(mostRepMode.value, statsData.value).slice(0, 6);
-  const max = items[0]?.count ?? 1;
-  return items.map((item, i) => ({
-    name: item.label,
-    count: item.count,
-    barWidth: barWidth(item.count, max),
-    color:
-      mostRepMode.value === "author" && i === 0
-        ? "rgb(var(--v-theme-primary))"
-        : mostRepMode.value === "author"
-          ? "var(--color-chart-muted)"
-          : (ramp[i] ?? ramp.at(-1)),
-  }));
-});
-
-// ── Stat tiles ────────────────────────────────────────────────────────────────
-
-const statTiles = computed(() => {
-  if (!statsData.value) return [];
-  const { total, byStatus } = statsData.value;
-  const pctOf = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
-  const totalColor = "var(--color-chart-total)";
-  return [
-    {
-      key: "total",
-      label: t("home.stat_total"),
-      value: formatCount(total),
-      pctLabel: "100%",
-      barWidth: "100%",
-      color: totalColor,
-    },
-    {
-      key: "read",
-      label: t("home.stat_read"),
-      value: formatCount(byStatus.read),
-      pctLabel: pctOf(byStatus.read) + "%",
-      barWidth: Math.max(pctOf(byStatus.read), byStatus.read > 0 ? 4 : 0) + "%",
-      color: STATUS_META.read.themeColor,
-    },
-    {
-      key: "unread",
-      label: t("home.stat_unread"),
-      value: formatCount(byStatus.unread),
-      pctLabel: pctOf(byStatus.unread) + "%",
-      barWidth: pctOf(byStatus.unread) + "%",
-      color: STATUS_META.unread.themeColor,
-    },
-    {
-      key: "reading",
-      label: t("home.stat_reading"),
-      value: formatCount(byStatus.reading),
-      pctLabel: pctOf(byStatus.reading) + "%",
-      barWidth:
-        Math.max(pctOf(byStatus.reading), byStatus.reading > 0 ? 4 : 0) + "%",
-      color: STATUS_META.reading.themeColor,
-    },
-    {
-      key: "dnf",
-      label: t("home.stat_dnf"),
-      value: formatCount(byStatus.dnf),
-      pctLabel: pctOf(byStatus.dnf) + "%",
-      barWidth: Math.max(pctOf(byStatus.dnf), byStatus.dnf > 0 ? 4 : 0) + "%",
-      color: STATUS_META.dnf.themeColor,
-    },
-  ];
-});
-
-// ── Decade × genre rotator ──────────────────────────────────────────────────────
-
-const decadeGenreIndex = ref(0);
-let decadeGenreTimer: ReturnType<typeof setInterval> | undefined;
-
-const currentDecadeGenre = computed(() => {
-  const list = statsData.value?.decadeGenres ?? [];
-  if (list.length === 0) return null;
-  return list[decadeGenreIndex.value % list.length];
-});
-
-// ── By the numbers ────────────────────────────────────────────────────────────
-
-const trioItems = computed(() => {
-  if (!statsData.value) return [];
-  const { totalPagesRead, decades, languageCount, authorCount, genreCount } =
-    statsData.value;
-  return [
-    {
-      key: "total_pages",
-      kicker: t("home.total_pages_read"),
-      value: formatCount(totalPagesRead),
-      unit: t("home.unit_pp"),
-    },
-    {
-      key: "decade",
-      kicker: t("home.richest_decade"),
-      value: decades[0]?.label ?? null,
-      unit: "",
-    },
-    {
-      key: "langs",
-      kicker: t("home.languages_label"),
-      value: languageCount > 0 ? languageCount : null,
-      unit: "",
-    },
-    {
-      key: "authors",
-      kicker: t("home.authors_label"),
-      value: authorCount > 0 ? authorCount : null,
-      unit: "",
-    },
-    {
-      key: "genres",
-      kicker: t("home.genres_label"),
-      value: genreCount > 0 ? genreCount : null,
-      unit: "",
-    },
-  ];
-});
-
-// ── Data fetching ─────────────────────────────────────────────────────────────
-
-const fetchStats = async () => {
+const load = async () => {
+  const isCurrent = nextLoad();
+  const locale = localeStore.locale;
+  // Owned by load() so a watcher-triggered refetch shows the spinner rather than the previous
+  // scope's blocks under an already-switched preference.
+  loading.value = true;
   try {
-    const res = await apiFetch(`/api/stats?locale=${localeStore.locale}`);
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch stats");
-    statsData.value = normalizeStats(data);
-    // Only set once per page load — locale-triggered refetches shouldn't change the quote.
-    if (randomQuote.value === null && data.randomFirstLine) {
-      randomQuote.value = data.randomFirstLine;
-    }
+    // Three requests rather than one, run in parallel. `/api/scans?limit=12` is far lighter than
+    // the library's 500-row page, and a landing page can afford the fan-out.
+    //
+    // Known divergence: `GET /api/scans` takes no `?scope=`, so the recently-added strip can
+    // include `want`/`unknown` books while the rest of the page is scoped. For an import-only
+    // library that is the friendlier miss — the strip still shows books. Same class of gap as
+    // the one `CatalogueGaps.vue` documents for its library deep-links.
+    const [statsRes, scansRes, seriesRes] = await Promise.all([
+      apiFetch(`/api/stats?locale=${locale}&scope=${scope.value}`),
+      apiFetch(
+        `/api/scans?limit=${RECENT_LIMIT}&sort=date_desc&locale=${locale}`,
+      ),
+      apiFetch(`/api/series?locale=${locale}`),
+    ]);
+
+    const statsBody = await statsRes.json();
+    // `/api/scans` answers with a bare array; anything else is a shape this page shouldn't
+    // render through, so the strip stays empty rather than the block half-painting.
+    const scansBody = scansRes.ok ? await scansRes.json() : null;
+    const seriesBody = seriesRes.ok ? await seriesRes.json() : null;
+    if (!isCurrent()) return; // superseded — a newer load() owns the page now
+    if (!statsRes.ok) throw new Error(statsBody.error || t("home.load_failed"));
+    statsData.value = normalizeStats(statsBody);
+    if (spotlightPool.value.length === 0)
+      spotlightPool.value = statsData.value.spotlight;
+
+    // Both secondary blocks degrade on their own rather than blanking the page — the pattern
+    // `/stats` already uses for its series fetch.
+    if (Array.isArray(scansBody)) recent.value = scansBody;
+    if (seriesBody) memberships.value = seriesBody;
   } catch (err: any) {
-    showToast(err.message, "error");
+    if (isCurrent()) showToast(err.message || t("home.load_failed"), "error");
+  } finally {
+    if (isCurrent()) loading.value = false;
   }
 };
 
-onMounted(async () => {
-  loading.value = true;
-  await Promise.all([fetchStats(), fieldDefsStore.load()]);
-  loading.value = false;
-  decadeGenreTimer = setInterval(() => {
-    decadeGenreIndex.value++;
-  }, 15_000);
-});
+onMounted(() => Promise.all([load(), fieldDefsStore.load()]));
 
-onUnmounted(() => {
-  if (decadeGenreTimer) clearInterval(decadeGenreTimer);
-});
-
-watch(
-  () => localeStore.locale,
-  () => fetchStats(),
-);
+watch([() => localeStore.locale, scope], () => load());
 </script>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

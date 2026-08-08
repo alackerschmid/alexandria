@@ -345,8 +345,10 @@ export const VALID_STATUSES = ["unread", "reading", "read", "dnf"] as const;
 
 // "unknown" is the deliberate no-assertion state: nothing is claimed about whether the user owns
 // the copy. It's what a Goodreads import writes (a shelf says nothing about ownership) and it is
-// excluded from every "owned" gate — series completeness (routes/catalog.ts) and the ownership
-// stats (routes/stats.ts) both key on `IN ('owned', 'lent_out')`.
+// excluded from every "owned" gate — series completeness (routes/catalog.ts) keys on
+// `IN ('owned', 'lent_out')` unconditionally, and `/api/stats` does too unless the caller asks
+// for `?scope=all`, which exists precisely because an import-only library is entirely "unknown"
+// and would otherwise measure as empty (see SCOPE_CLAUSES in routes/stats.ts).
 export const VALID_OWNING_STATUSES = [
   "owned",
   "unowned",

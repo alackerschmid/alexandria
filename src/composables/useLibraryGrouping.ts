@@ -4,7 +4,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { parseTagList } from "@/utils/tags";
 import { bookCustomValue } from "@/utils/custom-fields";
-import { sortByCreatedAt, authorNames } from "@/utils/book-display";
+import { sortByCreatedAt, authorNames, workYear } from "@/utils/book-display";
 import { languageDisplayFormatter } from "@/utils/language";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { Book, ReadStatus } from "@/types/book";
@@ -268,8 +268,11 @@ export function useLibraryGrouping(options: {
         });
       case "decade":
         return groupByValues(books, dir, locale, {
+          // Same year as the /stats decade histogram and the `year:` filter — `original_pub_date`
+          // alone left every book whose work isn't enriched yet in "Unclassified", which in a
+          // fresh library is most of it.
           values: (b) => {
-            const year = Number.parseInt(b.original_pub_date ?? "");
+            const year = Number.parseInt(workYear(b));
             return Number.isNaN(year) ? [] : [`${Math.floor(year / 10) * 10}s`];
           },
           missingKey: "__unclassified__",

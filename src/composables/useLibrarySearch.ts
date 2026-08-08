@@ -4,7 +4,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { parseTagList } from "@/utils/tags";
 import { bookCustomValue } from "@/utils/custom-fields";
 import { languageDisplayFormatter } from "@/utils/language";
-import { authorNames } from "@/utils/book-display";
+import { authorNames, bookYear, matchesYearPrefix } from "@/utils/book-display";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -30,7 +30,49 @@ const BUILTIN_KEYS = [
   "year",
   "subject",
   "location",
+  "missing",
 ];
+
+/**
+ * `missing:` — the absence facet. Every other key matches a value a book *has*, which left the
+ * catalogue gaps on the stats page with nowhere to link: "books with no cover" is not
+ * expressible as `cover:something`.
+ *
+ * A small closed enum rather than a general negation grammar (`-cover:`), because these four are
+ * the gaps worth acting on and a negation operator would have to answer much harder questions
+ * about how it composes with the free-text half of the query.
+ */
+const MISSING_VALUES = {
+  cover: (b: Book) => !b.cover_url,
+  // `bookYear` prefers the edition's publish_date and falls back to the work's original year,
+  // so this asks "no year from either source" — the same question the stats tile counts.
+  year: (b: Book) => !bookYear(b),
+  genre: (b: Book) => !b.genres?.length,
+  pages: (b: Book) => !b.number_of_pages_median,
+} as const satisfies Record<string, (b: Book) => boolean>;
+
+export type MissingFacet = keyof typeof MISSING_VALUES;
+
+export const MISSING_KEYS = Object.keys(MISSING_VALUES) as MissingFacet[];
+
+/** Absence chips, offered only where the pool actually has such a book — a "no cover" chip that
+ *  matches nothing is worse than no chip. Same present-in-pool rule as the status facets. */
+function missingFacets(
+  pool: Book[],
+  t: (key: string) => string,
+): SuggestionFacet[] {
+  const typeLabel = t("library.filter_missing");
+  return MISSING_KEYS.filter((val) => {
+    const isMissing = MISSING_VALUES[val];
+    return pool.some((b) => isMissing(b));
+  }).map((val) => ({
+    kind: "facet" as const,
+    token: `missing:${val}`,
+    icon: "mdi-help-circle-outline",
+    label: t(`library.missing_${val}`),
+    typeLabel,
+  }));
+}
 
 export interface ParsedSearch {
   status: ReadStatus | null;
@@ -45,6 +87,7 @@ export interface ParsedSearch {
   form: string;
   country: string;
   year: string;
+  missing: MissingFacet | null;
   subject: string;
   location: string;
   custom: Record<string, string>; // custom-field slug → search value
@@ -136,6 +179,7 @@ export function useLibrarySearch(options: {
     let year = "";
     let subject = "";
     let location = "";
+    let missing: MissingFacet | null = null;
     const custom: Record<string, string> = {};
     const remaining: string[] = [];
     const tokens: string[] = [];
@@ -176,6 +220,9 @@ export function useLibrarySearch(options: {
       } else if (key === "award" && val) {
         award = val;
         tokens.push(part.toLowerCase());
+      } else if (key === "missing" && val in MISSING_VALUES) {
+        missing = val as MissingFacet;
+        tokens.push(part.toLowerCase());
       } else if (simpleFields.has(key) && val) {
         simpleFields.get(key)!(val);
         tokens.push(part);
@@ -203,6 +250,7 @@ export function useLibrarySearch(options: {
       year,
       subject,
       location,
+      missing,
       custom,
       text: remaining.join(" ").toLowerCase(),
       tokens,
@@ -233,6 +281,7 @@ export function useLibrarySearch(options: {
       year,
       subject,
       location,
+      missing,
       custom,
       text,
     } = parsedSearch.value;
@@ -286,10 +335,11 @@ export function useLibrarySearch(options: {
         b.countries_of_origin?.some((c) => c.toLowerCase().includes(country)),
       );
     }
+    // Prefix-matched on the work's year (`matchesYearPrefix`), so `year:200` is "the 2000s" —
+    // precisely what the /stats decade histogram links to. See the predicate's own note for
+    // why it is a prefix match over `workYear` and not a substring over `original_pub_date`.
     if (year) {
-      list = list.filter((b) =>
-        b.original_pub_date?.toLowerCase().includes(year),
-      );
+      list = list.filter((b) => matchesYearPrefix(b, year));
     }
     if (subject) {
       list = list.filter((b) =>
@@ -300,6 +350,10 @@ export function useLibrarySearch(options: {
       list = list.filter((b) =>
         b.narrative_locations?.some((l) => l.toLowerCase().includes(location)),
       );
+    }
+    if (missing) {
+      const isMissing = MISSING_VALUES[missing];
+      list = list.filter((b) => isMissing(b));
     }
     for (const [slug, val] of Object.entries(custom)) {
       const def = customSlugMap.value.get(slug);
@@ -377,6 +431,8 @@ export function useLibrarySearch(options: {
           typeLabel: owningLabel,
         });
     }
+
+    entries.push(...missingFacets(pool, t));
 
     // Resolve a book's custom-field value entries to their meta in one lookup,
     // avoiding a per-field scan of custom_field_values for every book.

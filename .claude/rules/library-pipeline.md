@@ -30,7 +30,23 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
 - `useLibrarySearch.ts` — text and filter search (`status:unread` and friends). Most of what it
   matches is per-edition; `review` is the exception — it comes from the `work_ratings` join and
   is identical across every edition of a work, which is why including it in the free-text match
-  is safe upstream of collapsing (see below)
+  is safe upstream of collapsing (see below).
+
+  **`missing:` is the absence facet** — `missing:cover|year|genre|pages`, a small closed enum in
+  `MISSING_VALUES`. Every other key matches a value a book *has*, which left the `/stats`
+  catalogue gaps with nowhere to link: "books with no cover" isn't expressible as
+  `cover:something`. Deliberately not a general negation grammar (`-cover:`), which would have
+  to answer much harder questions about composing with the free-text half of the query. Its
+  autocomplete chips are offered only where the current pool actually contains such a book,
+  same present-in-pool rule as the status facets
+
+  **`year:` is a prefix match, not a substring one**, over `workYear(b)` — so `year:1990` is a
+  year and `year:199` is the 1990s, which is what the `/stats` decade histogram deep-links to.
+  Both halves matter: a substring read also matched `year:200` against a book from 1200, and
+  reading `original_pub_date` directly (as this and the `decade` grouping both used to) drops
+  every book whose work isn't enriched yet — most of a young library — even though `/stats` has
+  already placed it in a decade off the edition's `publish_date`. `workYear` is that fallback,
+  and it is the only definition of a book's year the three surfaces are allowed to share
 - `useEditionGrouping.ts` — collapses same-work editions into one synthetic card per work.
   **Must run downstream of search**, so filters match real per-edition fields rather than a
   collapsed card's representative values

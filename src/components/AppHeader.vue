@@ -23,9 +23,8 @@
         >
           {{ link.label }}
         </router-link>
-        <!-- Not part of useNavLinks: that list is also what MobileTabBar slices its two side
-             slots out of, and a fifth entry would silently push one off the bar. This is a
-             transient destination anyway, present only while an import is unfinished.
+        <!-- Not part of useNavLinks: this is a transient destination, present only while an
+             import is unfinished, so it doesn't belong in the app's permanent nav.
              Auth-gated like the chip in App.vue: the session outlives a logout (it lives in
              localStorage and rehydrates on boot), so without this the header on `/` and
              `/login` would offer a link the route guard bounces — and tell whoever signs in
@@ -43,8 +42,9 @@
           <span class="w-1.5 h-1.5 rounded-full flex-none" :class="importDotClass" />
           {{ $t("home.nav_import") }}
         </router-link>
-        <!-- Also outside useNavLinks, for the same four-entry reason. Shown from a flag the
-             login response sets; the route guard and every /api/admin call check again. -->
+        <!-- Also outside useNavLinks: an admin-only destination most accounts never see.
+             Shown from a flag the login response sets; the route guard and every /api/admin
+             call check again. -->
         <router-link
           v-if="authStore.isAdmin"
           :to="{ name: 'admin' }"
@@ -115,6 +115,25 @@
               v-if="authStore.isAuthenticated"
               class="border-t border-charcoal-border my-1"
             />
+            <!-- Mobile-only: the desktop nav already carries Settings, but the mobile header
+                 has no nav at all and the bottom bar has two side slots for four destinations.
+                 Settings is the one it deprioritizes, so this is its second way in. -->
+            <router-link
+              v-if="authStore.isAuthenticated"
+              :to="{ name: 'settings' }"
+              role="menuitem"
+              class="md:hidden w-full flex items-center gap-3 px-4 py-2.5 hover:opacity-70 transition-opacity"
+            >
+              <v-icon
+                icon="mdi-cog-outline"
+                size="14"
+                class="text-text-secondary shrink-0"
+              />
+              <span
+                class="text-[11px] tracking-widest uppercase text-text-primary"
+                >{{ $t("settings.nav_label") }}</span
+              >
+            </router-link>
             <button
               v-if="authStore.isAuthenticated"
               role="menuitem"

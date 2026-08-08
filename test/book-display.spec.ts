@@ -4,6 +4,8 @@ import {
   pickRepresentativeEdition,
   publishYear,
   bookYear,
+  workYear,
+  matchesYearPrefix,
   d1TimestampMs,
   formatDateTime,
   formatPublishDate,
@@ -116,6 +118,72 @@ describe("publishYear", () => {
     });
     expect(bookYear(b)).toBe("2004");
     expect(bookYear({ ...b, publish_date: null })).toBe("1936");
+  });
+});
+
+describe("workYear", () => {
+  it("prefers the work's original date over the edition's — the mirror of bookYear", () => {
+    const b = book(1, 10, {
+      publish_date: "January 1, 2004",
+      original_pub_date: "1936",
+    });
+    expect(workYear(b)).toBe("1936");
+    expect(bookYear(b)).toBe("2004");
+  });
+
+  it("falls back to the edition's date, which is the whole point", () => {
+    // `original_pub_date` arrives with Wikidata enrichment, so it is null for most of a young
+    // library. Without this fallback the `year:` filter and the decade grouping answered
+    // "unknown" for those books while /stats had already placed them in a decade.
+    const b = book(1, 10, {
+      publish_date: "2004-01-15",
+      original_pub_date: null,
+    });
+    expect(workYear(b)).toBe("2004");
+  });
+
+  it("is empty only when neither date carries a year", () => {
+    expect(
+      workYear(book(1, 10, { publish_date: null, original_pub_date: null })),
+    ).toBe("");
+    expect(
+      workYear(book(1, 10, { publish_date: "n.d.", original_pub_date: "" })),
+    ).toBe("");
+  });
+});
+
+describe("matchesYearPrefix", () => {
+  it("treats a 3-digit prefix as a decade — the /stats histogram's deep link", () => {
+    expect(
+      matchesYearPrefix(book(1, 10, { original_pub_date: "2004" }), "200"),
+    ).toBe(true);
+  });
+
+  it("is a prefix match, not a substring one — year:200 must not match 1200", () => {
+    // The regression this pins: the old substring read (`original_pub_date.includes("200")`)
+    // returned a book from 1200 for "the 2000s".
+    expect(
+      matchesYearPrefix(book(1, 10, { original_pub_date: "1200" }), "200"),
+    ).toBe(false);
+  });
+
+  it("matches through the publish_date fallback — the unenriched-library case", () => {
+    // A book the histogram placed by the edition's date must come back from the bar's link.
+    expect(
+      matchesYearPrefix(
+        book(1, 10, { publish_date: "2004-01-15", original_pub_date: null }),
+        "200",
+      ),
+    ).toBe(true);
+  });
+
+  it("never matches a book with no resolvable year", () => {
+    expect(
+      matchesYearPrefix(
+        book(1, 10, { publish_date: "n.d.", original_pub_date: null }),
+        "200",
+      ),
+    ).toBe(false);
   });
 });
 

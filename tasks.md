@@ -20,7 +20,9 @@ Conventions used below:
 | D1–D7 | **Done** — see `tasks_completed.md` (`fix/audit-process-hardening`). D1 still needs two Cloudflare-dashboard actions, named there |
 | E1, E3, E5, E6, E7 | **Done** — see `tasks_completed.md` (`feat/e-block-polish`) |
 | E2, E4 | **Dropped** — removed from the backlog, not built |
-| F | Open — below |
+| F3 | **Done** — `/stats` shipped on `feat/stats-page`; manual QA pass still owed (see the task) |
+| F3b | **Done** — home reworked to match on `feat/home-rework`; manual QA pass still owed (see the task) |
+| F (rest) | Open — below |
 
 ---
 
@@ -36,11 +38,61 @@ Conventions used below:
   - **Frontend:** replace the decoy's `@click.prevent` with a blob download; both locales.
 - **Done when:** a library exports to CSV, that CSV re-imports through the existing wizard cleanly, JSON contains every field including overrides/ratings/reviews/custom fields, and `worker/CLAUDE.md` lists the route. No migration needed.
 
-### F3. Dedicated `/stats` page (M)
+### F3. Dedicated `/stats` page (M) — **Done** (`feat/stats-page`)
 
-- **Today:** `home.vue` is a fixed-height teaser; `worker/src/routes/stats.ts` already computes ~10 breakdown dimensions (publishers, forms, subjects, countries, decades, decade×genre) the dashboard shows 5–6 of.
-- **Scope:** a `/stats` route reusing `getBreakdown`/`useGroupDimensions`; full-length bars, decade histogram, pages histogram, rating distribution. Mostly frontend; put any new computation helpers in `src/utils/` as pure functions so they're unit-testable (policy). Nav entry in header + mobile tab bar; both locales.
-- **Already served by the API:** E1 added `avgRating`, `ratedCount` and `ratingDistribution` (11 dense buckets, 0–10) to `GET /api/stats` and nothing renders them yet — the rating histogram is a pure frontend job.
+Built from the `Stats v2` / `Stats mobile v2` mockups, which went beyond the original scope; every
+block in them was built. Beyond the plan as written:
+
+- **Worker:** one `LEFT JOIN work_ratings` + three columns on the existing main query backed four
+  new blocks — `pageBuckets`/`totalPages`, `genreRatings`, `catalogueGaps`, `owningStatus`, plus
+  `countryCount`. `topAuthors` raised 6 → 15; `decades` uncapped (a histogram can't take a
+  top-N-by-count slice). No migration.
+- **Pure helpers:** `src/utils/stats-view.ts` (extracted from `home.vue`, which now shares it) and
+  `src/utils/series-completeness.ts`. Series completeness needed no new API — `GET /api/series`
+  already carries the `owned` flag `useShelfGroups` uses.
+- **`MobileTabBar` had a live bug**, not just a latent one: it sliced two side slots out of a
+  filtered list and indexed `[0]`/`[1]`, so a fourth section silently dropped Settings. Now driven
+  by an explicit `MOBILE_SLOT_PRIORITY`, with Settings given a second route in via the account menu.
+- **`missing:` search key** (`cover|year|genre|pages`) added so the catalogue-gap rows have
+  somewhere to link — no other key expresses absence.
+
+**Deliberately not built:** the mockup's All/Read/Unread scope pills (page is unscoped, matching
+what the API does).
+
+**Known divergence worth a follow-up:** a gap row's count is gated on
+`owning_status IN ('owned','lent_out')` but its library link isn't, so the linked view can list
+more books than the count. No single `owning:` value expresses "owned or lent out"; documented in
+`CatalogueGaps.vue`.
+
+**Still owed:** a manual QA pass under a non-default paper/typeface preset, and on a real phone
+(the layout was checked at 430px in a desktop browser).
+
+### F3b. Home page rework (M) — **Done** (`feat/home-rework`)
+
+`/stats` absorbed eight of home's ~12 blocks, leaving home a smaller, worse copy of it. The two
+pages now split by **mode**: `/stats` aggregates and never names a book, home particularises and
+shows almost no numbers. Stated as an invariant in `src/CLAUDE.md`.
+
+- **Removed:** both dimension pickers, the five status tiles (Read/Reading/DNF is the reading
+  framing being moved away from — the counts survive in the meta line and as `/stats`'s `status`
+  breakdown), median year, average length, the trio items, the decade×genre rotator, and the
+  `md:h-screen overflow-hidden` shell. Home scrolls now; covers need room.
+- **Built:** `src/components/home/{ShelfSpotlight,RecentlyAdded,ShelfGaps,ShelfOddities}.vue`.
+- **Worker:** `computeExemplars` + a 5-book `spotlight` pool on the existing queries — two extra
+  columns on the main SELECT, no new query, no migration. `randomFirstLine` retained.
+- **No `date_read`/`date_started` and no "currently reading" anywhere**, deliberately. "Recently
+  added" stays: acquisition is the core collection event, and the Goodreads import backdating
+  `created_at` from "Date Added" is arguably correct.
+
+**Known divergence:** the recently-added strip is unscoped — `GET /api/scans` has no `?scope=`,
+so it can include `want`/`unknown` books while the rest of the page is scoped. For an
+import-only library that is the friendlier miss (the strip still shows books). Same class as the
+`CatalogueGaps.vue` one above. Home also makes three requests where it made one; they run in
+parallel and `?limit=12` is far lighter than the library's 500-row page.
+
+**Still owed:** the whole manual QA pass — see the checklist the implementing agent reported
+(light/dark and a non-default preset, <840px, the no-network "show me another" cycle, every book
+link opening the detail on `/library`, an empty and an import-only library).
 
 ### F4. "Want this" from the series page + wishlist view (S/M)
 
@@ -68,7 +120,7 @@ Existing base: `EditionsPane`/`EditionsDialog`, `useWorkEditions`, `work_edition
 
 ### F8. "What should I read next?" spotlight (S)
 
-A random unread pick on the home dashboard, optionally re-rollable and biasable by a facet. Precedent: `randomFirstLine` in `stats.ts` (`ORDER BY RANDOM() LIMIT 1`). Small, fun, on-brand for "statistics you can actually enjoy browsing".
+A random unread pick on the home dashboard, optionally re-rollable and biasable by a facet. Most of the machinery now exists: F3b's `spotlight` pool is `ORDER BY RANDOM() LIMIT 5` with client-side re-rolling already built (`ShelfSpotlight.vue`), so this is that query gated on `status = 'unread'` plus a second block — not a new mechanism. Small, fun, on-brand for "statistics you can actually enjoy browsing".
 
 ---
 

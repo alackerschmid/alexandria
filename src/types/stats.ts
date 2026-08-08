@@ -17,8 +17,89 @@ export interface RatingBucket {
 export const emptyRatingDistribution = (): RatingBucket[] =>
   Array.from({ length: 11 }, (_, rating) => ({ rating, count: 0 }));
 
+export interface GenreRating {
+  label: string;
+  /** Mean rating for the genre, 0–10, one decimal. */
+  avg: number;
+  /** Rated **works** behind that mean, deduped — not owned copies. */
+  count: number;
+}
+
+/**
+ * Books missing a given piece of data. Each one is a library deep-link on the stats page, so the
+ * keys line up with `useLibrarySearch`'s `missing:` values (`cover`, `pages`, `genre`, `year`);
+ * the last two have no filter because neither is a property of the book the user can search for.
+ */
+export interface CatalogueGaps {
+  noCover: number;
+  noPageCount: number;
+  noGenre: number;
+  noYear: number;
+  enrichmentPending: number;
+  readUnrated: number;
+}
+
+/**
+ * Which scans `/api/stats` is computed over.
+ *
+ * Deliberately not the library's `OwnershipScope`, which carries a third value (`missing`,
+ * revealing series entries the user doesn't have) that has no meaning for an aggregate over
+ * books the user actually holds a scan of.
+ *
+ * `owned` is the default and matches every other ownership gate in the app; `all` also counts
+ * the `unknown`/`want`/`unowned` rows — notably everything a Goodreads import writes, which
+ * asserts nothing about ownership and would otherwise measure as an empty library.
+ */
+export type StatsScope = "owned" | "all";
+
+/**
+ * One named book, for the home page's "particularise" half of the split.
+ *
+ * `/stats` aggregates and never names a book; home names books and shows almost no numbers. These
+ * carry only what it takes to render a row and deep-link it — everything but `isbn` can be absent,
+ * and the row renders what it has.
+ */
+export interface ExemplarBook {
+  title: string | null;
+  isbn: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  /** Already resolved server-side against the shared 100–2100 bounds. */
+  year: number | null;
+  pages: number | null;
+  /** ISO code, not a display name — format it through `languageDisplayFormatter`. */
+  language: string | null;
+}
+
+export interface Exemplars {
+  oldest: ExemplarBook | null;
+  longest: ExemplarBook | null;
+  /** The only book in its language. Null for a monolingual library (the common case) and for a
+   *  one-book library, where the claim is trivially true. */
+  soleLanguage: ExemplarBook | null;
+}
+
+/** A first-line book plus enough identity to render and link it. */
+export interface SpotlightBook {
+  isbn: string;
+  title: string | null;
+  firstLine: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  year: number | null;
+  publisher: string | null;
+  pages: number | null;
+}
+
+export const STATS_SCOPES: readonly StatsScope[] = ["owned", "all"];
+
 export interface CollectionStats {
   total: number;
+  /** Scans behind each scope, both always present whichever one was asked for — so a page whose
+   *  current scope is empty can say what the other one holds instead of "nothing to measure". */
+  scopeCounts: { owned: number; all: number };
   byStatus: { read: number; reading: number; unread: number; dnf: number };
   genres: DimensionItem[];
   uncategorizedGenreCount: number;
@@ -30,6 +111,19 @@ export interface CollectionStats {
   forms: DimensionItem[];
   subjects: DimensionItem[];
   countries: DimensionItem[];
+  /** Distinct countries, not `countries.length` — that list is capped at 15 server-side, and the
+   *  stats page's "N more" row is the difference between the two. Same relationship as
+   *  `authorCount`/`topAuthors` and `genreCount`/`genres`. */
+  countryCount: number;
+  owningStatus: {
+    owned: number;
+    lent_out: number;
+    unowned: number;
+    want: number;
+    unknown: number;
+  };
+  /** Uncapped and unordered by count — the stats page sorts these chronologically and rolls the
+   *  early ones up, which a top-N-by-count slice would have made impossible. */
   decades: DimensionItem[];
   decadeGenres: {
     decade: string;
@@ -44,7 +138,14 @@ export interface CollectionStats {
     values: DimensionItem[];
   }[];
   avgPages: number | null;
+  /** Pages of **read** books only. `totalPages` is the whole collection — they are different
+   *  numbers and the labels have to keep saying which is which. */
   totalPagesRead: number | null;
+  totalPages: number;
+  pagesKnownCount: number;
+  /** The five length bands, ascending, always present. Labels are stable ids (`"<200"`,
+   *  `"200-350"`, …) that the client maps to translated strings — never display them raw. */
+  pageBuckets: DimensionItem[];
   medianYear: number | null;
   yearKnownCount: number;
   genreCount: number;
@@ -54,10 +155,23 @@ export interface CollectionStats {
   /** Always 11 entries, `rating` 0–10 ascending, zero-count buckets included — so a consumer may
    *  index it directly. Build any fallback with `emptyRatingDistribution()`, never `[]`. */
   ratingDistribution: RatingBucket[];
+  /** Best- and worst-rated genre, each null until a genre clears the server's sample floor.
+   *  `worst` is also null when only one genre qualifies — one genre being both would read as a
+   *  bug. Averages are on the 0–10 scale, one decimal. */
+  genreRatings: {
+    best: GenreRating | null;
+    worst: GenreRating | null;
+  };
+  catalogueGaps: CatalogueGaps;
   translationRatio: {
     pct: number;
     translatedCount: number;
     knownCount: number;
   } | null;
   randomFirstLine: { title: string; firstLine: string } | null;
+  /** Up to five random first-line books. A pool, not one book, so home's "show me another" can
+   *  re-roll without refetching the whole aggregate to change a single row. `randomFirstLine` is
+   *  the first entry, kept separately for compatibility. */
+  spotlight: SpotlightBook[];
+  exemplars: Exemplars;
 }
