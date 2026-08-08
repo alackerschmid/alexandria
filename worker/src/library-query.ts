@@ -110,12 +110,14 @@ export type OverrideField = (typeof OVERRIDE_FIELDS)[number];
 export const SORT_CLAUSES: Record<string, string> = {
   date_desc: "s.created_at DESC, s.id DESC",
   date_asc: "s.created_at ASC, s.id ASC",
-  title_asc: "COALESCE(b.title, b.isbn) ASC COLLATE NOCASE, s.id ASC",
-  title_desc: "COALESCE(b.title, b.isbn) DESC COLLATE NOCASE, s.id ASC",
-  author_asc: "COALESCE(b.author, '') ASC COLLATE NOCASE, s.id ASC",
-  author_desc: "COALESCE(b.author, '') DESC COLLATE NOCASE, s.id ASC",
+  // COLLATE binds to the expression and must precede the direction: SQLite's ordering-term is
+  // `expr [COLLATE name] [ASC|DESC]`, so `… ASC COLLATE NOCASE` is a parse error, not a quirk.
+  title_asc: "COALESCE(b.title, b.isbn) COLLATE NOCASE ASC, s.id ASC",
+  title_desc: "COALESCE(b.title, b.isbn) COLLATE NOCASE DESC, s.id ASC",
+  author_asc: "COALESCE(b.author, '') COLLATE NOCASE ASC, s.id ASC",
+  author_desc: "COALESCE(b.author, '') COLLATE NOCASE DESC, s.id ASC",
   series_asc:
-    "series_name IS NULL, series_name ASC COLLATE NOCASE, ws.ordinal ASC, s.id ASC",
+    "series_name IS NULL, series_name COLLATE NOCASE ASC, ws.ordinal ASC, s.id ASC",
   // NULLS LAST in *both* directions, deliberately: an unrated book isn't a bad book, so it
   // belongs at the end of "worst first" just as much as at the end of "best first". SQLite
   // sorts NULL first in ASC, hence the explicit `IS NULL` leading term rather than relying on

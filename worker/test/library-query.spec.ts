@@ -276,6 +276,17 @@ describe("sortClauseFor", () => {
     expect(sortClauseFor("garbage")).toBe(SORT_CLAUSES.date_desc);
   });
 
+  // SQLite's ordering-term is `expr [COLLATE name] [ASC|DESC]`, so a COLLATE placed *after* the
+  // direction is a parse error rather than a stylistic slip — and one that no string-equality
+  // assertion notices, because the clause is only ever parsed by D1 at request time. Five of these
+  // nine clauses shipped that way, making `?sort=title_asc` and four others an unhandled 500.
+  it.each(Object.entries(SORT_CLAUSES))(
+    "puts COLLATE before the sort direction in %s",
+    (_key, clause) => {
+      expect(clause).not.toMatch(/\b(?:ASC|DESC)\s+COLLATE\b/i);
+    },
+  );
+
   it("falls back to date_desc for undefined and empty string", () => {
     expect(sortClauseFor(undefined)).toBe(SORT_CLAUSES.date_desc);
     expect(sortClauseFor("")).toBe(SORT_CLAUSES.date_desc);
