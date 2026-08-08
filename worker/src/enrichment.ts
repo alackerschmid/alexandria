@@ -6,6 +6,7 @@ import {
   discoverEditionsFromOpenLibrary,
 } from "./editions";
 import { exactTitleMatcher, titleScorer } from "./title-match";
+import { normalizeIsbn } from "./isbn";
 import {
   googleBooksCallsToday,
   outcomeForStatus,
@@ -928,7 +929,11 @@ async function fetchWorkEditionIsbn(
     } LIMIT 20`.trim();
   const rows = await runSparql(usage, "edition_isbn", query);
   if (!rows.length) return null;
-  const clean = (v: string | undefined) => (v ?? "").replace(/[-\s]/g, "");
+  // normalizeIsbn, not a bare dash-strip: it also uppercases. A Wikidata P957 value carrying a
+  // lowercase ISBN-10 check digit would otherwise reach `books.isbn` in a form `isbnForms` cannot
+  // expand, so no both-forms comparison could ever match it and a later scan of that edition would
+  // mint a second row for one physical book.
+  const clean = (v: string | undefined) => normalizeIsbn(v ?? "");
   // Prefer an English, then German, then any edition.
   const pick =
     rows.find((r) => r.lang?.value === "en") ??
@@ -985,7 +990,13 @@ async function backfillEdition(
     }
   }
 
-  const book = await materializeEdition(db, isbn, workId, effectiveKey, usage);
+  const book = await materializeEdition(
+    db,
+    isbn,
+    workId,
+    effectiveKey,
+    usage ?? null,
+  );
   if (!book) {
     console.log(`[backfillEdition] no metadata for ISBN ${isbn}`);
     return;

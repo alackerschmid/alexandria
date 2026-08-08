@@ -119,7 +119,13 @@ async function fetchGoogleBooksJson(
       return { data: await res.json(), status, ok: true };
     } catch {
       if (!recorded) record("error");
-      if (attempt < MAX_ATTEMPTS_5XX - 1) continue;
+      // `retryTransient` gates this arm too. A thrown failure — the 4s abort, a network error, a
+      // non-JSON body — is exactly the transient case the flag exists to fail fast on, and the
+      // slowest of them: leaving it ungated meant the ISBN path, which passes `retryTransient:
+      // false` precisely to avoid backoff, still spent 4 attempts x 4s on a stalled Google.
+      // `recorded` means the response arrived and parsing it threw; re-fetching would spend
+      // another quota unit on a body that will not parse the second time either.
+      if (retryTransient && !recorded && attempt < MAX_ATTEMPTS_5XX - 1) continue;
       return { data: undefined, status, ok: false };
     }
   }
@@ -748,18 +754,29 @@ export async function discoverEditionsFromOpenLibrary(
 
   const related = await fetchOpenLibraryEditionsByWorkId(olWorkId, usage);
   if (related === null) return; // transient OL failure — leave retryable, don't mark searched
+  // An empty result must not stamp `editions_checked_at` either. That stamp is the one-shot gate on
+  // the *user-triggered* discover route, whose seed-ISBN path is a different key that may well
+  // succeed where the work id found nothing — spending the user's only attempt on this one's miss
+  // left "Find other editions" permanently returning an empty list with no way to retry.
+  if (!related.length) return;
   await saveEditionCandidates(db, workId, related);
 }
 
 // Returns the books row for `isbn` linked to `workId`, fetching and inserting it if missing.
 // Sets work_id directly (bypasses linkWork) so cross-language editions of the same work
 // (e.g. translations discovered via fetchOpenLibraryEditions) don't mint a competing match-key work.
+// `usage` is **required**, like `resolveEdition`'s and `enrichWork`'s — pass `null` only where
+// there is deliberately nothing to count (unit tests). It was optional, and the edition-switch
+// route duly forgot it, so every Google Books call that materializing a candidate makes went
+// unrecorded. That undercount is not just cosmetic: `googleBooksCallsToday` reads the same
+// counters to gate the sweeper's daily budget, so it let the cron keep spending against a quota
+// user traffic had already eaten into. A compile error is the cheaper guard.
 export async function materializeEdition(
   db: D1Database,
   isbn: string,
   workId: number,
-  apiKey?: string,
-  usage?: UsageRecorder | null,
+  apiKey: string | undefined,
+  usage: UsageRecorder | null,
 ): Promise<BookRow | null> {
   // Matched on both ISBN forms, not the exact string. `resolveEdition` and `POST /api/scans`
   // already dedupe this way; this site didn't, so switching to an ISBN-10 candidate of an edition
@@ -941,18 +958,22 @@ export async function linkWork(db: D1Database, book: BookRow): Promise<void> {
         .bind(normalizeAuthorKey(name), name),
     );
   }
-  await db.batch(stmts);
-
-  if (authors.length) {
-    const links = authors.map((name, idx) =>
+  // One batch, not two. The `work_authors` inserts resolve their author ids with a subquery rather
+  // than a read-back value, and a D1 batch runs sequentially in one implicit transaction, so they
+  // still see the `authors` upserts that precede them. Split across two batches, a failure of the
+  // second left the book linked and the work permanently author-less: every caller gates linkWork
+  // on `!book.work_id`, so nothing ever re-links it, and AUTHORS_JSON_SUBQUERY returns [] for
+  // every scan of that book from then on.
+  for (const [idx, name] of authors.entries()) {
+    stmts.push(
       db
         .prepare(
           "INSERT OR IGNORE INTO work_authors (work_id, author_id, ordinal) SELECT ?, id, ? FROM authors WHERE normalized_name = ?",
         )
         .bind(work.id, idx, normalizeAuthorKey(name)),
     );
-    await db.batch(links);
   }
+  await db.batch(stmts);
   book.work_id = work.id;
 }
 
@@ -999,10 +1020,19 @@ export async function resolveEdition(
   // Check both ISBN forms — the same edition can already be stored under its ISBN-10 or ISBN-13
   // form depending on which one was scanned/looked-up first. Without this, a lookup under the
   // other form would fall through to fetch+insert and mint a second `books` row for one edition.
+  // `ORDER BY (isbn = ?) DESC LIMIT 1` prefers the exact form the caller asked for, as
+  // `materializeEdition` does. Where both forms legitimately have a row — an older all-NULL
+  // placeholder under one, a populated row under the other — a bare OR + `.first()` returned
+  // whichever SQLite yielded first, so a scan could attach to the empty placeholder while the
+  // populated row sat unused, and `POST /api/books/refresh` (which selects on the exact ISBN)
+  // then repaired a row the card never reads.
   const altIsbn = alternateIsbnForm(isbn);
   let book = await db
-    .prepare(`SELECT * FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}`)
-    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]))
+    .prepare(
+      `SELECT * FROM books WHERE isbn = ? ${altIsbn ? "OR isbn = ?" : ""}
+       ORDER BY (isbn = ?) DESC LIMIT 1`,
+    )
+    .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]), isbn)
     .first<BookRow>();
   if (book) {
     if (!book.work_id && !skipLinkWork) await linkWork(db, book);
