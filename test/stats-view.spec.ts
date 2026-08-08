@@ -105,25 +105,6 @@ describe("normalizeStats", () => {
       normalizeStats({ total: 42, scopeCounts: { owned: 3 } }).scopeCounts,
     ).toEqual({ owned: 3, all: 42 });
   });
-});
-
-describe("countOutsideScope", () => {
-  it("is the all-minus-owned difference the scoped empty state renders", () => {
-    expect(
-      countOutsideScope(stats({ scopeCounts: { owned: 0, all: 120 } })),
-    ).toBe(120);
-  });
-
-  it("is 0 while stats are still loading (null)", () => {
-    expect(countOutsideScope(null)).toBe(0);
-  });
-
-  it("clamps a degenerate payload to 0 rather than going negative", () => {
-    // "You've catalogued -2 books" must be unrepresentable whatever the worker sends.
-    expect(
-      countOutsideScope(stats({ scopeCounts: { owned: 5, all: 3 } })),
-    ).toBe(0);
-  });
 
   it("survives null and undefined payloads", () => {
     // An older worker, or a response that failed to parse — neither may blank the page.
@@ -152,6 +133,25 @@ describe("countOutsideScope", () => {
     expect(s.catalogueGaps.readUnrated).toBe(0);
     expect(s.genreRatings.best?.avg).toBe(8.2);
     expect(s.genreRatings.worst).toBeNull();
+  });
+});
+
+describe("countOutsideScope", () => {
+  it("is the all-minus-owned difference the scoped empty state renders", () => {
+    expect(
+      countOutsideScope(stats({ scopeCounts: { owned: 0, all: 120 } })),
+    ).toBe(120);
+  });
+
+  it("is 0 while stats are still loading (null)", () => {
+    expect(countOutsideScope(null)).toBe(0);
+  });
+
+  it("clamps a degenerate payload to 0 rather than going negative", () => {
+    // "You've catalogued -2 books" must be unrepresentable whatever the worker sends.
+    expect(
+      countOutsideScope(stats({ scopeCounts: { owned: 5, all: 3 } })),
+    ).toBe(0);
   });
 });
 

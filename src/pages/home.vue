@@ -77,7 +77,9 @@
       v-else-if="statsData && statsData.total === 0"
       class="flex-1 flex flex-col items-center justify-center gap-3 px-6 py-20"
     >
-      <template v-if="unscopedCount > 0">
+      <!-- Also gated on the scope: after a failed refetch the payload can lag the pill, and a
+           switch-to-all button while the preference already reads All would be inert. -->
+      <template v-if="unscopedCount > 0 && scope === 'owned'">
         <p class="font-heading font-bold text-3xl text-text-primary text-center">
           {{ $t("home.empty_scoped_heading") }}
         </p>
@@ -251,7 +253,8 @@ import type { SeriesMemberships } from "@/composables/useShelfGroups";
 import { BCP47 } from "@/plugins/i18n";
 import type { Book } from "@/types/book";
 import type { CollectionStats, SpotlightBook } from "@/types/stats";
-import { normalizeStats } from "@/utils/stats-view";
+import { countOutsideScope, normalizeStats } from "@/utils/stats-view";
+import { createFetchSequencer } from "@/utils/fetch-seq";
 import { summarizeSeries } from "@/utils/series-completeness";
 
 /** Covers in the recently-added strip. Deliberately small — this is a landing page, not the
@@ -343,12 +346,7 @@ const metaLine = computed(() => {
   });
 });
 
-/** Books the *other* scope holds that this one doesn't — what the scoped empty state offers.
- *  Only ever non-zero on `owned`, since `all` is a superset. */
-const unscopedCount = computed(() => {
-  const c = statsData.value?.scopeCounts;
-  return c ? Math.max(0, c.all - c.owned) : 0;
-});
+const unscopedCount = computed(() => countOutsideScope(statsData.value));
 
 // ── Blocks ────────────────────────────────────────────────────────────────────
 
@@ -365,8 +363,17 @@ const hasOddities = computed(() => {
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
+// Sequenced for the same reason as /stats: a scope or locale switch can re-trigger load()
+// while the previous request set is still in flight, and the stale set must not overwrite the
+// fresh one (`scope=all` is systematically the slower stats query, so it tends to land last).
+const nextLoad = createFetchSequencer();
+
 const load = async () => {
+  const isCurrent = nextLoad();
   const locale = localeStore.locale;
+  // Owned by load() so a watcher-triggered refetch shows the spinner rather than the previous
+  // scope's blocks under an already-switched preference.
+  loading.value = true;
   try {
     // Three requests rather than one, run in parallel. `/api/scans?limit=12` is far lighter than
     // the library's 500-row page, and a landing page can afford the fan-out.
@@ -384,6 +391,11 @@ const load = async () => {
     ]);
 
     const statsBody = await statsRes.json();
+    // `/api/scans` answers with a bare array; anything else is a shape this page shouldn't
+    // render through, so the strip stays empty rather than the block half-painting.
+    const scansBody = scansRes.ok ? await scansRes.json() : null;
+    const seriesBody = seriesRes.ok ? await seriesRes.json() : null;
+    if (!isCurrent()) return; // superseded — a newer load() owns the page now
     if (!statsRes.ok) throw new Error(statsBody.error || t("home.load_failed"));
     statsData.value = normalizeStats(statsBody);
     if (spotlightPool.value.length === 0)
@@ -391,23 +403,16 @@ const load = async () => {
 
     // Both secondary blocks degrade on their own rather than blanking the page — the pattern
     // `/stats` already uses for its series fetch.
-    if (scansRes.ok) {
-      // `/api/scans` answers with a bare array; anything else is a shape this page shouldn't
-      // render through, so the strip stays empty rather than the block half-painting.
-      const scans = await scansRes.json();
-      if (Array.isArray(scans)) recent.value = scans;
-    }
-    if (seriesRes.ok) memberships.value = await seriesRes.json();
+    if (Array.isArray(scansBody)) recent.value = scansBody;
+    if (seriesBody) memberships.value = seriesBody;
   } catch (err: any) {
-    showToast(err.message || t("home.load_failed"), "error");
+    if (isCurrent()) showToast(err.message || t("home.load_failed"), "error");
+  } finally {
+    if (isCurrent()) loading.value = false;
   }
 };
 
-onMounted(async () => {
-  loading.value = true;
-  await Promise.all([load(), fieldDefsStore.load()]);
-  loading.value = false;
-});
+onMounted(() => Promise.all([load(), fieldDefsStore.load()]));
 
 watch([() => localeStore.locale, scope], () => load());
 </script>
