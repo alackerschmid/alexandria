@@ -52,6 +52,47 @@ export interface CatalogueGaps {
  */
 export type StatsScope = "owned" | "all";
 
+/**
+ * One named book, for the home page's "particularise" half of the split.
+ *
+ * `/stats` aggregates and never names a book; home names books and shows almost no numbers. These
+ * carry only what it takes to render a row and deep-link it — everything but `isbn` can be absent,
+ * and the row renders what it has.
+ */
+export interface ExemplarBook {
+  title: string | null;
+  isbn: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  /** Already resolved server-side against the shared 100–2100 bounds. */
+  year: number | null;
+  pages: number | null;
+  /** ISO code, not a display name — format it through `languageDisplayFormatter`. */
+  language: string | null;
+}
+
+export interface Exemplars {
+  oldest: ExemplarBook | null;
+  longest: ExemplarBook | null;
+  /** The only book in its language. Null for a monolingual library (the common case) and for a
+   *  one-book library, where the claim is trivially true. */
+  soleLanguage: ExemplarBook | null;
+}
+
+/** A first-line book plus enough identity to render and link it. */
+export interface SpotlightBook {
+  isbn: string;
+  title: string | null;
+  firstLine: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  year: number | null;
+  publisher: string | null;
+  pages: number | null;
+}
+
 export const STATS_SCOPES: readonly StatsScope[] = ["owned", "all"];
 
 export interface CollectionStats {
@@ -128,4 +169,9 @@ export interface CollectionStats {
     knownCount: number;
   } | null;
   randomFirstLine: { title: string; firstLine: string } | null;
+  /** Up to five random first-line books. A pool, not one book, so home's "show me another" can
+   *  re-roll without refetching the whole aggregate to change a single row. `randomFirstLine` is
+   *  the first entry, kept separately for compatibility. */
+  spotlight: SpotlightBook[];
+  exemplars: Exemplars;
 }
