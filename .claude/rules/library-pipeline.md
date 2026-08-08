@@ -39,6 +39,14 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
   to answer much harder questions about composing with the free-text half of the query. Its
   autocomplete chips are offered only where the current pool actually contains such a book,
   same present-in-pool rule as the status facets
+
+  **`year:` is a prefix match, not a substring one**, over `workYear(b)` — so `year:1990` is a
+  year and `year:199` is the 1990s, which is what the `/stats` decade histogram deep-links to.
+  Both halves matter: a substring read also matched `year:200` against a book from 1200, and
+  reading `original_pub_date` directly (as this and the `decade` grouping both used to) drops
+  every book whose work isn't enriched yet — most of a young library — even though `/stats` has
+  already placed it in a decade off the edition's `publish_date`. `workYear` is that fallback,
+  and it is the only definition of a book's year the three surfaces are allowed to share
 - `useEditionGrouping.ts` — collapses same-work editions into one synthetic card per work.
   **Must run downstream of search**, so filters match real per-edition fields rather than a
   collapsed card's representative values

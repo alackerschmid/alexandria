@@ -4,7 +4,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { parseTagList } from "@/utils/tags";
 import { bookCustomValue } from "@/utils/custom-fields";
 import { languageDisplayFormatter } from "@/utils/language";
-import { authorNames, bookYear } from "@/utils/book-display";
+import { authorNames, bookYear, workYear } from "@/utils/book-display";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -335,10 +335,14 @@ export function useLibrarySearch(options: {
         b.countries_of_origin?.some((c) => c.toLowerCase().includes(country)),
       );
     }
+    // A **prefix** match on the work's year, not a substring one on `original_pub_date`, so that
+    // `year:200` means "the 2000s" — which is precisely what the /stats decade histogram links
+    // to. Two things were wrong with the substring read: it matched a 4-digit year anywhere
+    // (`year:200` also returned a book from 1200), and it ignored the `publish_date` fallback
+    // the histogram buckets by, so a bar of 20 books opened onto 4 in a mostly-unenriched
+    // library. `workYear` is that fallback; see its note for why the precedence is what it is.
     if (year) {
-      list = list.filter((b) =>
-        b.original_pub_date?.toLowerCase().includes(year),
-      );
+      list = list.filter((b) => workYear(b).startsWith(year));
     }
     if (subject) {
       list = list.filter((b) =>

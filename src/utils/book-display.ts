@@ -120,6 +120,28 @@ export function bookYear(
 }
 
 /**
+ * 4-digit year of the **work** — when it was written — preferring the original publication date
+ * and falling back to the edition's. The opposite precedence to `bookYear`, deliberately: that
+ * one answers "which printing is this", this one answers "when is this book from", so a 2019
+ * reprint of a 1954 novel is a 1954 book here and a 2019 edition there.
+ *
+ * The client-side mirror of the worker's `extractYear` (`routes/stats.ts`), which is what the
+ * `/stats` decade histogram buckets by — so anything claiming to filter or group by the same
+ * decades has to come through here, or it silently drops every book placed by the fallback.
+ * `original_pub_date` comes from Wikidata enrichment and is null for most of an unenriched
+ * library, which is exactly when the two answers diverge most.
+ *
+ * One knowing difference from `extractYear`: `YEAR_RE` needs four digits, so a work from before
+ * the year 1000 resolves to "" here while the histogram still buckets it. No such book has
+ * turned up in the catalogue, and every other year helper shares the limit.
+ */
+export function workYear(
+  book: Pick<Book, "publish_date" | "original_pub_date">,
+): string {
+  return publishYear(book.original_pub_date || book.publish_date);
+}
+
+/**
  * A D1 `datetime('now')` timestamp as ms-epoch, or null when it's absent/unparseable.
  *
  * D1 stores these as `YYYY-MM-DD HH:MM:SS` in UTC with **no zone marker**, which `Date.parse`

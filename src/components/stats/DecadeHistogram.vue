@@ -68,13 +68,14 @@ function ariaFor(bar: DecadeBar): string {
   return t("stats.decade_aria", { decade: bar.label, count: bar.count });
 }
 
-// `year:` is a substring match on `original_pub_date`, so a decade is its 3-digit prefix —
+// `year:` is a prefix match on the book's work year, so a decade is its 3-digit prefix —
 // `year:199` is "the 1990s". A rolled-up bucket spans many decades and has no such prefix, so
 // it goes to the unfiltered library rather than to a token that would match nothing.
 //
-// Caveat: that filter reads `original_pub_date` only, while the histogram's own bucketing falls
-// back to the edition's `publish_date` when the work has no original year. A book placed by
-// that fallback is counted in the bar but won't come back from the link.
+// The filter resolves that year through `workYear`, the same original-then-edition fallback the
+// histogram is bucketed by, so a bar and the view behind it hold the same books. They didn't
+// while the filter read `original_pub_date` alone: a book placed in a bar by the fallback — most
+// of them, until the work is enriched — never came back from the link.
 function linkFor(bar: DecadeBar): RouteLocationRaw {
   if (bar.rollup) return { name: "library" };
   return { name: "library", query: { q: `year:${bar.label.slice(0, 3)}` } };
