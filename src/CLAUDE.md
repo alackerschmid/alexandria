@@ -73,6 +73,11 @@ ask the `inventory` subagent rather than expecting a list here.
   both read `/api/stats`, so `normalizeStats` (the version-tolerance layer), `getBreakdown`,
   `colorRamp` and the percentage helpers live there rather than in either page. A new
   `CollectionStats` field needs a default in `normalizeStats` or an older worker blanks the page.
+  `/stats` additionally owns an ownership **scope** (`StatsScope`, persisted via
+  `stores/statsDefaults.ts`) that it passes to the API as `?scope=`; the home dashboard sends
+  none and so always reads the owned collection. Series completeness is deliberately outside
+  that switch — `/api/series` has its own ownership gate, so the block reads "owned only" under
+  any wider scope rather than mixing an owned-derived figure into all-scope numbers.
 - **`stores/preferences.ts` is the single owner of every persisted preference.** The
   appearance/locale/library-default stores are thin wrappers over it — never touch
   `localStorage` directly.

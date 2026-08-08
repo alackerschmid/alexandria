@@ -113,7 +113,32 @@ type StatsResponse = {
     knownCount: number;
   } | null;
   randomFirstLine: { title: string; firstLine: string } | null;
+  /** Scans behind each scope, both always present and independent of the one asked for. The
+   *  client needs the other number to offer the switch: an import-only library is 0 owned /
+   *  N all, where "nothing to measure" is the wrong thing to say. */
+  scopeCounts: { owned: number; all: number };
 };
+
+/** The ownership predicates `/api/stats` can be computed over, keyed by the `?scope=` value.
+ *
+ *  `owned` is the default and what every other ownership gate in the app means (see
+ *  `OWNED_OWNING_STATUSES`); `all` drops the gate, which is the only way an import-only library
+ *  — every row written at `owning_status = 'unknown'` — measures as anything but empty.
+ *  Every query below carries the scans table as `s`, so one clause fits all of them. */
+export const SCOPE_CLAUSES: Record<string, string> = {
+  owned: "s.owning_status IN ('owned', 'lent_out')",
+  all: "1 = 1",
+};
+
+/** The only supported way to turn a `?scope=` query param into a predicate. Mirrors
+ *  `sortClauseFor`, prototype-safe lookup included: the clause is interpolated into the SQL, so
+ *  `?scope=constructor` must not resolve to an inherited function that stringifies into it. */
+export function scopeClauseFor(scope: string | undefined): string {
+  // hasOwnProperty.call, not Object.hasOwn: the worker's tsconfig lib is es2021.
+  return scope && Object.prototype.hasOwnProperty.call(SCOPE_CLAUSES, scope)
+    ? SCOPE_CLAUSES[scope]
+    : SCOPE_CLAUSES.owned;
+}
 
 export function extractYear(r: RawRow): number | null {
   if (r.original_pub_date) {
@@ -386,8 +411,11 @@ export function computeCatalogueGaps(
 }
 
 // Owning-status counts, so the breakdown picker's `owning` dimension has data behind it.
-// Only `owned`/`lent_out` can appear — every other value is excluded by the query's gate — but
-// the shape stays total so the client never has to guess at a missing key.
+// Which keys can be non-zero follows the request's `?scope=`: under `owned` only `owned` and
+// `lent_out` survive the gate, under `all` every one of them can. The shape stays total either
+// way so the client never has to guess at a missing key. Deliberately computed from the scoped
+// rows rather than from the ungated `scopeCounts` query, so this breakdown adds up to the same
+// `total` every other breakdown on the page does.
 export function computeOwningCounts(rows: RawRow[]) {
   const counts = { owned: 0, lent_out: 0, unowned: 0, want: 0, unknown: 0 };
   for (const r of rows) {
@@ -582,10 +610,14 @@ function computeCustomFields(customFieldRows: CustomFieldRow[]) {
   );
 }
 
-function buildStatsResponse(input: StatsResponse): StatsResponse {
+// Split three ways purely to keep each function under the complexity ceiling — one `??` per
+// field adds up. The grouping deliberately mirrors `normalizeStats`/`normalizeDimensions`/
+// `normalizeMeasures` in `src/utils/stats-view.ts`, the hand-written client-side mirror of this
+// same shape, so a field lands in the matching half on both sides.
+
+/** The list and count fields — the bulk of the payload and the least interesting part of it. */
+function buildDimensions(input: StatsResponse) {
   return {
-    total: input.total,
-    byStatus: input.byStatus,
     genres: input.genres ?? [],
     uncategorizedGenreCount: input.uncategorizedGenreCount ?? 0,
     languages: input.languages ?? [],
@@ -597,17 +629,18 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
     subjects: input.subjects ?? [],
     countries: input.countries ?? [],
     countryCount: input.countryCount ?? 0,
-    owningStatus: input.owningStatus ?? {
-      owned: 0,
-      lent_out: 0,
-      unowned: 0,
-      want: 0,
-      unknown: 0,
-    },
     decades: input.decades ?? [],
     decadeGenres: input.decadeGenres ?? [],
     topSeries: input.topSeries ?? [],
     customFields: input.customFields ?? [],
+    genreCount: input.genreCount ?? 0,
+  };
+}
+
+/** The scalar measures. `ratingDistribution` falls back to the dense zeros, never `[]` — the
+ *  shape is a contract consumers may index directly (see `computeRatingStats`). */
+function buildMeasures(input: StatsResponse) {
+  return {
     avgPages: input.avgPages ?? null,
     totalPagesRead: input.totalPagesRead ?? null,
     totalPages: input.totalPages ?? 0,
@@ -615,10 +648,25 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
     pageBuckets: input.pageBuckets ?? [],
     medianYear: input.medianYear ?? null,
     yearKnownCount: input.yearKnownCount ?? 0,
-    genreCount: input.genreCount ?? 0,
     avgRating: input.avgRating ?? null,
     ratedCount: input.ratedCount ?? 0,
     ratingDistribution: input.ratingDistribution ?? emptyRatingDistribution(),
+    translationRatio: input.translationRatio ?? null,
+    randomFirstLine: input.randomFirstLine ?? null,
+  };
+}
+
+function buildStatsResponse(input: StatsResponse): StatsResponse {
+  return {
+    total: input.total,
+    byStatus: input.byStatus,
+    owningStatus: input.owningStatus ?? {
+      owned: 0,
+      lent_out: 0,
+      unowned: 0,
+      want: 0,
+      unknown: 0,
+    },
     genreRatings: input.genreRatings ?? { best: null, worst: null },
     catalogueGaps: input.catalogueGaps ?? {
       noCover: 0,
@@ -628,14 +676,16 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
       enrichmentPending: 0,
       readUnrated: 0,
     },
-    translationRatio: input.translationRatio ?? null,
-    randomFirstLine: input.randomFirstLine ?? null,
+    scopeCounts: input.scopeCounts ?? { owned: 0, all: 0 },
+    ...buildDimensions(input),
+    ...buildMeasures(input),
   };
 }
 
 stats.get("/", async (c) => {
   const userId = c.get("userId");
   const locale = (c.req.query("locale") ?? "en").slice(0, 5);
+  const scopeClause = scopeClauseFor(c.req.query("scope"));
 
   const [
     { results },
@@ -643,6 +693,7 @@ stats.get("/", async (c) => {
     customFieldResult,
     firstLineResult,
     ratingResult,
+    scopeCountRow,
   ] = await Promise.all([
       c.env.DB.prepare(
         `
@@ -670,7 +721,7 @@ stats.get("/", async (c) => {
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
       LEFT JOIN works wk ON wk.id = b.work_id
       LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
-      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+      WHERE s.user_id = ? AND ${scopeClause}
     `,
       )
         .bind(userId)
@@ -685,7 +736,7 @@ stats.get("/", async (c) => {
       JOIN work_series ws ON ws.work_id = wk.id
       JOIN series ser ON ser.id = ws.series_id
       LEFT JOIN series_names sn ON sn.series_id = ser.id AND sn.language = ?
-      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+      WHERE s.user_id = ? AND ${scopeClause}
       GROUP BY ser.id
       ORDER BY count DESC
       LIMIT 15
@@ -702,7 +753,7 @@ stats.get("/", async (c) => {
       JOIN scans s ON s.book_id = bcf.book_id AND s.user_id = bcf.user_id
       WHERE bcf.user_id = ?
       AND ufd.field_type NOT IN ('date', 'integer')
-      AND s.owning_status IN ('owned', 'lent_out')
+      AND ${scopeClause}
     `,
       )
         .bind(userId)
@@ -714,7 +765,7 @@ stats.get("/", async (c) => {
       FROM scans s
       JOIN books b ON s.book_id = b.id
       JOIN works wk ON wk.id = b.work_id
-      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+      WHERE s.user_id = ? AND ${scopeClause}
         AND wk.first_line IS NOT NULL AND wk.first_line != ''
       ORDER BY RANDOM()
       LIMIT 1
@@ -731,13 +782,27 @@ stats.get("/", async (c) => {
       FROM scans s
       JOIN books b ON s.book_id = b.id
       JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
-      WHERE s.user_id = ? AND s.owning_status IN ('owned', 'lent_out')
+      WHERE s.user_id = ? AND ${scopeClause}
         AND wr.rating IS NOT NULL
       GROUP BY wr.rating
     `,
       )
         .bind(userId)
         .all<RatingRow>(),
+
+      // Deliberately ungated and separate from the main query rather than derived from it: the
+      // whole point is to report the size of the scope the caller *didn't* ask for. One indexed
+      // aggregate over `scans` is cheaper than widening the main row read to every scan.
+      c.env.DB.prepare(
+        `
+      SELECT COUNT(*) AS all_count,
+             SUM(CASE WHEN s.owning_status IN ('owned', 'lent_out') THEN 1 ELSE 0 END) AS owned_count
+      FROM scans s
+      WHERE s.user_id = ?
+    `,
+      )
+        .bind(userId)
+        .first<{ all_count: number; owned_count: number | null }>(),
     ]);
 
   const rows = results;
@@ -780,6 +845,13 @@ stats.get("/", async (c) => {
 
   const customFields = computeCustomFields(customFieldResult.results);
 
+  // SUM over no rows is NULL, and `first()` is nullable in the types — an account with no scans
+  // at all has to read as 0/0 rather than as NaN in the client's empty-state sentence.
+  const scopeCounts = {
+    owned: scopeCountRow?.owned_count ?? 0,
+    all: scopeCountRow?.all_count ?? 0,
+  };
+
   return c.json(
     buildStatsResponse({
       total: rows.length,
@@ -815,6 +887,7 @@ stats.get("/", async (c) => {
       catalogueGaps,
       translationRatio,
       randomFirstLine,
+      scopeCounts,
     }),
   );
 });

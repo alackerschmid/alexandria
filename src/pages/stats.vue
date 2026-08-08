@@ -14,12 +14,24 @@
       >
         {{ headline }}
       </h1>
-      <p
-        v-if="stats"
-        class="font-mono text-[10px] md:text-[11px] tracking-[0.05em] text-text-secondary"
-      >
-        {{ metaLine }}
-      </p>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <p
+          v-if="stats"
+          class="font-mono text-[10px] md:text-[11px] tracking-[0.05em] text-text-secondary"
+        >
+          {{ metaLine }}
+        </p>
+        <!-- ml-auto so the pill stays right-aligned even before the meta line has a payload
+             to render from — justify-between alone would park it on the left. -->
+        <AppSegmented
+          v-model="scope"
+          class="ml-auto"
+          :options="scopeOptions"
+          variant="highlight"
+          size="sm"
+          :aria-label="$t('stats.scope_label')"
+        />
+      </div>
     </div>
 
     <!-- Loading -->
@@ -27,17 +39,32 @@
       <v-progress-circular indeterminate color="primary" size="24" width="2" />
     </div>
 
-    <!-- Empty state -->
+    <!-- Empty state. Two of them: a genuinely empty library, and one whose books are all
+         outside the current scope — a Goodreads import writes every row at owning_status
+         "unknown", so "nothing to measure" would be plainly false there. -->
     <div
       v-else-if="stats && stats.total === 0"
       class="flex-1 flex flex-col items-center justify-center gap-3 px-6 py-20"
     >
-      <p class="font-heading font-bold text-3xl text-text-primary text-center">
-        {{ $t("stats.empty_heading") }}
-      </p>
-      <p class="text-sm text-text-secondary text-center max-w-xs">
-        {{ $t("stats.empty_body") }}
-      </p>
+      <template v-if="unscopedCount > 0">
+        <p class="font-heading font-bold text-3xl text-text-primary text-center">
+          {{ $t("stats.empty_scoped_heading") }}
+        </p>
+        <p class="text-sm text-text-secondary text-center max-w-sm">
+          {{ $t("stats.empty_scoped_body", { count: unscopedCount }) }}
+        </p>
+        <AppButton class="mt-2" @click="scope = 'all'">
+          {{ $t("stats.empty_scoped_action") }}
+        </AppButton>
+      </template>
+      <template v-else>
+        <p class="font-heading font-bold text-3xl text-text-primary text-center">
+          {{ $t("stats.empty_heading") }}
+        </p>
+        <p class="text-sm text-text-secondary text-center max-w-xs">
+          {{ $t("stats.empty_body") }}
+        </p>
+      </template>
     </div>
 
     <!-- Content. pb-28 on mobile clears the fixed bottom tab bar. -->
@@ -308,16 +335,27 @@
             <h2 class="micro-label !text-[9px] !tracking-[0.3em] !text-orange-neon !opacity-100">
               {{ $t("stats.series_title") }}
             </h2>
-            <span class="font-mono text-[10px] text-text-secondary text-right">{{
-              $t("stats.series_meta", {
-                tracked: series.tracked,
-                missing: series.missingTotal,
-              })
-            }}</span>
+            <span
+              v-if="scope === 'owned'"
+              class="font-mono text-[10px] text-text-secondary text-right"
+              >{{
+                $t("stats.series_meta", {
+                  tracked: series.tracked,
+                  missing: series.missingTotal,
+                })
+              }}</span
+            >
           </header>
 
+          <!-- Completeness is owned-only by definition — "which volumes are missing from your
+               shelf" is a question about possession, and `/api/series` answers it against its
+               own ownership gate rather than this page's scope. Rather than show an
+               owned-derived figure beside all-scope numbers, the block says why it's absent. -->
+          <p v-if="scope !== 'owned'" class="text-sm text-text-secondary pt-2">
+            {{ $t("stats.series_owned_only") }}
+          </p>
           <SeriesCompleteness
-            v-if="series.rows.length"
+            v-else-if="series.rows.length"
             :rows="visibleSeries"
             :ramp="ramp"
           />
@@ -326,7 +364,7 @@
           </p>
 
           <button
-            v-if="series.rows.length > SERIES_ROWS"
+            v-if="scope === 'owned' && series.rows.length > SERIES_ROWS"
             type="button"
             class="mt-3.5 font-mono text-[10px] tracking-[0.14em] uppercase text-orange-neon cursor-pointer"
             @click="allSeries = !allSeries"
@@ -368,13 +406,17 @@
 
 <script lang="ts" setup>
 import { computed, onMounted, ref, watch } from "vue";
+import { storeToRefs } from "pinia";
 import { useI18n } from "vue-i18n";
 import { useDisplay } from "vuetify";
 import { useLocaleStore } from "@/stores/locale";
 import { useThemeStore } from "@/stores/theme";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
+import { useStatsDefaultsStore } from "@/stores/statsDefaults";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
+import AppButton from "@/components/AppButton.vue";
+import AppSegmented from "@/components/AppSegmented.vue";
 import AppSelect from "@/components/AppSelect.vue";
 import AppToast from "@/components/AppToast.vue";
 import RatingStars from "@/components/RatingStars.vue";
@@ -403,7 +445,7 @@ import {
   pctOf,
   rampColor,
 } from "@/utils/stats-view";
-import type { CollectionStats } from "@/types/stats";
+import { STATS_SCOPES, type CollectionStats } from "@/types/stats";
 import type { GroupBy } from "@/types/library";
 
 /** Rows shown before the breakdown's "show all" is used. */
@@ -416,6 +458,7 @@ const { mdAndDown } = useDisplay();
 const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
 const fieldDefsStore = useFieldDefsStore();
+const { scope } = storeToRefs(useStatsDefaultsStore());
 const { apiFetch } = useApi();
 const { dimensionOptions } = useGroupDimensions();
 const { visible: errorToast, message: errorMessage, showToast } = useToast();
@@ -430,6 +473,17 @@ const allSeries = ref(false);
 const isMobile = computed(() => mdAndDown.value);
 const ramp = computed(() => colorRamp(themeStore.isDark));
 const langFmt = computed(() => languageDisplayFormatter(localeStore.locale));
+
+const scopeOptions = computed(() =>
+  STATS_SCOPES.map((value) => ({ value, label: t(`stats.scope_${value}`) })),
+);
+
+/** Books the *other* scope holds that this one doesn't — what the empty state offers to show.
+ *  Only ever non-zero on `owned`, since `all` is a superset. */
+const unscopedCount = computed(() => {
+  const c = stats.value?.scopeCounts;
+  return c ? Math.max(0, c.all - c.owned) : 0;
+});
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
@@ -488,16 +542,40 @@ const tiles = computed(() => {
       coverage: `${pctOf(s.pagesKnownCount, s.total)}%`,
       color: rampColor(ramp.value, 2),
     },
-    {
-      key: "series",
-      label: t("stats.tile_series"),
-      value: String(series.value.complete),
-      unit: t("stats.tile_series_unit", { count: series.value.tracked }),
-      coverage: `${pctOf(series.value.complete, series.value.tracked)}%`,
-      color: rampColor(ramp.value, 3),
-    },
+    // Series completeness is owned-only (see the series block), so under a wider scope this
+    // slot would carry an owned-derived figure among all-scope ones. It shows how much of the
+    // wider set is actually on the shelf instead — the question the scope switch raises, and a
+    // ratio in the same shape, so the tile grid keeps its four cells either way.
+    scope.value === "owned"
+      ? {
+          key: "series",
+          label: t("stats.tile_series"),
+          value: String(series.value.complete),
+          unit: t("stats.tile_series_unit", { count: series.value.tracked }),
+          coverage: `${pctOf(series.value.complete, series.value.tracked)}%`,
+          color: rampColor(ramp.value, 3),
+        }
+      : {
+          key: "owned",
+          label: t("stats.tile_owned"),
+          value: `${pctOf(ownedInScope.value, s.total)}%`,
+          unit: t("stats.tile_owned_unit", {
+            count: ownedInScope.value.toLocaleString(),
+            total: s.total.toLocaleString(),
+          }),
+          coverage: `${pctOf(ownedInScope.value, s.total)}%`,
+          color: rampColor(ramp.value, 3),
+        },
   ];
 });
+
+/** Books in the current scope the user actually holds — the `owned` gate, counted in JS off the
+ *  owning-status block rather than re-asked of the server. */
+const ownedInScope = computed(
+  () =>
+    (stats.value?.owningStatus.owned ?? 0) +
+    (stats.value?.owningStatus.lent_out ?? 0),
+);
 
 // ── Blocks ────────────────────────────────────────────────────────────────────
 
@@ -634,9 +712,10 @@ const topAuthorsLine = computed(() => {
 const load = async () => {
   const locale = localeStore.locale;
   try {
-    // Both are locale-joined server-side (series names), so they refetch together.
+    // Both are locale-joined server-side (series names), so they refetch together. `/api/series`
+    // takes no scope — series completeness is owned-only, see the series block.
     const [statsRes, seriesRes] = await Promise.all([
-      apiFetch(`/api/stats?locale=${locale}`),
+      apiFetch(`/api/stats?locale=${locale}&scope=${scope.value}`),
       apiFetch(`/api/series?locale=${locale}`),
     ]);
     const statsBody = await statsRes.json();
@@ -652,10 +731,7 @@ const load = async () => {
   }
 };
 
-watch(
-  () => localeStore.locale,
-  () => load(),
-);
+watch([() => localeStore.locale, scope], () => load());
 
 // Collapse back when the dimension changes — "show all 12" for genres shouldn't leave the
 // author list pre-expanded to a different length.

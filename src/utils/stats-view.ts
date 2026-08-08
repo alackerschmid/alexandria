@@ -158,6 +158,12 @@ export function normalizeStats(payload: unknown): CollectionStats {
   const p = (payload ?? {}) as Raw;
   return {
     total: p.total ?? 0,
+    // An older worker ships no scope counts at all; falling back to the scope-agnostic `total`
+    // keeps the empty state from claiming books exist outside the current scope when it can't know.
+    scopeCounts: {
+      owned: p.scopeCounts?.owned ?? p.total ?? 0,
+      all: p.scopeCounts?.all ?? p.total ?? 0,
+    },
     byStatus: counts(p.byStatus, STATUS_KEYS),
     owningStatus: counts(p.owningStatus, OWNING_KEYS),
     catalogueGaps: counts(p.catalogueGaps, GAP_KEYS),

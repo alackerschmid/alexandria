@@ -10,6 +10,8 @@ import {
   computeYearStats,
   dedupeByWork,
   extractYear,
+  scopeClauseFor,
+  SCOPE_CLAUSES,
   type RawRow,
 } from "../src/routes/stats";
 
@@ -87,6 +89,27 @@ describe("extractYear", () => {
   it("reads a leading year out of a partial ISO original date", () => {
     // parseInt stops at the first non-digit, which is what makes "1954-01-01" work here.
     expect(extractYear(row({ original_pub_date: "1954-01-01" }))).toBe(1954);
+  });
+});
+
+describe("scopeClauseFor", () => {
+  it("defaults to the owned gate", () => {
+    expect(scopeClauseFor(undefined)).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("")).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("nonsense")).toBe(SCOPE_CLAUSES.owned);
+  });
+
+  it("resolves the scopes it knows", () => {
+    expect(scopeClauseFor("owned")).toBe(SCOPE_CLAUSES.owned);
+    expect(scopeClauseFor("all")).toBe(SCOPE_CLAUSES.all);
+  });
+
+  it("does not reach the prototype chain", () => {
+    // The clause is interpolated into the SQL, so an inherited property would stringify a
+    // function into the query as a 500 — the exact bug `sortClauseFor` was fixed for.
+    for (const key of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+      expect(scopeClauseFor(key)).toBe(SCOPE_CLAUSES.owned);
+    }
   });
 });
 

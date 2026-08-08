@@ -39,8 +39,26 @@ export interface CatalogueGaps {
   readUnrated: number;
 }
 
+/**
+ * Which scans `/api/stats` is computed over.
+ *
+ * Deliberately not the library's `OwnershipScope`, which carries a third value (`missing`,
+ * revealing series entries the user doesn't have) that has no meaning for an aggregate over
+ * books the user actually holds a scan of.
+ *
+ * `owned` is the default and matches every other ownership gate in the app; `all` also counts
+ * the `unknown`/`want`/`unowned` rows — notably everything a Goodreads import writes, which
+ * asserts nothing about ownership and would otherwise measure as an empty library.
+ */
+export type StatsScope = "owned" | "all";
+
+export const STATS_SCOPES: readonly StatsScope[] = ["owned", "all"];
+
 export interface CollectionStats {
   total: number;
+  /** Scans behind each scope, both always present whichever one was asked for — so a page whose
+   *  current scope is empty can say what the other one holds instead of "nothing to measure". */
+  scopeCounts: { owned: number; all: number };
   byStatus: { read: number; reading: number; unread: number; dnf: number };
   genres: DimensionItem[];
   uncategorizedGenreCount: number;

@@ -67,6 +67,17 @@ describe("normalizeStats", () => {
     expect(s.catalogueGaps.noCover).toBe(0);
     expect(s.genreRatings).toEqual({ best: null, worst: null });
     expect(s.owningStatus.owned).toBe(0);
+    expect(s.scopeCounts).toEqual({ owned: 0, all: 0 });
+  });
+
+  it("falls back to `total` for the scope counts an older worker doesn't send", () => {
+    // The page offers "you have N books outside this scope" off the difference between the two.
+    // Defaulting them to 0 would make a full library look like it had books to reveal; taking
+    // both from `total` says "the scopes are the same size", i.e. offers nothing.
+    expect(normalizeStats({ total: 42 }).scopeCounts).toEqual({
+      owned: 42,
+      all: 42,
+    });
   });
 
   it("survives null and undefined payloads", () => {
