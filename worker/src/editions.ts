@@ -2,7 +2,7 @@ import type { BookRow, BookMetadata } from "./types";
 import { alternateIsbnForm, isbnForms, normalizeIsbn } from "./isbn";
 import { dedupeTrimmed } from "./library-query";
 import { outcomeForStatus } from "./usage";
-import type { UsageOutcome, UsageRecorder } from "./usage";
+import type { UsageOperation, UsageOutcome, UsageRecorder } from "./usage";
 
 /**
  * Every outbound HTTP call in this module goes through here, so this is where they are counted
@@ -10,17 +10,31 @@ import type { UsageOutcome, UsageRecorder } from "./usage";
  * than at the call sites is what makes the count exact: a new call site cannot forget, and calls
  * whose *telemetry* is skipped (the OpenLibrary work-description read) are still metered.
  */
-async function fetchWithTimeout(
+async function fetchWithTimeout<T>(
   url: string,
   usage: UsageRecorder | null | undefined,
+  /**
+   * Everything the caller needs from the response — status checks, header reads and the body
+   * parse alike — because this runs *inside* the timeout.
+   *
+   * `fetch()` in Workers resolves as soon as the response **headers** arrive, so a helper that
+   * returned the `Response` and cleared its timer had already stopped guarding by the time the
+   * caller read the body. An upstream that answered 200 and then stalled mid-stream — a realistic
+   * mode for OpenLibrary and for the 25s SPARQL endpoint under load — left `res.json()` hanging
+   * with nothing to abort it, until the platform's own limits killed the invocation. For the cron
+   * that also stranded the tick's `usage.flush()`, losing every counter it had accumulated.
+   * Aborting the controller aborts the body stream too, so keeping the callback inside restores
+   * the intended end-to-end bound at no extra cost.
+   */
+  consume: (res: Response) => Promise<T>,
   opts: RequestInit = {},
   timeoutMs = 4000,
-): Promise<Response> {
+): Promise<T> {
   usage?.countFetch();
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...opts, signal: ctrl.signal });
+    return await consume(await fetch(url, { ...opts, signal: ctrl.signal }));
   } finally {
     clearTimeout(t);
   }
@@ -66,8 +80,9 @@ interface GoogleBooksOptions {
    * reasoning applies to a 5xx blip just as much as a 429.
    */
   retryTransient: boolean;
-  /** Which counter the call is charged to in `api_usage`. */
-  operation: "isbn_lookup" | "title_search";
+  /** Which counter the call is charged to in `api_usage`. Narrowed from `UsageOperation` so a
+   *  label the counters don't recognise is a compile error rather than a phantom row. */
+  operation: Extract<UsageOperation, "isbn_lookup" | "title_search">;
   /** Omitted only where no recorder is available (unit tests); then nothing is recorded. */
   usage?: UsageRecorder | null;
 }
@@ -94,29 +109,48 @@ async function fetchGoogleBooksJson(
     // throws — that's one call to Google, whatever went wrong afterwards.
     let recorded = false;
     try {
-      const res = await fetchWithTimeout(url, usage);
-      status = res.status;
-      record(outcomeForStatus(status));
-      recorded = true;
+      // Response inspection and the body parse both happen inside `consume`; only the retry
+      // decision (which may sleep, and must not hold the request open) is made out here.
+      const outcome = await fetchWithTimeout(
+        url,
+        usage,
+        async (
+          res,
+        ): Promise<
+          | { kind: "transient"; hinted: number }
+          | { kind: "failed" }
+          | { kind: "ok"; data: any }
+        > => {
+          status = res.status;
+          record(outcomeForStatus(status));
+          recorded = true;
+          if (status === 429 || status >= 500)
+            return {
+              kind: "transient",
+              hinted: Number(res.headers.get("Retry-After")),
+            };
+          if (!res.ok) return { kind: "failed" };
+          return { kind: "ok", data: await res.json() };
+        },
+      );
 
+      if (outcome.kind === "ok")
+        return { data: outcome.data, status, ok: true };
+      if (outcome.kind === "failed")
+        return { data: undefined, status, ok: false };
+
+      if (Number.isFinite(outcome.hinted) && outcome.hinted > 0)
+        retryAfterSeconds = outcome.hinted;
       const retryable =
         retryTransient &&
         (status >= 500 || (status === 429 && attempt < MAX_ATTEMPTS_429 - 1));
-
-      if (status === 429 || status >= 500) {
-        const hinted = Number(res.headers.get("Retry-After"));
-        if (Number.isFinite(hinted) && hinted > 0) retryAfterSeconds = hinted;
-        if (retryable && attempt < MAX_ATTEMPTS_5XX - 1) {
-          const backoff = 300 * (attempt + 1);
-          const hintedMs = retryAfterSeconds ? retryAfterSeconds * 1000 : 0;
-          await sleep(Math.min(Math.max(backoff, hintedMs), MAX_RETRY_AFTER_MS));
-          continue;
-        }
-        return { data: undefined, status, ok: false, retryAfterSeconds };
+      if (retryable && attempt < MAX_ATTEMPTS_5XX - 1) {
+        const backoff = 300 * (attempt + 1);
+        const hintedMs = retryAfterSeconds ? retryAfterSeconds * 1000 : 0;
+        await sleep(Math.min(Math.max(backoff, hintedMs), MAX_RETRY_AFTER_MS));
+        continue;
       }
-
-      if (!res.ok) return { data: undefined, status, ok: false };
-      return { data: await res.json(), status, ok: true };
+      return { data: undefined, status, ok: false, retryAfterSeconds };
     } catch {
       if (!recorded) record("error");
       // `retryTransient` gates this arm too. A thrown failure — the 4s abort, a network error, a
@@ -178,11 +212,11 @@ async function fetchOpenLibraryWorkDescription(
   usage?: UsageRecorder | null,
 ): Promise<string | null> {
   try {
-    const res = await fetchWithTimeout(
+    const work: any = await fetchWithTimeout(
       `https://openlibrary.org${workKey}.json`,
       usage,
+      (res) => res.json() as Promise<any>,
     );
-    const work: any = await res.json();
     return typeof work.description === "string"
       ? work.description
       : (work.description?.value ?? null);
@@ -203,12 +237,16 @@ async function fetchOpenLibraryBibkey(
 ): Promise<[any, any]> {
   try {
     const pair = await Promise.all([
-      fetchWithTimeout(`${base}&jscmd=data`, usage).then(
+      fetchWithTimeout(
+        `${base}&jscmd=data`,
+        usage,
         (r) => r.json() as Promise<any>,
       ),
-      fetchWithTimeout(`${base}&jscmd=details`, usage)
-        .then((r) => r.json() as Promise<any>)
-        .catch(() => ({})),
+      fetchWithTimeout(
+        `${base}&jscmd=details`,
+        usage,
+        (r) => r.json() as Promise<any>,
+      ).catch(() => ({})),
     ]);
     usage?.record("openlibrary", "isbn_lookup", "success");
     return pair;
@@ -593,22 +631,33 @@ export async function fetchOpenLibraryEditions(
   usage?: UsageRecorder | null,
 ): Promise<OpenLibraryEdition[] | null> {
   try {
-    const editionRes = await fetchWithTimeout(
+    // Only this request is timed here; the editions fetch below is a separate request that
+    // carries its own timeout, so it stays outside the callback.
+    const lookup = await fetchWithTimeout(
       `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
       usage,
+      async (
+        res,
+      ): Promise<
+        { kind: "none" } | { kind: "failed"; status: number } | { kind: "work"; workKey: string }
+      > => {
+        // 404 = ISBN unknown to OpenLibrary — nothing to expand from, not an error.
+        if (res.status === 404) return { kind: "none" };
+        if (!res.ok) return { kind: "failed", status: res.status };
+        const edition: any = await res.json();
+        const workKey: string | undefined = edition.works?.[0]?.key;
+        return workKey ? { kind: "work", workKey } : { kind: "none" };
+      },
     );
-    if (editionRes.status === 404) return []; // ISBN unknown to OpenLibrary — nothing to expand from, not an error
-    if (!editionRes.ok) {
+    if (lookup.kind === "none") return [];
+    if (lookup.kind === "failed") {
       console.error(
-        `[OL editions] HTTP ${editionRes.status} resolving isbn ${isbn}`,
+        `[OL editions] HTTP ${lookup.status} resolving isbn ${isbn}`,
       );
       return null;
     }
-    const edition: any = await editionRes.json();
-    const workKey: string | undefined = edition.works?.[0]?.key;
-    if (!workKey) return [];
 
-    return await fetchEditionsForWorkKey(workKey, usage);
+    return await fetchEditionsForWorkKey(lookup.workKey, usage);
   } catch (e) {
     console.error(`[OL editions] failed for isbn ${isbn}:`, e);
     return null;
@@ -637,11 +686,18 @@ async function fetchEditionsForWorkKey(
   workKey: string,
   usage?: UsageRecorder | null,
 ): Promise<OpenLibraryEdition[] | null> {
-  let editionsRes: Response;
+  // The body is parsed inside the timed scope, so what comes back is the status plus the already
+  // -read payload rather than a Response whose stream is no longer guarded.
+  let fetched: { status: number; ok: boolean; data: any };
   try {
-    editionsRes = await fetchWithTimeout(
+    fetched = await fetchWithTimeout(
       `https://openlibrary.org${workKey}/editions.json?limit=200`,
       usage,
+      async (res) => ({
+        status: res.status,
+        ok: res.ok,
+        data: res.ok ? await res.json() : null,
+      }),
     );
   } catch (e) {
     usage?.record("openlibrary", "editions", "error");
@@ -652,18 +708,16 @@ async function fetchEditionsForWorkKey(
   usage?.record(
     "openlibrary",
     "editions",
-    editionsRes.status === 404
-      ? "success"
-      : outcomeForStatus(editionsRes.status),
+    fetched.status === 404 ? "success" : outcomeForStatus(fetched.status),
   );
-  if (editionsRes.status === 404) return [];
-  if (!editionsRes.ok) {
+  if (fetched.status === 404) return [];
+  if (!fetched.ok) {
     console.error(
-      `[OL editions] HTTP ${editionsRes.status} fetching ${workKey}/editions.json`,
+      `[OL editions] HTTP ${fetched.status} fetching ${workKey}/editions.json`,
     );
     return null;
   }
-  const data: any = await editionsRes.json();
+  const data: any = fetched.data;
   const entries: any[] = data.entries ?? [];
 
   const out: OpenLibraryEdition[] = [];

@@ -15,6 +15,31 @@ const DAY_MS = 86_400_000;
 
 export type UsageProvider = "google_books" | "openlibrary" | "wikidata";
 
+/**
+ * Every operation label the counters recognise, as a closed union rather than a bare `string`.
+ *
+ * The `api_usage` primary key is `(hour_start, provider, operation)`, so a mistyped literal does
+ * not fail — it silently creates a *new* row nobody reads and drops the increment from the row the
+ * board actually charts. Writing `"isbn-lookup"` for `"isbn_lookup"` would compile, run, and split
+ * the panel's per-operation totals in two, with no type error, no test failure and no runtime
+ * signal. The values are a contract with `worker/migrations/CLAUDE.md`, so they live here and the
+ * per-provider subsets below narrow from them.
+ */
+export type UsageOperation =
+  // google_books
+  | "isbn_lookup" // also openlibrary — the same logical lookup against either source
+  | "title_search"
+  // openlibrary
+  | "editions"
+  // wikidata — `SparqlOperation` in enrichment.ts is exactly these
+  | "entity_search"
+  | "book_search"
+  | "book_hydrate"
+  | "labels"
+  | "work_details"
+  | "series_members"
+  | "edition_isbn";
+
 export type UsageOutcome = "success" | "error" | "rate_limited";
 
 /**
@@ -132,7 +157,7 @@ export class UsageRecorder {
 
   record(
     provider: UsageProvider,
-    operation: string,
+    operation: UsageOperation,
     outcome: UsageOutcome,
   ): void {
     if (!this.db) return;

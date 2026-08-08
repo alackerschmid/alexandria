@@ -12,6 +12,7 @@ import {
   outcomeForStatus,
   UsageRecorder,
 } from "./usage";
+import type { UsageOperation } from "./usage";
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -36,14 +37,18 @@ export type FailureReason =
 // each is a different failure mode, and the board is where that shows. `entity_search` is the mwapi
 // candidate search, `book_search` the type/author filter over it, `book_hydrate` the labels/series
 // read over the survivors — the filter is the expensive one, so a future regression has an address.
-type SparqlOperation =
+// Narrowed from `UsageOperation` rather than spelled independently, so a label that isn't one the
+// counters recognise is a compile error here instead of a phantom `api_usage` row at runtime.
+type SparqlOperation = Extract<
+  UsageOperation,
   | "book_search"
   | "book_hydrate"
   | "entity_search"
   | "labels"
   | "work_details"
   | "series_members"
-  | "edition_isbn";
+  | "edition_isbn"
+>;
 
 // Per-reason retry policy, applied by scheduleRetry at failure time. Typed as
 // Record<FailureReason, ...> so adding a new FailureReason value is a compile error here
@@ -151,20 +156,39 @@ async function fetchWikidataJson(
   url: string,
   timeoutMs = 25_000,
 ): Promise<any> {
-  const once = async () => {
+  // The response is reduced to a plain object *inside* the timed scope, body included. `fetch()`
+  // resolves on headers, so parsing the body after `clearTimeout` left the largest part of a
+  // SPARQL read — WDQS routinely streams for seconds — with no abort behind it: an endpoint that
+  // answered 200 and then stalled mid-stream hung the tick until the platform killed it, taking
+  // the tick's unflushed `usage` counters with it. The whole point of the 25s budget is that a
+  // slow query fails as `timeout` and gets retried, so this is where it has to be enforced.
+  const once = async (): Promise<{
+    status: number;
+    statusText: string;
+    ok: boolean;
+    retryAfter: string | null;
+    data: any;
+  }> => {
     // Counted here, per attempt, for the same reason `fetchWithTimeout` does it: this is the only
     // place a Wikidata request is actually made, so the subrequest meter cannot drift from reality.
     usage?.countFetch();
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      return await fetch(url, {
+      const res = await fetch(url, {
         headers: {
           "User-Agent": WIKIDATA_UA,
           Accept: "application/sparql-results+json",
         },
         signal: ctrl.signal,
       });
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        retryAfter: res.headers.get("Retry-After"),
+        data: res.ok ? await res.json() : undefined,
+      };
     } catch (e: any) {
       if (e?.name === "AbortError")
         throw new SparqlError(
@@ -195,7 +219,7 @@ async function fetchWikidataJson(
 
   let res = await attempt();
   if (res.status === 429) {
-    const retry = Number(res.headers.get("Retry-After")) || 5;
+    const retry = Number(res.retryAfter) || 5;
     console.warn(
       `[wikidata:${operation}] Rate limited (HTTP 429), retrying after ${retry}s`,
     );
@@ -210,16 +234,14 @@ async function fetchWikidataJson(
           ? "http_5xx"
           : "other";
     const retryAfter =
-      res.status === 429
-        ? Number(res.headers.get("Retry-After")) || undefined
-        : undefined;
+      res.status === 429 ? Number(res.retryAfter) || undefined : undefined;
     throw new SparqlError(
       `[wikidata:${operation}] HTTP ${res.status} ${res.statusText}`,
       kind,
       retryAfter,
     );
   }
-  return await res.json();
+  return res.data;
 }
 
 /** Returns [] when the query succeeds but has no results. */
