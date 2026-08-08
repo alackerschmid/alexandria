@@ -171,6 +171,12 @@ export function normalizeStats(payload: unknown): CollectionStats {
       best: p.genreRatings?.best ?? null,
       worst: p.genreRatings?.worst ?? null,
     },
+    spotlight: p.spotlight ?? [],
+    exemplars: {
+      oldest: p.exemplars?.oldest ?? null,
+      longest: p.exemplars?.longest ?? null,
+      soleLanguage: p.exemplars?.soleLanguage ?? null,
+    },
     ...normalizeDimensions(p),
     ...normalizeMeasures(p),
   };

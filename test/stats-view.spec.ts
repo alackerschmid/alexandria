@@ -69,6 +69,14 @@ describe("normalizeStats", () => {
     expect(s.genreRatings).toEqual({ best: null, worst: null });
     expect(s.owningStatus.owned).toBe(0);
     expect(s.scopeCounts).toEqual({ owned: 0, all: 0 });
+    // Home reads through `exemplars.oldest.title` while rendering, so a missing block has to
+    // arrive as three nulls rather than as `undefined`.
+    expect(s.spotlight).toEqual([]);
+    expect(s.exemplars).toEqual({
+      oldest: null,
+      longest: null,
+      soleLanguage: null,
+    });
   });
 
   it("falls back to `total` for the scope counts an older worker doesn't send", () => {

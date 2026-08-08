@@ -18,6 +18,10 @@ stats.use("*", authMiddleware);
 export type RawRow = {
   status: string;
   owning_status: string;
+  // Identity, carried only so the exemplars can name a book and the client can deep-link it.
+  // Nothing aggregate reads either one.
+  title: string | null;
+  isbn: string;
   author: string | null;
   authors_json: string | null;
   language: string | null;
@@ -48,8 +52,57 @@ type CustomFieldRow = {
   field_type: string;
   field_value: string | null;
 };
-type FirstLineRow = { title: string; first_line: string };
+type SpotlightRow = {
+  isbn: string;
+  title: string | null;
+  first_line: string;
+  work_id: number | null;
+  author: string | null;
+  cover_url: string | null;
+  original_pub_date: string | null;
+  publish_date: string | null;
+  publisher: string | null;
+  pages: number | null;
+};
 export type RatingRow = { rating: number; count: number };
+
+/** One named book, as the home page presents it. Everything but `isbn` can be absent — the row
+ *  renders what it has. `year` is already resolved through the shared bounds (`yearFromDates`)
+ *  rather than shipped as two raw date columns for the client to re-derive. */
+export type ExemplarBook = {
+  title: string | null;
+  isbn: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  year: number | null;
+  pages: number | null;
+  language: string | null;
+};
+
+export type Exemplars = {
+  oldest: ExemplarBook | null;
+  longest: ExemplarBook | null;
+  soleLanguage: ExemplarBook | null;
+};
+
+/** The spotlight book — a first line plus enough identity to render and link it. */
+export type SpotlightBook = {
+  isbn: string;
+  title: string | null;
+  firstLine: string;
+  workId: number | null;
+  author: string | null;
+  coverUrl: string | null;
+  year: number | null;
+  publisher: string | null;
+  pages: number | null;
+};
+
+/** How many first-line books the spotlight ships. A pool costs the same one query as a single
+ *  row and gives the home page's "show me another" its re-rolls without a refetch — re-rolling
+ *  by refetching `/api/stats` would recompute the whole aggregate to change one book. */
+export const SPOTLIGHT_POOL_SIZE = 5;
 type StatsResponse = {
   total: number;
   byStatus: { read: number; reading: number; unread: number; dnf: number };
@@ -113,6 +166,11 @@ type StatsResponse = {
     knownCount: number;
   } | null;
   randomFirstLine: { title: string; firstLine: string } | null;
+  /** Up to `SPOTLIGHT_POOL_SIZE` random first-line books. `randomFirstLine` is the first of
+   *  these, kept as its own field so an older client still gets the shape it reads. */
+  spotlight: SpotlightBook[];
+  /** Named books rather than distributions — the home page's half of the split. */
+  exemplars: Exemplars;
   /** Scans behind each scope, both always present and independent of the one asked for. The
    *  client needs the other number to offer the switch: an import-only library is 0 owned /
    *  N all, where "nothing to measure" is the wrong thing to say. */
@@ -140,19 +198,32 @@ export function scopeClauseFor(scope: string | undefined): string {
     : SCOPE_CLAUSES.owned;
 }
 
-export function extractYear(r: RawRow): number | null {
-  if (r.original_pub_date) {
-    const n = parseInt(r.original_pub_date, 10);
+/** The work's own year where it has one, else a 4-digit year off the edition's publish date,
+ *  bounded to 100..2100 — the bound is what stops a Wikidata `"0"` or a mistyped 5-digit year
+ *  being reported as the collection's oldest book.
+ *
+ *  Split out of `extractYear` because the spotlight row is not a `RawRow` and must not grow a
+ *  second, subtly different copy of the same rule. */
+export function yearFromDates(
+  originalPubDate: string | null,
+  publishDate: string | null,
+): number | null {
+  if (originalPubDate) {
+    const n = parseInt(originalPubDate, 10);
     if (n >= 100 && n <= 2100) return n;
   }
-  if (r.publish_date) {
-    const m = r.publish_date.match(/\d{4}/);
+  if (publishDate) {
+    const m = publishDate.match(/\d{4}/);
     if (m) {
       const n = parseInt(m[0], 10);
       if (n >= 100 && n <= 2100) return n;
     }
   }
   return null;
+}
+
+export function extractYear(r: RawRow): number | null {
+  return yearFromDates(r.original_pub_date, r.publish_date);
 }
 
 function topCounts(
@@ -288,6 +359,89 @@ function computeCountries(rows: RawRow[]) {
   return {
     countries: topCounts(countryCounts, 15),
     countryCount: countryCounts.size,
+  };
+}
+
+// ── Exemplars ─────────────────────────────────────────────────────────────────
+
+function toExemplar(r: RawRow): ExemplarBook {
+  return {
+    title: r.title,
+    isbn: r.isbn,
+    workId: r.work_id,
+    author: r.author,
+    coverUrl: r.cover_url,
+    year: extractYear(r),
+    pages: r.pages,
+    language: r.language,
+  };
+}
+
+/** Ties break on `isbn`, so the block names the same book on every request rather than whichever
+ *  row D1 happened to return first — the same trap `computeGenreRatings` documents. */
+function firstByIsbn(a: RawRow, b: RawRow): RawRow {
+  return a.isbn.localeCompare(b.isbn) <= 0 ? a : b;
+}
+
+/** The row with the extreme value of `valueOf`, rows without one skipped. */
+function pickExtreme(
+  rows: RawRow[],
+  valueOf: (r: RawRow) => number | null,
+  better: (candidate: number, best: number) => boolean,
+): RawRow | null {
+  let best: RawRow | null = null;
+  let bestValue = 0;
+  for (const r of rows) {
+    const v = valueOf(r);
+    if (v === null) continue;
+    if (best === null || better(v, bestValue)) {
+      best = r;
+      bestValue = v;
+    } else if (v === bestValue) {
+      best = firstByIsbn(best, r);
+    }
+  }
+  return best;
+}
+
+/**
+ * The three named books the home page shows instead of a distribution.
+ *
+ * One pass over the rows the route already holds — no extra query. Every one of them is null for
+ * a library that can't answer it (no years known, no page counts, one language), and the block
+ * hides the rows it gets nothing for.
+ *
+ * `soleLanguage` is the only book in its language, which is null for a monolingual library — the
+ * common case. It also stays null for a **one-book** library, where the claim is trivially true
+ * of the only book there is and the row would just repeat `oldest`.
+ */
+export function computeExemplars(rows: RawRow[]): Exemplars {
+  const oldest = pickExtreme(rows, extractYear, (v, best) => v < best);
+  const longest = pickExtreme(
+    rows,
+    (r) => (r.pages != null && r.pages > 0 ? r.pages : null),
+    (v, best) => v > best,
+  );
+
+  const byLanguage = new Map<string, RawRow[]>();
+  for (const r of rows) {
+    if (!r.language) continue;
+    const list = byLanguage.get(r.language);
+    if (list) list.push(r);
+    else byLanguage.set(r.language, [r]);
+  }
+  let sole: RawRow | null = null;
+  if (rows.length > 1) {
+    for (const list of byLanguage.values()) {
+      if (list.length !== 1) continue;
+      sole = sole === null ? list[0] : firstByIsbn(sole, list[0]);
+    }
+  }
+
+  return {
+    oldest: oldest && toExemplar(oldest),
+    longest: longest && toExemplar(longest),
+    soleLanguage: sole && toExemplar(sole),
   };
 }
 
@@ -677,6 +831,12 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
       readUnrated: 0,
     },
     scopeCounts: input.scopeCounts ?? { owned: 0, all: 0 },
+    spotlight: input.spotlight ?? [],
+    exemplars: input.exemplars ?? {
+      oldest: null,
+      longest: null,
+      soleLanguage: null,
+    },
     ...buildDimensions(input),
     ...buildMeasures(input),
   };
@@ -699,6 +859,8 @@ stats.get("/", async (c) => {
         `
       SELECT s.status                                                        AS status,
              s.owning_status                                                 AS owning_status,
+             b.title                                                         AS title,
+             b.isbn                                                          AS isbn,
              b.author                                                        AS author,
              ${AUTHORS_JSON_SUBQUERY}                                       AS authors_json,
              COALESCE(o.language, b.language)                               AS language,
@@ -759,20 +921,32 @@ stats.get("/", async (c) => {
         .bind(userId)
         .all<CustomFieldRow>(),
 
+      // A pool rather than one row (see `SPOTLIGHT_POOL_SIZE`): same query cost, and the home
+      // page can re-roll client-side instead of refetching the whole aggregate.
       c.env.DB.prepare(
         `
-      SELECT b.title AS title, wk.first_line AS first_line
+      SELECT b.isbn                                                          AS isbn,
+             b.title                                                          AS title,
+             b.work_id                                                        AS work_id,
+             b.author                                                         AS author,
+             wk.first_line                                                    AS first_line,
+             wk.original_pub_date                                             AS original_pub_date,
+             COALESCE(o.cover_url, b.cover_url)                               AS cover_url,
+             COALESCE(o.publish_date, b.publish_date)                         AS publish_date,
+             COALESCE(o.publisher, b.publisher)                               AS publisher,
+             COALESCE(o.number_of_pages_median, b.number_of_pages_median)     AS pages
       FROM scans s
       JOIN books b ON s.book_id = b.id
       JOIN works wk ON wk.id = b.work_id
+      LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
       WHERE s.user_id = ? AND ${scopeClause}
         AND wk.first_line IS NOT NULL AND wk.first_line != ''
       ORDER BY RANDOM()
-      LIMIT 1
+      LIMIT ${SPOTLIGHT_POOL_SIZE}
     `,
       )
         .bind(userId)
-        .all<FirstLineRow>(),
+        .all<SpotlightRow>(),
 
       // COUNT(DISTINCT b.work_id), not COUNT(*): the rating hangs off the work, so a user who
       // owns two editions of one book would otherwise contribute that rating twice.
@@ -831,11 +1005,24 @@ stats.get("/", async (c) => {
     ratingResult.results,
   );
 
-  // Random first line (for the home page spotlight)
-  const firstLineRow = firstLineResult.results[0];
-  const randomFirstLine = firstLineRow
-    ? { title: firstLineRow.title, firstLine: firstLineRow.first_line }
+  // The home page's spotlight pool. `randomFirstLine` is the first entry, kept as its own field
+  // so a client that only knows the old shape still gets exactly what it used to.
+  const spotlight: SpotlightBook[] = firstLineResult.results.map((r) => ({
+    isbn: r.isbn,
+    title: r.title,
+    firstLine: r.first_line,
+    workId: r.work_id,
+    author: r.author,
+    coverUrl: r.cover_url,
+    year: yearFromDates(r.original_pub_date, r.publish_date),
+    publisher: r.publisher,
+    pages: r.pages,
+  }));
+  const randomFirstLine = spotlight[0]
+    ? { title: spotlight[0].title ?? "", firstLine: spotlight[0].firstLine }
     : null;
+
+  const exemplars = computeExemplars(rows);
 
   // Series
   const topSeries = seriesResult.results.map((r) => ({
@@ -887,6 +1074,8 @@ stats.get("/", async (c) => {
       catalogueGaps,
       translationRatio,
       randomFirstLine,
+      spotlight,
+      exemplars,
       scopeCounts,
     }),
   );
