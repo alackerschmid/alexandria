@@ -131,14 +131,33 @@ export function bookYear(
  * `original_pub_date` comes from Wikidata enrichment and is null for most of an unenriched
  * library, which is exactly when the two answers diverge most.
  *
- * One knowing difference from `extractYear`: `YEAR_RE` needs four digits, so a work from before
- * the year 1000 resolves to "" here while the histogram still buckets it. No such book has
- * turned up in the catalogue, and every other year helper shares the limit.
+ * The mirror leans on a writer contract: `yearFrom` (`worker/src/enrichment.ts`) is the sole
+ * writer of `works.original_pub_date` and emits exactly four digits or NULL — which is why the
+ * `||` fallback here (falsy-only) matches `extractYear`'s parse-failure fallback in practice,
+ * and why zero-padded early years ("0500") resolve identically on both sides. One latent
+ * difference remains, on the `publish_date` half: `YEAR_RE` is word-boundary anchored while
+ * `extractYear`'s regex is not, so a MARC-style date like "c1990" would be bucketed by the
+ * histogram but dropped here. OpenLibrary's `publish_date` passes through unnormalised
+ * (`editions.ts`), so nothing rules such values out — none exist in the catalogue today
+ * (verified across all distinct values), so this is recorded rather than defended against.
  */
 export function workYear(
   book: Pick<Book, "publish_date" | "original_pub_date">,
 ): string {
   return publishYear(book.original_pub_date || book.publish_date);
+}
+
+/**
+ * The `year:` search token's predicate: a **prefix** match on the work year, so `year:1954` is
+ * a year and `year:195` is the 1950s — which is what the `/stats` decade histogram deep-links
+ * to. Deliberately not a substring match: that also matched `year:200` against a book from
+ * 1200. Lives here rather than in `useLibrarySearch` so the semantics are pinned by unit test.
+ */
+export function matchesYearPrefix(
+  book: Pick<Book, "publish_date" | "original_pub_date">,
+  prefix: string,
+): boolean {
+  return workYear(book).startsWith(prefix);
 }
 
 /**

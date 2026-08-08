@@ -176,6 +176,18 @@ export function normalizeStats(payload: unknown): CollectionStats {
   };
 }
 
+/**
+ * Books the *other* scope holds that the current one doesn't — what a scoped empty state
+ * offers to reveal ("You've catalogued N books, but none are marked as owned"). Only ever
+ * non-zero under `owned`, since `all` is a superset; the `Math.max` clamp keeps a
+ * degenerate payload from putting a negative count into that sentence. Shared by `/stats`
+ * and home, which carry the same two-branch empty state.
+ */
+export function countOutsideScope(stats: CollectionStats | null): number {
+  const c = stats?.scopeCounts;
+  return c ? Math.max(0, c.all - c.owned) : 0;
+}
+
 // ── Dimension breakdown ───────────────────────────────────────────────────────
 
 /** Localized labels a breakdown needs but the payload only carries as codes/keys. */

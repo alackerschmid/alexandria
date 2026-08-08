@@ -49,12 +49,15 @@ const libraryQuery = (q: string): RouteLocationRaw => ({
  * rating facet doesn't express. Both are still worth reporting — they're the two gaps that
  * resolve themselves over time rather than by editing a book.
  *
- * **The linked view can list more books than the count says.** Every `/api/stats` figure is
- * gated on `owning_status IN ('owned','lent_out')`, while the library lists everything recorded
- * — so a `want` or `unowned` book with no cover is outside the count but inside the link. The
- * superset is the friendlier miss of the two (you see everything that needs fixing rather than
- * a filtered subset), and no single `owning:` value expresses "owned or lent out" to close the
- * gap. Worth revisiting if the search grammar ever grows one.
+ * **The linked view can list more books than the count says — under the owned scope.** With
+ * `/stats` on its default `scope=owned` the gap figures are gated on
+ * `owning_status IN ('owned','lent_out')`, while the library lists everything recorded — so a
+ * `want` or `unowned` book with no cover is outside the count but inside the link. The superset
+ * is the friendlier miss of the two (you see everything that needs fixing rather than a
+ * filtered subset), and no single `owning:` value expresses "owned or lent out" to close the
+ * gap. Under `scope=all` the figures are ungated and count and link agree (modulo the user
+ * having narrowed the library's own ownership scope). Worth revisiting if the search grammar
+ * ever grows an owned-or-lent-out facet.
  */
 const gaps = computed(() => [
   {

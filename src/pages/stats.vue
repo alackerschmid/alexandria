@@ -46,7 +46,9 @@
       v-else-if="stats && stats.total === 0"
       class="flex-1 flex flex-col items-center justify-center gap-3 px-6 py-20"
     >
-      <template v-if="unscopedCount > 0">
+      <!-- Also gated on the scope: after a failed refetch the payload can lag the pill, and a
+           "Measure all books" button while the pill already reads All would be inert. -->
+      <template v-if="unscopedCount > 0 && scope === 'owned'">
         <p class="font-heading font-bold text-3xl text-text-primary text-center">
           {{ $t("stats.empty_scoped_heading") }}
         </p>
@@ -438,6 +440,7 @@ import {
   buildLengthSegments,
   buildRatingHistogram,
   colorRamp,
+  countOutsideScope,
   dimensionTotal,
   formatCount,
   getBreakdown,
@@ -445,6 +448,7 @@ import {
   pctOf,
   rampColor,
 } from "@/utils/stats-view";
+import { createFetchSequencer } from "@/utils/fetch-seq";
 import { STATS_SCOPES, type CollectionStats } from "@/types/stats";
 import type { GroupBy } from "@/types/library";
 
@@ -478,12 +482,7 @@ const scopeOptions = computed(() =>
   STATS_SCOPES.map((value) => ({ value, label: t(`stats.scope_${value}`) })),
 );
 
-/** Books the *other* scope holds that this one doesn't — what the empty state offers to show.
- *  Only ever non-zero on `owned`, since `all` is a superset. */
-const unscopedCount = computed(() => {
-  const c = stats.value?.scopeCounts;
-  return c ? Math.max(0, c.all - c.owned) : 0;
-});
+const unscopedCount = computed(() => countOutsideScope(stats.value));
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
@@ -709,8 +708,18 @@ const topAuthorsLine = computed(() => {
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
+// Sequenced: a scope or locale switch can re-trigger load() while the previous request is
+// still in flight, and the two scopes are not equally heavy — `scope=all` scans strictly more
+// rows, so without the guard the stale request is systematically the one that lands last and
+// overwrites the fresh one (all-scope numbers under an OWNED pill, or vice versa).
+const nextLoad = createFetchSequencer();
+
 const load = async () => {
+  const isCurrent = nextLoad();
   const locale = localeStore.locale;
+  // Owned by load() rather than by onMounted, so a watcher-triggered refetch also shows the
+  // spinner instead of leaving the previous scope's numbers under the already-moved pill.
+  loading.value = true;
   try {
     // Both are locale-joined server-side (series names), so they refetch together. `/api/series`
     // takes no scope — series completeness is owned-only, see the series block.
@@ -719,29 +728,28 @@ const load = async () => {
       apiFetch(`/api/series?locale=${locale}`),
     ]);
     const statsBody = await statsRes.json();
+    // Series completeness is a secondary block: a failure there must not blank the page, so it
+    // degrades to "no series tracked" rather than throwing past the stats we did get.
+    const seriesBody = seriesRes.ok ? await seriesRes.json() : null;
+    if (!isCurrent()) return; // superseded — a newer load() owns the page now
     if (!statsRes.ok)
       throw new Error(statsBody.error || t("stats.load_failed"));
     stats.value = normalizeStats(statsBody);
-
-    // Series completeness is a secondary block: a failure there must not blank the page, so it
-    // degrades to "no series tracked" rather than throwing past the stats we did get.
-    if (seriesRes.ok) memberships.value = await seriesRes.json();
+    if (seriesBody) memberships.value = seriesBody;
   } catch (err: any) {
-    showToast(err.message || t("stats.load_failed"), "error");
+    if (isCurrent()) showToast(err.message || t("stats.load_failed"), "error");
+  } finally {
+    if (isCurrent()) loading.value = false;
   }
 };
 
 watch([() => localeStore.locale, scope], () => load());
 
-// Collapse back when the dimension changes — "show all 12" for genres shouldn't leave the
-// author list pre-expanded to a different length.
-watch(dimension, () => {
+// Collapse back when the dimension or the scope changes — "show all 12" for genres shouldn't
+// leave a different, longer list pre-expanded.
+watch([dimension, scope], () => {
   expanded.value = false;
 });
 
-onMounted(async () => {
-  loading.value = true;
-  await Promise.all([load(), fieldDefsStore.load()]);
-  loading.value = false;
-});
+onMounted(() => Promise.all([load(), fieldDefsStore.load()]));
 </script>

@@ -93,6 +93,15 @@ describe("extractYear", () => {
 });
 
 describe("scopeClauseFor", () => {
+  it("pins the clauses themselves, not just the routing between them", () => {
+    // Self-referential assertions (`scopeClauseFor(x) === SCOPE_CLAUSES.x`) stay green if the
+    // two values are swapped or 'lent_out' is dropped from the gate — and the default clause is
+    // what the home dashboard reads, since it sends no ?scope=. Same pattern as the
+    // SORT_CLAUSES content assertions in library-query.spec.ts.
+    expect(SCOPE_CLAUSES.owned).toBe("s.owning_status IN ('owned', 'lent_out')");
+    expect(SCOPE_CLAUSES.all).toBe("1 = 1");
+  });
+
   it("defaults to the owned gate", () => {
     expect(scopeClauseFor(undefined)).toBe(SCOPE_CLAUSES.owned);
     expect(scopeClauseFor("")).toBe(SCOPE_CLAUSES.owned);

@@ -5,6 +5,7 @@ import {
   buildLengthSegments,
   buildRatingHistogram,
   colorRamp,
+  countOutsideScope,
   dimensionTotal,
   formatCount,
   getBreakdown,
@@ -78,6 +79,42 @@ describe("normalizeStats", () => {
       owned: 42,
       all: 42,
     });
+  });
+
+  it("passes a real scopeCounts payload through, including a legitimate zero", () => {
+    // The payload the whole scope feature exists for: a Goodreads-imported library where every
+    // scan is owning_status 'unknown'. `owned: 0` must survive (?? not ||) — collapsing it to
+    // `total` would hide the scoped empty state and tell a 120-book library "nothing to
+    // measure yet".
+    expect(
+      normalizeStats({ total: 0, scopeCounts: { owned: 0, all: 120 } })
+        .scopeCounts,
+    ).toEqual({ owned: 0, all: 120 });
+  });
+
+  it("fills a partial scopeCounts per-field from total", () => {
+    expect(
+      normalizeStats({ total: 42, scopeCounts: { owned: 3 } }).scopeCounts,
+    ).toEqual({ owned: 3, all: 42 });
+  });
+});
+
+describe("countOutsideScope", () => {
+  it("is the all-minus-owned difference the scoped empty state renders", () => {
+    expect(
+      countOutsideScope(stats({ scopeCounts: { owned: 0, all: 120 } })),
+    ).toBe(120);
+  });
+
+  it("is 0 while stats are still loading (null)", () => {
+    expect(countOutsideScope(null)).toBe(0);
+  });
+
+  it("clamps a degenerate payload to 0 rather than going negative", () => {
+    // "You've catalogued -2 books" must be unrepresentable whatever the worker sends.
+    expect(
+      countOutsideScope(stats({ scopeCounts: { owned: 5, all: 3 } })),
+    ).toBe(0);
   });
 
   it("survives null and undefined payloads", () => {

@@ -1,6 +1,12 @@
 import vuetify from "eslint-config-vuetify";
 
 export default [
+  {
+    // Agent worktrees are separate checkouts of this same repo, linted (or not) in their own
+    // right — walking into them from here double-lints every file and, worse, their copies of
+    // path-anchored overrides like the `.claude/hooks/**` block below no longer match.
+    ignores: [".claude/worktrees/**"],
+  },
   ...(await vuetify({
     ts: true,
   })),
