@@ -240,6 +240,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useLocaleStore } from "@/stores/locale";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useStatsDefaultsStore } from "@/stores/statsDefaults";
+import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppButton from "@/components/AppButton.vue";
@@ -270,6 +271,7 @@ const fieldDefsStore = useFieldDefsStore();
 // One collection-scope preference, two collection surfaces: home must not default to `owned`
 // independently, or an import-only library shows a blank home while `/stats` offers the fix.
 const { scope } = storeToRefs(useStatsDefaultsStore());
+const libraryDefaults = useLibraryDefaultsStore();
 const { apiFetch } = useApi();
 const { visible: errorToast, message: errorMessage, showToast } = useToast();
 
@@ -350,8 +352,14 @@ const unscopedCount = computed(() => countOutsideScope(statsData.value));
 
 // ── Blocks ────────────────────────────────────────────────────────────────────
 
+// Honours the library's "Count novellas & side stories" setting, which is what that setting says
+// it does ("Include non-whole-numbered entries in series counts") — these gaps are series counts.
+// Reading the shared preference rather than deciding locally is what keeps this row, the stats
+// page's completeness block and the library shelf from each claiming a different "N missing".
 const incompleteSeries = computed(() =>
-  summarizeSeries(memberships.value).rows.filter((r) => !r.complete),
+  summarizeSeries(memberships.value, {
+    mainOnly: libraryDefaults.mainOnly,
+  }).rows.filter((r) => !r.complete),
 );
 
 const gapRows = computed(() => incompleteSeries.value.slice(0, GAP_ROWS));

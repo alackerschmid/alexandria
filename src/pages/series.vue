@@ -227,6 +227,7 @@ import type {
   ReadStatus,
 } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
+import { isMainSeriesEntry } from "@/utils/series-completeness";
 import CoverImage from "@/components/CoverImage.vue";
 
 interface SeriesEntry {
@@ -262,11 +263,13 @@ const loadError = ref(false);
 const showSideEntries = ref(false);
 
 const entries = computed(() => series.value?.entries ?? []);
-const mainEntries = computed(() =>
-  entries.value.filter((e) => e.ordinal != null && e.ordinal % 1 === 0),
-);
+// This page splits the two halves for display rather than measuring completeness, so it wants
+// `isMainSeriesEntry` itself rather than `countableSeriesEntries` — but it must be the *same*
+// predicate the shelves and the stats page use, or "side story" means one thing here and another
+// in the counts. It was a third inline spelling of the rule (`% 1 === 0`) until this shared it.
+const mainEntries = computed(() => entries.value.filter(isMainSeriesEntry));
 const sideEntries = computed(() =>
-  entries.value.filter((e) => e.ordinal == null || e.ordinal % 1 !== 0),
+  entries.value.filter((e) => !isMainSeriesEntry(e)),
 );
 const mainOwnedCount = computed(
   () => mainEntries.value.filter((e) => e.owned).length,

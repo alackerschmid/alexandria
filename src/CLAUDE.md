@@ -78,6 +78,13 @@ ask the `inventory` subagent rather than expecting a list here.
   none and so always reads the owned collection. Series completeness is deliberately outside
   that switch — `/api/series` has its own ownership gate, so the block reads "owned only" under
   any wider scope rather than mixing an owned-derived figure into all-scope numbers.
+- **Series completeness has one definition, in `utils/series-completeness.ts`.**
+  `countableSeriesEntries` decides which entries count *and* which a shelf displays, and it takes
+  the user's `libMainOnly` preference as an argument — pass it from `stores/libraryDefaults`,
+  never default it locally. The library shelf, home's shelf gaps and `/stats`' completeness block
+  all make the same claim, and they will silently disagree the moment one of them re-derives the
+  rule. See the `library-pipeline` rule for the main-entry definition and the no-ordinals
+  fallback.
 - **`/stats` aggregates; home particularises.** Both pages are about the same subject — the
   collection — so they split by *mode*, not by subject. `/stats` shows distributions, averages
   and completeness and never names a single book; `/home` shows individual books and almost no

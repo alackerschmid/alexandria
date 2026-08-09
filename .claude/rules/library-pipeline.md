@@ -56,6 +56,26 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
   completeness counts, unowned reveal, collapse/"show all" helpers) consumed by the
   packed-row layout
 
+## What counts as a series entry
+
+`countableSeriesEntries` (`src/utils/series-completeness.ts`) is **the only definition of which
+entries a series' completeness is measured over**, and it decides both the counts and which
+entries a shelf displays. Three surfaces share it — the library shelf's "3 / 7", home's shelf
+gaps, and `/stats`' series completeness — and they drifted before it existed: the shelf filtered
+to whole-numbered entries inline while `summarizeSeries` counted everything, so Discworld read
+"1 / 41" on a shelf and "1 / 64" on the stats page.
+
+- **Main entry = whole-numbered ordinal.** `work_series.ordinal` is REAL precisely to carry
+  decimal interludes (5.5), and novellas/companions arrive from Wikidata with a decimal ordinal
+  or none at all. `0` is a real ordinal (a prequel), only `null` is unnumbered.
+- **It honours `libMainOnly`** (`stores/libraryDefaults`, default main-only) — the setting whose
+  own subtitle is "Include non-whole-numbered entries in series counts". Pass the preference in;
+  never default it per call site, or the three surfaces disagree again.
+- **No whole-numbered entries at all → fall back to every entry.** Wikidata ordinal coverage is
+  patchy (23 of 64 Discworld entries have none locally; some series have none whatsoever).
+  Without the fallback such a series measures 0 of 0 — which reads as *complete*, and renders an
+  **empty shelf**, since this same set drives display.
+
 ## Search bar
 
 `LibrarySearchBar` is the smart-search widget — hero, highlight overlay, autocomplete

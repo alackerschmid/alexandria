@@ -415,6 +415,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { useThemeStore } from "@/stores/theme";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useStatsDefaultsStore } from "@/stores/statsDefaults";
+import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import AppButton from "@/components/AppButton.vue";
@@ -463,6 +464,7 @@ const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
 const fieldDefsStore = useFieldDefsStore();
 const { scope } = storeToRefs(useStatsDefaultsStore());
+const libraryDefaults = useLibraryDefaultsStore();
 const { apiFetch } = useApi();
 const { dimensionOptions } = useGroupDimensions();
 const { visible: errorToast, message: errorMessage, showToast } = useToast();
@@ -598,7 +600,10 @@ const lengthSegments = computed(() =>
   buildLengthSegments(stats.value?.pageBuckets ?? [], ramp.value),
 );
 
-const series = computed(() => summarizeSeries(memberships.value));
+// Same shared preference the library shelves and home's gaps row read — see `summarizeSeries`.
+const series = computed(() =>
+  summarizeSeries(memberships.value, { mainOnly: libraryDefaults.mainOnly }),
+);
 
 const visibleSeries = computed(() =>
   allSeries.value ? series.value.rows : series.value.rows.slice(0, SERIES_ROWS),
