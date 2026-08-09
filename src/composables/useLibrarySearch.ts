@@ -4,7 +4,11 @@ import { useLocaleStore } from "@/stores/locale";
 import { parseTagList } from "@/utils/tags";
 import { bookCustomValue } from "@/utils/custom-fields";
 import { languageDisplayFormatter } from "@/utils/language";
-import { authorNames, bookYear, matchesYearPrefix } from "@/utils/book-display";
+import {
+  authorNames,
+  matchesYearPrefix,
+  workYear,
+} from "@/utils/book-display";
 import { STATUS_ORDER } from "@/composables/useBookStatus";
 import { OWNING_ORDER } from "@/composables/useOwningStatus";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
@@ -44,9 +48,11 @@ const BUILTIN_KEYS = [
  */
 const MISSING_VALUES = {
   cover: (b: Book) => !b.cover_url,
-  // `bookYear` prefers the edition's publish_date and falls back to the work's original year,
-  // so this asks "no year from either source" — the same question the stats tile counts.
-  year: (b: Book) => !bookYear(b),
+  // `workYear`, not `bookYear`: the same resolution `year:`, the decade grouping and the
+  // worker's `noYear` tally use, so the four agree on which books have no year. `bookYear`
+  // short-circuits on a truthy `publish_date` that carries no 4-digit year ("n.d."), which made
+  // a book with `original_pub_date = "1954"` match `missing:year` *and* `year:195` at once.
+  year: (b: Book) => !workYear(b),
   genre: (b: Book) => !b.genres?.length,
   pages: (b: Book) => !b.number_of_pages_median,
 } as const satisfies Record<string, (b: Book) => boolean>;
@@ -54,6 +60,11 @@ const MISSING_VALUES = {
 export type MissingFacet = keyof typeof MISSING_VALUES;
 
 export const MISSING_KEYS = Object.keys(MISSING_VALUES) as MissingFacet[];
+
+/** Membership as a Set, like the status facets — a bare `val in MISSING_VALUES` walks the
+ *  prototype chain, so `missing:__proto__` passed the check and then resolved to
+ *  `Object.prototype` where a predicate was expected. */
+const MISSING_SET: ReadonlySet<string> = new Set(MISSING_KEYS);
 
 /** Absence chips, offered only where the pool actually has such a book — a "no cover" chip that
  *  matches nothing is worse than no chip. Same present-in-pool rule as the status facets. */
@@ -220,7 +231,7 @@ export function useLibrarySearch(options: {
       } else if (key === "award" && val) {
         award = val;
         tokens.push(part.toLowerCase());
-      } else if (key === "missing" && val in MISSING_VALUES) {
+      } else if (key === "missing" && MISSING_SET.has(val)) {
         missing = val as MissingFacet;
         tokens.push(part.toLowerCase());
       } else if (simpleFields.has(key) && val) {

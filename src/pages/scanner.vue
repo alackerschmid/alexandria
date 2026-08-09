@@ -1495,8 +1495,11 @@ const selectCandidate = async (candidate: EditionCandidate) => {
 
   const result = await lookupBook(isbn);
   detectedBook.value = {
-    // Unlike the barcode path, this one already has a title/author from the search candidate, so
-    // the sheet stays informative even when the lookup couldn't run.
+    // The candidate's title/author are carried so the *save* keeps them (`guestStore.addScan`
+    // reads them straight off this object). The sheet itself does not show them: its title and
+    // author lines are both gated on `!notFound`, so a failed lookup renders the same
+    // message-and-ISBN it does on the barcode path. Worth revisiting — a title we already have
+    // is better than "couldn't look this up" — but the two paths agree today.
     ...(result.kind === "found"
       ? result.book
       : {

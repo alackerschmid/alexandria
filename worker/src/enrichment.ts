@@ -1393,6 +1393,13 @@ async function resolveWorkIdentity(
 // fully-resolved set of details, booked the work as a genuine failure, and advanced it toward
 // `exhausted`; three such flakes retired a perfectly healthy work for two days having thrown away
 // three complete Wikidata reads.
+//
+// Swallowing it outright is the opposite error, though: `persistWorkDetails` then books the work
+// `done` at the current schema version, and neither Q1 (status != 'done') nor Q2 (schema < current)
+// will ever serve it again -- so one WDQS 502 costs a placeholder work its cover edition
+// permanently, with no manual recovery either (`/api/books/refresh` 404s on a work with no `books`
+// row). Hence the return value: the details are kept, the run is not a failure, but the caller
+// holds the schema version back so the *next* sweep retries the backfill alone.
 async function backfillEditionsAndDiscovery(
   db: D1Database,
   canonicalId: number,
@@ -1401,10 +1408,12 @@ async function backfillEditionsAndDiscovery(
   source: EnrichmentSource,
   apiKey?: string,
   usage?: UsageRecorder | null,
-): Promise<void> {
+): Promise<{ editionBackfillFailed: boolean }> {
+  let editionBackfillFailed = false;
   const backfill = workQid
     ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage).catch(
         (e) => {
+          editionBackfillFailed = true;
           console.error(
             "[enrichWork] edition backfill failed for work",
             canonicalId,
@@ -1428,6 +1437,10 @@ async function backfillEditionsAndDiscovery(
       })
     : Promise.resolve();
   await Promise.all([backfill, discovery]);
+  // Discovery is not reported: it only pre-populates candidate ISBNs and re-runs on its own,
+  // being gated on the work having none yet. The edition backfill is gated on the work having no
+  // linked edition, which is only re-checked if the work is enriched again at all.
+  return { editionBackfillFailed };
 }
 
 // Writes fetched Wikidata details back to `works`. force=true (manual refresh) overwrites
@@ -1439,6 +1452,10 @@ async function persistWorkDetails(
   canonicalId: number,
   details: WorkDetails | null,
   force: boolean,
+  /** False when a best-effort step was skipped by a transient failure. The work is still `done`
+   *  — its details are real and its attempt counter must not advance — but it is left one schema
+   *  version short, which is exactly the sweeper's Q2 predicate, so the next tick retries it. */
+  schemaComplete = true,
 ): Promise<void> {
   const arrToJson = (a: string[] | undefined) =>
     a?.length ? JSON.stringify(a) : null;
@@ -1468,6 +1485,10 @@ async function persistWorkDetails(
     nominJson,
   });
 
+  const schemaVersion = schemaComplete
+    ? CURRENT_ENRICHMENT_SCHEMA_VERSION
+    : Math.max(0, CURRENT_ENRICHMENT_SCHEMA_VERSION - 1);
+
   const coalesce = (col: string) => (force ? "?" : `COALESCE(?, ${col})`);
   const updateResult = await db
     .prepare(
@@ -1480,7 +1501,7 @@ async function persistWorkDetails(
       enrichment_failure_reason = NULL,
       enrichment_attempts       = 0,
       enrichment_started_at     = NULL,
-      enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
+      enrichment_schema_version = ${schemaVersion},
       canonical_title           = ${coalesce("canonical_title")},
       genres                    = ${coalesce("genres")},
       original_pub_date         = ${coalesce("original_pub_date")},
@@ -1667,7 +1688,7 @@ export async function enrichWork(
     canonicalId = identity.canonicalId;
     merged = identity.merged;
 
-    await backfillEditionsAndDiscovery(
+    const { editionBackfillFailed } = await backfillEditionsAndDiscovery(
       db,
       canonicalId,
       workQid,
@@ -1676,7 +1697,13 @@ export async function enrichWork(
       apiKey,
       usage,
     );
-    await persistWorkDetails(db, canonicalId, details, force);
+    await persistWorkDetails(
+      db,
+      canonicalId,
+      details,
+      force,
+      !editionBackfillFailed,
+    );
     await recordRun(
       db,
       canonicalId,

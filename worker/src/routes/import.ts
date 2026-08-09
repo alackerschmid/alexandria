@@ -924,6 +924,30 @@ importRoutes.post("/match", async (c) => {
         if (bookRow) {
           await linkWork(db, bookRow);
           primary.work_id = bookRow.work_id;
+          // The work the link resolved to can already carry a rating — `linkWork` attaches to an
+          // existing `works` row whenever the match_key matches, and `work_ratings` outlives a
+          // deleted scan. The library index read `rating` through `b.work_id`, which was NULL, so
+          // without this re-read `previous.rating` reports null for a rating that exists: the
+          // import overwrites it and Undo then PATCHes `rating: null`, destroying it. The
+          // `/goodreads` ISBN path does the same thing for the same reason.
+          //
+          // Both copies: `scans` was spread off these rows *above*, so mutating `primary` alone
+          // leaves `applyImportUpdate` reading the stale null out of `scans[0]`.
+          const stored = await existingWorkRating(db, userId, bookRow.work_id);
+          primary.rating = stored;
+          scans[0].rating = stored;
+          // `byWorkId` was built once, before the loop, from rows that already had a work. This
+          // row now has one, so index it — otherwise a second row of the same batch matching the
+          // same scan either dereferences `byWorkId.get(...)!` as undefined and throws (no other
+          // copy carries the work) or gets a sibling list that silently omits this very scan.
+          // Appended rather than inserted in `created_at` order: the list only orders
+          // `pickPrimarySibling`'s oldest-copy fallback, and a just-linked row losing that tie is
+          // the harmless direction.
+          if (bookRow.work_id != null) {
+            const siblings = byWorkId.get(bookRow.work_id);
+            if (!siblings) byWorkId.set(bookRow.work_id, [primary]);
+            else if (!siblings.includes(primary)) siblings.push(primary);
+          }
         }
       }
 

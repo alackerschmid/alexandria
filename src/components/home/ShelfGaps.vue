@@ -10,7 +10,8 @@
         {{ row.name ?? $t("stats.series_unnamed") }}
       </span>
       <span class="flex-none font-mono text-[11px] text-text-secondary">
-        {{ $t("home.gaps_missing", { count: row.missing }) }} &rarr;
+        <!-- Third argument selects the plural form: German needs "1 fehlt" against "2 fehlen". -->
+        {{ $t("home.gaps_missing", { count: row.missing }, row.missing) }} &rarr;
       </span>
     </router-link>
   </div>

@@ -254,16 +254,20 @@ async function fetchOpenLibraryBibkey(
   usage?: UsageRecorder | null,
 ): Promise<[any, any]> {
   try {
+    // `res.ok` is carried out of the timed scope, as `fetchEditionsForWorkKey` does, rather than
+    // parsing whatever came back: OpenLibrary answers a 429 or 503 with a JSON body, so a bare
+    // `r.json()` resolves and the outage is then indistinguishable from "this ISBN isn't here" —
+    // an empty bibkey map, i.e. `missing`. That conflation is what makes `/api/books/lookup`
+    // answer 404 during an outage instead of 503, and what lets a scan settle an all-NULL row.
     const pair = await Promise.all([
-      fetchWithTimeout(
-        `${base}&jscmd=data`,
-        usage,
-        (r) => r.json() as Promise<any>,
-      ),
-      fetchWithTimeout(
-        `${base}&jscmd=details`,
-        usage,
-        (r) => r.json() as Promise<any>,
+      fetchWithTimeout(base + "&jscmd=data", usage, async (r) => {
+        if (!r.ok) throw new Error(`OpenLibrary bibkey HTTP ${r.status}`);
+        return (await r.json()) as any;
+      }),
+      // The details half stays best-effort either way — it only fills physical_dimensions and
+      // edition_name, and a miss there is not an outage.
+      fetchWithTimeout(base + "&jscmd=details", usage, async (r) =>
+        r.ok ? ((await r.json()) as any) : {},
       ).catch(() => ({})),
     ]);
     usage?.record("openlibrary", "isbn_lookup", "success");
@@ -317,8 +321,9 @@ async function fetchFromOpenLibrary(
   const bibkey = `ISBN:${isbn}`;
   const base = `https://openlibrary.org/api/books?bibkeys=${encodeURIComponent(bibkey)}&format=json`;
 
-  // A throw here is the request failing (timeout, network, a body that won't parse); an empty
-  // bibkey map is OpenLibrary answering that it has nothing. Caught here rather than by the
+  // A throw here is the request failing (a non-2xx status, timeout, network, a body that won't
+  // parse); an empty bibkey map is OpenLibrary answering that it has nothing — the unknown-ISBN
+  // answer is a 200 carrying `{}`, not a 404. Caught here rather than by the
   // caller so the two stay distinguishable — `fetchBookMetadata` used to wrap this whole call in
   // `.catch(() => null)`, which made them identical.
   let dataJson: any, detailsJson: any;
@@ -1191,6 +1196,58 @@ export type ResolveEditionOptions = {
   usage: UsageRecorder | null;
 };
 
+/**
+ * Second chance for a `books` row that carries no identity at all.
+ *
+ * Such a row is only ever created by `resolveEdition`'s `allowEmpty` path when the fetch produced
+ * nothing — which, before the outcomes were distinguished, included "both sources were
+ * unreachable". Because `books` is keyed by ISBN and shared by every user, that blank row was then
+ * served to everyone forever without anyone contacting a source again; only a hand-triggered
+ * refresh could fix it. Retrying costs a lookup on a row that has nothing to lose, and a genuine
+ * miss is bounded by user action (a rescan answers 409 before reaching this).
+ *
+ * Throws `UpstreamLookupError` when the retry finds the sources down and the caller can't accept a
+ * blank row — the same rule the no-row path follows, and for the same reason: answering 200 with
+ * the placeholder makes the scanner (which reads `lookup_unavailable` off the 503 alone) say "no
+ * match" during an outage.
+ *
+ * Returns the row to use — the refreshed one on success, the caller's otherwise.
+ */
+async function repairEmptyBook(
+  db: D1Database,
+  book: BookRow,
+  isbn: string,
+  allowEmpty: boolean,
+  apiKey: string | undefined,
+  usage: UsageRecorder | null,
+): Promise<BookRow> {
+  const repaired = await fetchBookMetadata(isbn, apiKey, usage);
+  if (repaired.kind === "unavailable" && !allowEmpty)
+    throw new UpstreamLookupError(isbn);
+  if (repaired.kind !== "found") return book;
+
+  await db.batch([
+    fillMetadataStatement(db, book.id, repaired.meta),
+    // The work this book was linked to at insert time was named from a NULL title, so it carries
+    // no `canonical_title` and enrichment retired it as 'no-title' (status `done`, which no
+    // sweeper query serves again). Now that there is a title, give it one and make it due —
+    // otherwise the card fills in but never gains genres, series or a cover credit. Scoped to
+    // works that never had a title, so a real one is never reset.
+    db
+      .prepare(
+        `UPDATE works SET canonical_title = ?, enrichment_status = 'pending', next_retry_at = NULL
+               WHERE id = ? AND canonical_title IS NULL`,
+      )
+      .bind(repaired.meta.title, book.work_id),
+  ]);
+  return (
+    (await db
+      .prepare("SELECT * FROM books WHERE id = ?")
+      .bind(book.id)
+      .first<BookRow>()) ?? book
+  );
+}
+
 // Returns the books row, creating it (and its work/author links) if missing.
 // Centralizes the fetch-metadata → INSERT → re-SELECT flow shared by lookup/guest-lookup/scans.
 // The tail is an options object rather than positional flags: callers set one or two of them, and
@@ -1224,37 +1281,8 @@ export async function resolveEdition(
     .bind(...(altIsbn ? [isbn, altIsbn] : [isbn]), isbn)
     .first<BookRow>();
   if (book) {
-    // Repair a row that carries no identity at all. Such a row is only ever created by the
-    // `allowEmpty` path below when the fetch produced nothing — which, before the outcomes were
-    // distinguished, included "both sources were unreachable". Because `books` is keyed by ISBN and
-    // shared by every user, that blank row was then served to everyone forever without anyone
-    // contacting a source again: only a hand-triggered refresh could fix it. Retrying here costs a
-    // lookup on a row that has nothing to lose, and a genuine miss is bounded by user action (a
-    // rescan answers 409 before reaching this).
-    if (isMetadataEmpty(book)) {
-      const repaired = await fetchBookMetadata(isbn, apiKey, usage);
-      if (repaired.kind === "found") {
-        await db.batch([
-          fillMetadataStatement(db, book.id, repaired.meta),
-          // The work this book was linked to at insert time was named from a NULL title, so it
-          // carries no `canonical_title` and enrichment retired it as 'no-title' (status `done`,
-          // which no sweeper query serves again). Now that there is a title, give it one and make
-          // it due — otherwise the card fills in but never gains genres, series or a cover credit.
-          // Scoped to works that never had a title, so a real one is never reset.
-          db
-            .prepare(
-              `UPDATE works SET canonical_title = ?, enrichment_status = 'pending', next_retry_at = NULL
-               WHERE id = ? AND canonical_title IS NULL`,
-            )
-            .bind(repaired.meta.title, book.work_id),
-        ]);
-        book =
-          (await db
-            .prepare("SELECT * FROM books WHERE id = ?")
-            .bind(book.id)
-            .first<BookRow>()) ?? book;
-      }
-    }
+    if (isMetadataEmpty(book))
+      book = await repairEmptyBook(db, book, isbn, allowEmpty, apiKey, usage);
     if (!book.work_id && !skipLinkWork) await linkWork(db, book);
     return book;
   }

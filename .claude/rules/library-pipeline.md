@@ -13,6 +13,12 @@ paths:
   - "src/utils/shelf-packing.ts"
   - "src/utils/search-parse.ts"
   - "src/utils/book-display.ts"
+  # The series-entry section below is the only description of `countableSeriesEntries`' rules,
+  # and it names three consumer surfaces — so the file that implements it and the two new
+  # consumers have to load it too, or the drift it documents is exactly what happens next.
+  - "src/utils/series-completeness.ts"
+  - "src/pages/stats.vue"
+  - "src/pages/home.vue"
 ---
 
 # Library display pipeline
@@ -38,7 +44,13 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
   `cover:something`. Deliberately not a general negation grammar (`-cover:`), which would have
   to answer much harder questions about composing with the free-text half of the query. Its
   autocomplete chips are offered only where the current pool actually contains such a book,
-  same present-in-pool rule as the status facets
+  same present-in-pool rule as the status facets. Membership is a **Set** (`MISSING_SET`), like
+  the status facets — a bare `val in MISSING_VALUES` reaches `Object.prototype`, so
+  `missing:__proto__` passed the check and then resolved to a non-function, throwing inside
+  `baseFiltered` and blanking the page. And `missing:year` asks `workYear`, not `bookYear`: it
+  has to agree with `year:`, the decade grouping and the worker's `noYear` tally, or a book with
+  a yearless `publish_date` ("n.d.") and a real `original_pub_date` matches "no year" and
+  `year:195` at the same time
 
   **`year:` is a prefix match, not a substring one**, over `workYear(b)` — so `year:1990` is a
   year and `year:199` is the 1990s, which is what the `/stats` decade histogram deep-links to.
@@ -74,7 +86,14 @@ to whole-numbered entries inline while `summarizeSeries` counted everything, so 
 - **No whole-numbered entries at all → fall back to every entry.** Wikidata ordinal coverage is
   patchy (23 of 64 Discworld entries have none locally; some series have none whatsoever).
   Without the fallback such a series measures 0 of 0 — which reads as *complete*, and renders an
-  **empty shelf**, since this same set drives display.
+  **empty shelf**, since this same set drives display. The trigger is "none at all", **not** a
+  coverage ratio: one numbered entry beside three unnumbered ones legitimately measures 1 of 1,
+  because an unnumbered entry usually *is* a novella. Reviewed and kept as-is.
+- **`/series/:id` splits rather than measures, and takes the same fallback.** The detail page
+  wants `isMainSeriesEntry` itself, to show "3 of 6 main; 1 of 3 side" — the shelves' aggregate
+  decomposed, not a rival count, which is why it doesn't read `libMainOnly`. But its *default*
+  list comes from `countableSeriesEntries(entries, true)`, so an all-unnumbered series lands on a
+  populated list and a single figure instead of an empty one under "0 of 0 main entries".
 
 ## Search bar
 

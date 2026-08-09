@@ -25,7 +25,10 @@
           v-if="series"
           class="text-xs text-text-secondary tracking-[0.15em] uppercase mt-3 font-mono"
         >
-          <template v-if="sideEntries.length > 0">
+          <!-- Only split when there is something to split. With no whole-numbered entries at
+               all the list already shows every entry (see `sequenceEntries`), so "0 of 0 main"
+               beside an inert show/hide toggle would describe a division the page isn't making. -->
+          <template v-if="mainEntries.length > 0 && sideEntries.length > 0">
             {{
               $t("series.main_owned_count", {
                 owned: mainOwnedCount,
@@ -52,8 +55,8 @@
           <template v-else>
             {{
               $t("series.owned_count", {
-                owned: mainOwnedCount,
-                total: mainEntries.length,
+                owned: sequenceOwnedCount,
+                total: sequenceEntries.length,
               })
             }}
           </template>
@@ -227,7 +230,10 @@ import type {
   ReadStatus,
 } from "@/types/book";
 import { NEXT_STATUS } from "@/composables/useBookStatus";
-import { isMainSeriesEntry } from "@/utils/series-completeness";
+import {
+  countableSeriesEntries,
+  isMainSeriesEntry,
+} from "@/utils/series-completeness";
 import CoverImage from "@/components/CoverImage.vue";
 
 interface SeriesEntry {
@@ -277,8 +283,24 @@ const mainOwnedCount = computed(
 const sideOwnedCount = computed(
   () => sideEntries.value.filter((e) => e.owned).length,
 );
+/**
+ * The sequence this page presents by default: the main entries, or every entry when Wikidata
+ * numbered none of them (Hitchhiker's has no whole ordinals at all).
+ *
+ * `countableSeriesEntries` rather than a local `mainEntries.length ? … : …`, so the fallback has
+ * exactly one spelling — without it the collapsed default rendered an *empty list* for a series
+ * the shelves and `/stats` had just offered as "4 of 6". `mainOnly: true` because the split is
+ * this page's display idiom, not a completeness count; the preference governs the counts, which
+ * this page doesn't make.
+ */
+const sequenceEntries = computed(() =>
+  countableSeriesEntries(entries.value, true),
+);
+const sequenceOwnedCount = computed(
+  () => sequenceEntries.value.filter((e) => e.owned).length,
+);
 const displayedEntries = computed(() =>
-  showSideEntries.value ? entries.value : mainEntries.value,
+  showSideEntries.value ? entries.value : sequenceEntries.value,
 );
 
 const detailBook = ref<BookWithOverrides | null>(null);

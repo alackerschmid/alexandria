@@ -289,6 +289,78 @@ export function dimensionTotal(
   }
 }
 
+// ── Breakdown rows ────────────────────────────────────────────────────────────
+
+/** Values a search token has to be quoted for, because the tokenizer splits on whitespace. */
+export function quoteToken(value: string): string {
+  return /\s/.test(value) ? `"${value}"` : value;
+}
+
+/** A breakdown item, plus the optional token override a language row needs. */
+export interface BreakdownInput {
+  label: string;
+  count: number;
+  /** What the deep-link token carries when it isn't the label — languages link by ISO code. */
+  tokenValue?: string;
+}
+
+export interface BreakdownRow {
+  label: string;
+  count: number;
+  /** Share of the whole collection, not of the dimension. */
+  pct: number;
+  width: string;
+  color: string;
+  /** `genre:"Science fiction"`, or null where the dimension has no library facet. */
+  token: string | null;
+}
+
+export interface BreakdownRowOptions {
+  ramp: string[];
+  /** Collection size, for the "% of the shelf" tail. */
+  total: number;
+  /** The library search key this dimension deep-links through. Absent = no equivalent facet. */
+  searchKey?: string | null;
+  /** Rows to keep. The scale and the ramp are computed over the *full* list first, so collapsing
+   *  never changes a bar's width or its colour. */
+  limit?: number;
+}
+
+/**
+ * The bars behind one breakdown dimension.
+ *
+ * Two things this owes the caller, both of which were wrong while it lived inside `stats.vue` and
+ * so could not be tested:
+ *
+ * - **The scale is the largest row, not the first one.** `getBreakdown` emits `status`, `owning`
+ *   and `rating` in fixed key order rather than by count, so `items[0]` is not the maximum for
+ *   three of the fourteen dimensions — and a library with more `unknown` than `owned` rows (every
+ *   Goodreads import) produced widths in the thousands of percent.
+ * - **Colour is assigned by rank, not by position** — the same rule `buildLengthSegments` follows,
+ *   so the accent marks the modal value rather than whichever row happens to be listed first.
+ */
+export function buildBreakdownRows(
+  items: readonly BreakdownInput[],
+  { ramp, total, searchKey = null, limit }: BreakdownRowOptions,
+): BreakdownRow[] {
+  const max = items.reduce((m, it) => Math.max(m, it.count), 0);
+  const rank = new Map(
+    items
+      // Ties keep list order, so two equal rows don't swap colours between renders.
+      .map((it, i) => ({ it, i }))
+      .sort((x, y) => y.it.count - x.it.count || x.i - y.i)
+      .map(({ i }, position) => [i, position]),
+  );
+  return items.slice(0, limit ?? items.length).map((it, i) => ({
+    label: it.label,
+    count: it.count,
+    pct: pctOf(it.count, total),
+    width: barWidth(it.count, max),
+    color: rampColor(ramp, rank.get(i)!),
+    token: searchKey ? `${searchKey}:${quoteToken(it.tokenValue ?? it.label)}` : null,
+  }));
+}
+
 // ── Decade histogram ──────────────────────────────────────────────────────────
 
 export interface DecadeBar {
@@ -415,7 +487,7 @@ export interface LengthSegment {
  * Colour is assigned by **rank**, not by band order — the biggest band takes the accent and the
  * rest step down from it. Colouring by position would put the accent on whichever band happens
  * to be first (`<200`), which says nothing; by rank it marks the modal length, the same thing
- * the decade histogram's highlighted bar and the breakdown's leading row mean.
+ * the decade histogram's highlighted bar and `buildBreakdownRows`' accent bar mean.
  */
 export function buildLengthSegments(
   buckets: DimensionItem[],

@@ -52,7 +52,7 @@ type CustomFieldRow = {
   field_type: string;
   field_value: string | null;
 };
-type SpotlightRow = {
+export type SpotlightRow = {
   isbn: string;
   title: string | null;
   first_line: string;
@@ -103,6 +103,12 @@ export type SpotlightBook = {
  *  row and gives the home page's "show me another" its re-rolls without a refetch — re-rolling
  *  by refetching `/api/stats` would recompute the whole aggregate to change one book. */
 export const SPOTLIGHT_POOL_SIZE = 5;
+
+/** Rows a breakdown list ships. The client's "N of M shown" caption reads `M` off the true
+ *  distinct total where one is available (`genreCount`, `authorCount`, `languageCount`,
+ *  `countryCount`) and off the list length otherwise — so this is a page size, never a total.
+ *  One constant because the SQL-side `LIMIT` and the in-memory `topCounts` caps have to agree. */
+export const DIMENSION_LIMIT = 15;
 type StatsResponse = {
   total: number;
   byStatus: { read: number; reading: number; unread: number; dnf: number };
@@ -263,7 +269,7 @@ function computeStatusCounts(rows: RawRow[]) {
 // authors_json (co-authored books increment every author). Books whose work isn't
 // linked yet fall back to splitting the raw `author` string, keyed by normalized
 // name so a fallback entry merges into a linked one once the book gets re-enriched.
-function computeTopAuthors(rows: RawRow[]) {
+export function computeTopAuthors(rows: RawRow[]) {
   const authorLabels = new Map<string, string>();
   const authorCounts = new Map<string, number>();
   for (const r of rows) {
@@ -281,7 +287,7 @@ function computeTopAuthors(rows: RawRow[]) {
   // the full list it was given, and a 6-entry cap made "author" the one dimension that stopped
   // short of the others for no reason the UI could explain. `authorCount` remains the true
   // distinct total, so a capped list can still say what it's a slice of.
-  const topAuthors = topCounts(authorCounts, 15).map(({ label, count }) => ({
+  const topAuthors = topCounts(authorCounts, DIMENSION_LIMIT).map(({ label, count }) => ({
     label: authorLabels.get(label)!,
     count,
   }));
@@ -327,7 +333,7 @@ function computeGenreCounts(rows: RawRow[]) {
     }
   }
   return {
-    genres: topCounts(genreCounts, 15),
+    genres: topCounts(genreCounts, DIMENSION_LIMIT),
     genreCount: genreCounts.size,
     uncategorizedGenreCount,
   };
@@ -342,11 +348,11 @@ function computeStringFieldCounts(
     const v = r[field];
     if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
   }
-  return topCounts(counts, 15);
+  return topCounts(counts, DIMENSION_LIMIT);
 }
 
 // Countries of origin (JSON array)
-function computeCountries(rows: RawRow[]) {
+export function computeCountries(rows: RawRow[]) {
   const countryCounts = new Map<string, number>();
   for (const r of rows) {
     if (!r.countries_of_origin) continue;
@@ -357,7 +363,7 @@ function computeCountries(rows: RawRow[]) {
   // The count is the *distinct* total, not the list length — the list is capped at 15 and the
   // stats page's "N more" row is the difference between the two.
   return {
-    countries: topCounts(countryCounts, 15),
+    countries: topCounts(countryCounts, DIMENSION_LIMIT),
     countryCount: countryCounts.size,
   };
 }
@@ -412,8 +418,10 @@ function pickExtreme(
  * hides the rows it gets nothing for.
  *
  * `soleLanguage` is the only book in its language, which is null for a monolingual library — the
- * common case. It also stays null for a **one-book** library, where the claim is trivially true
- * of the only book there is and the row would just repeat `oldest`.
+ * common case. It also stays null unless at least two languages are actually *known*, which
+ * covers the one-book library (where the claim is trivially true and the row would just repeat
+ * `oldest`) and the far more common library where one book resolved a language and the rest
+ * carry NULL.
  */
 export function computeExemplars(rows: RawRow[]): Exemplars {
   const oldest = pickExtreme(rows, extractYear, (v, best) => v < best);
@@ -430,8 +438,13 @@ export function computeExemplars(rows: RawRow[]): Exemplars {
     if (list) list.push(r);
     else byLanguage.set(r.language, [r]);
   }
+  // Gated on how many languages are *known*, not on how many rows there are. `books.language` is
+  // NULL for any import fallback row neither source resolved, so `rows.length > 1` crowned the one
+  // book whose language happens to be known as "your only book in English" — about a shelf where
+  // the others are merely unrecorded. Two known languages is the least that makes the claim mean
+  // anything, and it subsumes the one-book guard.
   let sole: RawRow | null = null;
-  if (rows.length > 1) {
+  if (byLanguage.size > 1) {
     for (const list of byLanguage.values()) {
       if (list.length !== 1) continue;
       sole = sole === null ? list[0] : firstByIsbn(sole, list[0]);
@@ -442,6 +455,37 @@ export function computeExemplars(rows: RawRow[]): Exemplars {
     oldest: oldest && toExemplar(oldest),
     longest: longest && toExemplar(longest),
     soleLanguage: sole && toExemplar(sole),
+  };
+}
+
+/**
+ * The home page's spotlight pool, plus the `randomFirstLine` back-compat field.
+ *
+ * `randomFirstLine` is *by contract* the pool's first entry — worker/CLAUDE.md promises a client
+ * that only knows the old shape gets exactly what it used to — so the two are built together
+ * here rather than derived at two call sites. Extracted from the handler so that contract, and
+ * the `yearFromDates` resolution the spotlight row shares with `extractYear`, are testable.
+ */
+export function buildSpotlight(rows: SpotlightRow[]): {
+  spotlight: SpotlightBook[];
+  randomFirstLine: { title: string; firstLine: string } | null;
+} {
+  const spotlight: SpotlightBook[] = rows.map((r) => ({
+    isbn: r.isbn,
+    title: r.title,
+    firstLine: r.first_line,
+    workId: r.work_id,
+    author: r.author,
+    coverUrl: r.cover_url,
+    year: yearFromDates(r.original_pub_date, r.publish_date),
+    publisher: r.publisher,
+    pages: r.pages,
+  }));
+  return {
+    spotlight,
+    randomFirstLine: spotlight[0]
+      ? { title: spotlight[0].title ?? "", firstLine: spotlight[0].firstLine }
+      : null,
   };
 }
 
@@ -764,7 +808,7 @@ function computeCustomFields(customFieldRows: CustomFieldRow[]) {
     ([fieldDefId, { fieldName, valueCounts }]) => ({
       fieldDefId,
       fieldName,
-      values: topCounts(valueCounts, 15),
+      values: topCounts(valueCounts, DIMENSION_LIMIT),
     }),
   );
 }
@@ -847,21 +891,21 @@ function buildStatsResponse(input: StatsResponse): StatsResponse {
   };
 }
 
-stats.get("/", async (c) => {
-  const userId = c.get("userId");
-  const locale = (c.req.query("locale") ?? "en").slice(0, 5);
-  const scopeClause = scopeClauseFor(c.req.query("scope"));
-
-  const [
-    { results },
-    seriesResult,
-    customFieldResult,
-    firstLineResult,
-    ratingResult,
-    scopeCountRow,
-  ] = await Promise.all([
-      c.env.DB.prepare(
-        `
+/**
+ * The six statements this route runs, as builders over the resolved scope predicate.
+ *
+ * Lifted out of the handler so the SQL is reachable from a unit test. There is no D1 in the
+ * worker's test setup — these specs cover pure logic only — so asserting on the generated text is
+ * the check available, and it is worth having: with the SQL inline, deleting `AND ${scopeClause}`
+ * from one query or reverting a `COALESCE(o.title, b.title)` to `b.title` left the whole suite
+ * green while silently reporting one figure over books outside the scope, or showing the
+ * catalogue's title on a card that deep-links to a row displaying the user's override. Both of
+ * those are defects this route has actually shipped.
+ *
+ * `scopeCounts` takes no clause on purpose — it is the one figure that ignores `?scope=`.
+ */
+export const STATS_QUERIES = {
+  rows: (scopeClause: string) => `
       SELECT s.status                                                        AS status,
              s.owning_status                                                 AS owning_status,
              COALESCE(o.title, b.title)                                      AS title,
@@ -890,12 +934,8 @@ stats.get("/", async (c) => {
       LEFT JOIN work_ratings wr ON wr.work_id = b.work_id AND wr.user_id = s.user_id
       WHERE s.user_id = ? AND ${scopeClause}
     `,
-      )
-        .bind(userId)
-        .all<RawRow>(),
 
-      c.env.DB.prepare(
-        `
+  series: (scopeClause: string) => `
       SELECT COALESCE(sn.name, ser.canonical_name) AS label, COUNT(*) AS count
       FROM scans s
       JOIN books b ON s.book_id = b.id
@@ -906,14 +946,10 @@ stats.get("/", async (c) => {
       WHERE s.user_id = ? AND ${scopeClause}
       GROUP BY ser.id
       ORDER BY count DESC
-      LIMIT 15
+      LIMIT ${DIMENSION_LIMIT}
     `,
-      )
-        .bind(locale, userId)
-        .all<SeriesRow>(),
 
-      c.env.DB.prepare(
-        `
+  customFields: (scopeClause: string) => `
       SELECT ufd.id AS field_def_id, ufd.field_name, ufd.field_type, bcf.field_value
       FROM book_custom_fields bcf
       JOIN user_field_definitions ufd ON ufd.id = bcf.field_def_id
@@ -922,14 +958,16 @@ stats.get("/", async (c) => {
       AND ufd.field_type NOT IN ('date', 'integer')
       AND ${scopeClause}
     `,
-      )
-        .bind(userId)
-        .all<CustomFieldRow>(),
 
-      // A pool rather than one row (see `SPOTLIGHT_POOL_SIZE`): same query cost, and the home
-      // page can re-roll client-side instead of refetching the whole aggregate.
-      c.env.DB.prepare(
-        `
+  // A pool rather than one row (see `SPOTLIGHT_POOL_SIZE`): same query cost, and the home page
+  // can re-roll client-side instead of refetching the whole aggregate.
+  //
+  // GROUP BY the work, not the scan: `first_line` lives on `works` and `scans` is unique on
+  // `(user_id, book_id)`, so a user who owns two editions of one book contributed it twice —
+  // "show me another" then served the same quote twice a cycle, and for someone whose only
+  // first-line work is one they own three copies of, the pool was three identical entries and
+  // the button did nothing at all.
+  spotlight: (scopeClause: string) => `
       SELECT b.isbn                                                          AS isbn,
              COALESCE(o.title, b.title)                                       AS title,
              b.work_id                                                        AS work_id,
@@ -946,17 +984,14 @@ stats.get("/", async (c) => {
       LEFT JOIN book_overrides o ON o.book_id = b.id AND o.user_id = s.user_id
       WHERE s.user_id = ? AND ${scopeClause}
         AND wk.first_line IS NOT NULL AND wk.first_line != ''
+      GROUP BY b.work_id
       ORDER BY RANDOM()
       LIMIT ${SPOTLIGHT_POOL_SIZE}
     `,
-      )
-        .bind(userId)
-        .all<SpotlightRow>(),
 
-      // COUNT(DISTINCT b.work_id), not COUNT(*): the rating hangs off the work, so a user who
-      // owns two editions of one book would otherwise contribute that rating twice.
-      c.env.DB.prepare(
-        `
+  // COUNT(DISTINCT b.work_id), not COUNT(*): the rating hangs off the work, so a user who owns
+  // two editions of one book would otherwise contribute that rating twice.
+  ratings: (scopeClause: string) => `
       SELECT wr.rating AS rating, COUNT(DISTINCT b.work_id) AS count
       FROM scans s
       JOIN books b ON s.book_id = b.id
@@ -965,24 +1000,58 @@ stats.get("/", async (c) => {
         AND wr.rating IS NOT NULL
       GROUP BY wr.rating
     `,
-      )
-        .bind(userId)
-        .all<RatingRow>(),
 
-      // Deliberately ungated and separate from the main query rather than derived from it: the
-      // whole point is to report the size of the scope the caller *didn't* ask for. One indexed
-      // aggregate over `scans` is cheaper than widening the main row read to every scan.
-      c.env.DB.prepare(
-        `
+  // Deliberately ungated and separate from the main query rather than derived from it: the whole
+  // point is to report the size of the scope the caller *didn't* ask for. One indexed aggregate
+  // over `scans` is cheaper than widening the main row read to every scan.
+  //
+  // The owned half interpolates `SCOPE_CLAUSES.owned` rather than respelling it: as two copies,
+  // adding an owning status to the scope would grow `total` under `scope=owned` while leaving
+  // this count behind, so `countOutsideScope` would offer to reveal books that aren't outside it
+  // — with the suite green, since a test pinning the constant doesn't see the duplicate.
+  scopeCounts: () => `
       SELECT COUNT(*) AS all_count,
-             SUM(CASE WHEN s.owning_status IN ('owned', 'lent_out') THEN 1 ELSE 0 END) AS owned_count
+             SUM(CASE WHEN ${SCOPE_CLAUSES.owned} THEN 1 ELSE 0 END) AS owned_count
       FROM scans s
       WHERE s.user_id = ?
     `,
-      )
-        .bind(userId)
-        .first<{ all_count: number; owned_count: number | null }>(),
-    ]);
+};
+
+stats.get("/", async (c) => {
+  const userId = c.get("userId");
+  const locale = (c.req.query("locale") ?? "en").slice(0, 5);
+  const scopeClause = scopeClauseFor(c.req.query("scope"));
+
+  const [
+    { results },
+    seriesResult,
+    customFieldResult,
+    firstLineResult,
+    ratingResult,
+    scopeCountRow,
+  ] = await Promise.all([
+    c.env.DB.prepare(STATS_QUERIES.rows(scopeClause)).bind(userId).all<RawRow>(),
+
+    c.env.DB.prepare(STATS_QUERIES.series(scopeClause))
+      .bind(locale, userId)
+      .all<SeriesRow>(),
+
+    c.env.DB.prepare(STATS_QUERIES.customFields(scopeClause))
+      .bind(userId)
+      .all<CustomFieldRow>(),
+
+    c.env.DB.prepare(STATS_QUERIES.spotlight(scopeClause))
+      .bind(userId)
+      .all<SpotlightRow>(),
+
+    c.env.DB.prepare(STATS_QUERIES.ratings(scopeClause))
+      .bind(userId)
+      .all<RatingRow>(),
+
+    c.env.DB.prepare(STATS_QUERIES.scopeCounts())
+      .bind(userId)
+      .first<{ all_count: number; owned_count: number | null }>(),
+  ]);
 
   const rows = results;
 
@@ -1010,22 +1079,7 @@ stats.get("/", async (c) => {
     ratingResult.results,
   );
 
-  // The home page's spotlight pool. `randomFirstLine` is the first entry, kept as its own field
-  // so a client that only knows the old shape still gets exactly what it used to.
-  const spotlight: SpotlightBook[] = firstLineResult.results.map((r) => ({
-    isbn: r.isbn,
-    title: r.title,
-    firstLine: r.first_line,
-    workId: r.work_id,
-    author: r.author,
-    coverUrl: r.cover_url,
-    year: yearFromDates(r.original_pub_date, r.publish_date),
-    publisher: r.publisher,
-    pages: r.pages,
-  }));
-  const randomFirstLine = spotlight[0]
-    ? { title: spotlight[0].title ?? "", firstLine: spotlight[0].firstLine }
-    : null;
+  const { spotlight, randomFirstLine } = buildSpotlight(firstLineResult.results);
 
   const exemplars = computeExemplars(rows);
 

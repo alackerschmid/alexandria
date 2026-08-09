@@ -1,19 +1,25 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildSpotlight,
   computeCatalogueGaps,
+  computeCountries,
   computeDecadeGenres,
   computeExemplars,
   computeGenreRatings,
   computeOwningCounts,
   computePageBuckets,
   computeRatingStats,
+  computeTopAuthors,
   computeTranslationRatio,
   computeYearStats,
   dedupeByWork,
   extractYear,
   scopeClauseFor,
+  DIMENSION_LIMIT,
   SCOPE_CLAUSES,
+  STATS_QUERIES,
   type RawRow,
+  type SpotlightRow,
 } from "../src/routes/stats";
 
 /** A stats row with everything absent, so each test names only the columns it is about. */
@@ -700,6 +706,28 @@ describe("computeExemplars", () => {
     expect(soleLanguage).toBeNull();
   });
 
+  it("leaves soleLanguage null when only one book's language is even known", () => {
+    // `books.language` is NULL for any import fallback row neither source resolved, so this is
+    // routine rather than exotic. Gating on row count crowned A "your only book in English"
+    // about a shelf whose other books have no recorded language at all.
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en" }),
+      row({ isbn: "2", title: "B", language: null }),
+      row({ isbn: "3", title: "C", language: null }),
+    ]);
+    expect(soleLanguage).toBeNull();
+  });
+
+  it("still names a sole book once a second language is known", () => {
+    const { soleLanguage } = computeExemplars([
+      row({ isbn: "1", title: "A", language: "en" }),
+      row({ isbn: "2", title: "B", language: "en" }),
+      row({ isbn: "3", title: "C", language: "fr" }),
+      row({ isbn: "4", title: "D", language: null }),
+    ]);
+    expect(soleLanguage?.title).toBe("C");
+  });
+
   it("returns every exemplar null for an empty library", () => {
     expect(computeExemplars([])).toEqual({
       oldest: null,
@@ -725,5 +753,141 @@ describe("computeExemplars", () => {
       row({ isbn: "2", pages: 0 }),
     ]);
     expect(longest).toBeNull();
+  });
+});
+
+// ── The SQL itself ────────────────────────────────────────────────────────────
+//
+// There is no D1 in this setup, so these assert on the generated text. That is a weak check, but
+// it pins the two properties that have actually regressed in this route: the `?scope=` predicate
+// reaching every scoped query, and the title being read through the user's override. Both were
+// fixed by their own commits while the whole suite stayed green either way.
+describe("STATS_QUERIES", () => {
+  const owned = SCOPE_CLAUSES.owned;
+  const scoped = ["rows", "series", "customFields", "spotlight", "ratings"] as const;
+
+  it("carries the scope predicate into every scoped query", () => {
+    for (const key of scoped) {
+      expect(STATS_QUERIES[key](owned), `${key} is unscoped`).toContain(owned);
+    }
+  });
+
+  it("carries whatever clause it is handed, not a hardcoded one", () => {
+    // `?scope=all` must actually widen the query rather than the builder pinning `owned`.
+    for (const key of scoped) {
+      expect(STATS_QUERIES[key](SCOPE_CLAUSES.all)).toContain(SCOPE_CLAUSES.all);
+      expect(STATS_QUERIES[key](SCOPE_CLAUSES.all)).not.toContain(owned);
+    }
+  });
+
+  it("leaves scopeCounts ungated so it can report the other scope's size", () => {
+    const sql = STATS_QUERIES.scopeCounts();
+    // The owned half is a CASE inside the SUM, not a WHERE — the row count must stay total, or
+    // the field whose whole job is naming the other scope's size can't.
+    expect(sql).toContain(`SUM(CASE WHEN ${owned}`);
+    const where = sql.slice(sql.indexOf("WHERE"));
+    expect(where.trim()).toBe("WHERE s.user_id = ?");
+  });
+
+  it("reads every displayed title through the user's override", () => {
+    // A card showing the catalogue title while the library row it deep-links to shows the
+    // override is the exact mismatch this COALESCE was added for.
+    expect(STATS_QUERIES.rows(owned)).toContain("COALESCE(o.title, b.title)");
+    expect(STATS_QUERIES.spotlight(owned)).toContain("COALESCE(o.title, b.title)");
+  });
+
+  it("draws the spotlight pool per work, not per scan", () => {
+    // Two owned editions of one book share a `works.first_line`, so without this the pool can
+    // hold the same quote twice and "show me another" repeats itself.
+    expect(STATS_QUERIES.spotlight(owned)).toContain("GROUP BY b.work_id");
+  });
+
+  it("counts rated works rather than rated scans", () => {
+    expect(STATS_QUERIES.ratings(owned)).toContain("COUNT(DISTINCT b.work_id)");
+  });
+
+  it("caps the series list at the shared dimension limit", () => {
+    expect(STATS_QUERIES.series(owned)).toContain(`LIMIT ${DIMENSION_LIMIT}`);
+  });
+});
+
+describe("capped dimension lists", () => {
+  it("ships the distinct author total alongside the capped list", () => {
+    // The caption reads "N of M shown"; M has to be the real total, or a user with 20 authors is
+    // told they have 15.
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      row({ isbn: String(i), author: `Author ${i}` }),
+    );
+    const { topAuthors, authorCount } = computeTopAuthors(rows);
+    expect(topAuthors).toHaveLength(DIMENSION_LIMIT);
+    expect(authorCount).toBe(20);
+  });
+
+  it("ships the distinct country total alongside the capped list", () => {
+    const rows = Array.from({ length: 20 }, (_, i) =>
+      row({ isbn: String(i), countries_of_origin: JSON.stringify([`C${i}`]) }),
+    );
+    const { countries, countryCount } = computeCountries(rows);
+    expect(countries).toHaveLength(DIMENSION_LIMIT);
+    expect(countryCount).toBe(20);
+  });
+});
+
+describe("buildSpotlight", () => {
+  const spotlightRow = (o: Partial<SpotlightRow> = {}): SpotlightRow => ({
+    isbn: "1",
+    title: "A",
+    first_line: "Call me Ishmael.",
+    work_id: 1,
+    author: null,
+    cover_url: null,
+    original_pub_date: null,
+    publish_date: null,
+    publisher: null,
+    pages: null,
+    ...o,
+  });
+
+  it("keeps randomFirstLine equal to the pool's first entry", () => {
+    // worker/CLAUDE.md promises a client that only knows the old field gets exactly what it used
+    // to, so re-sourcing or reordering the pool must not silently break it.
+    const { spotlight, randomFirstLine } = buildSpotlight([
+      spotlightRow({ isbn: "1", title: "First", first_line: "One." }),
+      spotlightRow({ isbn: "2", title: "Second", first_line: "Two." }),
+    ]);
+    expect(randomFirstLine).toEqual({ title: "First", firstLine: "One." });
+    expect(spotlight[0].firstLine).toBe(randomFirstLine!.firstLine);
+  });
+
+  it("renders a titleless book as an empty title rather than null", () => {
+    // `randomFirstLine.title` is typed as a string; the pool entry keeps the honest null.
+    const { spotlight, randomFirstLine } = buildSpotlight([
+      spotlightRow({ title: null }),
+    ]);
+    expect(randomFirstLine!.title).toBe("");
+    expect(spotlight[0].title).toBeNull();
+  });
+
+  it("resolves the year through the shared bounds, original date first", () => {
+    const { spotlight } = buildSpotlight([
+      spotlightRow({ original_pub_date: "1851", publish_date: "2019" }),
+    ]);
+    expect(spotlight[0].year).toBe(1851);
+  });
+
+  it("falls back to the edition's date, and rejects an out-of-bounds one", () => {
+    expect(
+      buildSpotlight([spotlightRow({ publish_date: "2019-03-01" })])[
+        "spotlight"
+      ][0].year,
+    ).toBe(2019);
+    expect(
+      buildSpotlight([spotlightRow({ original_pub_date: "0" })]).spotlight[0]
+        .year,
+    ).toBeNull();
+  });
+
+  it("has no first line to report for an empty pool", () => {
+    expect(buildSpotlight([])).toEqual({ spotlight: [], randomFirstLine: null });
   });
 });

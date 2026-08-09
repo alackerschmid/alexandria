@@ -70,6 +70,25 @@
       <v-progress-circular indeterminate color="primary" size="24" width="2" />
     </div>
 
+    <!-- Load error, but only with nothing to fall back on. A failed refetch keeps the page it
+         already has and says so through the toast; a failed first load used to leave every
+         branch below false, i.e. a page with a greeting and nothing else. -->
+    <div
+      v-else-if="loadError && !statsData"
+      class="flex-1 flex flex-col items-center justify-center gap-4 px-6 py-20"
+    >
+      <p class="text-sm text-text-secondary text-center">
+        {{ $t("home.load_failed") }}
+      </p>
+      <button
+        type="button"
+        class="text-xs font-bold tracking-[0.25em] uppercase border-b border-text-primary pb-0.5 text-text-primary hover:opacity-70 transition-opacity cursor-pointer"
+        @click="load"
+      >
+        {{ $t("home.retry") }}
+      </button>
+    </div>
+
     <!-- Empty states. Two of them, matching `/stats`: a genuinely empty library, and one whose
          books all sit outside the current collection scope — a Goodreads import writes every row
          at owning_status "unknown", where "scan your first book" would be plainly false. -->
@@ -253,10 +272,15 @@ import { useToast } from "@/composables/useToast";
 import type { SeriesMemberships } from "@/composables/useShelfGroups";
 import { BCP47 } from "@/plugins/i18n";
 import type { Book } from "@/types/book";
-import type { CollectionStats, SpotlightBook } from "@/types/stats";
+import type {
+  CollectionStats,
+  SpotlightBook,
+  StatsScope,
+} from "@/types/stats";
 import { countOutsideScope, normalizeStats } from "@/utils/stats-view";
 import { createFetchSequencer } from "@/utils/fetch-seq";
 import { summarizeSeries } from "@/utils/series-completeness";
+import { greetingKey, greetingName } from "@/utils/greeting";
 
 /** Covers in the recently-added strip. Deliberately small — this is a landing page, not the
  *  library, and the strip scrolls rather than paginating. */
@@ -281,9 +305,11 @@ const statsData = ref<CollectionStats | null>(null);
 const recent = ref<Book[]>([]);
 const memberships = ref<SeriesMemberships>({});
 const loading = ref(false);
-// Set once per page load and *not* replaced by a locale refetch — the quote shouldn't change
-// under the reader because they switched language.
+const loadError = ref(false);
+// Held across a *locale* refetch — the quote shouldn't change under the reader because they
+// switched language — but not across a scope switch, which changes which books are eligible.
 const spotlightPool = ref<SpotlightBook[]>([]);
+const spotlightScope = ref<StatsScope | null>(null);
 
 // ── First-name onboarding ─────────────────────────────────────────────────────
 
@@ -310,24 +336,11 @@ const saveFirstname = async () => {
 // ── Header ────────────────────────────────────────────────────────────────────
 
 const greeting = computed(() => {
-  const hour = new Date().getHours();
-  const name =
-    authStore.firstname ??
-    (() => {
-      const raw = (authStore.email ?? "").split("@")[0];
-      return raw.charAt(0).toUpperCase() + raw.slice(1);
-    })();
-  const key =
-    hour < 6
-      ? "greeting_night"
-      : hour < 12
-        ? "greeting_morning"
-        : hour < 17
-          ? "greeting_afternoon"
-          : hour < 22
-            ? "greeting_evening"
-            : "greeting_night";
-  return t(`home.${key}`, { name });
+  const key = greetingKey(new Date().getHours());
+  const name = greetingName(authStore.firstname, authStore.email);
+  // No name at all falls to the nameless variant rather than interpolating "" and leaving a
+  // comma with nothing after it.
+  return name ? t(`home.${key}`, { name }) : t(`home.${key}_plain`);
 });
 
 // The status tiles are gone; the two counts they were worth survive here, and the full status
@@ -362,7 +375,12 @@ const incompleteSeries = computed(() =>
   }).rows.filter((r) => !r.complete),
 );
 
-const gapRows = computed(() => incompleteSeries.value.slice(0, GAP_ROWS));
+// Owned-only, matching `/stats`. `/api/series` takes no scope and answers against its own
+// ownership gate, so under `all` this block would offer "all N series →" into a page that
+// suppresses the whole completeness section and shows nothing the link promised.
+const gapRows = computed(() =>
+  scope.value === "owned" ? incompleteSeries.value.slice(0, GAP_ROWS) : [],
+);
 
 const hasOddities = computed(() => {
   const e = statsData.value?.exemplars;
@@ -379,6 +397,9 @@ const nextLoad = createFetchSequencer();
 const load = async () => {
   const isCurrent = nextLoad();
   const locale = localeStore.locale;
+  // Read once, so the pool is compared against the scope this request actually asked for and
+  // not against whatever the preference has moved to by the time it lands.
+  const requestedScope = scope.value;
   // Owned by load() so a watcher-triggered refetch shows the spinner rather than the previous
   // scope's blocks under an already-switched preference.
   loading.value = true;
@@ -391,30 +412,48 @@ const load = async () => {
     // library that is the friendlier miss — the strip still shows books. Same class of gap as
     // the one `CatalogueGaps.vue` documents for its library deep-links.
     const [statsRes, scansRes, seriesRes] = await Promise.all([
-      apiFetch(`/api/stats?locale=${locale}&scope=${scope.value}`),
+      apiFetch(`/api/stats?locale=${locale}&scope=${requestedScope}`),
       apiFetch(
         `/api/scans?limit=${RECENT_LIMIT}&sort=date_desc&locale=${locale}`,
       ),
       apiFetch(`/api/series?locale=${locale}`),
     ]);
 
+    // Status before body: an upstream HTML error page makes `json()` throw a parse error, which
+    // would otherwise mask the status it came with.
+    if (!statsRes.ok) throw new Error(`GET /api/stats ${statsRes.status}`);
     const statsBody = await statsRes.json();
     // `/api/scans` answers with a bare array; anything else is a shape this page shouldn't
     // render through, so the strip stays empty rather than the block half-painting.
-    const scansBody = scansRes.ok ? await scansRes.json() : null;
-    const seriesBody = seriesRes.ok ? await seriesRes.json() : null;
+    const scansBody = scansRes.ok
+      ? await scansRes.json().catch(() => null)
+      : null;
+    const seriesBody = seriesRes.ok
+      ? await seriesRes.json().catch(() => null)
+      : null;
     if (!isCurrent()) return; // superseded — a newer load() owns the page now
-    if (!statsRes.ok) throw new Error(statsBody.error || t("home.load_failed"));
     statsData.value = normalizeStats(statsBody);
-    if (spotlightPool.value.length === 0)
+    loadError.value = false;
+    // Re-drawn when the scope changes, so switching to Owned can't leave an `unowned` book
+    // quoted under "From the shelf"; held otherwise, so a locale refetch keeps the quote.
+    if (
+      spotlightPool.value.length === 0 ||
+      spotlightScope.value !== requestedScope
+    ) {
       spotlightPool.value = statsData.value.spotlight;
+      spotlightScope.value = requestedScope;
+    }
 
     // Both secondary blocks degrade on their own rather than blanking the page — the pattern
     // `/stats` already uses for its series fetch.
     if (Array.isArray(scansBody)) recent.value = scansBody;
     if (seriesBody) memberships.value = seriesBody;
-  } catch (err: any) {
-    if (isCurrent()) showToast(err.message || t("home.load_failed"), "error");
+  } catch (err) {
+    if (!isCurrent()) return;
+    // Raw `err.message` was untranslated and often unreadable — offline gives "Failed to fetch".
+    console.error("[home] load failed", err);
+    loadError.value = true;
+    showToast(t("home.load_failed"), "error");
   } finally {
     if (isCurrent()) loading.value = false;
   }

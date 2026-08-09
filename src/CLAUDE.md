@@ -22,7 +22,7 @@ ask the `inventory` subagent rather than expecting a list here.
 | `src/locales/` | `en.json`, `de.json` — all UI strings |
 | `src/plugins/` | `i18n.ts`, `vuetify.ts` (Vuetify 4, `editorial` / `editorial-dark` themes) |
 | `src/styles/` | `tailwind.css` — Tailwind v4 config and design tokens |
-| `src/router/` | Route guards — authed users redirect from `/`, `/login` → `/home`; unauthed from `/home`, `/series/:id`, `/welcome` → `/`; `/welcome` → `/home` once `WELCOME_SEEN_KEY` is set |
+| `src/router/` | Route guards — authed users redirect from `/`, `/login` → `/home`; unauthed from any `meta.requiresAuth` route (`/home`, `/series/:id`, `/stats`, `/settings`, `/import`, `/admin`) → `/`; `/welcome` → `/home` once `WELCOME_SEEN_KEY` is set. Note `/welcome` itself carries no `requiresAuth`, so an unauthenticated visit renders it |
 
 ## Invariants
 
@@ -73,11 +73,18 @@ ask the `inventory` subagent rather than expecting a list here.
   both read `/api/stats`, so `normalizeStats` (the version-tolerance layer), `getBreakdown`,
   `colorRamp` and the percentage helpers live there rather than in either page. A new
   `CollectionStats` field needs a default in `normalizeStats` or an older worker blanks the page.
-  `/stats` additionally owns an ownership **scope** (`StatsScope`, persisted via
-  `stores/statsDefaults.ts`) that it passes to the API as `?scope=`; the home dashboard sends
-  none and so always reads the owned collection. Series completeness is deliberately outside
+  An ownership **scope** (`StatsScope`, persisted via `stores/statsDefaults.ts`) goes to the API
+  as `?scope=`; **both** pages send it, from that one shared store — see the bullet below for
+  why home must not default to `owned` on its own. Series completeness is deliberately outside
   that switch — `/api/series` has its own ownership gate, so the block reads "owned only" under
-  any wider scope rather than mixing an owned-derived figure into all-scope numbers.
+  any wider scope rather than mixing an owned-derived figure into all-scope numbers, and home's
+  shelf-gaps block hides itself under a wider scope for the same reason: its "all N series →"
+  link lands on the section `/stats` is suppressing.
+  `buildBreakdownRows` owns the bar geometry for both the breakdown and the origins list. Two
+  rules it exists to hold: the scale is the **largest** row (`getBreakdown` emits `status`,
+  `owning` and `rating` in fixed key order, so the first row is not the maximum for three of the
+  fourteen dimensions), and the ramp is assigned by **rank**, so the accent marks the modal value.
+  `StatBarRow`'s track additionally clips, so a caller that gets this wrong stays local.
 - **Series completeness has one definition, in `utils/series-completeness.ts`.**
   `countableSeriesEntries` decides which entries count *and* which a shelf displays, and it takes
   the user's `libMainOnly` preference as an argument — pass it from `stores/libraryDefaults`,

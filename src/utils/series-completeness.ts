@@ -41,6 +41,13 @@ export function isMainSeriesEntry(entry: OrdinalEntry): boolean {
  * That reads as "complete" in a count and, worse, renders an *empty shelf* in the library,
  * because this same set decides which entries are displayed. Missing metadata should degrade to
  * "we can't tell the side entries apart here", not to "this series has no books".
+ *
+ * **The threshold is deliberately "none at all", not a coverage ratio.** A series with one
+ * whole-numbered entry and three unnumbered ones measures 1 of 1 and reads as complete, which
+ * looks like the same bug one entry up — it isn't. A missing ordinal usually *means* novella or
+ * companion (see `isMainSeriesEntry`), so that series is most often a volume 1 plus three side
+ * stories, and 1 of 1 is the right answer under main-only. Reviewed and kept; don't "fix" it into
+ * a `main.length * 2 >= entries.length` floor without data showing the opposite.
  */
 export function countableSeriesEntries<T extends OrdinalEntry>(
   entries: T[],
