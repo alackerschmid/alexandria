@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   barWidth,
+  buildBreakdownRows,
   buildDecadeHistogram,
   buildLengthSegments,
   buildRatingHistogram,
@@ -11,6 +12,7 @@ import {
   getBreakdown,
   normalizeStats,
   pctOf,
+  quoteToken,
   rampColor,
 } from "@/utils/stats-view";
 import { emptyRatingDistribution, type CollectionStats } from "@/types/stats";
@@ -424,5 +426,106 @@ describe("buildLengthSegments", () => {
     );
     expect(segs[0].width).toBe("0%");
     expect(segs[0].pct).toBe(0);
+  });
+});
+
+describe("quoteToken", () => {
+  it("quotes only values the tokenizer would split", () => {
+    expect(quoteToken("scifi")).toBe("scifi");
+    expect(quoteToken("Science fiction")).toBe('"Science fiction"');
+  });
+});
+
+describe("buildBreakdownRows", () => {
+  const ramp = colorRamp(true);
+
+  // The regression this function was extracted for. `status`, `owning` and `rating` come out of
+  // `getBreakdown` in fixed key order, so the first row is not the largest — scaling against it
+  // put widths in the thousands of percent on any library with a big non-leading bucket, which
+  // on a Goodreads import (owned few, unknown many) is the first thing the user ever sees.
+  it("scales bars against the largest row, not the first one", () => {
+    const rows = buildBreakdownRows(
+      [
+        { label: "owned", count: 5 },
+        { label: "unknown", count: 200 },
+      ],
+      { ramp, total: 205 },
+    );
+    expect(rows[0].width).toBe("3%");
+    expect(rows[1].width).toBe("100%");
+  });
+
+  it("gives the accent to the largest row wherever it sits in the list", () => {
+    const rows = buildBreakdownRows(
+      [
+        { label: "read", count: 12 },
+        { label: "unread", count: 300 },
+      ],
+      { ramp, total: 312 },
+    );
+    expect(rows[1].color).toBe(ramp[0]);
+    expect(rows[0].color).toBe(ramp[1]);
+  });
+
+  it("keeps list order for equal counts, so colours don't swap between renders", () => {
+    const rows = buildBreakdownRows(
+      [
+        { label: "a", count: 4 },
+        { label: "b", count: 4 },
+      ],
+      { ramp, total: 8 },
+    );
+    expect(rows.map((r) => r.color)).toEqual([ramp[0], ramp[1]]);
+  });
+
+  it("computes the scale and the ramp over the full list, then truncates", () => {
+    // Collapsing must not rescale the rows that stay on screen.
+    const items = [
+      { label: "a", count: 10 },
+      { label: "b", count: 5 },
+      { label: "c", count: 50 },
+    ];
+    const all = buildBreakdownRows(items, { ramp, total: 65 });
+    const collapsed = buildBreakdownRows(items, { ramp, total: 65, limit: 2 });
+    expect(collapsed).toHaveLength(2);
+    expect(collapsed).toEqual(all.slice(0, 2));
+  });
+
+  it("reports each row's share of the collection, not of the dimension", () => {
+    const rows = buildBreakdownRows([{ label: "a", count: 25 }], {
+      ramp,
+      total: 100,
+    });
+    expect(rows[0].pct).toBe(25);
+  });
+
+  it("builds a deep-link token only where the dimension has a facet", () => {
+    const items = [{ label: "Science fiction", count: 3 }];
+    expect(
+      buildBreakdownRows(items, { ramp, total: 3, searchKey: "genre" })[0].token,
+    ).toBe('genre:"Science fiction"');
+    expect(buildBreakdownRows(items, { ramp, total: 3 })[0].token).toBeNull();
+  });
+
+  it("links a language by its code while labelling it with the display name", () => {
+    const rows = buildBreakdownRows(
+      [{ label: "German", count: 4, tokenValue: "de" }],
+      { ramp, total: 4, searchKey: "language" },
+    );
+    expect(rows[0].label).toBe("German");
+    expect(rows[0].token).toBe("language:de");
+  });
+
+  it("survives an empty dimension", () => {
+    expect(buildBreakdownRows([], { ramp, total: 0 })).toEqual([]);
+  });
+
+  it("does not divide by zero when every row is empty", () => {
+    const rows = buildBreakdownRows([{ label: "a", count: 0 }], {
+      ramp,
+      total: 0,
+    });
+    expect(rows[0].width).toBe("0%");
+    expect(rows[0].pct).toBe(0);
   });
 });

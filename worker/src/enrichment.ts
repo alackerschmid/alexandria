@@ -6,11 +6,13 @@ import {
   discoverEditionsFromOpenLibrary,
 } from "./editions";
 import { exactTitleMatcher, titleScorer } from "./title-match";
+import { normalizeIsbn } from "./isbn";
 import {
   googleBooksCallsToday,
   outcomeForStatus,
   UsageRecorder,
 } from "./usage";
+import type { UsageOperation } from "./usage";
 
 // Bump this whenever fetchWorkDetails fetches new columns. The sweeper uses it to re-enrich
 // works that were enriched with an older schema and are missing the new fields.
@@ -35,14 +37,18 @@ export type FailureReason =
 // each is a different failure mode, and the board is where that shows. `entity_search` is the mwapi
 // candidate search, `book_search` the type/author filter over it, `book_hydrate` the labels/series
 // read over the survivors — the filter is the expensive one, so a future regression has an address.
-type SparqlOperation =
+// Narrowed from `UsageOperation` rather than spelled independently, so a label that isn't one the
+// counters recognise is a compile error here instead of a phantom `api_usage` row at runtime.
+type SparqlOperation = Extract<
+  UsageOperation,
   | "book_search"
   | "book_hydrate"
   | "entity_search"
   | "labels"
   | "work_details"
   | "series_members"
-  | "edition_isbn";
+  | "edition_isbn"
+>;
 
 // Per-reason retry policy, applied by scheduleRetry at failure time. Typed as
 // Record<FailureReason, ...> so adding a new FailureReason value is a compile error here
@@ -150,20 +156,39 @@ async function fetchWikidataJson(
   url: string,
   timeoutMs = 25_000,
 ): Promise<any> {
-  const once = async () => {
+  // The response is reduced to a plain object *inside* the timed scope, body included. `fetch()`
+  // resolves on headers, so parsing the body after `clearTimeout` left the largest part of a
+  // SPARQL read — WDQS routinely streams for seconds — with no abort behind it: an endpoint that
+  // answered 200 and then stalled mid-stream hung the tick until the platform killed it, taking
+  // the tick's unflushed `usage` counters with it. The whole point of the 25s budget is that a
+  // slow query fails as `timeout` and gets retried, so this is where it has to be enforced.
+  const once = async (): Promise<{
+    status: number;
+    statusText: string;
+    ok: boolean;
+    retryAfter: string | null;
+    data: any;
+  }> => {
     // Counted here, per attempt, for the same reason `fetchWithTimeout` does it: this is the only
     // place a Wikidata request is actually made, so the subrequest meter cannot drift from reality.
     usage?.countFetch();
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      return await fetch(url, {
+      const res = await fetch(url, {
         headers: {
           "User-Agent": WIKIDATA_UA,
           Accept: "application/sparql-results+json",
         },
         signal: ctrl.signal,
       });
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        retryAfter: res.headers.get("Retry-After"),
+        data: res.ok ? await res.json() : undefined,
+      };
     } catch (e: any) {
       if (e?.name === "AbortError")
         throw new SparqlError(
@@ -194,7 +219,7 @@ async function fetchWikidataJson(
 
   let res = await attempt();
   if (res.status === 429) {
-    const retry = Number(res.headers.get("Retry-After")) || 5;
+    const retry = Number(res.retryAfter) || 5;
     console.warn(
       `[wikidata:${operation}] Rate limited (HTTP 429), retrying after ${retry}s`,
     );
@@ -209,16 +234,14 @@ async function fetchWikidataJson(
           ? "http_5xx"
           : "other";
     const retryAfter =
-      res.status === 429
-        ? Number(res.headers.get("Retry-After")) || undefined
-        : undefined;
+      res.status === 429 ? Number(res.retryAfter) || undefined : undefined;
     throw new SparqlError(
       `[wikidata:${operation}] HTTP ${res.status} ${res.statusText}`,
       kind,
       retryAfter,
     );
   }
-  return await res.json();
+  return res.data;
 }
 
 /** Returns [] when the query succeeds but has no results. */
@@ -928,7 +951,11 @@ async function fetchWorkEditionIsbn(
     } LIMIT 20`.trim();
   const rows = await runSparql(usage, "edition_isbn", query);
   if (!rows.length) return null;
-  const clean = (v: string | undefined) => (v ?? "").replace(/[-\s]/g, "");
+  // normalizeIsbn, not a bare dash-strip: it also uppercases. A Wikidata P957 value carrying a
+  // lowercase ISBN-10 check digit would otherwise reach `books.isbn` in a form `isbnForms` cannot
+  // expand, so no both-forms comparison could ever match it and a later scan of that edition would
+  // mint a second row for one physical book.
+  const clean = (v: string | undefined) => normalizeIsbn(v ?? "");
   // Prefer an English, then German, then any edition.
   const pick =
     rows.find((r) => r.lang?.value === "en") ??
@@ -985,7 +1012,13 @@ async function backfillEdition(
     }
   }
 
-  const book = await materializeEdition(db, isbn, workId, effectiveKey, usage);
+  const book = await materializeEdition(
+    db,
+    isbn,
+    workId,
+    effectiveKey,
+    usage ?? null,
+  );
   if (!book) {
     console.log(`[backfillEdition] no metadata for ISBN ${isbn}`);
     return;
@@ -999,6 +1032,21 @@ async function mergeWorks(
   from: number,
   into: number,
 ): Promise<void> {
+  // The loser's match_key has to be read *before* the batch and carried over as a value. It is the
+  // only key `linkWork` resolves by, and the loser is always the row that has one (a work that
+  // already carries a QID returns early from resolveWorkIdentity and never merges), so deleting it
+  // with the row retired a dedup key still in active use: a later scan of a *different* edition of
+  // the same book found nothing for that key and minted a rival work, splitting the user's rating
+  // and the enriched data across two cards. It converges only if enrichment happens to resolve the
+  // new work to the same QID — for a book Wikidata does not match, never.
+  //
+  // Read first, and applied *after* the DELETE below, because match_key is UNIQUE: writing it onto
+  // the survivor while the loser still holds it would fail the batch.
+  const loser = await db
+    .prepare("SELECT match_key FROM works WHERE id = ?")
+    .bind(from)
+    .first<{ match_key: string | null }>();
+
   await db.batch([
     db
       .prepare("UPDATE books SET work_id = ? WHERE work_id = ?")
@@ -1050,6 +1098,11 @@ async function mergeWorks(
     // Instead D1's FK enforcement fails the whole batch if the repoint above is ever removed or
     // reordered after it — a loud tripwire rather than silent data loss.
     db.prepare("DELETE FROM works WHERE id = ?").bind(from),
+    // After the DELETE, per the note above. COALESCE so the survivor's own key wins when it has
+    // one; only a survivor with none (the usual case — a QID-first placeholder) adopts the loser's.
+    db
+      .prepare("UPDATE works SET match_key = COALESCE(match_key, ?) WHERE id = ?")
+      .bind(loser?.match_key ?? null, into),
   ]);
 }
 
@@ -1170,6 +1223,15 @@ async function resolveWorkIdentity(
   workId: number,
   w: WorkRow,
   usage?: UsageRecorder | null,
+  /**
+   * Called the instant `mergeWorks` returns, before anything that could throw runs afterwards.
+   * `enrichWork` only learns `canonicalId`/`merged` from the *returned* outcome, so a throw
+   * between the merge and the return left its catch writing the failure to `workId` — a row
+   * `mergeWorks` had just deleted. The status UPDATE then matched nothing, the surviving work kept
+   * a non-NULL `enrichment_started_at` blocking re-claims for the full TTL, and the
+   * `enrichment_runs` row pointed at a work id that no longer existed.
+   */
+  onMerge?: (canonicalId: number) => void,
 ): Promise<IdentityOutcome> {
   if (w.wikidata_qid) {
     console.log(
@@ -1254,6 +1316,7 @@ async function resolveWorkIdentity(
     await mergeWorks(db, workId, existing.id);
     canonicalId = existing.id;
     merged = true;
+    onMerge?.(canonicalId);
     // The claim taken earlier was on workId, which mergeWorks just deleted. Re-claim the
     // canonical row so a second concurrent enrichWork that resolves to the same existing
     // work can't race this one on the series/detail writes below.
@@ -1322,8 +1385,21 @@ async function resolveWorkIdentity(
 
 // Gives an identified work a cover edition (if unowned) and pre-discovers related OpenLibrary
 // editions via the Wikidata-linked work id. Independent operations on different tables, run
-// concurrently. Both best-effort: a discovery failure must not turn a successful enrichment
-// into a failed one (backfillEdition has no failure mode of its own).
+// concurrently. Both best-effort: neither may turn a successful enrichment into a failed one.
+//
+// backfillEdition emphatically *does* have a failure mode -- it runs the `edition_isbn` SPARQL
+// query, which propagates SparqlError on timeout/429/5xx exactly like every other one -- and the
+// claim that it does not is what left it uncaught. A flake there discarded an already-fetched,
+// fully-resolved set of details, booked the work as a genuine failure, and advanced it toward
+// `exhausted`; three such flakes retired a perfectly healthy work for two days having thrown away
+// three complete Wikidata reads.
+//
+// Swallowing it outright is the opposite error, though: `persistWorkDetails` then books the work
+// `done` at the current schema version, and neither Q1 (status != 'done') nor Q2 (schema < current)
+// will ever serve it again -- so one WDQS 502 costs a placeholder work its cover edition
+// permanently, with no manual recovery either (`/api/books/refresh` 404s on a work with no `books`
+// row). Hence the return value: the details are kept, the run is not a failure, but the caller
+// holds the schema version back so the *next* sweep retries the backfill alone.
 async function backfillEditionsAndDiscovery(
   db: D1Database,
   canonicalId: number,
@@ -1332,9 +1408,19 @@ async function backfillEditionsAndDiscovery(
   source: EnrichmentSource,
   apiKey?: string,
   usage?: UsageRecorder | null,
-): Promise<void> {
+): Promise<{ editionBackfillFailed: boolean }> {
+  let editionBackfillFailed = false;
   const backfill = workQid
-    ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage)
+    ? backfillEdition(db, canonicalId, workQid, source, apiKey, usage).catch(
+        (e) => {
+          editionBackfillFailed = true;
+          console.error(
+            "[enrichWork] edition backfill failed for work",
+            canonicalId,
+            e,
+          );
+        },
+      )
     : Promise.resolve();
   const discovery = details?.openlibraryWorkId
     ? discoverEditionsFromOpenLibrary(
@@ -1351,6 +1437,10 @@ async function backfillEditionsAndDiscovery(
       })
     : Promise.resolve();
   await Promise.all([backfill, discovery]);
+  // Discovery is not reported: it only pre-populates candidate ISBNs and re-runs on its own,
+  // being gated on the work having none yet. The edition backfill is gated on the work having no
+  // linked edition, which is only re-checked if the work is enriched again at all.
+  return { editionBackfillFailed };
 }
 
 // Writes fetched Wikidata details back to `works`. force=true (manual refresh) overwrites
@@ -1362,6 +1452,10 @@ async function persistWorkDetails(
   canonicalId: number,
   details: WorkDetails | null,
   force: boolean,
+  /** False when a best-effort step was skipped by a transient failure. The work is still `done`
+   *  — its details are real and its attempt counter must not advance — but it is left one schema
+   *  version short, which is exactly the sweeper's Q2 predicate, so the next tick retries it. */
+  schemaComplete = true,
 ): Promise<void> {
   const arrToJson = (a: string[] | undefined) =>
     a?.length ? JSON.stringify(a) : null;
@@ -1391,6 +1485,10 @@ async function persistWorkDetails(
     nominJson,
   });
 
+  const schemaVersion = schemaComplete
+    ? CURRENT_ENRICHMENT_SCHEMA_VERSION
+    : Math.max(0, CURRENT_ENRICHMENT_SCHEMA_VERSION - 1);
+
   const coalesce = (col: string) => (force ? "?" : `COALESCE(?, ${col})`);
   const updateResult = await db
     .prepare(
@@ -1403,7 +1501,7 @@ async function persistWorkDetails(
       enrichment_failure_reason = NULL,
       enrichment_attempts       = 0,
       enrichment_started_at     = NULL,
-      enrichment_schema_version = ${CURRENT_ENRICHMENT_SCHEMA_VERSION},
+      enrichment_schema_version = ${schemaVersion},
       canonical_title           = ${coalesce("canonical_title")},
       genres                    = ${coalesce("genres")},
       original_pub_date         = ${coalesce("original_pub_date")},
@@ -1551,7 +1649,10 @@ export async function enrichWork(
         .bind(workId)
         .run();
 
-    const identity = await resolveWorkIdentity(db, workId, w, usage);
+    const identity = await resolveWorkIdentity(db, workId, w, usage, (id) => {
+      canonicalId = id;
+      merged = true;
+    });
     if (identity.kind === "no-title") {
       // Lands on `done` at the current schema version, so neither sweeper query serves this work
       // again — deliberate: nothing about it will have changed on the next tick, and a titleless
@@ -1587,7 +1688,7 @@ export async function enrichWork(
     canonicalId = identity.canonicalId;
     merged = identity.merged;
 
-    await backfillEditionsAndDiscovery(
+    const { editionBackfillFailed } = await backfillEditionsAndDiscovery(
       db,
       canonicalId,
       workQid,
@@ -1596,7 +1697,13 @@ export async function enrichWork(
       apiKey,
       usage,
     );
-    await persistWorkDetails(db, canonicalId, details, force);
+    await persistWorkDetails(
+      db,
+      canonicalId,
+      details,
+      force,
+      !editionBackfillFailed,
+    );
     await recordRun(
       db,
       canonicalId,

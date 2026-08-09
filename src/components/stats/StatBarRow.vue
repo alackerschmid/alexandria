@@ -13,7 +13,10 @@
         <slot name="tail">{{ tail }}</slot>
       </span>
     </div>
-    <div class="h-[3px] bg-charcoal-border relative">
+    <!-- `overflow-hidden` so a width over 100% clips at the track rather than escaping it and
+         making the whole page scroll sideways. Callers are supposed to scale against their own
+         maximum; this is the containment that keeps a mistake there local. -->
+    <div class="h-[3px] bg-charcoal-border relative overflow-hidden">
       <div
         class="absolute left-0 top-0 bottom-0"
         :style="{ width, background: color }"

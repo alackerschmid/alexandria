@@ -1,5 +1,6 @@
 import { computed, type Ref } from "vue";
 import { authorDisplayName } from "@/utils/book-display";
+import { countableSeriesEntries } from "@/utils/series-completeness";
 import type { BookGroup } from "@/composables/useLibraryGrouping";
 import type { ParsedSearch } from "@/composables/useLibrarySearch";
 import type { ShelfEntry, ShelfGroup } from "@/utils/shelf-packing";
@@ -87,19 +88,17 @@ export function useShelfGroups(options: {
       // Series group with full membership → counts + completeness + unowned reveal.
       if (g.seriesId != null && seriesMemberships.value[g.seriesId]) {
         const members = seriesMemberships.value[g.seriesId].entries;
-        const mainMembers = members.filter(
-          (e) => e.ordinal != null && Number.isInteger(e.ordinal),
-        );
+        // `countableSeriesEntries` owns the main-sequence rule and the no-ordinals fallback, and
+        // is shared with `summarizeSeries` — home's shelf gaps and the stats page's series
+        // completeness are the same claim as this shelf's "3 / 7" and must not drift from it.
+        const pool = countableSeriesEntries(members, mainOnly.value);
         // Completeness reflects actual possession (worker-computed `owned`, which now
         // requires owning_status 'owned'/'lent_out') and is intentionally independent of the
         // "Owned books only" / `owning:` display filters below — narrowing visible tiles
         // shouldn't change the underlying completeness fact, any more than a text search does.
-        const ownedTotal = members.filter((e) => e.owned).length;
-        const ownedMain = mainMembers.filter((e) => e.owned).length;
-        const denom = mainOnly.value ? mainMembers.length : members.length;
-        const numer = mainOnly.value ? ownedMain : ownedTotal;
+        const denom = pool.length;
+        const numer = pool.filter((e) => e.owned).length;
         const complete = denom > 0 && numer === denom;
-        const pool = mainOnly.value ? mainMembers : members;
         const visible = showUnowned.value ? pool : pool.filter((e) => e.owned);
         // "Owned books only" and the `owning:` search token both filter by owning_status —
         // a display filter, distinct from the FRBR ownership (`e.owned`) that drives

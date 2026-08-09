@@ -416,9 +416,14 @@ admin.get("/works", async (c) => {
 admin.get("/usage", async (c) => {
   const db = c.env.DB;
   const requested = Number(c.req.query("hours"));
+  // Clamped at both ends, like `listLimit`. The lower bound is not cosmetic: `requested > 0`
+  // admitted any fraction below 1, which `Math.trunc` then turned into 0, and `from` became
+  // `usageHourStart(now) + HOUR_MS` — an hour into the future, matching no rows. The chart and the
+  // per-provider totals came back empty while the quota gauge (its own query) showed real numbers,
+  // which reads as "no external calls at all" rather than as a bad parameter.
   const hours =
     Number.isFinite(requested) && requested > 0
-      ? Math.min(Math.trunc(requested), MAX_USAGE_HOURS)
+      ? Math.min(Math.max(Math.trunc(requested), 1), MAX_USAGE_HOURS)
       : DEFAULT_USAGE_HOURS;
 
   const now = Date.now();

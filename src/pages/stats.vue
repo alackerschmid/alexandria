@@ -39,6 +39,26 @@
       <v-progress-circular indeterminate color="primary" size="24" width="2" />
     </div>
 
+    <!-- Load error, but only when there is nothing to fall back on. A failed *refetch* keeps the
+         numbers it already has and says so through the toast; a failed first load used to render
+         all three branches false, leaving an empty page under a headline claiming zero books —
+         strictly less than the genuine empty state below. -->
+    <div
+      v-else-if="loadError && !stats"
+      class="flex-1 flex flex-col items-center justify-center gap-4 px-6 py-20"
+    >
+      <p class="text-sm text-text-secondary text-center">
+        {{ $t("stats.load_failed") }}
+      </p>
+      <button
+        type="button"
+        class="text-xs font-bold tracking-[0.25em] uppercase border-b border-text-primary pb-0.5 text-text-primary hover:opacity-70 transition-opacity cursor-pointer"
+        @click="load"
+      >
+        {{ $t("stats.retry") }}
+      </button>
+    </div>
+
     <!-- Empty state. Two of them: a genuinely empty library, and one whose books are all
          outside the current scope — a Goodreads import writes every row at owning_status
          "unknown", so "nothing to measure" would be plainly false there. -->
@@ -213,12 +233,12 @@
 
           <div v-if="breakdownRows.length" class="flex flex-col gap-3.5">
             <StatBarRow
-              v-for="(rowData, i) in breakdownRows"
+              v-for="rowData in breakdownRows"
               :key="rowData.label"
               :label="rowData.label"
               :tail="rowData.tail"
               :width="rowData.width"
-              :color="rampColor(ramp, i)"
+              :color="rowData.color"
               :to="rowData.to"
             />
           </div>
@@ -262,18 +282,22 @@
               {{ $t("stats.origins_title") }}
             </h2>
             <span class="font-mono text-[10px] text-text-secondary">{{
-              $t("stats.language_count", { count: stats.languageCount })
+              $t(
+                "stats.language_count",
+                { count: stats.languageCount },
+                stats.languageCount,
+              )
             }}</span>
           </header>
 
           <div v-if="languageRows.length" class="flex flex-col gap-3.5">
             <StatBarRow
-              v-for="(rowData, i) in languageRows"
+              v-for="rowData in languageRows"
               :key="rowData.label"
               :label="rowData.label"
               :tail="rowData.tail"
               :width="rowData.width"
-              :color="rampColor(ramp, i)"
+              :color="rowData.color"
               :to="rowData.to"
             />
           </div>
@@ -307,7 +331,11 @@
                 class="flex items-baseline justify-between gap-3"
               >
                 <span class="text-xs text-text-secondary">{{
-                  $t("stats.countries_more", { count: moreCountries })
+                  $t(
+                    "stats.countries_more",
+                    { count: moreCountries },
+                    moreCountries,
+                  )
                 }}</span>
               </div>
             </div>
@@ -338,7 +366,7 @@
               {{ $t("stats.series_title") }}
             </h2>
             <span
-              v-if="scope === 'owned'"
+              v-if="scope === 'owned' && !seriesFailed"
               class="font-mono text-[10px] text-text-secondary text-right"
               >{{
                 $t("stats.series_meta", {
@@ -355,6 +383,9 @@
                owned-derived figure beside all-scope numbers, the block says why it's absent. -->
           <p v-if="scope !== 'owned'" class="text-sm text-text-secondary pt-2">
             {{ $t("stats.series_owned_only") }}
+          </p>
+          <p v-else-if="seriesFailed" class="text-sm text-text-secondary pt-2">
+            {{ $t("stats.series_unavailable") }}
           </p>
           <SeriesCompleteness
             v-else-if="series.rows.length"
@@ -415,6 +446,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { useThemeStore } from "@/stores/theme";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useStatsDefaultsStore } from "@/stores/statsDefaults";
+import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
 import AppHeader from "@/components/AppHeader.vue";
 import AppFooter from "@/components/AppFooter.vue";
 import AppButton from "@/components/AppButton.vue";
@@ -435,7 +467,7 @@ import type { SeriesMemberships } from "@/composables/useShelfGroups";
 import { summarizeSeries } from "@/utils/series-completeness";
 import { languageDisplayFormatter } from "@/utils/language";
 import {
-  barWidth,
+  buildBreakdownRows,
   buildDecadeHistogram,
   buildLengthSegments,
   buildRatingHistogram,
@@ -446,6 +478,7 @@ import {
   getBreakdown,
   normalizeStats,
   pctOf,
+  quoteToken,
   rampColor,
 } from "@/utils/stats-view";
 import { createFetchSequencer } from "@/utils/fetch-seq";
@@ -463,6 +496,7 @@ const localeStore = useLocaleStore();
 const themeStore = useThemeStore();
 const fieldDefsStore = useFieldDefsStore();
 const { scope } = storeToRefs(useStatsDefaultsStore());
+const libraryDefaults = useLibraryDefaultsStore();
 const { apiFetch } = useApi();
 const { dimensionOptions } = useGroupDimensions();
 const { visible: errorToast, message: errorMessage, showToast } = useToast();
@@ -470,6 +504,10 @@ const { visible: errorToast, message: errorMessage, showToast } = useToast();
 const stats = ref<CollectionStats | null>(null);
 const memberships = ref<SeriesMemberships>({});
 const loading = ref(false);
+const loadError = ref(false);
+/** `/api/series` answered with an error. Distinct from "no series tracked": one is a fact about
+ *  the library, the other is the absence of one, and the tile must not state the first. */
+const seriesFailed = ref(false);
 const dimension = ref<GroupBy>("genre");
 const expanded = ref(false);
 const allSeries = ref(false);
@@ -486,8 +524,13 @@ const unscopedCount = computed(() => countOutsideScope(stats.value));
 
 // ── Header ────────────────────────────────────────────────────────────────────
 
+// The band sits outside the loading/error region, so it renders before there is a payload. It
+// says nothing about size until it has one — `?? 0` here asserted "0 books" through every load
+// and permanently after a failed one.
 const headline = computed(() =>
-  t("stats.headline", { count: (stats.value?.total ?? 0).toLocaleString() }),
+  stats.value
+    ? t("stats.headline", { count: stats.value.total.toLocaleString() })
+    : t("stats.headline_pending"),
 );
 
 // Includes `dnf`, which the other status summaries in the app also carry — leaving it out makes
@@ -549,9 +592,15 @@ const tiles = computed(() => {
       ? {
           key: "series",
           label: t("stats.tile_series"),
-          value: String(series.value.complete),
-          unit: t("stats.tile_series_unit", { count: series.value.tracked }),
-          coverage: `${pctOf(series.value.complete, series.value.tracked)}%`,
+          // An unreachable `/api/series` is an unknown, not a zero — the same rule `formatCount`
+          // exists for. "0 of 0, 0% coverage" would state a measurement nobody took.
+          value: seriesFailed.value ? "—" : String(series.value.complete),
+          unit: seriesFailed.value
+            ? ""
+            : t("stats.tile_series_unit", { count: series.value.tracked }),
+          coverage: seriesFailed.value
+            ? "0%"
+            : `${pctOf(series.value.complete, series.value.tracked)}%`,
           color: rampColor(ramp.value, 3),
         }
       : {
@@ -598,17 +647,16 @@ const lengthSegments = computed(() =>
   buildLengthSegments(stats.value?.pageBuckets ?? [], ramp.value),
 );
 
-const series = computed(() => summarizeSeries(memberships.value));
+// Same shared preference the library shelves and home's gaps row read — see `summarizeSeries`.
+const series = computed(() =>
+  summarizeSeries(memberships.value, { mainOnly: libraryDefaults.mainOnly }),
+);
 
 const visibleSeries = computed(() =>
   allSeries.value ? series.value.rows : series.value.rows.slice(0, SERIES_ROWS),
 );
 
 // ── Collection breakdown ──────────────────────────────────────────────────────
-
-/** Values a token has to be quoted for, because the tokenizer splits on whitespace. */
-const quoteToken = (value: string) =>
-  /\s/.test(value) ? `"${value}"` : value;
 
 // Which search key each dimension deep-links through. Absent = no equivalent facet, so those
 // rows render as plain bars rather than as links that would land on an unfiltered library.
@@ -637,20 +685,20 @@ const breakdownAll = computed(() => {
 const breakdownRows = computed(() => {
   const s = stats.value;
   if (!s) return [];
-  const all = breakdownAll.value;
-  const shown = expanded.value ? all : all.slice(0, COLLAPSED_ROWS);
-  const max = all[0]?.count ?? 0;
-  const key = DIMENSION_TOKENS[dimension.value];
-  return shown.map((item) => ({
-    label: item.label,
+  return buildBreakdownRows(breakdownAll.value, {
+    ramp: ramp.value,
+    total: s.total,
+    searchKey: DIMENSION_TOKENS[dimension.value],
+    limit: expanded.value ? undefined : COLLAPSED_ROWS,
+  }).map((row) => ({
+    ...row,
     // Share of the collection, not of the dimension: "Science fiction, 17% of the shelf".
     tail: t("stats.breakdown_tail", {
-      count: item.count.toLocaleString(),
-      pct: pctOf(item.count, s.total),
+      count: row.count.toLocaleString(),
+      pct: row.pct,
     }),
-    width: barWidth(item.count, max),
-    to: key
-      ? { name: "library", query: { q: `${key}:${quoteToken(item.label)}` } }
+    to: row.token
+      ? { name: "library", query: { q: row.token } }
       : undefined,
   }));
 });
@@ -674,12 +722,18 @@ const shownCaption = computed(() => {
 const languageRows = computed(() => {
   const s = stats.value;
   if (!s) return [];
-  const max = s.languages[0]?.count ?? 0;
-  return s.languages.slice(0, 6).map((l) => ({
-    label: langFmt.value(l.code),
-    tail: l.count.toLocaleString(),
-    width: barWidth(l.count, max),
-    to: { name: "library", query: { q: `language:${l.code}` } },
+  return buildBreakdownRows(
+    // Linked by ISO code, not by the display name the bar is labelled with.
+    s.languages.map((l) => ({
+      label: langFmt.value(l.code),
+      count: l.count,
+      tokenValue: l.code,
+    })),
+    { ramp: ramp.value, total: s.total, searchKey: "language", limit: 6 },
+  ).map((row) => ({
+    ...row,
+    tail: row.count.toLocaleString(),
+    to: { name: "library", query: { q: row.token! } },
   }));
 });
 
@@ -727,17 +781,28 @@ const load = async () => {
       apiFetch(`/api/stats?locale=${locale}&scope=${scope.value}`),
       apiFetch(`/api/series?locale=${locale}`),
     ]);
+    // Status before body: an upstream HTML error page (a Cloudflare 502 or 1101) makes `json()`
+    // throw a parse error, which would otherwise mask the status it came with.
+    if (!statsRes.ok) throw new Error(`GET /api/stats ${statsRes.status}`);
     const statsBody = await statsRes.json();
-    // Series completeness is a secondary block: a failure there must not blank the page, so it
-    // degrades to "no series tracked" rather than throwing past the stats we did get.
-    const seriesBody = seriesRes.ok ? await seriesRes.json() : null;
+    // Series completeness is a secondary block: a failure there must not blank the page. It
+    // degrades to "couldn't load" and not to "no series tracked" — the second is a claim about
+    // the library, and the tile states it as a measured 0 of 0.
+    const seriesBody = seriesRes.ok
+      ? await seriesRes.json().catch(() => null)
+      : null;
     if (!isCurrent()) return; // superseded — a newer load() owns the page now
-    if (!statsRes.ok)
-      throw new Error(statsBody.error || t("stats.load_failed"));
     stats.value = normalizeStats(statsBody);
+    loadError.value = false;
+    seriesFailed.value = seriesBody == null;
     if (seriesBody) memberships.value = seriesBody;
-  } catch (err: any) {
-    if (isCurrent()) showToast(err.message || t("stats.load_failed"), "error");
+  } catch (err) {
+    if (!isCurrent()) return;
+    // Raw `err.message` here was untranslated and often unreadable — offline gives "Failed to
+    // fetch", an HTML error body gives a JSON parse error quoting the doctype.
+    console.error("[stats] load failed", err);
+    loadError.value = true;
+    showToast(t("stats.load_failed"), "error");
   } finally {
     if (isCurrent()) loading.value = false;
   }

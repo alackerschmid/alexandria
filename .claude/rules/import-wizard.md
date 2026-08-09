@@ -135,8 +135,12 @@ surviving ones as a warning-coloured note; the edition-swap path in `changeImpor
 deliberately **discards** the field, because there the sibling it finds is the item's own prior
 scan, which that path then deletes.
 
-`matched_via_work: true` + `sibling_updates: [{ scan_id, previous_status }]` (on `updated` only)
-mark the **work-level update** path — see below.
+`matched_via_work: true` (on `updated` only) marks the **work-level update** path — see below.
+`sibling_updates: [{ scan_id, previous_status }]` rides along with it, but is **not** exclusive to
+it: the ISBN path fans the status out across every copy too (see the fan-out paragraph below), so
+any `updated` row whose work has more than one copy carries it. Gating sibling handling on
+`matched_via_work` would strand every ISBN-matched sibling on an imported status with no card
+tracking it, so neither Undo nor cancel could restore it.
 
 Rate-limited to ~600 rows/min per user (`import:<userId>`, same `rate_limits` table, charged
 via `checkRateLimit`'s `cost` param as `rows.length` rather than 1 per request).
@@ -279,6 +283,18 @@ and picks the runner-up to beat from a *different* work; a tie among copies of o
 twice, not an unanswerable question. An unlinked scan (`work_id` NULL) is its own work and never
 groups with another, mirroring `workSiblings` on the client. Genuinely different works with the same
 title still come back `null` and still go to review.
+
+**A matched-but-unlinked book is linked before the rating is written, and its work rating is then
+re-read.** `applyImportRating` writes nothing without a `work_id`, so the row's rating was
+silently swallowed; linking fixes that, but the link can attach to a work that *already* carries a
+rating (`work_ratings` outlives a deleted scan), and the library index read `rating` through the
+then-NULL `b.work_id`. Without the re-read the row reports `previous.rating: null`, overwrites the
+stored value, and `restorePreImport` sends `rating: null` on Undo — which `PATCH /api/scans/:id`
+treats as an explicit clear, destroying it. The `/goodreads` ISBN path does the same thing for the
+same reason. Both `primary` and `scans[0]` are updated: `scans` is spread off the index rows
+before the link, so mutating one leaves `applyImportUpdate` reading the other. The newly linked
+work is also inserted into `byWorkId`, or a second row of the same batch matching that scan
+dereferences a missing key.
 
 Which copy the card then points at is the caller's call, via `identifiedCopy` on the result: true when
 one copy beat its own siblings by the margin (a per-user title override, or a German edition matched

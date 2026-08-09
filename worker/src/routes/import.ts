@@ -145,9 +145,13 @@ interface ImportRowResult {
   // explicit flag rather than something the client infers from `isbn` vs `book.isbn`, which would
   // be wrong for a book stored under the other ISBN form.
   matched_via_work?: true;
-  // Present only alongside `matched_via_work` — the *other* sibling scans whose status this row
-  // also wrote, each with its own pre-update value. Undo has to restore all of them, not just
-  // `scan_id`; the rating needs no equivalent, being one per-work value.
+  // Present on **any** "updated" row whose work has more than one copy — the ISBN path fans the
+  // status out too, so this does *not* imply `matched_via_work`. (It once did; gating handling of
+  // this field on that flag — the inference the old wording invited — would leave every
+  // ISBN-matched sibling scan on an imported status with no card tracking it, so neither Undo nor
+  // cancel could restore it.) Each entry is another copy whose status this row wrote, with its own
+  // pre-update value: Undo has to restore all of them, not just `scan_id`. The rating needs no
+  // equivalent, being one per-work value.
   sibling_updates?: { scan_id: number; previous_status: string }[];
   // Present only for "imported" rows that added a *second* edition of a work the user already
   // owns — the import wrote owning_status "unknown" on this new scan while another edition sits
@@ -453,7 +457,19 @@ async function importRow(
       if (matchedScan && matchedBook) {
         if (!update) return { isbn: isbn13, outcome: "duplicate" };
 
-        if (!matchedBook.work_id) await linkWork(db, matchedBook);
+        if (!matchedBook.work_id) {
+          await linkWork(db, matchedBook);
+          // Re-read the work's rating: `getExistingScan` joined it through `books.work_id`, which
+          // was still NULL at that point, so it reported null for a work that may well already
+          // carry a rating — ratings outlive scans, so a book re-added after being deleted still
+          // has one. Left stale, an incoming CSV rating overwrote the real stored value and
+          // `previous.rating` reported null, so Undo destroyed it rather than restoring it.
+          matchedScan.rating = await existingWorkRating(
+            db,
+            userId,
+            matchedBook.work_id,
+          );
+        }
         // The row named this edition, so it stays the primary — but a reading status is a statement
         // about the book, so every other copy of the work takes it too, exactly as on the work-match
         // path below. Without this the same export would update one copy for a row naming the exact
@@ -833,60 +849,124 @@ importRoutes.post("/match", async (c) => {
 
   const results: MatchRowResult[] = [];
   for (const row of rows) {
-    const validated = validateMatchRow(row);
-    if (!validated) {
+    // Per-row isolation, as `/goodreads`'s `importRow` has. This loop awaits `applyImportUpdate`,
+    // and therefore a real `db.batch`; without a catch, a throw on row k propagated out of the
+    // handler as a 500 and discarded the whole `results` array — including rows 0..k-1 whose scan
+    // statuses and work_ratings had already been written. The client then marked every row of the
+    // batch `no_match`, leaving those committed writes with no card pointing at them, so neither
+    // Undo nor cancel could restore them. Reporting `no_match` for the failed row keeps the
+    // response positional and lets the rows that did write report their scan_id and previous.
+    try {
+      const validated = validateMatchRow(row);
+      if (!validated) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      const match = pickBestMatchPrepared(
+        { title: validated.title, author: validated.author },
+        candidates,
+      );
+      if (!match) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      const matched = byScanId.get(match.scanId);
+      if (!matched) {
+        results.push({ outcome: "no_match" });
+        continue;
+      }
+
+      // Every copy of the matched work, primary first. Same rule as the /goodreads work path — one
+      // book the user has twice still takes one reading status — and free here: the whole library is
+      // already in memory, so the siblings cost no query. A work-less scan is its own only copy;
+      // grouping unlinked books together would be wrong (see `workSiblings` on the client).
+      const copies =
+        matched.work_id == null ? [matched] : byWorkId.get(matched.work_id)!;
+      // The row named a title, not an edition, so it only identifies a *copy* when one outscored its
+      // siblings. On a tie the card points at an owned copy, else the oldest — the same choice the
+      // ISBN work path makes for the same reason: the card is an editor for one scan, and the copy
+      // on the user's shelf is the one they mean. The status write covers all of them either way.
+      const primary = match.identifiedCopy
+        ? matched
+        : pickPrimarySibling(copies);
+      const scans: UpdatableScan[] = [
+        primary,
+        ...copies.filter((r) => r !== primary),
+      ].map((r) => ({ ...r, id: r.scan_id }));
+
+      if (
+        !update ||
+        !claimScans(
+          claimedScanIds,
+          scans.map((s) => s.id),
+        )
+      ) {
+        results.push({ outcome: "duplicate" });
+        continue;
+      }
+
+      // A rating needs a work to hang on — `applyImportRating` writes nothing when `work_id` is
+      // NULL — so a matched-but-unlinked book silently swallowed the CSV's rating while the status
+      // half of the same row was written normally, with nothing telling the user. The ISBN path
+      // links first for exactly this reason; this makes the third update path agree. Gated on the
+      // row actually carrying a rating: an unlinked scan is rare and a status-only row has no
+      // reason to spend the read plus write.
+      if (primary.work_id == null && validated.rating != null) {
+        // The real `books` row, not the index row: the index carries the *override-merged* title,
+        // and keying a work on that would hand this book a different match_key than every other
+        // path derives for it.
+        const bookRow = await db
+          .prepare("SELECT * FROM books WHERE id = ?")
+          .bind(primary.book_id)
+          .first<BookRow>();
+        if (bookRow) {
+          await linkWork(db, bookRow);
+          primary.work_id = bookRow.work_id;
+          // The work the link resolved to can already carry a rating — `linkWork` attaches to an
+          // existing `works` row whenever the match_key matches, and `work_ratings` outlives a
+          // deleted scan. The library index read `rating` through `b.work_id`, which was NULL, so
+          // without this re-read `previous.rating` reports null for a rating that exists: the
+          // import overwrites it and Undo then PATCHes `rating: null`, destroying it. The
+          // `/goodreads` ISBN path does the same thing for the same reason.
+          //
+          // Both copies: `scans` was spread off these rows *above*, so mutating `primary` alone
+          // leaves `applyImportUpdate` reading the stale null out of `scans[0]`.
+          const stored = await existingWorkRating(db, userId, bookRow.work_id);
+          primary.rating = stored;
+          scans[0].rating = stored;
+          // `byWorkId` was built once, before the loop, from rows that already had a work. This
+          // row now has one, so index it — otherwise a second row of the same batch matching the
+          // same scan either dereferences `byWorkId.get(...)!` as undefined and throws (no other
+          // copy carries the work) or gets a sibling list that silently omits this very scan.
+          // Appended rather than inserted in `created_at` order: the list only orders
+          // `pickPrimarySibling`'s oldest-copy fallback, and a just-linked row losing that tie is
+          // the harmless direction.
+          if (bookRow.work_id != null) {
+            const siblings = byWorkId.get(bookRow.work_id);
+            if (!siblings) byWorkId.set(bookRow.work_id, [primary]);
+            else if (!siblings.includes(primary)) siblings.push(primary);
+          }
+        }
+      }
+
+      results.push({
+        ...(await applyImportUpdate(
+          db,
+          userId,
+          scans,
+          bookSummary(primary),
+          validated.status,
+          validated.rating,
+          ratedWorkIds,
+        )),
+        confidence: match.score,
+      });
+    } catch (e) {
+      console.error("[POST /api/import/match] row failed:", e);
       results.push({ outcome: "no_match" });
-      continue;
     }
-
-    const match = pickBestMatchPrepared(
-      { title: validated.title, author: validated.author },
-      candidates,
-    );
-    if (!match) {
-      results.push({ outcome: "no_match" });
-      continue;
-    }
-
-    const matched = byScanId.get(match.scanId);
-    if (!matched) {
-      results.push({ outcome: "no_match" });
-      continue;
-    }
-
-    // Every copy of the matched work, primary first. Same rule as the /goodreads work path — one book
-    // the user has twice still takes one reading status — and free here: the whole library is already
-    // in memory, so the siblings cost no query. A work-less scan is its own only copy; grouping
-    // unlinked books together would be wrong (see `workSiblings` on the client).
-    const copies =
-      matched.work_id == null ? [matched] : byWorkId.get(matched.work_id)!;
-    // The row named a title, not an edition, so it only identifies a *copy* when one outscored its
-    // siblings. On a tie the card points at an owned copy, else the oldest — the same choice the ISBN
-    // work path makes for the same reason: the card is an editor for one scan, and the copy on the
-    // user's shelf is the one they mean. The status write covers all of them either way.
-    const primary = match.identifiedCopy ? matched : pickPrimarySibling(copies);
-    const scans: UpdatableScan[] = [
-      primary,
-      ...copies.filter((r) => r !== primary),
-    ].map((r) => ({ ...r, id: r.scan_id }));
-
-    if (!update || !claimScans(claimedScanIds, scans.map((s) => s.id))) {
-      results.push({ outcome: "duplicate" });
-      continue;
-    }
-
-    results.push({
-      ...(await applyImportUpdate(
-        db,
-        userId,
-        scans,
-        bookSummary(primary),
-        validated.status,
-        validated.rating,
-        ratedWorkIds,
-      )),
-      confidence: match.score,
-    });
   }
 
   return c.json({ results });

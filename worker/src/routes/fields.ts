@@ -2,7 +2,11 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import type { Env } from "../types";
 import { authMiddleware } from "../auth";
-import { parseTagArray, dedupeTrimmed } from "../library-query";
+import {
+  parseTagArray,
+  dedupeTrimmed,
+  isUniqueConstraintError,
+} from "../library-query";
 import { readJsonBody, INVALID_JSON_BODY } from "../json-body";
 
 const fields = new Hono<Env>();
@@ -57,30 +61,31 @@ function parseFieldRow(
 // DELETE /:id/values already scrubs every book's value when a tag is removed. Without this, a
 // removed/renamed option would leave books silently holding an orphaned value that only gets
 // dropped (with no error surfaced) the next time that book happens to save any custom field.
-async function cleanupOrphanedSelectValues(
+//
+// Returns the statement rather than running it, so the caller can put it in the same `db.batch` as
+// the definition UPDATE it belongs to. Run separately, the two could half-apply: the definition's
+// new options committed and the cleanup lost, answered as a 500 for a change that had in fact
+// happened.
+function orphanedSelectValuesCleanup(
   db: D1Database,
   userId: number,
   fieldDefId: number,
   validOptions: string[],
-): Promise<void> {
-  if (!validOptions.length) {
-    await db
+): D1PreparedStatement {
+  if (!validOptions.length)
+    return db
       .prepare(
         "UPDATE book_custom_fields SET field_value = NULL WHERE user_id = ? AND field_def_id = ? AND field_value IS NOT NULL",
       )
-      .bind(userId, fieldDefId)
-      .run();
-    return;
-  }
+      .bind(userId, fieldDefId);
   const placeholders = validOptions.map(() => "?").join(",");
-  await db
+  return db
     .prepare(
       `UPDATE book_custom_fields SET field_value = NULL
        WHERE user_id = ? AND field_def_id = ? AND field_value IS NOT NULL
          AND field_value NOT IN (${placeholders})`,
     )
-    .bind(userId, fieldDefId, ...validOptions)
-    .run();
+    .bind(userId, fieldDefId, ...validOptions);
 }
 
 fields.get("/", async (c) => {
@@ -136,8 +141,8 @@ fields.post("/", async (c) => {
       },
       201,
     );
-  } catch (e: any) {
-    if (e.message?.includes("UNIQUE constraint failed"))
+  } catch (e) {
+    if (isUniqueConstraintError(e))
       return c.json({ error: "A field with that name already exists" }, 409);
     return c.json({ error: "Failed to create field" }, 500);
   }
@@ -176,8 +181,9 @@ fields.patch("/:id", async (c) => {
     setClauses.push("required = ?");
     bindings.push(body.required ? 1 : 0);
   }
+  let cleanOptions: string[] | null = null;
   if ("options" in body) {
-    const cleanOptions = sanitizeOptions(body.options);
+    cleanOptions = sanitizeOptions(body.options);
     setClauses.push("field_options = ?");
     bindings.push(cleanOptions ? JSON.stringify(cleanOptions) : null);
   }
@@ -185,14 +191,40 @@ fields.patch("/:id", async (c) => {
   if (setClauses.length === 0)
     return c.json({ error: "Nothing to update" }, 400);
 
+  // Read before writing, so the orphan cleanup can go in the same batch as the UPDATE. It needs
+  // the *effective* field type, which is the incoming one when the PATCH changes it and the stored
+  // one otherwise — knowable here, where previously it was taken from a re-select that could only
+  // happen after the UPDATE had already committed.
+  const current = await c.env.DB.prepare(
+    "SELECT field_type FROM user_field_definitions WHERE id = ? AND user_id = ?",
+  )
+    .bind(id, userId)
+    .first<{ field_type: string }>();
+  if (!current) return c.json({ error: "Not found" }, 404);
+  const effectiveType =
+    typeof body.type === "string" ? body.type : current.field_type;
+
   bindings.push(id, userId);
   try {
-    const result = await c.env.DB.prepare(
-      `UPDATE user_field_definitions SET ${setClauses.join(", ")} WHERE id = ? AND user_id = ?`,
-    )
-      .bind(...bindings)
-      .run();
-    if (!result.meta.changes) return c.json({ error: "Not found" }, 404);
+    const statements = [
+      c.env.DB.prepare(
+        `UPDATE user_field_definitions SET ${setClauses.join(", ")} WHERE id = ? AND user_id = ?`,
+      ).bind(...bindings),
+    ];
+    // One batch: the definition's new options and the scrub of values they orphan either both
+    // land or neither does. As two awaited statements, a failure of the second answered 500 for an
+    // options change that had already committed — the client re-showed the old options while the
+    // stored ones had moved on, and every book holding a removed value kept it until some
+    // unrelated save happened to clear it.
+    if ("options" in body && effectiveType === "select")
+      statements.push(
+        orphanedSelectValuesCleanup(c.env.DB, userId, id, cleanOptions ?? []),
+      );
+
+    const [updateResult] = await c.env.DB.batch(statements);
+    // Deleted between the read above and this write. The cleanup in the same batch then matched
+    // nothing, since DELETE /:id removes a definition's values along with it.
+    if (!updateResult.meta.changes) return c.json({ error: "Not found" }, 404);
 
     const updated = await c.env.DB.prepare(
       "SELECT id, field_name AS name, field_type AS type, field_options AS options, sort_order, required FROM user_field_definitions WHERE id = ?",
@@ -203,13 +235,9 @@ fields.patch("/:id", async (c) => {
     // the two statements — gone either way, and a 200 with a `null` body was something no client
     // could act on.
     if (!updated) return c.json({ error: "Not found" }, 404);
-    const parsed = parseFieldRow(updated);
-    if ("options" in body && parsed.type === "select") {
-      await cleanupOrphanedSelectValues(c.env.DB, userId, id, parsed.options);
-    }
-    return c.json(parsed);
-  } catch (e: any) {
-    if (e.message?.includes("UNIQUE constraint failed"))
+    return c.json(parseFieldRow(updated));
+  } catch (e) {
+    if (isUniqueConstraintError(e))
       return c.json({ error: "A field with that name already exists" }, 409);
     return c.json({ error: "Failed to update field" }, 500);
   }

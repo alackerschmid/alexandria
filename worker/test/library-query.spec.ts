@@ -218,10 +218,18 @@ describe("upsertWorkRating", () => {
     expect(calls[0].binds).toEqual([1, 7, null, null]);
   });
 
-  it("always refreshes updated_at — mergeWorks resolves conflicts by comparing it", () => {
+  // updated_at moves only on a real change. Stamping it unconditionally re-dated a row that a
+  // seed write had deliberately left alone — the client presents this column as the review's
+  // written date, and mergeWorks resolves genuine conflicts by comparing it, so a spurious bump
+  // both misreports the date and lets an untouched side win against a genuinely newer edit.
+  it("refreshes updated_at only when a value actually changes", () => {
     const { db, calls } = fakeDb();
     upsertWorkRating(db, 1, 7, { rating: 8 }, "overwrite");
-    expect(calls[0].sql).toContain("updated_at = CURRENT_TIMESTAMP");
+    expect(calls[0].sql).toContain("THEN CURRENT_TIMESTAMP");
+    expect(calls[0].sql).toContain("ELSE work_ratings.updated_at");
+    // The guard compares the same expressions the columns are assigned, so it cannot drift from
+    // them, and uses NULL-safe `IS NOT` so clearing a field to NULL still counts as a change.
+    expect(calls[0].sql).toContain("excluded.rating IS NOT work_ratings.rating");
   });
 
   it("follows every write with a delete so a fully-cleared entry leaves no tombstone", () => {
@@ -275,6 +283,17 @@ describe("sortClauseFor", () => {
   it("falls back to date_desc for an unknown key", () => {
     expect(sortClauseFor("garbage")).toBe(SORT_CLAUSES.date_desc);
   });
+
+  // SQLite's ordering-term is `expr [COLLATE name] [ASC|DESC]`, so a COLLATE placed *after* the
+  // direction is a parse error rather than a stylistic slip — and one that no string-equality
+  // assertion notices, because the clause is only ever parsed by D1 at request time. Five of these
+  // nine clauses shipped that way, making `?sort=title_asc` and four others an unhandled 500.
+  it.each(Object.entries(SORT_CLAUSES))(
+    "puts COLLATE before the sort direction in %s",
+    (_key, clause) => {
+      expect(clause).not.toMatch(/\b(?:ASC|DESC)\s+COLLATE\b/i);
+    },
+  );
 
   it("falls back to date_desc for undefined and empty string", () => {
     expect(sortClauseFor(undefined)).toBe(SORT_CLAUSES.date_desc);

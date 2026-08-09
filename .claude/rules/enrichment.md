@@ -217,6 +217,19 @@ Q2 is the backfill mechanism: when new columns are added to `works`, bump
 works drain through the sweeper automatically; a failed backfill moves the work to `failed`, so
 it drains through Q1 from then on.
 
+**Q2 is also how a flaked best-effort step gets retried.** `backfillEdition` runs its own
+`edition_isbn` SPARQL query and so has a real transient failure mode, but it must not fail the
+enrichment — a flake there would discard a complete Wikidata read and advance the work toward
+`exhausted`. Nor may it simply be swallowed: `persistWorkDetails` would then book the work `done`
+at the current schema version, and *neither* Q1 (status != 'done') nor Q2 (schema < current) ever
+serves it again, so one WDQS 502 costs a placeholder work its cover edition permanently — with no
+manual route back either, since `POST /api/books/refresh` 404s on a work with no `books` row. So
+`backfillEditionsAndDiscovery` reports the failure and `persistWorkDetails` writes
+`CURRENT_ENRICHMENT_SCHEMA_VERSION - 1`: the run is a success, the attempt counter stays at zero,
+and the next tick picks the work up through Q2 to retry the backfill alone. Discovery is not
+reported the same way — it is gated on the work having no candidate editions yet, so it retries
+on its own.
+
 Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs`
 rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
 

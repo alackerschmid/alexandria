@@ -42,7 +42,7 @@
         {{
           row.complete
             ? $t("stats.series_complete")
-            : $t("stats.series_missing", { count: row.missing })
+            : $t("stats.series_missing", { count: row.missing }, row.missing)
         }}
       </div>
     </router-link>
