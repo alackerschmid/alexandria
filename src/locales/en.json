@@ -719,6 +719,8 @@
     "back_library": "Library",
     "match_found": "Match found",
     "no_match": "No match",
+    "lookup_unavailable": "Lookup unavailable",
+    "lookup_unavailable_body": "Couldn't reach the book database — the ISBN saves now and the details fill in later",
     "shelve_as": "Shelve as",
     "rate_as": "Rating (optional)",
     "scanned_session": "Scanned this session",

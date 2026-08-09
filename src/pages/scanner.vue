@@ -655,7 +655,11 @@
                   v-if="detectedBook.notFound"
                   class="text-lg text-text-secondary italic leading-snug mb-1"
                 >
-                  {{ $t("scanner.unknown_book") }}
+                  {{
+                    detectedBook.lookupUnavailable
+                      ? $t("scanner.lookup_unavailable_body")
+                      : $t("scanner.unknown_book")
+                  }}
                 </p>
                 <p
                   v-else
@@ -1186,6 +1190,10 @@ interface BookPreview {
   publisher?: string;
   coverUrl?: string;
   notFound?: boolean;
+  /** Set alongside `notFound` when the metadata sources couldn't be reached, rather than having
+   *  answered that they don't know this ISBN — see `lookupBook`. Only changes what the sheet
+   *  says, not what it offers. */
+  lookupUnavailable?: boolean;
   duplicate?: boolean;
   currentStatus?: ReadStatus;
 }
@@ -1227,6 +1235,11 @@ const detectedIndicator = computed(() => {
   if (!b) return { color: "var(--color-text-secondary)", label: "" };
   if (b.duplicate)
     return { color: DUPLICATE_COLOR, label: t("scanner.in_library") };
+  if (b.lookupUnavailable)
+    return {
+      color: "var(--color-text-secondary)",
+      label: t("scanner.lookup_unavailable"),
+    };
   if (b.notFound)
     return { color: "var(--color-text-secondary)", label: t("scanner.no_match") };
   return { color: "#22c55e", label: t("scanner.match_found") };
@@ -1480,14 +1493,19 @@ const selectCandidate = async (candidate: EditionCandidate) => {
   navigator.vibrate?.(50);
   setTimeout(() => (flash.value = false), 200);
 
-  const book = await lookupBook(isbn);
+  const result = await lookupBook(isbn);
   detectedBook.value = {
-    ...(book ?? {
-      isbn,
-      title: candidate.title ?? "",
-      author: candidate.author ?? t("book.unknown_author"),
-      notFound: true,
-    }),
+    // Unlike the barcode path, this one already has a title/author from the search candidate, so
+    // the sheet stays informative even when the lookup couldn't run.
+    ...(result.kind === "found"
+      ? result.book
+      : {
+          isbn,
+          title: candidate.title ?? "",
+          author: candidate.author ?? t("book.unknown_author"),
+          notFound: true,
+          lookupUnavailable: result.kind === "unavailable",
+        }),
     duplicate,
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };
@@ -1510,7 +1528,18 @@ const {
 
 // ── Book lookup ───────────────────────────────────────────────────────────────
 
-async function lookupBook(isbn: string): Promise<BookPreview | null> {
+/**
+ * `unavailable` is kept apart from `not_found` deliberately: the API answers 503
+ * `lookup_unavailable` when it couldn't reach Google Books/OpenLibrary at all, and telling the
+ * user "no match" there claims something a failed request cannot support. A network failure on
+ * our side is the same situation, so it lands in the same branch.
+ */
+type LookupResult =
+  | { kind: "found"; book: BookPreview }
+  | { kind: "not_found" }
+  | { kind: "unavailable" };
+
+async function lookupBook(isbn: string): Promise<LookupResult> {
   try {
     // Same split as submitTitleSearch: bare fetch for the pre-auth guest endpoint, apiFetch
     // (401 → logout) for the authenticated one.
@@ -1519,20 +1548,26 @@ async function lookupBook(isbn: string): Promise<BookPreview | null> {
       : await apiFetch(`/api/books/lookup?isbn=${isbn}`);
     if (res.ok) {
       const book = await res.json();
-      if (book.notFound) return null;
+      if (book.notFound) return { kind: "not_found" };
       return {
-        isbn: book.isbn,
-        title: book.title ?? "",
-        author: book.author ?? t("book.unknown_author"),
-        year: book.publish_date?.slice(0, 4),
-        pages: book.number_of_pages_median ?? undefined,
-        language: book.language ?? undefined,
-        publisher: book.publisher ?? undefined,
-        coverUrl: book.cover_url ?? undefined,
+        kind: "found",
+        book: {
+          isbn: book.isbn,
+          title: book.title ?? "",
+          author: book.author ?? t("book.unknown_author"),
+          year: book.publish_date?.slice(0, 4),
+          pages: book.number_of_pages_median ?? undefined,
+          language: book.language ?? undefined,
+          publisher: book.publisher ?? undefined,
+          coverUrl: book.cover_url ?? undefined,
+        },
       };
     }
-  } catch {}
-  return null;
+    if (res.status === 503) return { kind: "unavailable" };
+  } catch {
+    return { kind: "unavailable" };
+  }
+  return { kind: "not_found" };
 }
 
 // ── Detection handler ─────────────────────────────────────────────────────────
@@ -1551,9 +1586,21 @@ const onBarcodeDetected = async (isbn: string) => {
   navigator.vibrate?.(50);
   setTimeout(() => (flash.value = false), 200);
 
-  const book = await lookupBook(isbn);
+  const result = await lookupBook(isbn);
   detectedBook.value = {
-    ...(book ?? { isbn, title: "", author: "", notFound: true }),
+    // `notFound` stays set on the unavailable branch too, so the sheet keeps its title-less
+    // layout and its "save the ISBN" action — which is still the right thing to offer, since
+    // the scan succeeds regardless and the row fills itself in once a source answers again.
+    // Only the two strings that would otherwise claim "no match" change.
+    ...(result.kind === "found"
+      ? result.book
+      : {
+          isbn,
+          title: "",
+          author: "",
+          notFound: true,
+          lookupUnavailable: result.kind === "unavailable",
+        }),
     duplicate,
     currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
   };

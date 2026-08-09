@@ -10,6 +10,8 @@ import {
   searchCacheKeyString,
   SEARCH_CACHE_TTL_SECONDS,
   UpstreamSearchError,
+  UpstreamLookupError,
+  fillMetadataStatement,
   type TitleQuery,
 } from "../editions";
 import { enrichWorkDetached } from "../enrichment";
@@ -91,6 +93,17 @@ async function handleTitleSearch(c: Context<Env>): Promise<Response> {
   }
 }
 
+/**
+ * Both ISBN-lookup routes' answer when the metadata sources couldn't be reached. Deliberately a
+ * 503 rather than the 404 they used to give: a failed request is not evidence that the book does
+ * not exist, and telling the user it doesn't is both wrong and unactionable. Mirrors the
+ * `search_unavailable` 503 that title search already returns for the same reason.
+ */
+function lookupUnavailable(c: Context<Env>) {
+  console.error("[isbn lookup] upstream unavailable");
+  return c.json({ error: "lookup_unavailable" }, 503);
+}
+
 // ── Public routes (no auth) ───────────────────────────────────────────────────
 
 // Public guest lookup — no auth. Enrichment is intentionally NOT triggered here to avoid
@@ -112,10 +125,16 @@ books.get("/guest-lookup", async (c) => {
   const isbn = normalizeIsbn(rawIsbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
-  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
-    skipLinkWork: true,
-    usage: c.get("usage"),
-  });
+  let book: BookRow | null;
+  try {
+    book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
+      skipLinkWork: true,
+      usage: c.get("usage"),
+    });
+  } catch (e) {
+    if (e instanceof UpstreamLookupError) return lookupUnavailable(c);
+    throw e;
+  }
   if (!book) return c.json({ notFound: true }, 404);
   return c.json(book);
 });
@@ -187,9 +206,15 @@ books.get("/lookup", async (c) => {
   const isbn = normalizeIsbn(rawIsbn);
   if (!isValidIsbn(isbn)) return c.json({ error: "Invalid ISBN" }, 400);
 
-  const book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
-    usage: c.get("usage"),
-  });
+  let book: BookRow | null;
+  try {
+    book = await resolveEdition(c.env.DB, isbn, c.env.GOOGLE_BOOKS_API_KEY, {
+      usage: c.get("usage"),
+    });
+  } catch (e) {
+    if (e instanceof UpstreamLookupError) return lookupUnavailable(c);
+    throw e;
+  }
   if (!book) return c.json({ error: "Book not found" }, 404);
   if (book.work_id)
     c.executionCtx.waitUntil(
@@ -264,46 +289,16 @@ books.post("/refresh", async (c) => {
   const wasMissingMetadata = hasMissingMetadata(existing);
   let metadataUpdated = false;
   if (wasMissingMetadata) {
-    const bookData = await fetchBookMetadata(
+    const fetched = await fetchBookMetadata(
       isbn,
       c.env.GOOGLE_BOOKS_API_KEY,
       c.get("usage"),
     );
-    if (bookData) {
-      await c.env.DB.prepare(
-        `
-        UPDATE books SET
-          title = COALESCE(title, ?),
-          author = COALESCE(author, ?),
-          cover_url = COALESCE(cover_url, ?),
-          language = COALESCE(language, ?),
-          publish_date = COALESCE(publish_date, ?),
-          number_of_pages_median = COALESCE(NULLIF(number_of_pages_median, 0), ?),
-          description = COALESCE(description, ?),
-          publisher = COALESCE(publisher, ?),
-          physical_format = COALESCE(physical_format, ?),
-          edition_name = COALESCE(edition_name, ?),
-          physical_dimensions = COALESCE(physical_dimensions, ?),
-          categories = COALESCE(categories, ?)
-        WHERE isbn = ?
-      `,
-      )
-        .bind(
-          bookData.title,
-          bookData.author,
-          bookData.cover_url,
-          bookData.language,
-          bookData.publish_date,
-          bookData.number_of_pages_median,
-          bookData.description,
-          bookData.publisher,
-          bookData.physical_format,
-          bookData.edition_name,
-          bookData.physical_dimensions,
-          bookData.categories,
-          isbn,
-        )
-        .run();
+    // `unavailable` is reported the same way a miss is (`metadata_refreshed: false`) rather than
+    // failing the request: refresh's other half is the manual force-retry for Wikidata enrichment,
+    // and that should still run when the metadata sources happen to be down.
+    if (fetched.kind === "found") {
+      await fillMetadataStatement(c.env.DB, existing.id, fetched.meta).run();
       metadataUpdated = true;
     }
   }

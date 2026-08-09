@@ -719,6 +719,8 @@
     "back_library": "Bibliothek",
     "match_found": "Treffer gefunden",
     "no_match": "Kein Treffer",
+    "lookup_unavailable": "Suche nicht verfügbar",
+    "lookup_unavailable_body": "Buchdatenbank nicht erreichbar — die ISBN wird jetzt gespeichert, die Details folgen später",
     "shelve_as": "Einordnen als",
     "rate_as": "Bewertung (optional)",
     "scanned_session": "In dieser Sitzung gescannt",
