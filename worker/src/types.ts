@@ -2,6 +2,8 @@ import type { UsageRecorder } from "./usage";
 
 export type Bindings = {
   DB: D1Database;
+  /** Stored book covers, one object per book — written by `covers.ts`, served by `routes/covers.ts`. */
+  COVERS: R2Bucket;
   JWT_SECRET: string;
   CORS_ORIGIN?: string;
   GOOGLE_BOOKS_API_KEY: string;
@@ -32,6 +34,8 @@ export type BookRow = {
   categories: string | null;
   fetched_at: string;
   work_id: number | null;
+  /** R2 key of the stored cover, or `COVER_UNAVAILABLE`/null when there is none — see `covers.ts`. */
+  cover_object_key: string | null;
 };
 
 export type WorkRow = {

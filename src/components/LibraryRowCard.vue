@@ -36,6 +36,7 @@
         >
           <CoverImage
             :cover-url="book.cover_url"
+            :object-key="book.cover_object_key"
             :title="displayTitle(book)"
             :alt="displayTitle(book)"
             text-class="text-sm"

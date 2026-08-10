@@ -1,4 +1,5 @@
 import type { Bindings, BookRow } from "./types";
+import { localizeCovers } from "./covers";
 import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
 import { UsageRecorder } from "./usage";
@@ -20,6 +21,11 @@ const BATCH_SIZE = 7;
 // Books with no work link get their own budget so a large unlinked backlog can't crowd out
 // enrichment (and vice versa) — linking is cheap, enrichment is not.
 const LINK_BATCH_SIZE = 5;
+// Covers pulled into R2 per tick, at exactly one external request each. Deliberately the *last*
+// claim on the tick's subrequests: enrichment is what a user is watching a badge for, while a
+// cover that arrives two minutes later is invisible — the page keeps hot-linking it until then.
+// Five a tick drains the ~1,100 already-stored cover URLs in well under a day and then idles.
+const COVER_BATCH_SIZE = 5;
 
 /**
  * The tick's external-subrequest allowance, and the cost it assumes the next work might have.
@@ -209,6 +215,21 @@ export async function scheduled(
         usage,
       );
       if (i < results.length - 1) await sleep(DELAY_MS);
+    }
+
+    // Covers spend whatever enrichment left. No worst-case reservation is needed here (unlike
+    // `fitsInBudget`): a cover is exactly one fetch, so the remaining allowance *is* the batch
+    // size. Isolated, because a bucket or upstream failure must not cost the tick its usage flush
+    // or its prune — and because there is nothing to retry: the books stay due.
+    try {
+      const spent = await localizeCovers(
+        env,
+        usage,
+        Math.min(COVER_BATCH_SIZE, SUBREQUEST_BUDGET - usage.externalCalls),
+      );
+      if (spent) console.log(`[sweeper] localized ${spent} cover(s)`);
+    } catch (e) {
+      console.error("[sweeper] cover localization failed:", e);
     }
   } finally {
     // finally, not after the loop: enrichWork catches its own errors, but anything that does

@@ -15,7 +15,7 @@ import type { UsageOperation, UsageOutcome, UsageRecorder } from "./usage";
  * than at the call sites is what makes the count exact: a new call site cannot forget, and calls
  * whose *telemetry* is skipped (the OpenLibrary work-description read) are still metered.
  */
-async function fetchWithTimeout<T>(
+export async function fetchWithTimeout<T>(
   url: string,
   usage: UsageRecorder | null | undefined,
   /**

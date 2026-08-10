@@ -233,6 +233,15 @@ on its own.
 Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs`
 rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
 
+**The tick has a fourth phase that is not enrichment: `localizeCovers` (`covers.ts`).** It pulls up
+to `COVER_BATCH_SIZE` (5) book covers into R2 so the library stops hot-linking them from Google —
+see `worker/CLAUDE.md` for the route that serves them. It runs **last and takes only what
+enrichment left** (`SUBREQUEST_BUDGET - usage.externalCalls`), because a pending badge is something
+a user is watching and a cover arriving two minutes later is invisible. It needs no `fitsInBudget`
+worst case: a cover is exactly one fetch, so the remaining allowance *is* the batch size. It is
+isolated in its own `try`, so a bucket or upstream failure costs neither the usage flush nor the
+prune — there is nothing to retry either way, since the books simply stay due.
+
 **The tick meters its own subrequests; `BATCH_SIZE` does not bound them.** Free-plan Workers get **50
 external subrequests per invocation** (Cloudflare services like D1 have a separate 1,000, so the
 tick's queries don't compete). Per-work cost varies ~10x — a work that already has a QID skips the

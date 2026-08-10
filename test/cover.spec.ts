@@ -1,5 +1,41 @@
 import { describe, it, expect } from "vitest";
-import { initials, tintFor } from "@/utils/cover";
+import { coverSrc, initials, tintFor } from "@/utils/cover";
+
+describe("coverSrc", () => {
+  const upstream =
+    "https://books.google.com/books/content?id=x&img=1&zoom=1";
+  const key = "9780593081518/a1b2c3d4.jpg";
+
+  it("serves a stored cover from our own origin", () => {
+    // The whole point: an <img> pointing at books.google.com makes the *reader's* browser tell
+    // Google which books are on this shelf.
+    expect(coverSrc(upstream, key, "https://worker.example")).toBe(
+      "https://worker.example/api/covers/9780593081518/a1b2c3d4.jpg",
+    );
+  });
+
+  it("falls back to the upstream URL for a book with no stored cover", () => {
+    expect(coverSrc(upstream, null, "https://worker.example")).toBe(upstream);
+    expect(coverSrc(upstream, undefined, "https://worker.example")).toBe(upstream);
+  });
+
+  it("is same-origin when no API base is configured (dev proxies /api)", () => {
+    expect(coverSrc(upstream, key, "")).toBe(
+      "/api/covers/9780593081518/a1b2c3d4.jpg",
+    );
+  });
+
+  it("returns null when there is nothing to show, so CoverImage draws the placeholder", () => {
+    expect(coverSrc(null, null, "")).toBeNull();
+    expect(coverSrc(undefined, null, "")).toBeNull();
+  });
+
+  it("prefers the stored cover even when the upstream URL is missing", () => {
+    expect(coverSrc(null, key, "")).toBe(
+      "/api/covers/9780593081518/a1b2c3d4.jpg",
+    );
+  });
+});
 
 describe("tintFor", () => {
   it("is stable for the same title", () => {

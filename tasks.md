@@ -22,6 +22,7 @@ Conventions used below:
 | E2, E4 | **Dropped** — removed from the backlog, not built |
 | F3 | **Done** — `/stats` shipped on `feat/stats-page`; manual QA pass still owed (see the task) |
 | F3b | **Done** — home reworked to match on `feat/home-rework`; manual QA pass still owed (see the task) |
+| F9 | **Done** — covers served from R2 on `feat/covers-in-r2`; see `tasks_completed.md` |
 | F (rest) | Open — below |
 | G1–G18 | Open — UX QA findings (2026-08-09 Playwright session), below |
 
@@ -122,45 +123,6 @@ Existing base: `EditionsPane`/`EditionsDialog`, `useWorkEditions`, `work_edition
 ### F8. "What should I read next?" spotlight (S)
 
 A random unread pick on the home dashboard, optionally re-rollable and biasable by a facet. Most of the machinery now exists: F3b's `spotlight` pool is `ORDER BY RANDOM() LIMIT 5` with client-side re-rolling already built (`ShelfSpotlight.vue`), so this is that query gated on `status = 'unread'` plus a second block — not a new mechanism. Small, fun, on-brand for "statistics you can actually enjoy browsing".
-
-### F9. Serve covers from R2 instead of hot-linking them (M)
-
-- **Today:** every cover is an `<img>` pointing straight at `books.google.com` or `covers.openlibrary.org`, so the *reader's* browser makes that request. Google receives the reader's IP, User-Agent, `Referer: https://bookscan.pages.dev/` and the volume ids — which are the books — as one correlated burst per page load, and because `books.google.com` is a `google.com` subdomain a signed-in reader sends their Google cookies with it. The app already holds the opposite position everywhere else: `utils/markdown.ts` drops images from reviews because "a remote `<img>` in a review would leak the reader's IP the same way a font CDN would", and the fonts are self-hosted for exactly that reason. Covers are the one place the line isn't held, and the highest-volume remote resource on the page. Secondary payoff: hot-link rot is real here — `CoverImage`'s `failed`/`PlaceholderCover` path exists because stored URLs do die — and once the bytes are ours, `cover-url.ts`'s "which size can we actually get" problem is solved once per book instead of on every re-probe.
-- **Scope:** a private R2 bucket holding one image per book, filled by the sweeper, served by a public worker route, read by `CoverImage` through one helper. Six pieces:
-  1. **Bucket + binding.** `[[r2_buckets]] binding = "COVERS"` / `bucket_name = "bookscan-covers"` in `worker/wrangler.toml`. Local `wrangler dev` writes to local storage automatically — no `preview_bucket_name` needed. Cloudflare-side actions are listed under **Watch out**.
-  2. **Schema — `worker/migrations/0045_book_cover_objects.sql`.** One nullable column on `books`, plus the index the sweeper's due-query needs:
-
-     ```sql
-     -- The R2 key of this book's stored cover, NULL until the sweeper has fetched it. Deliberately
-     -- NOT a replacement for cover_url: that column stays the provenance record (which upstream
-     -- image we took, per src/cover-url.ts's measured source ranking) and the fallback for a book
-     -- whose object is missing or not yet written. book_overrides.cover_url still wins over both.
-     --
-     -- Key format `<isbn>/<8 hex of the bytes>.<ext>`. The content hash is load-bearing: the serve
-     -- route sends `Cache-Control: immutable`, so a cover we later replace with a better one has to
-     -- arrive under a NEW key or every browser keeps the old bytes for a year.
-     ALTER TABLE books ADD COLUMN cover_object_key TEXT;
-
-     -- Serves exactly one query — the sweeper's "which books still need localizing" pick. Partial,
-     -- because the rows it must find are a shrinking tail that goes empty once the backlog drains,
-     -- and a full index over `books` would stay the size of the catalogue forever to answer it.
-     CREATE INDEX idx_books_cover_pending
-       ON books(id)
-       WHERE cover_object_key IS NULL AND cover_url IS NOT NULL;
-     ```
-
-     No backfill statement: the column is NULL for every existing row by design, which is exactly the state the sweeper's fill step consumes. Add `cover_object_key` to the `books` line in `worker/migrations/CLAUDE.md`.
-  3. **Fill, in the sweeper.** A small per-tick step (start at 3–5 books) over `cover_url IS NOT NULL AND cover_object_key IS NULL`: fetch the URL, `COVERS.put(key, bytes, { httpMetadata: { contentType } })`, write the key. Costs one external subrequest per book, so it must go through `fitsInBudget` alongside enrichment — enrichment is the priority, covers are the filler. R2 calls are *internal* subrequests (separate 1,000/invocation budget), so only the fetch counts against the 50. Guard on size (reject > ~2 MB) and content type (`image/*` only). At 5/tick × 720 ticks/day the existing ~1,250 books drain in well under a day, so **no separate backfill script is needed** — the same code does both.
-  4. **Serve.** `GET /api/covers/:isbn/:hash` — **public**, mounted outside `authMiddleware` (an `<img>` cannot send an `Authorization` header, and a cover is not a secret). `Cache-Control: public, max-age=31536000, immutable`, ETag from the R2 object, `If-None-Match` → 304 via `get(key, { onlyIf })`. A miss is a 404, not a redirect to upstream — `CoverImage` already falls back to `PlaceholderCover`, and redirecting would reintroduce the leak this task exists to close. Consider exempting it from `usageMiddleware`: the recorder measures external API quota and a cover hit spends none. Add the route to `worker/CLAUDE.md`.
-  5. **Read.** `buildScanSelect` returns `cover_object_key` alongside `cover_url`; `src/utils/cover.ts` gains `coverSrc(book)` — override first (`cover_url_overridden`), then `${VITE_API_URL}/api/covers/${key}`, then the raw `cover_url` — and `CoverImage` is the only caller, which the "wraps every book cover" invariant already guarantees. Extend `types/book.ts`. Note the scanner and import wizard render candidate covers from *search* results, which have no `books` row yet and keep hot-linking; that is acceptable (a handful of images, user-initiated) but say so rather than leaving it looking finished.
-  6. **Interim.** Until the bucket is full, add `referrerpolicy="no-referrer"` to the `<img>` in `CoverImage.vue`. One attribute, stops the origin leaking; does nothing about the IP, so it is a stopgap and not the fix.
-- **Read first:** `worker/CLAUDE.md` (route conventions, `usageMiddleware` ownership), `.claude/rules/enrichment.md` (the sweeper's subrequest budget and why `fitsInBudget` stops *before* an overrun), `src/CLAUDE.md` (`CoverImage` invariant, override semantics), `worker/src/cover-url.ts` (which source wins and why, measured).
-- **Done when:** a cold library load makes zero requests to `books.google.com` / `covers.openlibrary.org` for books with a `cover_object_key`; a second load serves them from the browser cache with no worker request at all; a cover override still wins; a missing object degrades to `PlaceholderCover`; `worker/CLAUDE.md` and `worker/migrations/CLAUDE.md` updated.
-- **Watch out:**
-  - **Deploy order is on your side here.** `.github/workflows/deploy.yml` applies migrations *before* `wrangler deploy`, so an added column exists before any worker selects it — the safe direction. (The reverse is the trap `scans.rating`'s deferred `DROP` documents.) Nothing special to do; just don't reorder the workflow.
-  - **Cost model.** A Worker route is invoked on *every* request to it, and cache hits count as requests — the Free plan's 100k/day is the ceiling. `immutable` browser caching means only cold loads pay, so a single-owner instance is nowhere near it, but do not assume edge caching makes cover requests free. R2 itself is not the constraint: ~1,250 covers at ~100 KB is ~125 MB against a 10 GB free tier, and reads are Class B (10M/month free).
-  - **Cloudflare dashboard actions** (all before the first deploy): create the bucket (**R2 → Create bucket**, name `bookscan-covers`, Standard class, location hint EU) — enabling R2 on the account may ask for a payment method even though this stays inside the free tier; **leave the Public Development URL (`r2.dev`) disabled** — it is rate-limited, uncacheable and would re-expose the bucket the worker is meant to gate; and add **Workers R2 Storage: Edit** to the `CLOUDFLARE_API_TOKEN` repo secret, the same way **Pages: Edit** had to be added.
-  - **Later upgrade, not now:** an R2 *custom domain* serves objects straight from cache with no Worker invocation at all, which removes the 100k/day exposure entirely — but it needs a real domain as a zone in the same account, and this instance runs on `bookscan.pages.dev`. If a domain ever appears, it changes only what `coverSrc` prefixes; nothing else in this task.
 
 ---
 

@@ -53,9 +53,19 @@ ask the `inventory` subagent rather than expecting a list here.
   (default, accent-filled active option; every labelled settings-style row) / `highlight`
   (accent-tinted active text; toolbar chrome only). Not for the scanner's per-status colored
   pickers or login's auth-mode pills — those stay bespoke.
-- **`CoverImage` wraps every book cover** — renders the `<img>` when `coverUrl` is set and
+- **`CoverImage` wraps every book cover** — renders the `<img>` when there is a cover to show and
   falls back to `PlaceholderCover` when it's absent or the image fails. Don't hand-roll the
-  `<img v-if>` / `PlaceholderCover v-else` pair.
+  `<img v-if>` / `PlaceholderCover v-else` pair. It resolves its own `src` through
+  `utils/cover.ts`'s **`coverSrc`**, which prefers `objectKey` (the cover stored on our own origin,
+  `Book.cover_object_key`) over `coverUrl`: an `<img>` pointed at `books.google.com` makes the
+  *reader's* browser issue that request, handing Google their IP and the ids of the books on the
+  shelf, with their Google cookies attached — the same reason `markdown.ts` drops images from
+  reviews and the fonts are self-hosted. **So pass `:object-key` wherever the book came from
+  `GET /api/scans`**; omitting it silently reverts that book to hot-linking. Where a `cover_url`
+  and a key are carried side by side (`ShelfEntry`), they must be picked as a **pair** — a key that
+  doesn't belong to the URL beside it draws a different book's cover. Covers with no `books` row
+  behind them (search results, import candidates, unowned series entries) have no key and stay
+  upstream; `referrerpolicy="no-referrer"` on the `<img>` is the only mitigation there.
 - **`ConfirmDialog` is the shared destructive-confirm dialog** (library delete, account
   delete, import cancel).
 - **Rating and review are stored per work, not per scan.** `useScanStatus`'s

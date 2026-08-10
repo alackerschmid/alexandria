@@ -22,6 +22,12 @@ export interface Book {
   author: string | null;
   authors?: AuthorRef[];
   cover_url: string | null;
+  /** R2 key of the cover stored on our own origin, when there is one. Prefer it over `cover_url`
+   *  via `coverSrc` — reading `cover_url` directly asks Google for the image from the reader's
+   *  browser, which is what serving them ourselves exists to stop. Absent on a response from a
+   *  worker older than migration 0045, and deliberately absent when the user has overridden the
+   *  cover (the server suppresses it, so the override cannot be shadowed). */
+  cover_object_key?: string | null;
   status: ReadStatus;
   owning_status: OwningStatus;
   /** 0-10, or null when unrated. Stored per user × per **work** (`work_ratings`), not per scan:

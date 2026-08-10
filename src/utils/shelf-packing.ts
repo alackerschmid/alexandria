@@ -9,6 +9,10 @@ export interface ShelfEntry {
   key: string;
   title: string | null;
   cover_url: string | null;
+  /** Set only when `cover_url` came from an owned `Book` that has a stored cover — the two are
+   *  picked together, because a key that doesn't belong to the URL beside it would render another
+   *  book's artwork. An unowned series entry has a URL and no key, and stays hot-linked. */
+  cover_object_key?: string | null;
   ordinal: number | null;
   owned: boolean;
   status?: ReadStatus;

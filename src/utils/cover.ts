@@ -1,5 +1,31 @@
-// Deterministic placeholder helpers for book covers without an image.
-// Ported from the library mockups: a stable tint + initials per title.
+// Cover helpers: where a cover's bytes come from, plus the deterministic placeholder for a book
+// without one (a stable tint + initials per title, ported from the library mockups).
+
+/** Same read as `useApi`'s: the worker's origin in production, same-origin via the proxy in dev. */
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+/**
+ * The URL to actually put in an `<img>`.
+ *
+ * Prefers the cover stored on our own origin, because the alternative — pointing the `<img>` at
+ * `books.google.com` — makes the **reader's** browser issue that request: their IP, their
+ * User-Agent, the referring origin and the volume ids (which are the books they own) go to Google
+ * as one correlated burst per page load, with their Google cookies attached, since
+ * `books.google.com` is a `google.com` subdomain. `utils/markdown.ts` drops images from reviews for
+ * exactly this reason and the fonts are self-hosted for it; covers were the one exception.
+ *
+ * Falls back to the upstream URL for a book the sweeper has not stored yet (and for one it never
+ * can), so the library never loses a cover to this — it just stops being private for that book.
+ * The server suppresses the key when the user has overridden the cover, so no check is needed here.
+ */
+export function coverSrc(
+  coverUrl: string | null | undefined,
+  objectKey?: string | null,
+  base: string = API_BASE,
+): string | null {
+  if (objectKey) return `${base}/api/covers/${objectKey}`;
+  return coverUrl ?? null;
+}
 
 const TINTS = [
   "#3a352f",

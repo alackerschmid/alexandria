@@ -8,6 +8,15 @@ database_name = "bookscan"
 database_id = "5aa2cac9-de03-4ac0-a3b0-f51c9fe1c272"
 migrations_dir = "migrations"
 
+# Stored book covers, one object per book (see `src/covers.ts`). Private: nothing reads it but the
+# worker, and the bucket's Public Development URL (`r2.dev`) stays disabled — serving through
+# `GET /api/covers/*` is the entire point, since the alternative is the reader's browser asking
+# Google for the cover and telling it which books they own.
+# `wrangler dev` writes to local storage automatically, so no preview_bucket_name.
+[[r2_buckets]]
+binding = "COVERS"
+bucket_name = "alexandria-book-covers"
+
 [triggers]
 # Every 2 min rather than 5: BATCH_SIZE is capped by the per-invocation subrequest ceiling, so
 # interval is the only other throughput lever for draining a bulk-import backlog.

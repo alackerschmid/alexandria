@@ -351,3 +351,50 @@ The feature list has drifted both directions: it under-sells (no DNF, no ratings
 3. **`MAX_GUEST_SCANS`** is exported from `src/stores/guest.ts` and imported by `index.vue`'s banner. The store already used the constant for `remaining`/`isAtLimit`, so this was purely the banner reading a copy of it.
 4. **`RatingStars`** interactive rows are now a `radiogroup` labelled with `detail.rate_book`, each half-star button `role="radio"` with `aria-checked` bound to the current rating and an `aria-label` of `detail.rating_value_aria` ("{n} of 10" / "{n} von 10", new in both locales). Display-only rows are untouched — they render no buttons and are usually nested inside one, so a radiogroup role there would be a lie.
 5. **The duplicate-scan pre-check now charges the limiter**, and because this changed a documented invariant it was decided explicitly rather than inferred. The task text ("charging the limiter when the dup check misses") is ambiguous between counting-only and counting-and-rejecting; **counting and rejecting** was chosen, with the owner's agreement. A follow-up commit (`70e1571`) then went further and moved the dup check *below* `rateLimitOrReject` entirely, which is the shipped state: the limiter runs first, and an over-budget caller never reaches the lookup at all. The dup check is still ahead of `resolveEdition`, so no external metadata fetch happens for a duplicate. Inside the budget the answer is unchanged; past it, a duplicate gets the `429`. Rationale: 30/min is ~one book every 2 s, which covers every real rescan, whereas the previous ordering left a path doing up to three D1 queries per request that no limiter ever saw. `worker/CLAUDE.md`'s rate-limiting paragraph was rewritten to describe the new ordering and why the old one changed.
+
+## F9. Serve covers from R2 instead of hot-linking them — **Done** (`feat/covers-in-r2`)
+
+Every cover was an `<img>` pointing at `books.google.com` or `covers.openlibrary.org`, so the
+*reader's* browser made that request — their IP, User-Agent, referring origin and the volume ids
+(which are the books) to Google as one burst per page load, with their Google cookies attached
+since `books.google.com` is a `google.com` subdomain. The app already held the opposite line
+everywhere else (`markdown.ts` drops images from reviews for this reason; the fonts are
+self-hosted for it). Covers are now fetched once into R2 and served from our own origin.
+
+- **Implemented as specced, in six pieces:** bucket binding `COVERS` → `alexandria-book-covers`
+  (WEUR, Standard); migration `0045` adding `books.cover_object_key` plus a partial index over the
+  shrinking due set; `src/covers.ts` (`localizeCovers` + the key contract); public
+  `GET /api/covers/:isbn/:file`; a sweeper phase; and `coverSrc` in `src/utils/cover.ts`, which
+  `CoverImage` resolves its own `src` through so every existing call site inherits it.
+- **Three deviations from the plan:**
+  1. **A sentinel the plan didn't have.** `COVER_UNAVAILABLE` (`'-'`) is written when the upstream
+     cover is permanently gone (404/410, or a 200 that isn't a storable image). Without it the due
+     predicate (`cover_object_key IS NULL`) re-fetches a dead URL every two minutes forever,
+     spending a subrequest per tick that enrichment needs. A *transient* failure (5xx, timeout)
+     deliberately writes nothing and is retried — which is why the distinction is made at the
+     failure site rather than by a blanket catch. `buildScanSelect` suppresses the sentinel, or the
+     client would follow it to a 404 instead of the upstream URL that still works.
+  2. **Scope stops at `buildScanSelect`.** `/api/series` and `/api/stats` aggregate covers with
+     `MAX()` across a `GROUP BY`, so a key and a URL taken independently can come from different
+     rows — which would draw *another book's* cover. Pairing them there is its own change, noted in
+     `worker/CLAUDE.md`. Search/candidate surfaces (scanner, import wizard, editions carousel) have
+     no `books` row and cannot be covered at all; `referrerpolicy="no-referrer"` on the `<img>` is
+     the only mitigation for those and shipped as the plan's interim step.
+  3. **No backfill script**, as the plan predicted: the sweeper's fill step is the backfill. It
+     takes only what enrichment left (`SUBREQUEST_BUDGET - usage.externalCalls`), needing no
+     `fitsInBudget` worst case since a cover is exactly one fetch.
+- **Verified against a local worker, not just unit tests.** One sweeper tick: enrichment stopped
+  itself at 35 of 45 subrequests, covers took the remaining 5 and stored 5 objects. The route then
+  answered `200` with `image/jpeg`, the R2 ETag and `max-age=31536000, immutable`; `304` on
+  `If-None-Match`; and `404` for a miss, a `..%2f` traversal attempt and a wrong-shaped key. All
+  three branches of the `cover_object_key` CASE were exercised through `GET /api/scans`: a real key
+  forwarded, the sentinel suppressed, and a user cover override suppressing the key while keeping
+  its own URL.
+- **Docs:** `worker/CLAUDE.md` (route + `covers.ts` module + the scan-row field and what it
+  suppresses), `worker/migrations/CLAUDE.md` (the column), `src/CLAUDE.md` (the `CoverImage`
+  invariant now covers `coverSrc` and the pairing rule), `.claude/rules/enrichment.md` (the
+  sweeper's fourth phase and why it goes last).
+- **Still owed:** a look in a real browser — the covers currently stored locally are five, and the
+  production bucket fills over the first day after deploy, so the library will be a mix of served
+  and hot-linked covers until the sweeper drains. Confirm in devtools that a fully-drained shelf
+  makes no third-party image requests.
