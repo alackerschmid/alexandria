@@ -10,6 +10,9 @@ The finished half of the audit backlog (see `tasks.md` for what's still open, an
 | C1–C9 | `fix/audit-medium-severity` (branched off `fix/audit-high-severity`) |
 | D1–D7 | `fix/audit-process-hardening` (branched off `fix/audit-medium-severity`) |
 | E3, E5, E6, E7 | `feat/e-block-polish` (branched off `fix/audit-process-hardening`) |
+| F3 | `feat/stats-page` |
+| F3b | `feat/home-rework` |
+| F9 | `feat/covers-in-r2` |
 
 `fix/audit-high-severity` and `fix/wikidata-series-filter` both touch `sweeper.ts`, in disjoint hunks — they merge cleanly in either order, and neither is blocked.
 
@@ -351,6 +354,62 @@ The feature list has drifted both directions: it under-sells (no DNF, no ratings
 3. **`MAX_GUEST_SCANS`** is exported from `src/stores/guest.ts` and imported by `index.vue`'s banner. The store already used the constant for `remaining`/`isAtLimit`, so this was purely the banner reading a copy of it.
 4. **`RatingStars`** interactive rows are now a `radiogroup` labelled with `detail.rate_book`, each half-star button `role="radio"` with `aria-checked` bound to the current rating and an `aria-label` of `detail.rating_value_aria` ("{n} of 10" / "{n} von 10", new in both locales). Display-only rows are untouched — they render no buttons and are usually nested inside one, so a radiogroup role there would be a lie.
 5. **The duplicate-scan pre-check now charges the limiter**, and because this changed a documented invariant it was decided explicitly rather than inferred. The task text ("charging the limiter when the dup check misses") is ambiguous between counting-only and counting-and-rejecting; **counting and rejecting** was chosen, with the owner's agreement. A follow-up commit (`70e1571`) then went further and moved the dup check *below* `rateLimitOrReject` entirely, which is the shipped state: the limiter runs first, and an over-budget caller never reaches the lookup at all. The dup check is still ahead of `resolveEdition`, so no external metadata fetch happens for a duplicate. Inside the budget the answer is unchanged; past it, a duplicate gets the `429`. Rationale: 30/min is ~one book every 2 s, which covers every real rescan, whereas the previous ordering left a path doing up to three D1 queries per request that no limiter ever saw. `worker/CLAUDE.md`'s rate-limiting paragraph was rewritten to describe the new ordering and why the old one changed.
+
+## F3. Dedicated `/stats` page (M) — **Done** (`feat/stats-page`)
+
+Built from the `Stats v2` / `Stats mobile v2` mockups, which went beyond the original scope; every
+block in them was built. Beyond the plan as written:
+
+- **Worker:** one `LEFT JOIN work_ratings` + three columns on the existing main query backed four
+  new blocks — `pageBuckets`/`totalPages`, `genreRatings`, `catalogueGaps`, `owningStatus`, plus
+  `countryCount`. `topAuthors` raised 6 → 15; `decades` uncapped (a histogram can't take a
+  top-N-by-count slice). No migration.
+- **Pure helpers:** `src/utils/stats-view.ts` (extracted from `home.vue`, which now shares it) and
+  `src/utils/series-completeness.ts`. Series completeness needed no new API — `GET /api/series`
+  already carries the `owned` flag `useShelfGroups` uses.
+- **`MobileTabBar` had a live bug**, not just a latent one: it sliced two side slots out of a
+  filtered list and indexed `[0]`/`[1]`, so a fourth section silently dropped Settings. Now driven
+  by an explicit `MOBILE_SLOT_PRIORITY`, with Settings given a second route in via the account menu.
+- **`missing:` search key** (`cover|year|genre|pages`) added so the catalogue-gap rows have
+  somewhere to link — no other key expresses absence.
+
+**Deliberately not built:** the mockup's All/Read/Unread scope pills (page is unscoped, matching
+what the API does).
+
+**Known divergence worth a follow-up:** a gap row's count is gated on
+`owning_status IN ('owned','lent_out')` but its library link isn't, so the linked view can list
+more books than the count. No single `owning:` value expresses "owned or lent out"; documented in
+`CatalogueGaps.vue`.
+
+**Still owed:** a manual QA pass under a non-default paper/typeface preset, and on a real phone
+(the layout was checked at 430px in a desktop browser).
+
+## F3b. Home page rework (M) — **Done** (`feat/home-rework`)
+
+`/stats` absorbed eight of home's ~12 blocks, leaving home a smaller, worse copy of it. The two
+pages now split by **mode**: `/stats` aggregates and never names a book, home particularises and
+shows almost no numbers. Stated as an invariant in `src/CLAUDE.md`.
+
+- **Removed:** both dimension pickers, the five status tiles (Read/Reading/DNF is the reading
+  framing being moved away from — the counts survive in the meta line and as `/stats`'s `status`
+  breakdown), median year, average length, the trio items, the decade×genre rotator, and the
+  `md:h-screen overflow-hidden` shell. Home scrolls now; covers need room.
+- **Built:** `src/components/home/{ShelfSpotlight,RecentlyAdded,ShelfGaps,ShelfOddities}.vue`.
+- **Worker:** `computeExemplars` + a 5-book `spotlight` pool on the existing queries — two extra
+  columns on the main SELECT, no new query, no migration. `randomFirstLine` retained.
+- **No `date_read`/`date_started` and no "currently reading" anywhere**, deliberately. "Recently
+  added" stays: acquisition is the core collection event, and the Goodreads import backdating
+  `created_at` from "Date Added" is arguably correct.
+
+**Known divergence:** the recently-added strip is unscoped — `GET /api/scans` has no `?scope=`,
+so it can include `want`/`unknown` books while the rest of the page is scoped. For an
+import-only library that is the friendlier miss (the strip still shows books). Same class as the
+`CatalogueGaps.vue` one above. Home also makes three requests where it made one; they run in
+parallel and `?limit=12` is far lighter than the library's 500-row page.
+
+**Still owed:** the whole manual QA pass — see the checklist the implementing agent reported
+(light/dark and a non-default preset, <840px, the no-network "show me another" cycle, every book
+link opening the detail on `/library`, an empty and an import-only library).
 
 ## F9. Serve covers from R2 instead of hot-linking them — **Done** (`feat/covers-in-r2`)
 
