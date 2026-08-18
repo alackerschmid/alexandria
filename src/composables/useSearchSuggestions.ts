@@ -176,8 +176,17 @@ export function useSearchSuggestions(options: {
       }
     }
     if (results.length < MAX) {
+      // One row per work, not per edition. This pool is deliberately pre-collapse — search has
+      // to match per-edition fields — so a work owned in two editions offered its title twice,
+      // and with only eight slots a multi-edition work could fill the dropdown with rows that
+      // all open the same card. Same bucket key as `useEditionGrouping`: `work_id` is null until
+      // enrichment links the book, and an unlinked scan is its own work.
+      const seenWorks = new Set<string>();
       for (const b of baseFiltered.value) {
         if (b.title?.toLowerCase().includes(frag)) {
+          const workKey = b.work_id != null ? `work:${b.work_id}` : `book:${b.id}`;
+          if (seenWorks.has(workKey)) continue;
+          seenWorks.add(workKey);
           results.push({
             kind: "book",
             book: b,

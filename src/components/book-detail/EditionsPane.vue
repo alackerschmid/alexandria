@@ -149,6 +149,13 @@ function caption(ed: WorkEdition) {
   if (ed.isbn === props.activeIsbn) {
     return [t("detail.your_copy"), year].filter(Boolean).join(" · ");
   }
+  // A copy you own that isn't the one open. It already sorts to the front and is drawn in the
+  // accent colour, but only the open edition said so in words — so a work owned twice looked
+  // like one owned copy beside a catalogue entry, and the second was findable only by opening
+  // "Show all N editions" and reading the rows. Same string the dialog marks these with.
+  if (ed.scan_id != null) {
+    return [t("detail.edition_in_library"), year].filter(Boolean).join(" · ");
+  }
   const lang = ed.language ? langDisplay.value(ed.language) : "";
   return [year, lang].filter(Boolean).join(" · ") || ed.isbn;
 }
