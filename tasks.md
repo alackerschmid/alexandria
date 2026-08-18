@@ -24,7 +24,8 @@ Conventions used below:
 | F3b | **Done** — see `tasks_completed.md` (`feat/home-rework`); manual QA pass still owed, named there |
 | F9 | **Done** — covers served from R2 on `feat/covers-in-r2`; see `tasks_completed.md` |
 | F (rest) | Open — below |
-| G1–G18 | Open — UX QA findings (2026-08-09 Playwright session), below |
+| G1–G15 | **Done** — see `tasks_completed.md` (PRs #67–#70) |
+| G16–G18 | Open — the confirm-first findings and the taste call, below |
 
 ---
 
@@ -72,97 +73,9 @@ A random unread pick on the home dashboard, optionally re-rollable and biasable 
 
 ## G. UX QA findings (2026-08-09 Playwright session)
 
-Derived from a 13-pass agent-driven UX test of the running app (dev + a throwaway import account). No data-losing bug was found; these are error-path/display bugs plus friction/polish. IDs in parentheses are the original finding numbers from the session log. Ordered by severity: broken → friction → polish → confirm-first.
+Derived from a 13-pass agent-driven UX test of the running app (dev + a throwaway import account). No data-losing bug was found; these were error-path/display bugs plus friction/polish. IDs in parentheses are the original finding numbers from the session log.
 
-### Broken (display/content)
-
-### G1. Worker-down library shows a raw exception + the "scan your first book" empty-state (F15)
-
-- **Today:** with the worker unreachable, `/library` renders the raw JS error `Failed to execute 'json' on 'Response': Unexpected end of JSON input` in the error banner AND the new-user empty-state ("0 titles", "Nothing here yet." / "Scan your first book →") over a library that actually has books — reads as data loss. Reproduced live by killing the worker.
-- **Where:** `src/composables/useLibraryData.ts` ~40–41 calls `await res.json()` **before** `if (!res.ok)`, so a non-JSON error body throws the DOMException whose text becomes `error.value`; `src/pages/index.vue` can't distinguish "fetch failed" (`serverBooks` stays `[]`) from "genuinely empty", so it paints the first-scan empty-state on a network failure.
-- **Fix:** check `res.ok` before parsing and map a non-JSON body to an i18n message (not the DOMException); gate the empty-state on `!error && hasLoadedOnce` and show a distinct error/retry panel otherwise.
-- **Done when:** a worker-down `/library` shows a friendly "couldn't reach the server — retry" and never the empty "scan your first book" CTA over a populated library; recovery on reload still works (already does); both locales.
-
-### G2. Epigraph renders literal `<br>` tags instead of line breaks (F17)
-
-- **Today:** a book's detail Overview → EPIGRAPH shows raw `<br>` text (e.g. Frankenstein: "…from my clay`<br>`To mould me Man…"). The field isn't going through the sanitized markdown path the review uses.
-- **Where:** `src/components/book-detail/OverviewPane.vue` epigraph block. **Read first:** `src/CLAUDE.md` (the `MarkdownText` / `utils/markdown.ts` DOMPurify allowlist is the only sanctioned HTML render).
-- **Fix:** render the epigraph through the sanitized markdown path (turns `<br>` into a break) or normalise `<br>`→`\n` before display. Do not hand-roll `v-html`.
-- **Done when:** the epigraph shows line breaks, no raw tags, and no unsanitized HTML is introduced.
-
-### Friction
-
-### G3. Manual entry of an already-owned ISBN is a silent no-op (F10)
-
-- **Today:** on `/scanner` (manual mode), submitting an ISBN already in the library correctly short-circuits (no lookup/POST) but shows **no feedback** — no "already in library" sheet, no toast; the field just clears. The user can't tell "already owned" from "lookup failed".
-- **Where:** `src/pages/scanner.vue` — `submitManualIsbn` (~1418) routes through `onBarcodeDetected`, whose camera-only guard `if (sessionScanned.has(isbn)) return;` (~1580) swallows the repeat; any duplicate is added to `sessionScanned` the first time it's shown (~1613). The title-search path already inlines detection to dodge this exact guard (see the comment ~1479–1481).
-- **Fix:** make `submitManualIsbn` bypass the `sessionScanned` short-circuit — inline detection like `selectCandidate`, or pass `{ manual: true }` to skip the guard — so manual entry always produces the sheet, including the amber duplicate sheet the component already supports via `detectedBook.duplicate`.
-- **Done when:** typing an owned ISBN and submitting shows the "in library" sheet every time, not a silent field-clear.
-
-### G4. Home mixes a scope-filtered count with unscoped book sections (F14)
-
-- **Today:** under the default **Owned** scope, `/home` hero reads "N books" (scoped) while Recently-added / Gaps / Oddities draw from the **full** library — e.g. "3 books" over ~17 covers on a mostly-import library. Self-contradictory. **Read first:** `src/CLAUDE.md` (the `/stats` aggregates / home particularises invariant and the persisted `useStatsDefaultsStore().scope`).
-- **Fix (product decision — discuss before building):** either scope Recently-added/Oddities/Gaps to match the hero (keep a blank-home guard that falls back to all-scope + surfaces the "switch scope on /stats" hint), or stop the hero claiming a total the sections then contradict. Note this is the same class as the documented `CatalogueGaps.vue` / recently-added-unscoped divergences (see F3/F3b above) — resolve together.
-- **Done when:** the home hero count and the book sections tell one consistent story under both scopes.
-
-### G5. A work's other owned editions are hard to find (F6)
-
-- **Today:** a work owned in 2 editions (e.g. Pride & Prejudice, scan_id 44 + 72 from `/api/works/44/editions`) shows a "2 editions owned" badge, but opening it lands on one edition and the Editions tab marks only "Your copy" for the current one; the second owned edition is only findable via "Show all N editions" → EditionsDialog among N rows.
-- **Where:** `src/components/book-detail/EditionsPane.vue` / `EditionsDialog.vue` curated-list selection. **Read first:** `.claude/rules/book-detail.md`.
-- **Fix:** pin **every** owned edition (`scan_id != null`) to the top of the curated Editions list with the "In your library" marker, not just the opened one; optionally show the owned-count on the Editions tab label.
-- **Done when:** all owned editions of a work are visible without opening "Show all".
-
-### G6. Autocomplete lists duplicate suggestions for multi-edition works (F4)
-
-- **Today:** typing "dune" shows "Dune — Title" twice (2 owned editions; suggestions aren't deduped by title/work).
-- **Where:** `src/composables/useSearchSuggestions.ts`. **Read first:** `.claude/rules/library-pipeline.md`.
-- **Fix / Done when:** dedupe title suggestions by work/title so each appears once.
-
-### G7. Library header "N titles" ignores the active filter (F5)
-
-- **Today:** the `/library` header count is a static total; with a search active — even at zero results ("No books match this filter.") — it still reads "37 titles".
-- **Where:** `src/pages/index.vue` header count.
-- **Fix / Done when:** the count tracks the filtered (collapsed) result, or is relabeled so it doesn't read as a live total.
-
-### G8. Home "Gaps on your shelves" surfaces an "Untitled series — N missing" placeholder (F2)
-
-- **Today:** a series with no display name (enrichment placeholder) shows on the dashboard as "Untitled series" with a missing count → `/series/2`; reads as data corruption.
-- **Where:** home gaps block; series naming (`series_names`). **Read first:** `.claude/rules/library-pipeline.md` + `.claude/rules/enrichment`.
-- **Fix / Done when:** unnamed/placeholder series are hidden from the home gaps block (or given a real name upstream) so no "Untitled series" appears.
-
-### G9. Library bootstrap data fetched twice on load (F7 — efficiency)
-
-- **Today:** loading `/library` fires the four bootstrap calls (`/api/auth/preferences`, `/api/scans?limit=500`, `/api/series`, `/api/field-definitions`) **twice** — likely a mount fetch plus a reactive re-fetch once preferences/locale settle.
-- **Where:** `src/composables/useLibraryData.ts` / the page's watch wiring.
-- **Fix / Done when:** the bootstrap set fires once per load (guard/debounce the locale/prefs-driven re-fetch).
-
-### Polish / a11y / copy
-
-### G10. Landing icon-only hero CTA has no accessible name (F1)
-
-- **Where:** `src/pages/landing.vue` — the hero button before "Catalogue your library". **Fix / Done when:** add an `aria-label`; screen readers announce it.
-
-### G11. Rating button keeps `aria-label="Rate this book"` even when rated (F9)
-
-- **Where:** `src/components/book-detail/RecordControls.vue` masthead rating button — renders a star glyph with no text/title. **Fix / Done when:** the label reflects state (e.g. "Rated 7 of 10 — edit") so a screen reader hears the value.
-
-### G12. Library header "37 titles" vs pagination "of 35" (F3)
-
-- **Today:** 37 = scan/edition count, 35 = collapsed work-cards (P&P and Dune each have 2 owned editions). Two totals for "my books" on one screen. **Where:** `src/pages/index.vue` header vs pagination; `useEditionGrouping`. **Fix / Done when:** the header "titles" count matches the collapsed count the list shows (relates to G7).
-
-### G13. Scanner instruction reads "Enter V2 ISBN" (F11)
-
-- **Where:** `src/pages/scanner.vue` / `scanner.*` locale string (en + de). **Fix / Done when:** reads "Enter an ISBN" / "ISBN-13"; both locales.
-
-### G14. Import counters say "1 books" (F13)
-
-- **Where:** `src/pages/import.vue` / `src/components/import/*` shelf-count label. **Fix / Done when:** pluralization is correct ("1 book"); both locales.
-
-### G15. "Import complete" chip never auto-dismisses and leaks across logout/account (F16)
-
-- **Today:** the success chip stays pinned across navigations, a worker restart, a logout, and re-login as a different account — the completion state lives unscoped in the localStorage import store; only a manual × clears it.
-- **Where:** `ImportProgressChip` / `src/stores/import.ts` completion state. **Read first:** `.claude/rules/import-wizard.md`.
-- **Fix / Done when:** the success chip times out on its own and clears on logout; it never shows for a user who didn't run the import.
+**G1–G15 have shipped** (PRs #67–#70) — see `tasks_completed.md` for what was built and where it deviated. What remains is the tail that a browser session couldn't settle on its own.
 
 ### Confirm first (need a human at a real browser before fixing)
 
@@ -183,19 +96,17 @@ Derived from a 13-pass agent-driven UX test of the running app (dev + a throwawa
 
 ## Suggested sequencing
 
-1. **A, B, C, D, the whole E block, and F3/F3b/F9 are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9, and for the E-block's frontend surfaces (including E1's review search); each task names its own. D1 additionally waits on two Cloudflare-dashboard actions, and D7's `initials`/`formatPublishDate` fixes are worth a glance at a placeholder cover and a book's publish date in the browser. F3, F3b and F9 each still owe a browser pass, listed with them in `tasks_completed.md`.
-2. **G1, G2** — the two broken-display bugs. Both are small, and both misrepresent the state of the
-   user's library: G1 paints the first-scan empty-state over a populated shelf whenever the worker
-   is unreachable, G2 shows raw `<br>` tags in the epigraph.
-3. **F1** — library export. The front of the feature queue.
-4. **G4, G7 and G12 together** — they are one question ("which count is the real count?") asked on
-   two pages, and answering it three separate times invites three different answers. G4 needs a
-   product decision before anyone builds; it is the same class as the `CatalogueGaps.vue` and
-   recently-added-unscoped divergences recorded with F3/F3b in `tasks_completed.md`, so resolve
-   those in the same pass.
-5. **The remaining F- and G-items** by appetite. G16 and G17 want a human at a real browser to
-   confirm the symptom before any code is written — both may be automation artefacts. E6 (README)
-   has had one pass, but F1 landing should shrink its "To be implemented" list again; that list is
-   down to export, edition management and offline, so the roadmap and this backlog agree.
+1. **A, B, C, D, the whole E block, F3/F3b/F9 and G1–G15 are done** — see `tasks_completed.md`. Manual-QA passes are still owed for B1–B4 and C6/C7 plus the frontend half of C9, and for the E-block's frontend surfaces (including E1's review search); each task names its own. D1 additionally waits on two Cloudflare-dashboard actions, and D7's `initials`/`formatPublishDate` fixes are worth a glance at a placeholder cover and a book's publish date in the browser. F3, F3b and F9 each still owe a browser pass, listed with them in `tasks_completed.md`. The G block was verified in a browser as it landed; only G4's bulk-import fallback rests on the code alone, noted there.
+2. **F1** — library export. The front of the feature queue.
+3. **G16 and G17** whenever someone is at a real browser anyway — both may be automation
+   artefacts, and neither should have code written against it until the symptom is reproduced by
+   hand. G18 is a taste call to make, not a task to schedule.
+4. **The remaining F-items** by appetite. E6 (README) has had one pass, but F1 landing should
+   shrink its "To be implemented" list again; that list is down to export, edition management and
+   offline, so the roadmap and this backlog agree.
+5. **One deferred defect worth a decision**, recorded with G4 in `tasks_completed.md`: `/stats`'
+   `CatalogueGaps.vue` deep-links list a superset of what their counts say, because no `owning:`
+   value expresses "owned or lent out". Closing it means adding that search facet — a feature, so
+   it wants scoping rather than folding into a fix.
 
 Notes for implementing agents: branch before multi-commit work; conventional commits; the Stop hook runs type-check/lint/tests for whatever you touch — don't pre-run them; update the two inventory files (`worker/CLAUDE.md`, `worker/migrations/CLAUDE.md`) whenever a route or schema change is part of the task; `to-do.md` at the repo root is the owner's personal notes, not this backlog — leave it alone.

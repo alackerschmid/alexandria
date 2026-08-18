@@ -457,3 +457,162 @@ self-hosted for it). Covers are now fetched once into R2 and served from our own
   production bucket fills over the first day after deploy, so the library will be a mix of served
   and hot-linked covers until the sweeper drains. Confirm in devtools that a fully-drained shelf
   makes no third-party image requests.
+
+---
+
+## G. UX QA findings — G1–G15 **Done** (PRs #67–#70)
+
+The actionable half of the 2026-08-09 Playwright session. Shipped as four stacked PRs, one per
+concern, each squash-merged: **#67** broken display (G1, G2), **#68** scanner + import (G3, G13,
+G14, G15), **#69** detail, dedupe and a11y (G5, G6, G10, G11), **#70** counts and home consistency
+(G4, G7, G8, G9, G12). Frontend only — no route, schema or inventory changes.
+
+**G16–G18 stay open in `tasks.md`**: the two confirm-first items still want a human at a real
+browser, and G18 is a taste call.
+
+**Verified in a browser, not only by type-check**, against local dev on a 37-scan account. The
+per-finding evidence is noted below; the whole pass is what caught the G11 gap and, via a
+follow-up `/code-review`, three defects in the first cut (recorded with G4, G5 and G6).
+
+### G1. Worker-down library showed a raw exception + the first-scan empty state
+
+`useLibraryData` checks `res.ok` **before** parsing, so a non-JSON error body no longer surfaces
+its DOMException; every transport failure maps to a new translated `library.error_load` with the
+cause logged to the console. A new `hasLoaded` flag separates "loaded, genuinely empty" from
+"never answered" — `serverBooks` is `[]` in both — and the empty state is gated on it, with guests
+short-circuiting since their books were never fetched. The error panel gained a Retry running the
+same bootstrap as mount. **Confirmed live**: the worker went down mid-session and `/library` showed
+the translated panel and Retry, never the "scan your first book" CTA over a populated shelf.
+
+### G2. Epigraph rendered literal `<br>` tags
+
+`unescapeLineBreaks` (`utils/book-display.ts`, unit-tested) turns the tag into a newline and the
+paragraph carries `white-space: pre-line`. **Deviation from the fix direction:** deliberately *not*
+routed through `MarkdownText`. `br` is allowlisted and `breaks: true` is on, so it would have
+worked — but it also lets catalogue-sourced text pick up markdown styling and brings `.md`
+typography that fights the italic pull-quote. Normalising to text opens no new HTML surface at all.
+Applied to the identical `first_line` block too. Confirmed on Frankenstein: real `\n`, three
+rendered lines, no raw tag.
+
+### G3. Manual entry of an owned ISBN was a silent no-op
+
+The shared body of `onBarcodeDetected` and `selectCandidate` moved into **`presentDetection`**;
+the camera keeps its two guards (`scanning`-only, `sessionScanned`), and typed entry plus
+title-search candidates call the helper directly. `selectCandidate` had already inlined the flow to
+dodge the same guard, so this removed that duplication rather than adding a second copy. Confirmed:
+the same owned ISBN typed twice in a row raises the "Already in your library" sheet **both** times.
+
+### G4. Home mixed a scoped count with unscoped sections
+
+Product decision taken up front: **scope the sections**, not unscope the hero. `GET /api/scans`
+takes no `?scope=`, so the recently-added strip is gated on the client against the same
+`owned`/`lent_out` pair the server uses, drawing from a wider window (`RECENT_FETCH = 48`) than the
+twelve it shows. Spotlight and oddities already rode the scoped `/api/stats`; shelf gaps was
+already owned-only. Confirmed both ways: Owned reads "32 books" and drops the `unowned`/`want`
+books sitting 2nd and 5th in recency while still filling twelve slots; All reads "37 books" and
+both reappear in place.
+
+- **Review fix (post-merge of the first cut):** the filter alone made the strip *vanish* after any
+  import past the fetch window — a Goodreads import writes every row `owning_status = 'unknown'`
+  and they arrive newest, and with owned books elsewhere the page-level scoped-empty state never
+  fires. The strip now falls back to the unscoped rows when the scope leaves nothing; the heading
+  claims recency, not ownership. **Not reproduced live** — arranging 48 consecutive out-of-scope
+  newest scans wasn't worth the data churn — so that path rests on the code and type-check.
+- **Deliberately not touched:** `/stats`' `CatalogueGaps.vue` divergence, which the finding lumped
+  in with this. On reading it is a *different* defect — the deep link lists a superset of what the
+  count says, because no `owning:` value expresses "owned or lent out". Closing it needs a new
+  search facet, which is a feature rather than a QA fix, and it is already documented with that
+  reasoning in the component.
+
+### G5. A work's other owned editions were hard to find
+
+`EditionsPane`'s caption now marks every owned edition, not just the open one, reusing
+`detail.edition_in_library` — the string `EditionsDialog` already marks those rows with. Owned
+editions already sorted first and drew in the accent colour, so they were visible but unlabelled.
+Click routing untouched: owned siblings navigate, everything else opens the dialog, which the 409
+on `PATCH /api/scans/:id/edition` depends on. Confirmed: "In your library · 2005" beside "Your copy
+· 2020" with no need to open "Show all". The optional owned-count on the tab label was skipped —
+the badge already carries `editionCount`.
+
+- **Review fix:** the new branch returned before the language was appended, so two copies of one
+  work from the same year in different languages read identically — the exact case the marker
+  exists for, the caption being the tile's only text. The language rides along with it now.
+
+### G6. Autocomplete listed duplicate suggestions for multi-edition works
+
+Title suggestions dedupe by work, keyed exactly as `useEditionGrouping` buckets (`work:<id>` /
+`book:<id>`, an unlinked scan being its own work). The pool stays pre-collapse — search has to match
+per-edition fields. Confirmed: "dune" lists the title once against two owned editions.
+
+- **Review fix:** the dedupe was unconditional and so collapsed even with edition grouping switched
+  *off*, where the list draws every edition as its own card; it now follows the same preference,
+  threaded through `LibrarySearchBar`.
+- **Review point deliberately declined:** keeping `pickRepresentativeEdition`'s choice rather than
+  the matched edition. Because the pool is pre-collapse, a title only one edition carries ("Der
+  Wüstenplanet") must still name *and open* that edition; the representative would open a sibling
+  the user didn't type. The detail dialog carries an edition switcher, so landing on the matched
+  edition costs nothing. Reasoning is in the code comment.
+
+### G7 + G12. Two totals for one shelf
+
+Taken together, as the sequencing asked. The heading counted raw editions and ignored the filter
+("37 titles" over 35 cards, and still "37 titles" at zero results); it now takes the collapsed,
+filtered count the list renders — which is the number the dropdown's "N shown" was **already**
+given, so `filteredCount` collapsed into `totalCount` and the prop is gone. `library.total_count`
+gained a pipe plural, since a filter reaching one result is now ordinary. Confirmed: "35 titles"
+against pagination "of 35", and "1 title" filtered to one.
+
+### G8. "Untitled series" on the dashboard
+
+Unnamed series are dropped from the home gaps block — empty string as well as null, the name being
+a `COALESCE(series_names.name, series.canonical_name)` server-side. The "all N series" link counts
+the same filtered set, so the two agree. **Confirmed decisively**: the link only renders above four
+incomplete series and is absent, yet the account has five — the fifth being a genuinely unnamed
+series (id 2) it owns two of ten works in.
+
+### G9. Library bootstrap fetched twice per load
+
+Root cause was ordering, not duplication: preferences hydrate after mount, `locale` is one of them,
+and both pages re-fetch when it changes — so anyone whose stored locale isn't the `en` default paid
+for the whole set twice. `stores/preferences.ts` now exposes **`whenReady()`**, settling immediately
+for a logged-out visitor and for a login (seeded off the auth response) and after the GET for a
+restored token; `/library` and `/home` await it before their first fetch, and raise the spinner
+before the await so the page isn't blank meanwhile. Confirmed under a German locale: exactly one
+each of `/api/auth/preferences`, `/api/scans`, `/api/series`, `/api/field-definitions`, with
+`scans` going out as `locale=de` immediately — four requests where there were six.
+
+### G10. Landing hero CTA had no accessible name
+
+The scanner-preview button takes `marketing.cta_primary`, the label of the CTA beside it, which
+goes to the same place — no new key. Confirmed in the accessibility tree; it was nameless before.
+
+### G11. Rating control ignored the current rating
+
+New `detail.rate_book_current` ("Rated {n} of 10 — edit") in both locales. **Deviation:** the
+finding named `RecordControls.vue`, but the label actually lives in two other places, and the
+second was only caught in the browser pass — `RatingStars`' radiogroup name, *and*
+`BookDetailCard`'s own button, which wraps a display-only star row so its static label was the
+entire accessible name. It was announcing "Rate this book" on a book rated 9. Both now carry the
+value; the per-star radios were already correct.
+
+### G13. Scanner read "Enter V2 ISBN"
+
+Stray "V2" dropped. The German string was already right but had lost the publisher clause; both
+now match.
+
+### G14. Import counters said "1 books"
+
+`import.mapping.count` and `import.chip.complete` take vue-i18n's pipe plural, called with the
+count as the plural choice like the rest of the app. Confirmed: "read → 2 books",
+"currently-reading → 1 book".
+
+### G15. "Import complete" chip never dismissed and outlived the account
+
+Three separate causes. `chipDismissed` was in-memory while `step: "review"` was persisted, so ×
+lasted until the next reload — it is now persisted beside the step it derives from, optional on the
+way back in per the store's compatibility-surface rule. The chip times itself out after ten
+seconds. And a logout resets the session, driven from `App.vue`'s existing auth watcher rather than
+`auth.ts` to avoid a store-to-store dependency, deliberately **not** `immediate` so a reload can't
+discard a resumable import before the token is restored. Confirmed end to end: auto-dismissed on
+its own, wrote `chipDismissed: true` into the persisted session, stayed gone across a reload, and a
+logout left `bookscan_import_session` null with no chip after logging back in.
