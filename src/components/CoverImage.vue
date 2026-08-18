@@ -1,8 +1,16 @@
 <template>
+  <!-- `lazy` because a library page is a burst, not a handful of images: grouped by shelf a page
+       renders hundreds of tiles, and since covers moved to `/api/covers/*` every one of them is a
+       request to our own worker on one connection, each paying an R2 round trip (~150-250ms).
+       Eager, that queue takes seconds to drain and the covers appear in waves. In-viewport images
+       still load immediately — `lazy` only defers what is scrolled past. Every call site draws
+       into a fixed-aspect box, so nothing reflows as they arrive. -->
   <img
     v-if="src && !failed"
     :src="src"
     :alt="alt"
+    loading="lazy"
+    decoding="async"
     referrerpolicy="no-referrer"
     @error="onError"
   />
