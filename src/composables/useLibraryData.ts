@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { useI18n } from "vue-i18n";
 import { useApi } from "@/composables/useApi";
 import { useLocaleStore } from "@/stores/locale";
 import type { SeriesMemberships } from "@/composables/useShelfGroups";
@@ -18,10 +19,15 @@ const MAX_PAGES = 40;
 export function useLibraryData() {
   const { apiFetch } = useApi();
   const localeStore = useLocaleStore();
+  const { t } = useI18n();
 
   const serverBooks = ref<Book[]>([]);
   const seriesMemberships = ref<SeriesMemberships>({});
   const error = ref("");
+  // Whether a fetch has ever come back with rows. The library page needs the distinction to tell
+  // "you own nothing yet" from "we never got an answer" — without it, an unreachable worker paints
+  // the first-scan empty state over a full shelf, which reads as data loss.
+  const hasLoaded = ref(false);
   let fetchSeq = 0;
 
   async function fetchBooks(onLoaded?: () => void) {
@@ -37,18 +43,31 @@ export function useLibraryData() {
         const res = await apiFetch(
           `/api/scans?limit=${PAGE_SIZE}&offset=${offset}&locale=${localeStore.locale}`,
         );
+        // Status first, body second. A worker that is down answers with an empty body, and parsing
+        // that threw a DOMException whose text ("Failed to execute 'json' on 'Response'…") went
+        // straight into the banner. Only a JSON error object is worth quoting; anything else gets
+        // the translated message.
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          if (seq !== fetchSeq) return;
+          error.value = body?.error || t("library.error_load");
+          return;
+        }
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to fetch books");
         if (seq !== fetchSeq) return;
         collected.push(...data);
         if (data.length < PAGE_SIZE) break;
         offset += PAGE_SIZE;
       }
       serverBooks.value = collected;
+      hasLoaded.value = true;
       onLoaded?.();
-    } catch (err: any) {
+    } catch {
       if (seq !== fetchSeq) return;
-      error.value = err.message;
+      // Everything reaching here is a transport failure — `fetch` rejecting (no network, no
+      // worker, CORS) or a 200 that isn't JSON. Their native messages are browser-authored,
+      // untranslated and meaningless to a reader, so none of them is shown.
+      error.value = t("library.error_load");
     }
   }
 
@@ -64,5 +83,12 @@ export function useLibraryData() {
     }
   }
 
-  return { serverBooks, seriesMemberships, error, fetchBooks, fetchMemberships };
+  return {
+    serverBooks,
+    seriesMemberships,
+    error,
+    hasLoaded,
+    fetchBooks,
+    fetchMemberships,
+  };
 }
