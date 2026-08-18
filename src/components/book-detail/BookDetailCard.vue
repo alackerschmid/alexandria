@@ -96,10 +96,17 @@
           </span>
 
           <!-- rating — belongs to the work, so it's offered (and shown) at any reading status -->
+          <!-- The stars here are display-only, so this button's own label is the entire
+               accessible name — it has to carry the current value, or a rated book announces
+               itself exactly like an unrated one. -->
           <button
             v-if="!readonly"
             class="flex items-center"
-            :aria-label="$t('detail.rate_book')"
+            :aria-label="
+              book.rating != null
+                ? $t('detail.rate_book_current', { n: book.rating })
+                : $t('detail.rate_book')
+            "
             @click="$emit('open-rating')"
           >
             <RatingStars :rating="book.rating" size="md" />

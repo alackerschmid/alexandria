@@ -59,8 +59,11 @@
         <!-- Scanner + CTAs row -->
         <div class="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
           <!-- Scanner widget -->
+          <!-- Labelled explicitly: its only child is a decorative preview graphic, so without
+               this the button reaches a screen reader unnamed. -->
           <button
             type="button"
+            :aria-label="$t('marketing.cta_primary')"
             class="shrink-0 cursor-pointer hover:opacity-80 transition-opacity w-full md:w-[300px]"
             @click="$router.push('/scanner')"
           >

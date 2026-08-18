@@ -146,10 +146,23 @@ function borderClass(ed: WorkEdition) {
 
 function caption(ed: WorkEdition) {
   const year = editionYear(ed);
+  const lang = ed.language ? langDisplay.value(ed.language) : "";
   if (ed.isbn === props.activeIsbn) {
     return [t("detail.your_copy"), year].filter(Boolean).join(" · ");
   }
-  const lang = ed.language ? langDisplay.value(ed.language) : "";
+  // A copy you own that isn't the one open. It already sorts to the front and is drawn in the
+  // accent colour, but only the open edition said so in words — so a work owned twice looked
+  // like one owned copy beside a catalogue entry, and the second was findable only by opening
+  // "Show all N editions" and reading the rows. Same string the dialog marks these with.
+  //
+  // It keeps the language too: the caption is the tile's only text, and two copies of one work
+  // published the same year are told apart by nothing else — which is exactly the case this
+  // branch exists for.
+  if (ed.scan_id != null) {
+    return [t("detail.edition_in_library"), year, lang]
+      .filter(Boolean)
+      .join(" · ");
+  }
   return [year, lang].filter(Boolean).join(" · ") || ed.isbn;
 }
 </script>

@@ -43,6 +43,15 @@ const { t } = useI18n();
 const uid = useId();
 const data = computed(() => ratingStars(props.rating, props.size));
 
+// The group's name carries the current value, because nothing else here says it out loud: the
+// row renders a star glyph and no text, and `aria-checked` only tells you which radio is current
+// once you are inside the group. "Rate this book" alone left a rated book sounding unrated.
+const groupLabel = computed(() =>
+  props.rating != null
+    ? t("detail.rate_book_current", { n: props.rating })
+    : t("detail.rate_book"),
+);
+
 const valueLabel = (n: number) => t("detail.rating_value_aria", { n });
 
 const rootEl = ref<HTMLElement>();
@@ -116,7 +125,7 @@ function onKeydown(e: KeyboardEvent) {
     class="inline-flex items-center"
     :class="GAP_CLASS[size]"
     :role="interactive ? 'radiogroup' : undefined"
-    :aria-label="interactive ? $t('detail.rate_book') : undefined"
+    :aria-label="interactive ? groupLabel : undefined"
     @keydown="onKeydown"
   >
     <span

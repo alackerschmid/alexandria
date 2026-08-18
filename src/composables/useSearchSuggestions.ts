@@ -63,10 +63,19 @@ export function useSearchSuggestions(options: {
   knownKeys: Ref<Set<string>>;
   facetEntries: Ref<SuggestionFacet[]>;
   baseFiltered: Ref<Book[]>;
+  /** The list's own "group editions into one card" preference — title suggestions collapse by
+   *  work only when the cards behind them do. */
+  groupEditions: Ref<boolean>;
   customFieldMetas: Ref<CustomFieldMeta[]> | ComputedRef<CustomFieldMeta[]>;
 }) {
-  const { search, knownKeys, facetEntries, baseFiltered, customFieldMetas } =
-    options;
+  const {
+    search,
+    knownKeys,
+    facetEntries,
+    baseFiltered,
+    groupEditions,
+    customFieldMetas,
+  } = options;
   const { t } = useI18n();
 
   const showAllPrefixes = ref(false);
@@ -176,8 +185,25 @@ export function useSearchSuggestions(options: {
       }
     }
     if (results.length < MAX) {
+      // One row per work rather than per edition, so a work owned twice doesn't offer its title
+      // twice and fill half of the eight slots with rows that all open the same card. Gated on
+      // the list's own grouping preference: with edition grouping off every edition is its own
+      // card, and collapsing the suggestions would then describe a list the user isn't looking
+      // at. The pool stays pre-collapse either way — search has to match per-edition fields —
+      // and the bucket key is `useEditionGrouping`'s: `work_id` is null until enrichment links
+      // the book, and an unlinked scan is its own work.
+      //
+      // The edition kept is the one that *matched*, not the card's representative, so typing a
+      // title only one edition carries ("Der Wüstenplanet") still names and opens that edition.
+      const seenWorks = new Set<string>();
       for (const b of baseFiltered.value) {
         if (b.title?.toLowerCase().includes(frag)) {
+          if (groupEditions.value) {
+            const workKey =
+              b.work_id != null ? `work:${b.work_id}` : `book:${b.id}`;
+            if (seenWorks.has(workKey)) continue;
+            seenWorks.add(workKey);
+          }
           results.push({
             kind: "book",
             book: b,
