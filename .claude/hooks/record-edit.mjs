@@ -5,10 +5,15 @@ import { readHookInput, recordFile, toRepoPath } from "./lib.mjs";
 
 // Extensions some check can actually fail on. `js`/`mjs`/`cjs` are here because ESLint lints them
 // — `eslint.config.js` and every script under `.claude/hooks/` are exactly that, and `verify.mjs`
-// has trigger prefixes for both, which were dead while this regex excluded them. Not `.css`:
-// neither `vue-tsc` nor ESLint reads it, so recording one would only run checks that cannot
-// detect a stylesheet error and report a pass that means nothing.
-const VERIFIABLE = /\.(?:ts|mts|vue|json|js|mjs|cjs)$/;
+// has trigger prefixes for both, which were dead while this regex excluded them.
+//
+// `.css` was excluded for the same reason until `test/appearance.spec.ts` existed: neither
+// `vue-tsc` nor ESLint reads a stylesheet, so recording one ran checks that could not fail on
+// its contents and reported a pass meaning nothing. That test reads `tailwind.css` directly and
+// fails on the one drift the `appearance` rule warns about, so a css edit now has a check that
+// can genuinely fail. It still doesn't cover a stylesheet *error* — only the token drift — so a
+// visual look is still the rule for anything else in there.
+const VERIFIABLE = /\.(?:ts|mts|vue|json|js|mjs|cjs|css)$/;
 
 const input = await readHookInput();
 const repoPath = toRepoPath(input?.tool_input?.file_path);

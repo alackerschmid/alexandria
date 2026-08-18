@@ -61,7 +61,10 @@ of the block stays literal.
 ## Adding or editing a paper preset
 
 Editing the defaults in `tailwind.css` alone is **not enough** — the `warm` paper preset in
-`src/utils/appearance.ts` mirrors them and must be kept in sync.
+`src/utils/appearance.ts` mirrors them and must be kept in sync. `test/appearance.spec.ts`
+enforces that: it parses the eight paper tokens out of the `@theme` block and out of the
+`[data-theme="dark"]` fallbacks and compares both against `PAPER_PRESETS.warm`, so a one-sided
+edit fails `npm test`. It's also why `.css` is a recorded extension for the Stop hook.
 
 No paper preset touches the text tokens, and the rule that keeps contrast safe differs by
 mode: **light** presets hold lightness roughly constant and differentiate through hue/chroma
