@@ -9,6 +9,7 @@ import {
   d1TimestampMs,
   formatDateTime,
   formatPublishDate,
+  unescapeLineBreaks,
 } from "@/utils/book-display";
 import type { Book, ReadStatus } from "@/types/book";
 
@@ -301,5 +302,30 @@ describe("formatPublishDate", () => {
     // "2026-13-01" matches the full-date regex, so Date.UTC rolls it into the next year. Asserted
     // as the current behaviour, not as a desirable one — the column is upstream-supplied.
     expect(formatPublishDate("2026-13-01", "en")).toBe("1 Jan 2027");
+  });
+});
+
+describe("unescapeLineBreaks", () => {
+  it("turns a <br> into a newline", () => {
+    expect(unescapeLineBreaks("from my clay<br>To mould me Man")).toBe(
+      "from my clay\nTo mould me Man",
+    );
+  });
+
+  it("accepts every spelling of the tag", () => {
+    expect(unescapeLineBreaks("a<br>b<br/>c<br />d<BR>e")).toBe(
+      "a\nb\nc\nd\ne",
+    );
+  });
+
+  it("leaves text without breaks untouched", () => {
+    expect(unescapeLineBreaks("Call me Ishmael.")).toBe("Call me Ishmael.");
+    expect(unescapeLineBreaks("")).toBe("");
+  });
+
+  it("does not touch other markup - the result is rendered as text, not HTML", () => {
+    expect(unescapeLineBreaks("<i>Dune</i><br>by Herbert")).toBe(
+      "<i>Dune</i>\nby Herbert",
+    );
   });
 });
