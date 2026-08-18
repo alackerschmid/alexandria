@@ -68,6 +68,44 @@ useLibraryData → useLibrarySearch → useEditionGrouping → useLibraryGroupin
   completeness counts, unowned reveal, collapse/"show all" helpers) consumed by the
   packed-row layout
 
+## Grid columns come from one number per view
+
+`index.vue` computes `coverPerRow` / `listPerRow` from the **measured content width**
+(`useElementWidth` on the grid container) and a target card width, not from breakpoints, and
+every grid on the page sizes itself from that number via `tileGridStyle` / `listGridStyle`.
+Never put `grid-cols-*` back on a library grid: `packRows` sizes each group's segment in
+*columns*, so a Tailwind class and the packer are two sources for one number and drift the
+moment either breakpoint set moves. That drift was real — the flat tile grid rendered 13
+columns at `xl` while shelves computed 8, so the same view showed covers at two sizes
+depending on grouping.
+
+Three consequences worth keeping:
+
+- **Cover size is a user preference, and it is a *size*, not a column count.** `libCoverSize`
+  (`stores/libraryDefaults`, `compact`/`default`/`large`) picks the tile target width, and the
+  columns follow from it per screen. A stored "covers per row" would mean a different cover on
+  every window — 90px on a laptop, 190px on a desktop — which is the same mistake the
+  breakpoint ladder made. List view has no equivalent: a row card's width comes from how much
+  text fits beside its thumbnail, not from taste.
+- **Below `md` the counts stay a fixed ladder** (tile 4/5, list 1). A phone shows a dense row
+  of spines by design, not two cards at the desktop target width — cover size still shifts that
+  ladder by one, so the control isn't inert there.
+- **A flat page fills whole rows.** `effectivePageSize` rounds the user's per-page choice to
+  the *nearest* whole row of the current column count — a fixed list of sizes can't know how
+  many columns the window has, and 12 books in an 8-column grid left a ragged row. Nearest and
+  not up, because the column count moves with the window: rounding up turned "12 per page" into
+  22 books on an 11-column grid. Grouped pages count shelves rather than books and pass through
+  unchanged. Everything downstream (page count, slicing, the "1–N of M" label, `useShelfGroups`'
+  shelf slice) reads `effectivePageSize`, never `pageSize`.
+
+  Because the page size moves with the window, a resize or a cover-size change re-slices the
+  list under the reader — a watcher re-derives `currentPage` from the first item that was on
+  screen, so their place survives the re-slice rather than the page *number* being the anchor.
+
+Both rules are arithmetic, and `pages/index.vue` is outside this repo's test scope, so they live
+in `utils/library-layout.ts` (`fitColumns`, `fillWholeRows`) with `test/library-layout.spec.ts`
+covering them. Keep new grid arithmetic there rather than in the page.
+
 ## What counts as a series entry
 
 `countableSeriesEntries` (`src/utils/series-completeness.ts`) is **the only definition of which

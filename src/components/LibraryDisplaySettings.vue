@@ -31,6 +31,25 @@
       />
     </div>
 
+    <!-- Tile-only: list rows take their width from the text beside the thumbnail,
+         so there is nothing to size there. Stacked for the same reason as the
+         ownership row below. -->
+    <div
+      v-if="viewMode === 'tile'"
+      class="border-b border-charcoal-border py-3.5"
+    >
+      <span class="block text-xs text-text-primary">{{
+        $t("library.cover_size")
+      }}</span>
+      <AppSegmented
+        v-model="coverSize"
+        size="sm"
+        class="mt-2.5"
+        :aria-label="$t('library.cover_size')"
+        :options="coverSizeOptions"
+      />
+    </div>
+
     <!-- Ownership axis: one control, stacked (three labelled options don't fit
          beside a leading label at the panel's width). -->
     <div class="border-b border-charcoal-border py-3.5">
@@ -117,7 +136,8 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import AppToggle from "@/components/AppToggle.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
-import type { OwnershipScope } from "@/types/library";
+import type { CoverSize, OwnershipScope } from "@/types/library";
+import { COVER_SIZE_VALUES } from "@/types/library";
 
 const showStatusIcons = defineModel<boolean>("showStatusIcons", {
   required: true,
@@ -130,6 +150,7 @@ const ownershipScope = defineModel<OwnershipScope>("ownershipScope", {
 });
 const mainOnly = defineModel<boolean>("mainOnly", { required: true });
 const viewMode = defineModel<"list" | "tile">("viewMode", { default: "list" });
+const coverSize = defineModel<CoverSize>("coverSize", { default: "default" });
 
 const props = withDefaults(
   defineProps<{ seriesContext: boolean; showViewRow?: boolean }>(),
@@ -137,6 +158,13 @@ const props = withDefaults(
 );
 
 const { t } = useI18n();
+
+const coverSizeOptions = computed(() =>
+  COVER_SIZE_VALUES.map((value) => ({
+    value,
+    label: t(`library.cover_size_${value}`),
+  })),
+);
 
 // "Missing" only means anything on series shelves, so outside that context it's
 // hidden and a persisted "missing" reads as plain "all".

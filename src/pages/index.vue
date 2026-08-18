@@ -87,6 +87,8 @@
               v-model:ownership-scope="ownershipScope"
               v-model:show-status-icons="showStatusIcons"
               v-model:group-editions="groupEditions"
+              v-model:cover-size="coverSize"
+              v-model:view-mode="viewMode"
               :series-context="seriesContext"
             >
               <template #extra>
@@ -259,6 +261,7 @@
           v-model:ownership-scope="ownershipScope"
           v-model:show-status-icons="showStatusIcons"
           v-model:group-editions="groupEditions"
+          v-model:cover-size="coverSize"
           v-model:view-mode="viewMode"
           show-view-row
           :series-context="seriesContext"
@@ -345,7 +348,11 @@
          leaving gaps; mobile keeps the classic one-section-per-group layout below —
          packing several groups' tiny headers into one cramped mobile row reads as noise,
          not a fix, so packing is scoped to `md` and up. ── -->
-    <div v-else-if="!loading && isGrouped" class="flex-1 px-6 md:px-10 pt-9 pb-28">
+    <div
+      v-else-if="!loading && isGrouped"
+      ref="contentEl"
+      class="flex-1 px-6 md:px-10 pt-9 pb-28"
+    >
       <!-- Desktop: packed rows -->
       <template v-if="display.mdAndUp.value">
       <!-- Tile shelf -->
@@ -356,9 +363,7 @@
           <div
             v-if="row.segments.some((s) => s.groupLabel)"
             class="grid gap-x-3 md:gap-x-4 mb-2"
-            :style="{
-              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
-            }"
+            :style="tileGridStyle"
           >
             <div
               v-for="seg in row.segments"
@@ -381,9 +386,7 @@
           <!-- Cards -->
           <div
             class="grid gap-x-3 md:gap-x-4 gap-y-6"
-            :style="{
-              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
-            }"
+            :style="tileGridStyle"
           >
             <template v-for="seg in row.segments" :key="seg.key">
               <template v-for="slot in seg.slots" :key="slot.key">
@@ -431,7 +434,8 @@
         <div v-for="row in packedListRows" :key="row.key" class="mb-7">
           <div
             v-if="row.segments.some((s) => s.groupLabel)"
-            class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5 mb-2"
+            class="grid gap-3.5 mb-2"
+            :style="listGridStyle"
           >
             <div
               v-for="seg in row.segments"
@@ -451,7 +455,7 @@
             </div>
           </div>
 
-          <div class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+          <div class="grid gap-3.5" :style="listGridStyle">
             <template v-for="seg in row.segments" :key="seg.key">
               <template v-for="slot in seg.slots" :key="slot.key">
                 <LibraryRowCard
@@ -522,9 +526,7 @@
           <div
             v-if="viewMode === 'tile'"
             class="grid gap-3 md:gap-4"
-            :style="{
-              gridTemplateColumns: `repeat(${coverPerRow}, minmax(0, 1fr))`,
-            }"
+            :style="tileGridStyle"
           >
             <LibraryCoverCard
               v-for="entry in shelfVisible(group).flatMap((entry) => expandEntry(entry))"
@@ -546,7 +548,7 @@
           </div>
 
           <!-- List shelf -->
-          <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+          <div v-else class="grid gap-3.5" :style="listGridStyle">
             <template v-for="entry in shelfVisible(group)" :key="entry.key">
               <LibraryRowCard
                 v-if="entry.book"
@@ -572,19 +574,20 @@
       <AppPagination
         :current-page="currentPage"
         :total-pages="totalPages"
-        :range-start="(currentPage - 1) * pageSize + 1"
-        :range-end="Math.min(currentPage * pageSize, paginatedCount)"
+        :range-start="(currentPage - 1) * effectivePageSize + 1"
+        :range-end="Math.min(currentPage * effectivePageSize, paginatedCount)"
         :total="paginatedCount"
         @change="changePage"
       />
     </div>
 
     <!-- ── Ungrouped: flat tile or list ───────────────────────────────────────── -->
-    <div v-else-if="!loading" class="flex-1 px-6 md:px-10 pt-6 pb-28">
+    <div v-else-if="!loading" ref="contentEl" class="flex-1 px-6 md:px-10 pt-6 pb-28">
       <!-- Tile -->
       <div
         v-if="viewMode === 'tile'"
-        class="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-9 xl:grid-cols-13 gap-3 md:gap-4"
+        class="grid gap-3 md:gap-4"
+        :style="tileGridStyle"
       >
         <LibraryCoverCard
           v-for="book in pagedBooks.flatMap(expandBook)"
@@ -606,7 +609,7 @@
       </div>
 
       <!-- List -->
-      <div v-else class="grid md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+      <div v-else class="grid gap-3.5" :style="listGridStyle">
         <LibraryRowCard
           v-for="book in pagedBooks"
           :key="book.id"
@@ -623,8 +626,8 @@
       <AppPagination
         :current-page="currentPage"
         :total-pages="totalPages"
-        :range-start="(currentPage - 1) * pageSize + 1"
-        :range-end="Math.min(currentPage * pageSize, filteredBooks.length)"
+        :range-start="(currentPage - 1) * effectivePageSize + 1"
+        :range-end="Math.min(currentPage * effectivePageSize, filteredBooks.length)"
         :total="filteredBooks.length"
         @change="changePage"
       />
@@ -713,6 +716,8 @@ import { useLibrarySearch } from "@/composables/useLibrarySearch";
 import { useLibraryGrouping } from "@/composables/useLibraryGrouping";
 import { useEditionGrouping } from "@/composables/useEditionGrouping";
 import { useShelfGroups } from "@/composables/useShelfGroups";
+import { useElementWidth } from "@/composables/useElementWidth";
+import { fillWholeRows, fitColumns } from "@/utils/library-layout";
 import {
   packRows,
   type ShelfEntry,
@@ -726,7 +731,7 @@ import {
 import { useGroupDimensions } from "@/composables/useGroupDimensions";
 import { sortByCreatedAt, authorDisplayName } from "@/utils/book-display";
 import type { Book, OwningStatus, ReadStatus } from "@/types/book";
-import type { GroupBy } from "@/types/library";
+import type { CoverSize, GroupBy } from "@/types/library";
 import AppHeader from "@/components/AppHeader.vue";
 import AppButton from "@/components/AppButton.vue";
 import AppSegmented from "@/components/AppSegmented.vue";
@@ -807,6 +812,7 @@ const {
   mainOnly,
   ownershipScope,
   showUnowned,
+  coverSize,
 } = storeToRefs(libraryDefaultsStore);
 
 // ── Search & grouping (see useLibrarySearch / useLibraryGrouping) ───────────────
@@ -933,21 +939,75 @@ function expandEntry(e: ShelfEntry): ShelfEntry[] {
   return expandBook(book).map((b) => (b.id === book.id ? e : bookToEntry(b)));
 }
 
-// Responsive shelf row sizing (collapsed = one row).
+// ── Responsive column counts (a collapsed shelf shows one row) ─────────────────
+// Desktop column counts come from the measured content width and a target card width,
+// not from breakpoints. Two reasons, both of which bit before:
+//   • Every grid on this page must agree on the count, because `packRows` sizes each
+//     group's segment in *columns* — the flat tile grid used to hard-code 13 at `xl`
+//     while shelves computed 8, so the same view rendered covers at two sizes.
+//   • A breakpoint ladder steps: the whole 1145–1545 band got the 2-column list meant
+//     for a small laptop, which with the "show all" cell left one book per shelf.
+// So the grids below are sized from these numbers — never from Tailwind `grid-cols-*`,
+// which would drift from the packer the moment either side changed.
+
+// px, desired card width. The tile target is the user's cover-size preference — the
+// column count is derived from it per screen, which is why the preference is a size and
+// not a "covers per row": a stored column count means a different cover on every window.
+const TILE_TARGET_W: Record<CoverSize, number> = {
+  compact: 110,
+  default: 150,
+  large: 200,
+};
+const LIST_TARGET_W = 330;
+const GRID_GAP = { tile: 16, list: 14 } as const; // px, matches gap-4 / gap-3.5
+
+const contentEl = ref<HTMLElement | null>(null);
+const contentWidth = useElementWidth(contentEl);
+
 const display = useDisplay();
 const coverPerRow = computed(() => {
-  if (display.xlAndUp.value) return 8;
-  if (display.lgAndUp.value) return 7;
-  if (display.mdAndUp.value) return 6;
-  if (display.smAndUp.value) return 5;
-  return 4;
+  // Below `md` the tile grid stays a fixed ladder — a phone shows a dense row of spines by
+  // design, not two cards at the desktop target width — but the cover-size preference still
+  // shifts it by one, so the control isn't inert there.
+  if (!display.mdAndUp.value) {
+    const base = display.smAndUp.value ? 5 : 4;
+    if (coverSize.value === "compact") return base + 1;
+    if (coverSize.value === "large") return base - 1;
+    return base;
+  }
+  // First frame, before the observer has measured: the pre-measurement breakpoint ladder,
+  // scaled by how far the chosen size is from the default — so a non-default preference
+  // paints at its own count rather than jumping one frame later.
+  if (!contentWidth.value) {
+    const ladder = display.xlAndUp.value ? 8 : display.lgAndUp.value ? 7 : 6;
+    const scaled =
+      (ladder * TILE_TARGET_W.default) / TILE_TARGET_W[coverSize.value];
+    return Math.max(4, Math.round(scaled));
+  }
+  return fitColumns(
+    contentWidth.value,
+    TILE_TARGET_W[coverSize.value],
+    GRID_GAP.tile,
+    4,
+    14,
+  );
 });
-const listPerRow = computed(() =>
-  display.xlAndUp.value ? 4 : display.mdAndUp.value ? 2 : 1,
-);
+const listPerRow = computed(() => {
+  if (!display.mdAndUp.value) return 1;
+  if (!contentWidth.value)
+    return display.xlAndUp.value ? 4 : display.lgAndUp.value ? 3 : 2;
+  return fitColumns(contentWidth.value, LIST_TARGET_W, GRID_GAP.list, 2, 5);
+});
 const shelfRowSize = computed(() =>
   viewMode.value === "tile" ? coverPerRow.value : listPerRow.value,
 );
+
+const tileGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${coverPerRow.value}, minmax(0, 1fr))`,
+}));
+const listGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${listPerRow.value}, minmax(0, 1fr))`,
+}));
 
 const isGrouped = computed(() => groupBy.value !== "none");
 const seriesContext = computed(() => groupBy.value === "series");
@@ -962,12 +1022,13 @@ const {
 
 const perPage = ref<string>(String(libraryDefaultsStore.defaultPageSize));
 
+const PAGE_SIZE_ALL = 10_000;
 const PAGE_SIZE_OPTIONS = [
   { value: "12", label: "12" },
   { value: "24", label: "24" },
   { value: "48", label: "48" },
   { value: "96", label: "96" },
-  { value: "10000", label: t("library.per_page_all") },
+  { value: String(PAGE_SIZE_ALL), label: t("library.per_page_all") },
 ];
 
 // ── Pagination ────────────────────────────────────────────────────────────────
@@ -980,18 +1041,30 @@ watch(perPage, (val) => {
   libraryDefaultsStore.setPageSize(parseInt(val, 10));
 });
 
+// A flat page fills whole rows (see `fillWholeRows` for why nearest and not up): a size
+// picked from a fixed list has no idea how many columns the window has, and 12 books in an
+// 8-column grid left a half-empty row with a screen of dead space under it. Grouped pages
+// count shelves rather than books, and "all" is not a row count, so both pass through.
+// Everything downstream (page count, slicing, the "1–N of M" label, the shelf slice in
+// useShelfGroups) reads this, never `pageSize`, or the label and the grid disagree.
+const effectivePageSize = computed(() =>
+  isGrouped.value || pageSize.value >= PAGE_SIZE_ALL
+    ? pageSize.value
+    : fillWholeRows(pageSize.value, shelfRowSize.value),
+);
+
 // When grouped, a "page" holds pageSize groups (shelves); otherwise pageSize books.
 const paginatedCount = computed(() =>
   isGrouped.value ? shelfGroups.value.length : filteredBooks.value.length,
 );
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(paginatedCount.value / pageSize.value)),
+  Math.max(1, Math.ceil(paginatedCount.value / effectivePageSize.value)),
 );
 
 // Flat (ungrouped) book pagination.
 const pagedBooks = computed<Book[]>(() => {
-  const start = (currentPage.value - 1) * pageSize.value;
-  return filteredBooks.value.slice(start, start + pageSize.value);
+  const start = (currentPage.value - 1) * effectivePageSize.value;
+  return filteredBooks.value.slice(start, start + effectivePageSize.value);
 });
 
 // Reset to page 1 when the query or view changes. Deliberately the pipeline *inputs*, not
@@ -1000,6 +1073,18 @@ const pagedBooks = computed<Book[]>(() => {
 // every property of every book), which threw the reader back to page 1 mid-browse.
 watch([search, onlyOwned, groupEditions, sortDirection, groupBy, perPage], () => {
   currentPage.value = 1;
+});
+
+// A page's size is a function of the window's column count, so resizing the window or picking
+// a different cover size re-slices the list under the reader. Keep the book they were looking
+// at on the page instead of leaving `currentPage` pointing at a different stretch of the
+// library: without this, page 2 of 16 (books 17–32) became page 2 of 22 (books 23–35) on a
+// cover-size change, skipping six books nobody navigated past. Registered after the reset
+// watcher above so an explicit per-page change still lands on page 1.
+watch(effectivePageSize, (size, previous) => {
+  if (!previous || size === previous) return;
+  const firstShown = (currentPage.value - 1) * previous;
+  currentPage.value = Math.floor(firstShown / size) + 1;
 });
 
 function changePage(p: number) {
@@ -1028,7 +1113,7 @@ const {
   shelfRowSize,
   expanded,
   currentPage,
-  pageSize,
+  pageSize: effectivePageSize,
 });
 
 // If the visible set shrinks under the current page (a delete, an optimistic write dropping a

@@ -41,3 +41,12 @@ export type SortOption = "asc" | "desc";
  * added at all.
  */
 export type OwnershipScope = "owned" | "all" | "missing";
+
+/**
+ * How large a cover renders in tile view. Deliberately a size and not a column count: the
+ * library derives its columns from the width it actually got, so a stored "10 per row" would
+ * mean 90px covers on a laptop and 190px on a desktop. This picks the *target* card width
+ * instead (mapped to pixels in `index.vue`), and the column count follows from it per screen.
+ */
+export const COVER_SIZE_VALUES = ["compact", "default", "large"] as const;
+export type CoverSize = (typeof COVER_SIZE_VALUES)[number];
