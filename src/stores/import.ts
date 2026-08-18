@@ -293,6 +293,11 @@ interface PersistedSession {
   reviewQueue: PersistedReviewItem[];
   log: ImportLogEntry[];
   importedItems: PersistedImportedItem[];
+  // Optional because sessions stored by an older build don't carry it — see the
+  // compatibility-surface note below; `hydrate` defaults it. Persisted at all because the
+  // completion chip reads `step === "review"`, which *is* persisted: without the dismissal
+  // beside it, closing the chip lasted until the next reload and then the chip came back.
+  chipDismissed?: boolean;
 }
 
 // A session in localStorage may have been written by an older build — loadPersistedSession is a bare
@@ -474,6 +479,7 @@ export const useImportStore = defineStore("import", () => {
       reviewQueue: reviewQueue.value.map((item) => stripReviewItem(item)),
       log: log.value,
       importedItems: importedItems.value.map((item) => stripImportedItem(item)),
+      chipDismissed: chipDismissed.value,
     };
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -506,6 +512,7 @@ export const useImportStore = defineStore("import", () => {
     reviewQueue.value = persisted.reviewQueue.map((item) => reviveReviewItem(item));
     log.value = persisted.log;
     importedItems.value = persisted.importedItems.map((item) => reviveImportedItem(item));
+    chipDismissed.value = persisted.chipDismissed ?? false;
   }
 
   // Runs once, when the store is first used (Pinia setup stores execute their body once, on
@@ -1845,8 +1852,11 @@ export const useImportStore = defineStore("import", () => {
     reset();
   }
 
+  // Persisted, not just held: the chip's "complete" state is derived from `step === "review"`,
+  // which survives a reload, so an unpersisted dismissal was undone by the next one.
   function dismissChip(): void {
     chipDismissed.value = true;
+    persistSession();
   }
 
   function reset(): void {

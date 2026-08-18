@@ -540,7 +540,7 @@
     "chip": {
       "running": "Importing {done} / {total}",
       "paused": "Import paused — tap to resume",
-      "complete": "Import complete — {n} books added"
+      "complete": "Import complete — {n} book added | Import complete — {n} books added"
     },
     "upload": {
       "instructions": "Export your library from Goodreads (My Books → Import/Export) and upload the CSV file here.",
@@ -550,7 +550,7 @@
       "empty_file": "This file has no books in it."
     },
     "mapping": {
-      "count": "{n} books"
+      "count": "{n} book | {n} books"
     },
     "confirm": {
       "summary": "{books} books from {shelves} shelves",
@@ -701,7 +701,7 @@
     "add_label": "Add a book",
     "isbn_heading": "Enter ISBN.",
     "manual_heading": "Find a book.",
-    "manual_hint": "Enter V2 ISBN, or search by title — add author or publisher to narrow down results.",
+    "manual_hint": "Enter an ISBN, or search by title — add author or publisher to narrow down results.",
     "or": "or",
     "camera_unavailable": "The camera isn't available. Type the 10- or 13-digit number printed beneath the barcode.",
     "barcode_hint": "Type the 10- or 13-digit number printed beneath the barcode.",

@@ -21,6 +21,7 @@ import { useTypefaceStore } from "@/stores/typeface";
 import { useLocaleStore } from "@/stores/locale";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore } from "@/stores/guest";
+import { useImportStore } from "@/stores/import";
 import { PAPER_PRESETS, TYPEFACE_PRESETS } from "@/utils/appearance";
 import MobileTabBar from "@/components/MobileTabBar.vue";
 import ImportProgressChip from "@/components/import/ImportProgressChip.vue";
@@ -49,6 +50,18 @@ watch(
     }
   },
   { immediate: true },
+);
+
+// An import session lives in localStorage and so outlives the account that started it: the next
+// person to log in on this browser inherited the finished-import chip, and clicking it landed
+// them on someone else's review screen. Cleared on the transition to logged-out — deliberately
+// not `immediate`, or a reload during a legitimate session would discard a resumable import
+// before the auth store has restored its token.
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated, wasAuthenticated) => {
+    if (wasAuthenticated && !authenticated) useImportStore().reset();
+  },
 );
 
 watch(

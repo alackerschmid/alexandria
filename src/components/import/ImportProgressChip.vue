@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 import { useImportStore } from "@/stores/import";
@@ -31,14 +31,38 @@ const label = computed(() => {
       });
     case "paused":
       return t("import.chip.paused");
-    case "complete":
-      return t("import.chip.complete", {
-        n: store.counts.imported + store.counts.updated,
-      });
+    case "complete": {
+      const n = store.counts.imported + store.counts.updated;
+      return t("import.chip.complete", { n }, n);
+    }
     default:
       return "";
   }
 });
+
+// The running and paused chips report work in progress and stay until it ends; the success one
+// is an acknowledgement, and used to sit there until someone clicked ×  — following the reader
+// across every page, a worker restart and even a logout. It times itself out instead. The full
+// summary is still on /import, which is where the chip leads.
+const DISMISS_AFTER_MS = 10_000;
+let dismissTimer: ReturnType<typeof setTimeout> | undefined;
+
+function clearDismissTimer() {
+  clearTimeout(dismissTimer);
+  dismissTimer = undefined;
+}
+
+watch(
+  chipState,
+  (state) => {
+    clearDismissTimer();
+    if (state === "complete")
+      dismissTimer = setTimeout(() => store.dismissChip(), DISMISS_AFTER_MS);
+  },
+  { immediate: true },
+);
+
+onUnmounted(clearDismissTimer);
 
 function go() {
   router.push({ name: "import" });

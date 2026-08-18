@@ -540,7 +540,7 @@
     "chip": {
       "running": "Import läuft: {done} / {total}",
       "paused": "Import pausiert — zum Fortsetzen tippen",
-      "complete": "Import abgeschlossen — {n} Bücher hinzugefügt"
+      "complete": "Import abgeschlossen — {n} Buch hinzugefügt | Import abgeschlossen — {n} Bücher hinzugefügt"
     },
     "upload": {
       "instructions": "Exportiere deine Bibliothek bei Goodreads (Meine Bücher → Import/Export) und lade die CSV-Datei hier hoch.",
@@ -550,7 +550,7 @@
       "empty_file": "Diese Datei enthält keine Bücher."
     },
     "mapping": {
-      "count": "{n} Bücher"
+      "count": "{n} Buch | {n} Bücher"
     },
     "confirm": {
       "summary": "{books} Bücher aus {shelves} Regalen",
@@ -701,7 +701,7 @@
     "add_label": "Buch hinzufügen",
     "isbn_heading": "ISBN eingeben.",
     "manual_heading": "Buch finden.",
-    "manual_hint": "ISBN eingeben oder nach Titel suchen — Autor hinzufügen, um die Treffer einzugrenzen.",
+    "manual_hint": "ISBN eingeben oder nach Titel suchen — Autor oder Verlag hinzufügen, um die Treffer einzugrenzen.",
     "or": "oder",
     "camera_unavailable": "Die Kamera ist nicht verfügbar. Gib die 10- oder 13-stellige Nummer unter dem Barcode ein.",
     "barcode_hint": "Gib die 10- oder 13-stellige Nummer unter dem Barcode ein.",
