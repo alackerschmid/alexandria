@@ -1,8 +1,13 @@
 import { defineStore } from "pinia";
 import { computed } from "vue";
 import type { ReadStatus } from "@/types/book";
-import type { GroupBy, OwnershipScope, SortOption } from "@/types/library";
-import { GROUP_BY_VALUES } from "@/types/library";
+import type {
+  CoverSize,
+  GroupBy,
+  OwnershipScope,
+  SortOption,
+} from "@/types/library";
+import { COVER_SIZE_VALUES, GROUP_BY_VALUES } from "@/types/library";
 import {
   persistedBool,
   persistedNum,
@@ -18,6 +23,9 @@ const isValidGroupBy = (v: string): v is GroupBy =>
 const VALID_OWNERSHIP_SCOPE: OwnershipScope[] = ["owned", "all", "missing"];
 const isValidOwnershipScope = (v: string): v is OwnershipScope =>
   (VALID_OWNERSHIP_SCOPE as string[]).includes(v);
+
+const isValidCoverSize = (v: string): v is CoverSize =>
+  (COVER_SIZE_VALUES as readonly string[]).includes(v);
 
 // These display defaults are per-user preferences, so they live in the preferences store
 // (server-backed, per-user cache) rather than raw localStorage. Each setting is a writable
@@ -39,6 +47,13 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
   const showStatusIconsList = persistedBool("libShowStatusIconsList", true);
   const showStatusIconsTile = persistedBool("libShowStatusIconsTile", false);
   const groupEditions = persistedBool("libGroupEditions", true);
+  // Tile view only — a row card's width is set by how much text fits beside its
+  // thumbnail, not by taste, so list view has no equivalent.
+  const coverSize = persistedStr<CoverSize>(
+    "libCoverSize",
+    "default",
+    isValidCoverSize,
+  );
 
   // One control over the ownership axis. `onlyOwned`/`showUnowned` are the two
   // filters the library pipeline actually consumes; deriving them here keeps the
@@ -77,6 +92,7 @@ export const useLibraryDefaultsStore = defineStore("libraryDefaults", () => {
     showStatusIconsTile,
     onlyOwned,
     groupEditions,
+    coverSize,
     groupBy,
     sortDirection,
     setView,

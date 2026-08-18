@@ -9,13 +9,19 @@
   </v-fade-transition>
 
   <!-- ── Search hero ──────────────────────────────────────────────────────── -->
+  <!-- Stacked and centred up to `lg`; from `lg` the heading and the search bar share one
+       row. On a desktop viewport the stacked version spent ~38% of the height before the
+       first book — the row costs one line instead of three and keeps the scroll for the
+       library itself. -->
   <div
-    class="border-b border-charcoal-border px-6 md:px-10 pt-10 md:pt-14 pb-8 md:pb-10 flex flex-col items-center shrink-0"
+    class="border-b border-charcoal-border px-6 md:px-10 pt-10 md:pt-14 lg:pt-8 pb-8 md:pb-10 lg:pb-8 flex flex-col items-center lg:flex-row lg:items-center lg:gap-10 shrink-0"
   >
     <!-- Heading + count -->
-    <div class="flex items-baseline gap-4 mb-7 self-start md:self-center">
+    <div
+      class="flex items-baseline gap-4 mb-7 lg:mb-0 self-start md:self-center lg:self-auto shrink-0"
+    >
       <h1
-        class="font-heading text-4xl md:text-5xl font-bold text-text-primary leading-none"
+        class="font-heading text-4xl md:text-5xl lg:text-4xl font-bold text-text-primary leading-none"
       >
         {{ $t("library.heading") }}
       </h1>
@@ -28,7 +34,7 @@
 
     <!-- Search wrapper (lifts above scrim when focused) -->
     <div
-      class="w-full max-w-2xl relative"
+      class="w-full max-w-2xl lg:ml-auto relative"
       :class="searchFocused ? 'z-[60]' : 'z-[2]'"
     >
       <!-- Bar -->

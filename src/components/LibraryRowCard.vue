@@ -7,10 +7,13 @@
     @keydown.enter="onKeydownSelect"
     @keydown.space.prevent="onKeydownSelect"
   >
-    <div class="flex items-start gap-3">
+    <!-- Fills the card so the meta row below can sit on its bottom edge: the grid stretches
+         every card in a row to the tallest one, and without this the block kept its content
+         height and a two-line title pushed that row out of line with its neighbours. -->
+    <div class="flex flex-1 gap-3">
       <!-- Cover / spine — fanned stack when this card represents multiple owned editions -->
       <div
-        class="w-10 h-15 shrink-0 relative"
+        class="w-12 h-18 shrink-0 relative"
         :class="hasEditions ? 'cursor-pointer' : ''"
         :role="hasEditions ? 'button' : undefined"
         :tabindex="hasEditions ? 0 : undefined"
@@ -22,16 +25,16 @@
       >
         <template v-if="hasEditions">
           <div
-            class="absolute w-10 h-15 border border-charcoal-border bg-text-secondary/15"
+            class="absolute w-12 h-18 border border-charcoal-border bg-text-secondary/15"
             style="top: 4px; left: 4px"
           />
           <div
-            class="absolute w-10 h-15 border border-charcoal-border bg-text-secondary/30"
+            class="absolute w-12 h-18 border border-charcoal-border bg-text-secondary/30"
             style="top: 2px; left: 2px"
           />
         </template>
         <div
-          class="absolute top-0 left-0 w-10 h-15 overflow-hidden bg-charcoal-light border border-charcoal-border"
+          class="absolute top-0 left-0 w-12 h-18 overflow-hidden bg-charcoal-light border border-charcoal-border"
           :class="owningBorderClass"
         >
           <CoverImage
@@ -54,8 +57,10 @@
         </span>
       </div>
 
-      <!-- Text -->
-      <div class="flex-1 min-w-0 flex flex-col gap-1">
+      <!-- Text — at least as tall as the cover beside it, so the status/year row (pushed
+           down by mt-auto) lands on the cover's baseline instead of wherever the title's
+           line count leaves it. Without it the status dots stagger across a grid row. -->
+      <div class="flex-1 min-w-0 min-h-18 flex flex-col gap-1">
         <div
           class="font-heading text-sm font-bold text-text-primary leading-snug line-clamp-2"
         >
