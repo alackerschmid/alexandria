@@ -16,7 +16,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  pr-title:
+    name: PR Title
     runs-on: ubuntu-latest
     steps:
       # PRs are squash-merged with the PR title as the commit subject, so the
