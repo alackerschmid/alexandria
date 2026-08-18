@@ -40,8 +40,7 @@
       :base-filtered="baseFiltered"
       :group-editions="groupEditions"
       :custom-field-metas="customFieldMetas"
-      :total-count="allBooks.length"
-      :filtered-count="groupedFiltered.length"
+      :total-count="groupedFiltered.length"
       :remove-token="removeToken"
       @select-book="openDetail"
     />
@@ -704,6 +703,7 @@ import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useGuestStore, MAX_GUEST_SCANS } from "@/stores/guest";
 import { useLocaleStore } from "@/stores/locale";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useDeleteScan } from "@/composables/useDeleteScan";
 import { useScanStatus } from "@/composables/useScanStatus";
 import { useRatingPrompt } from "@/composables/useRatingPrompt";
@@ -767,6 +767,7 @@ const {
 const { promptBook, promptOpen, openPrompt, promptIfRead } = useRatingPrompt();
 const fieldDefsStore = useFieldDefsStore();
 const libraryDefaultsStore = useLibraryDefaultsStore();
+const preferencesStore = usePreferencesStore();
 const {
   detailEditionIsbn,
   openDetail: openDetailRoute,
@@ -1236,7 +1237,17 @@ async function loadLibrary() {
   loading.value = false;
 }
 
-onMounted(loadLibrary);
+// Waits for the stored preferences before the first fetch. Locale is one of them, every call
+// here is locale-scoped, and the locale watcher below re-runs the pair when it changes — so
+// fetching first meant issuing the whole bootstrap set twice on every cold load for anyone whose
+// stored locale isn't the `en` default.
+onMounted(async () => {
+  // Spinner up front: the wait below is a real request, and `loadLibrary` only raises `loading`
+  // once it starts, which left the page blank until the preferences landed.
+  if (authStore.isAuthenticated) loading.value = true;
+  await preferencesStore.whenReady();
+  await loadLibrary();
+});
 
 watch(
   () => localeStore.locale,
