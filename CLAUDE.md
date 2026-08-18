@@ -64,6 +64,10 @@ Cloudflare's own Git integrations are disabled for both halves: Workers Builds f
 
 CI: the **CI** workflow (`.github/workflows/ci.yml`) runs the same verify workflow on every push to non-`main` branches.
 
+The **PR Title** workflow (`.github/workflows/pr-title.yml`) lints the pull request title against Conventional Commits on every PR — see Versioning for why the title, not the commits, is what matters.
+
+`main` is guarded by a repository **ruleset** ("CI check"), not classic branch protection: PRs required, force-push and deletion blocked, and three required status checks — `verify / frontend`, `verify / worker`, `PR Title`. It has **no bypass actors**, so there is no admin override. Adding a required check whose workflow does not yet exist on `main` blocks every open PR — the check never reports and nothing can merge, including the PR that would add the workflow. Land the workflow first, then require it.
+
 Worker deploys apply pending D1 migrations automatically (before `wrangler deploy`); manual/out-of-band deploys do not — apply those with `npx wrangler d1 migrations apply bookscan --remote`.
 
 The Vite dev server proxies `/api/*` to `http://localhost:8787` — the worker must be running locally for API calls to work in dev. In production, the frontend reads `VITE_API_URL` (set in root `wrangler.toml`) and calls the worker directly.
@@ -82,14 +86,18 @@ The `cloudflare` plugin adds five MCP servers. Four of them reach the **live acc
 
 ## Versioning
 
-Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+PRs are **squash-merged**, with the squash commit's subject set to the PR title and its body left blank (repo setting `squash_merge_commit_title = PR_TITLE`, `..._message = BLANK`). So the **PR title** is the only thing that reaches `main`, and it alone is what release-please parses into `CHANGELOG.md` — commit messages on the branch never appear there. Titles follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat: ...` — new feature → minor version bump
 - `fix: ...` — bug fix → patch bump
 - `feat!:` / `fix!:` — breaking change → major bump
-- `chore:`, `docs:`, `refactor:` — no release
+- `chore:`, `docs:`, `refactor:`, `ci:` — no release
 
-[release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release.
+Merge commits are **disabled**, deliberately. GitHub prefills a merge commit's body from the PR description, so a body containing a `feat:`/`fix:` line got counted twice — release-please parses the whole message, not just the subject, and the merge and the real commit each produced an entry. That is what put 27 duplicate lines in the 1.1.0 changelog. Re-enabling merge commits, or switching the squash default to "pull request title and description", brings it straight back.
+
+Rebase merging is still allowed and is safe for release-please, but it replays every branch commit individually, so a branch with three `feat:` commits yields three changelog entries. Squash if you want one entry per PR.
+
+[release-please](.github/workflows/release-please.yml) watches `main` and auto-opens a Release PR that updates `CHANGELOG.md` and `package.json`. Merge that PR when ready to publish a GitHub Release. It regenerates that branch whenever new commits land on `main`, so any hand-edit to the Release PR's `CHANGELOG.md` is lost if something else merges first.
 
 ## Verification
 
