@@ -1242,6 +1242,9 @@ async function loadLibrary() {
 // fetching first meant issuing the whole bootstrap set twice on every cold load for anyone whose
 // stored locale isn't the `en` default.
 onMounted(async () => {
+  // Spinner up front: the wait below is a real request, and `loadLibrary` only raises `loading`
+  // once it starts, which left the page blank until the preferences landed.
+  if (authStore.isAuthenticated) loading.value = true;
   await preferencesStore.whenReady();
   await loadLibrary();
 });

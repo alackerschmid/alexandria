@@ -489,6 +489,9 @@ const load = async () => {
 // stored ones, and the watcher below re-loads when either changes — so loading before they
 // arrive meant every cold load fetching the whole set twice.
 onMounted(async () => {
+  // Spinner up front, for the same reason: `load()` raises `loading` itself, but only once the
+  // preferences it waits for have arrived.
+  loading.value = true;
   await preferencesStore.whenReady();
   await Promise.all([load(), fieldDefsStore.load()]);
 });
