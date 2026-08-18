@@ -63,7 +63,10 @@ if (touchedAny(...TYPE_CHECKED)) {
 if (touchedAny(...LINTED)) {
   checks.push({ label: "lint", command: "npm run lint" });
 }
-if (touchedAny("src/utils/", "src/locales/", "test/")) {
+// `src/styles/` is here for `tailwind.css` — `test/appearance.spec.ts` reads it and fails when
+// its light/dark token values drift from the `warm` paper preset in `src/utils/appearance.ts`.
+// It is the only automated check any stylesheet in this repo has.
+if (touchedAny("src/utils/", "src/locales/", "src/styles/", "test/")) {
   checks.push({ label: "frontend tests", command: "npm test" });
 }
 if (touched("worker/")) {
