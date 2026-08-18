@@ -122,6 +122,7 @@
         >
           <CoverImage
             :cover-url="ed.cover_url"
+            :object-key="ed.cover_object_key"
             :title="displayTitle(ed)"
             :alt="displayTitle(ed)"
             text-class="text-[9px]"

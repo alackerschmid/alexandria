@@ -60,9 +60,11 @@ function isGoogleCoverUrl(url: URL): boolean {
  * both name cover id `-1`, whose URL redirects into the Internet Archive shard and answers **503**
  * (verified live for ISBN 9780060883287, and visible in this repo's captured browser console logs).
  *
- * `-1` is truthy, so a presence check lets it through — `work_edition_isbns` holds 18 such rows
- * today. Treating it as "no cover" is right: `CoverImage` then draws `PlaceholderCover` instead of
- * waiting on a request that cannot succeed.
+ * `-1` is truthy, so a presence check lets it through — `work_edition_isbns` holds **74** such rows
+ * in production (counted 2026-08-18; an earlier note here said 18, which was already stale).
+ * Treating it as "no cover" is right: `CoverImage` then draws `PlaceholderCover` instead of waiting
+ * on a request that cannot succeed. Note `books.cover_url` holds **none** — the sentinel only ever
+ * reached the candidate table, which is why the sweeper never trips over one.
  */
 function isDeletedOpenLibraryCover(url: URL): boolean {
   if (url.hostname !== "covers.openlibrary.org") return false;

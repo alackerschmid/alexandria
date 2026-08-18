@@ -62,10 +62,23 @@ ask the `inventory` subagent rather than expecting a list here.
   shelf, with their Google cookies attached — the same reason `markdown.ts` drops images from
   reviews and the fonts are self-hosted. **So pass `:object-key` wherever the book came from
   `GET /api/scans`**; omitting it silently reverts that book to hot-linking. Where a `cover_url`
-  and a key are carried side by side (`ShelfEntry`), they must be picked as a **pair** — a key that
-  doesn't belong to the URL beside it draws a different book's cover. Covers with no `books` row
-  behind them (search results, import candidates, unowned series entries) have no key and stay
-  upstream; `referrerpolicy="no-referrer"` on the `<img>` is the only mitigation there.
+  and a key are carried side by side (`ShelfEntry`), they must be picked as a **pair** — use
+  `pickCoverPair` in `utils/cover.ts` rather than re-deriving it, since a key that doesn't belong
+  to the URL beside it draws a different book's cover. `coverSrc` additionally ignores an
+  `objectKey` that isn't shaped like one (`isCoverKey`), because the `'-'` unavailable sentinel is
+  truthy and reaches the client raw from `/api/books/lookup`, `/guest-lookup` and `/books/refresh`,
+  which don't suppress it the way `buildScanSelect` does. A stored cover that 404s falls back to
+  `coverUrl` before the placeholder — D1 and the bucket can diverge, and a blank library is worse
+  than a hot-linked one. Covers with no `books` row behind them (import candidates, unowned series
+  entries) have no key and stay upstream; `referrerpolicy="no-referrer"` on the `<img>` is the only
+  mitigation there. **`scanner.vue` and `landing.vue` hand-roll their cover `<img>`s** rather than
+  using `CoverImage`, and deliberately keep doing so: their fallback is a bespoke orange spine
+  strip (or a book icon), not `PlaceholderCover`, and that is scanner/marketing chrome rather than
+  a library tile — the same exception the dark-hardcoded scanner buttons take. Each carries
+  `referrerpolicy` individually, and each has a local `coverFor()` that routes through `coverSrc`,
+  so the surfaces with a `books` row behind them (landing's `/books/sample` preview, the scanner's
+  detected book and session shelf) are served from our origin like everything else. The scanner's
+  *search results and candidates* have no row and stay upstream. Keep both on any new one.
 - **`ConfirmDialog` is the shared destructive-confirm dialog** (library delete, account
   delete, import cancel).
 - **Rating and review are stored per work, not per scan.** `useScanStatus`'s

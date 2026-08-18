@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { coverSrc, initials, tintFor } from "@/utils/cover";
+import {
+  coverSrc,
+  initials,
+  isCoverKey,
+  pickCoverPair,
+  tintFor,
+} from "@/utils/cover";
 
 describe("coverSrc", () => {
   const upstream =
@@ -34,6 +40,74 @@ describe("coverSrc", () => {
     expect(coverSrc(null, key, "")).toBe(
       "/api/covers/9780593081518/a1b2c3d4.jpg",
     );
+  });
+
+  it("falls back to the upstream URL for the '-' unavailable sentinel", () => {
+    // `buildScanSelect` suppresses it, but `GET /api/books/lookup`, `/guest-lookup` and
+    // `POST /api/books/refresh` all return the raw `books` row, sentinel included. It is truthy,
+    // so a presence check builds `/api/covers/-` — a hard 404 replacing a cover that still works.
+    expect(coverSrc(upstream, "-", "https://worker.example")).toBe(upstream);
+    expect(coverSrc(null, "-", "")).toBeNull();
+  });
+
+  it("ignores anything else that isn't shaped like a key", () => {
+    expect(coverSrc(upstream, "", "")).toBe(upstream);
+    expect(coverSrc(upstream, "not/a-key", "")).toBe(upstream);
+    expect(coverSrc(upstream, "../secrets/a1b2c3d4.jpg", "")).toBe(upstream);
+  });
+});
+
+describe("isCoverKey", () => {
+  it("accepts the shape the worker writes and rejects the sentinel", () => {
+    expect(isCoverKey("9780593081518/a1b2c3d4.jpg")).toBe(true);
+    expect(isCoverKey("0553813145/deadbeef.webp")).toBe(true);
+    expect(isCoverKey("-")).toBe(false);
+    expect(isCoverKey(null)).toBe(false);
+    expect(isCoverKey(undefined)).toBe(false);
+  });
+});
+
+describe("pickCoverPair", () => {
+  const owned = {
+    cover_url: "https://books.google.com/owned.jpg",
+    cover_object_key: "9780593081518/a1b2c3d4.jpg",
+  };
+
+  it("takes the key with the URL it belongs to", () => {
+    expect(pickCoverPair(owned, "https://covers.openlibrary.org/entry.jpg")).toEqual({
+      cover_url: owned.cover_url,
+      cover_object_key: owned.cover_object_key,
+    });
+  });
+
+  it("drops the key when the URL falls through to the series entry", () => {
+    // The bug this exists to prevent: an unowned placeholder entry rendering the *owned*
+    // representative book's stored cover, i.e. a different book's artwork under this title.
+    expect(pickCoverPair(undefined, "https://covers.openlibrary.org/entry.jpg")).toEqual({
+      cover_url: "https://covers.openlibrary.org/entry.jpg",
+      cover_object_key: null,
+    });
+    // Same when the owned book exists but has no cover of its own to contribute.
+    expect(
+      pickCoverPair(
+        { cover_url: null, cover_object_key: "9780593081518/a1b2c3d4.jpg" },
+        "https://covers.openlibrary.org/entry.jpg",
+      ),
+    ).toEqual({
+      cover_url: "https://covers.openlibrary.org/entry.jpg",
+      cover_object_key: null,
+    });
+  });
+
+  it("yields a clean pair when there is nothing on either side", () => {
+    expect(pickCoverPair(undefined, null)).toEqual({
+      cover_url: null,
+      cover_object_key: null,
+    });
+    expect(pickCoverPair({ cover_url: "https://x/a.jpg" }, null)).toEqual({
+      cover_url: "https://x/a.jpg",
+      cover_object_key: null,
+    });
   });
 });
 

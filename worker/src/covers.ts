@@ -32,13 +32,19 @@ const HASH_LENGTH = 8;
  */
 export const COVER_UNAVAILABLE = "-";
 
-/** Only image types we are willing to store, mapped to the extension the key carries. */
-const EXTENSIONS: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/gif": "gif",
-  "image/webp": "webp",
-};
+/**
+ * Only image types we are willing to store, mapped to the extension the key carries.
+ *
+ * A `Map` rather than an object literal: an object's `constructor` and `__proto__` are reachable
+ * through a bare index and answer truthy non-strings, and a lookup that can return
+ * `function Object() {…}` has no business deciding whether a response body is an image.
+ */
+const EXTENSIONS = new Map<string, string>([
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/gif", "gif"],
+  ["image/webp", "webp"],
+]);
 
 /**
  * Ceiling on a stored cover. Google's `zoom=3` covers run to ~240 KB and OpenLibrary's `-L` to
@@ -85,10 +91,49 @@ export function coverKeyFor(
   contentType: string | null,
   hash: string,
 ): string | null {
-  const extension = EXTENSIONS[(contentType ?? "").split(";")[0].trim()];
+  const extension = coverExtension(contentType);
   if (!extension) return null;
   const key = `${isbn}/${hash}.${extension}`;
   return isCoverKey(key) ? key : null;
+}
+
+/**
+ * The extension we store a content type under, or undefined for one we will not store. The essence
+ * is lowercased because HTTP media types are case-insensitive and `IMAGE/JPEG` is a real header.
+ */
+function coverExtension(contentType: string | null): string | undefined {
+  return EXTENSIONS.get((contentType ?? "").split(";")[0].trim().toLowerCase());
+}
+
+/**
+ * What an upstream status means for a cover: read the body, give up permanently, or try again.
+ *
+ * Pure and exported because this — not the fetching around it — is the decision `COVER_UNAVAILABLE`
+ * exists to get right, and the repo's test scope has no D1 or miniflare to reach it through
+ * `storeCover`. Collapsing `retry` into `unavailable` marks every book that hit one upstream blip
+ * as coverless forever; collapsing `unavailable` into `retry` re-fetches a dead URL every two
+ * minutes forever, out of the budget it shares with enrichment. Neither has a test that fails
+ * unless this is callable on its own.
+ */
+export function classifyCoverStatus(
+  status: number,
+): "read" | "unavailable" | "retry" {
+  // 404/410 is the source saying the image is gone; anything else non-OK might not be.
+  if (status === 404 || status === 410) return "unavailable";
+  return status >= 200 && status < 300 ? "read" : "retry";
+}
+
+/**
+ * Whether a body we did read is one we are willing to store. Every `false` here is a *permanent*
+ * answer — the request succeeded, so retrying it changes nothing: an HTML error page, an SVG, a
+ * type we do not serve, or a body too large to be the cover it claims to be.
+ */
+export function isStorableCover(
+  contentType: string | null,
+  byteLength: number,
+): boolean {
+  if (byteLength === 0 || byteLength > MAX_COVER_BYTES) return false;
+  return coverExtension(contentType) !== undefined;
 }
 
 /** What one book's localization attempt concluded. `skip` writes nothing and is retried. */
@@ -114,9 +159,11 @@ async function storeCover(
       url,
       usage,
       async (res) => {
-        // 404/410 is the source saying the image is gone; anything else non-OK might not be.
-        if (res.status === 404 || res.status === 410) return null;
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const disposition = classifyCoverStatus(res.status);
+        if (disposition === "unavailable") return null;
+        // Thrown so the `catch` below reads it as transient, alongside the network error and the
+        // timeout. The body is deliberately not read: on a 5xx it is an error page we discard.
+        if (disposition === "retry") throw new Error(`HTTP ${res.status}`);
         return {
           bytes: await res.arrayBuffer(),
           contentType: res.headers.get("content-type"),
@@ -131,7 +178,7 @@ async function storeCover(
   }
 
   if (!fetched) return { kind: "unavailable" };
-  if (fetched.bytes.byteLength === 0 || fetched.bytes.byteLength > MAX_COVER_BYTES)
+  if (!isStorableCover(fetched.contentType, fetched.bytes.byteLength))
     return { kind: "unavailable" };
 
   const key = coverKeyFor(
@@ -139,8 +186,8 @@ async function storeCover(
     fetched.contentType,
     await coverHash(fetched.bytes),
   );
-  // A 200 that isn't an image we store — an HTML error page, an SVG, a type we don't serve. The
-  // request succeeded, so retrying it changes nothing.
+  // Only reachable now for an `isbn` the key charset rejects, `isStorableCover` having already
+  // ruled on the body. Still permanent: the row's ISBN is not going to change either.
   if (!key) return { kind: "unavailable" };
 
   await env.COVERS.put(key, fetched.bytes, {

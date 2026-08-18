@@ -891,9 +891,13 @@ async function fetchEditionsForWorkKey(
       // written before this keep `-M` — `saveEditionCandidates` is INSERT OR IGNORE and discovery
       // only runs for a work with no candidates yet — so the grid mixes both sizes until a work is
       // rediscovered. Accepted: it is a thumbnail grid, not the cover the detail view shows.
-      // No presence check on `covers[0]`: `-1` is OpenLibrary's deleted-cover sentinel and truthy,
-      // so the helper tests the id itself and answers null.
-      cover_url: openLibraryCoverUrlById(e.covers?.[0]),
+      // The first *usable* id, not `covers[0]`: `-1` is OpenLibrary's deleted-cover sentinel and
+      // truthy, so a presence check let it through — and an edition whose `covers` is `[-1, 12345]`
+      // then lost a real cover it had, since only index 0 was ever read. The helper still tests the
+      // id it is given, so an all-sentinel array falls out as null either way.
+      cover_url: openLibraryCoverUrlById(
+        e.covers?.find((id: number) => Number(id) > 0),
+      ),
       publish_date: e.publish_date ?? null,
       publisher: e.publishers?.[0] ?? null,
     });

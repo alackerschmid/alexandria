@@ -16,6 +16,7 @@
              novella markers, none of which this row is about. -->
         <CoverImage
           :cover-url="book.cover_url"
+          :object-key="book.cover_object_key"
           :title="book.title"
           :alt="book.title ?? ''"
           text-class="text-[20px]"

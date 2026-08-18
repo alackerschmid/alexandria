@@ -23,8 +23,42 @@ export function coverSrc(
   objectKey?: string | null,
   base: string = API_BASE,
 ): string | null {
-  if (objectKey) return `${base}/api/covers/${objectKey}`;
+  if (isCoverKey(objectKey)) return `${base}/api/covers/${objectKey}`;
   return coverUrl ?? null;
+}
+
+/**
+ * `<isbn>/<8 hex>.<ext>` — the key shape the worker's `covers.ts` writes, mirrored here.
+ *
+ * The client needs its own copy because a key can reach it from a route that does *not* suppress
+ * the `'-'` unavailable sentinel: `buildScanSelect` filters it out, but `GET /api/books/lookup`,
+ * `/guest-lookup` and `POST /api/books/refresh` all return the raw `books` row. `'-'` is truthy,
+ * so a presence check would build `/api/covers/-` and 404 a book whose `cover_url` still works.
+ */
+const COVER_KEY = /^[\dA-Za-z-]{1,32}\/[\da-f]{8}\.(?:jpg|png|gif|webp)$/;
+
+export function isCoverKey(key: string | null | undefined): key is string {
+  return typeof key === "string" && COVER_KEY.test(key);
+}
+
+/**
+ * A cover URL and the stored-object key that belongs to **it**, chosen together.
+ *
+ * The two must be picked as a pair or the `<img>` draws a different book's artwork: a shelf entry
+ * falls back from the owned book's cover to an unowned series entry's, and a key carried across
+ * that fall-through still points at the owned book's object. Taking the key only when the owned
+ * book is also what supplied the URL is the whole rule — see `ShelfEntry` in `shelf-packing.ts`.
+ */
+export function pickCoverPair(
+  owned: { cover_url: string | null; cover_object_key?: string | null } | undefined,
+  fallbackUrl: string | null | undefined,
+): { cover_url: string | null; cover_object_key: string | null } {
+  if (owned?.cover_url)
+    return {
+      cover_url: owned.cover_url,
+      cover_object_key: owned.cover_object_key ?? null,
+    };
+  return { cover_url: fallbackUrl ?? null, cover_object_key: null };
 }
 
 const TINTS = [

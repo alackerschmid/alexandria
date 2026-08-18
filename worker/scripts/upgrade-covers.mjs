@@ -33,6 +33,14 @@
 // from then on, so a later run will not go looking for Google's 575px version for it. Probing for
 // tier 1 needs the Google volume id, which only a Google URL carries.
 //
+// Each UPDATE also sets `cover_object_key = NULL`, and that is not incidental. The sweeper stores a
+// copy of the cover in R2 (`src/covers.ts`) and the client prefers that object over `cover_url`, so
+// re-pointing the URL alone changes nothing a reader sees: the due predicate is
+// `cover_object_key IS NULL`, a localized row is never revisited, and the old image would be served
+// under an `immutable` header for a year. Clearing the key puts the row back in the sweeper's queue,
+// which fetches the upgraded image within a tick or two. The superseded R2 object is left behind —
+// nothing prunes the bucket today, and at ~1,200 covers that is not worth a reaper yet.
+//
 // This script WRITES NOTHING. It prints a plan and emits SQL for review; apply it yourself:
 //
 //   node scripts/upgrade-covers.mjs                          # probe + plan (nothing written)
@@ -60,6 +68,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const DB = "bookscan";
 // Kept as two literals rather than one with a substituted predicate, so the SELECT the `--in`
@@ -98,10 +107,18 @@ const IN_FILE = value("--in", null);
 const log = (...m) => console.error(...m);
 
 // ---------------------------------------------------------------------------------------------
-// URL predicates and builders — mirror src/cover-url.ts, which a .mjs cannot import. Keep the two
-// in sync. They are written against a parsed URL here for the same reason the module is: the
-// string-regex versions disagreed with it on an uppercased host, an explicit `:443`, and a
-// `/books` path with no trailing segment.
+// URL predicates and builders — mirror src/cover-url.ts, which a .mjs cannot import. They are
+// written against a parsed URL here for the same reason the module is: the string-regex versions
+// disagreed with it on an uppercased host, an explicit `:443`, and a `/books` path with no
+// trailing segment.
+//
+// "Keep the two in sync" is now enforced rather than asked for: the shared ones are exported and
+// `test/upgrade-covers.spec.ts` runs both implementations over one table of URLs. Two divergences
+// there are *deliberate* and asserted as such — `normalizeCoverUrl` here does not drop the deleted
+// -cover sentinel (the script has to still recognise such a row in order to re-point it), and the
+// script has no `pickCoverUrl` at all. Anything else that drifts fails the suite, which is what
+// the comment alone could not do: the script's output is UPDATEs against production, and a
+// drifted `currentTier` emits the cover *downgrades* the tier check exists to prevent.
 // ---------------------------------------------------------------------------------------------
 
 function parseUrl(url) {
@@ -123,12 +140,12 @@ function isGoogleCoverUrl(parsed) {
   return parsed.pathname === "/books" || parsed.pathname.startsWith("/books/");
 }
 
-const isGoogleCover = (url) => isGoogleCoverUrl(parseUrl(url));
+export const isGoogleCover = (url) => isGoogleCoverUrl(parseUrl(url));
 const isOpenLibraryCover = (url) =>
   parseUrl(url)?.hostname === "covers.openlibrary.org";
 
 /** Mirrors `isGoogleThumbnail`: `zoom=1`, or no zoom, is Google's 128px image. */
-function isGoogleThumbnail(url) {
+export function isGoogleThumbnail(url) {
   const parsed = parseUrl(url);
   if (!isGoogleCoverUrl(parsed)) return false;
   const zoom = parsed.searchParams.get("zoom");
@@ -136,13 +153,13 @@ function isGoogleThumbnail(url) {
 }
 
 /** Mirrors `isDeletedOpenLibraryCover`: cover id `-1` is their removed-cover sentinel, and 503s. */
-const isDeletedOpenLibraryCover = (url) =>
+export const isDeletedOpenLibraryCover = (url) =>
   /\/b\/id\/(?:-\d+|0+)-[SML]\.jpg(?:\?|$)/.test(url);
 
 // Deliberately does *not* drop the deleted-cover sentinel the way the module's version does. Here
 // this is only the "keep what we have, tidied" fallback, and a row holding a `-1` URL is tier 3,
 // so it is already being probed for a replacement.
-function normalizeCoverUrl(url) {
+export function normalizeCoverUrl(url) {
   if (!url) return null;
   const parsed = parseUrl(url);
   if (!parsed) return url;
@@ -157,7 +174,7 @@ const TIER_OPENLIBRARY_L = 2;
 const TIER_NONE = 3;
 
 /** What tier the URL a row already holds sits at — the check whose absence caused the downgrades. */
-function currentTier(url) {
+export function currentTier(url) {
   if (!url) return TIER_NONE;
   if (isGoogleCover(url))
     return isGoogleThumbnail(url) ? TIER_NONE : TIER_GOOGLE_LARGE;
@@ -170,7 +187,7 @@ function currentTier(url) {
   return TIER_NONE;
 }
 
-function googleCoverAtZoom(url, zoom) {
+export function googleCoverAtZoom(url, zoom) {
   try {
     const parsed = new URL(url);
     parsed.searchParams.delete("edge");
@@ -183,7 +200,7 @@ function googleCoverAtZoom(url, zoom) {
 
 // `default=false` makes a missing cover a 404 instead of a 1x1 placeholder — the only way to tell
 // "OpenLibrary has no cover for this ISBN" from "here is a blank image".
-const openLibraryCoverByIsbn = (isbn) =>
+export const openLibraryCoverByIsbn = (isbn) =>
   `https://covers.openlibrary.org/b/isbn/${encodeURIComponent(isbn)}-L.jpg?default=false`;
 
 // `default=false` is a probe-only argument: stored, it would make a cover later removed from
@@ -442,21 +459,32 @@ function render({ plan, skipped }, total) {
   const out = [
     "-- Generated by scripts/upgrade-covers.mjs. Every statement carries the old value, so a row",
     "-- changed since the probe is skipped rather than overwritten; re-running is safe.",
+    "-- cover_object_key is cleared alongside: the stored R2 object is the *old* image, and the",
+    "-- sweeper's due predicate is `cover_object_key IS NULL`, so without this the upgrade is",
+    "-- invisible — the client prefers the key and would keep serving the thumbnail forever.",
   ];
   for (const p of plan) {
     const guard = p.from === null ? "cover_url IS NULL" : `cover_url = ${q(p.from)}`;
     out.push(
-      `UPDATE books SET cover_url = ${q(p.to)} WHERE isbn = ${q(p.isbn)} AND ${guard};  -- ${p.why} ${p.size}`,
+      `UPDATE books SET cover_url = ${q(p.to)}, cover_object_key = NULL WHERE isbn = ${q(p.isbn)} AND ${guard};  -- ${p.why} ${p.size}`,
     );
   }
   out.push(
     "",
     "-- Verify: no 128px Google thumbnails should be left for books OpenLibrary has a cover for.",
     "SELECT COUNT(*) AS google_thumbnails FROM books WHERE cover_url LIKE '%books.google%zoom=1%';",
+    "-- And that the touched rows are queued for re-fetch rather than still serving the old object.",
+    "-- This one is the check that matters: the query above reports success either way.",
+    "SELECT COUNT(*) AS awaiting_refetch FROM books WHERE cover_object_key IS NULL AND cover_url IS NOT NULL;",
   );
   return out.join("\n");
 }
 
-const all = loadRows();
-const rows = LIMIT ? all.slice(0, LIMIT) : all;
-console.log(render(await buildPlan(rows), rows.length));
+// Only when invoked as a script. The predicates above are imported by
+// `test/upgrade-covers.spec.ts` to prove they still agree with `src/cover-url.ts`, and importing
+// this module must not shell out to wrangler to do it.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const all = loadRows();
+  const rows = LIMIT ? all.slice(0, LIMIT) : all;
+  console.log(render(await buildPlan(rows), rows.length));
+}
