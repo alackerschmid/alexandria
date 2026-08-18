@@ -248,6 +248,9 @@ const props = defineProps<{
   parsedSearch: ParsedSearch;
   facetEntries: SuggestionFacet[];
   baseFiltered: Book[];
+  /** The list's edition-grouping preference, so title suggestions collapse by work exactly when
+   *  the cards they point at do. */
+  groupEditions: boolean;
   customFieldMetas: CustomFieldMeta[];
   totalCount: number;
   filteredCount: number;
@@ -277,6 +280,7 @@ const { searchFragment, searchSegments, suggestions, dropdownHeading, showAllPre
     knownKeys: toRef(props, "knownKeys"),
     facetEntries: toRef(props, "facetEntries"),
     baseFiltered: toRef(props, "baseFiltered"),
+    groupEditions: toRef(props, "groupEditions"),
     customFieldMetas: toRef(props, "customFieldMetas"),
   });
 

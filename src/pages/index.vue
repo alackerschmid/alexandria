@@ -38,6 +38,7 @@
       :parsed-search="parsedSearch"
       :facet-entries="facetEntries"
       :base-filtered="baseFiltered"
+      :group-editions="groupEditions"
       :custom-field-metas="customFieldMetas"
       :total-count="allBooks.length"
       :filtered-count="groupedFiltered.length"
