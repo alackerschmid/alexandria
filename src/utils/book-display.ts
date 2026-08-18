@@ -231,3 +231,17 @@ export function formatPublishDate(
   }
   return date;
 }
+
+/**
+ * Turns literal `<br>` tags into real newlines.
+ *
+ * Wikidata literals are plain strings, but editors transcribing verse reach for `<br>` to keep the
+ * lines apart, so the tag arrives as text and renders as text. Epigraphs are where this shows,
+ * being the one field that is usually a poem. Only the break is translated: the result stays a
+ * string bound with `{{ }}` and displayed with `white-space: pre-line`, so no third-party metadata
+ * is ever interpreted as markup. Reviews, which are user-authored and genuinely rich, keep going
+ * through renderMarkdown/DOMPurify instead (utils/markdown.ts) — that path is not for this.
+ */
+export function unescapeLineBreaks(text: string): string {
+  return text.replace(/<br\s*\/?>/gi, "\n");
+}

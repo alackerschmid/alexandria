@@ -270,6 +270,8 @@
     "cancel": "Cancel",
     "remove": "Remove",
     "error_update_status": "Failed to update status",
+    "error_load": "We couldn't reach the server. Your library is still there — this is a connection problem.",
+    "error_retry": "Retry",
     "error_delete": "Failed to delete book",
     "filter_missing": "Missing data",
     "missing_cover": "No cover",

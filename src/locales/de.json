@@ -270,6 +270,8 @@
     "cancel": "Abbrechen",
     "remove": "Entfernen",
     "error_update_status": "Status konnte nicht aktualisiert werden",
+    "error_load": "Der Server ist nicht erreichbar. Deine Bibliothek ist noch da — das ist ein Verbindungsproblem.",
+    "error_retry": "Erneut versuchen",
     "error_delete": "Buch konnte nicht gelöscht werden",
     "filter_missing": "Fehlende Daten",
     "missing_cover": "Kein Cover",

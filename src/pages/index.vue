@@ -287,6 +287,8 @@
     </div>
 
     <!-- ── Error ────────────────────────────────────────────────────────────── -->
+    <!-- Carries its own retry: the failure this most often reports is a worker that was briefly
+         unreachable, and asking the reader to reload the whole SPA to find out is a poor answer. -->
     <div
       v-if="error"
       class="mx-6 md:mx-10 mt-6 pl-4 py-2 border-l-2 text-sm"
@@ -296,11 +298,24 @@
       "
     >
       {{ error }}
+      <v-btn
+        variant="text"
+        color="error"
+        rounded="0"
+        size="small"
+        class="text-[10px] tracking-[0.15em] uppercase px-0 ml-3"
+        :loading="loading"
+        @click="loadLibrary"
+      >
+        {{ $t("library.error_retry") }}
+      </v-btn>
     </div>
 
     <!-- ── Empty library ────────────────────────────────────────────────────── -->
+    <!-- Gated on a load having actually succeeded. "Nothing here yet — scan your first book" over
+         a library that failed to load is indistinguishable from having lost it. -->
     <div
-      v-if="!loading && allBooks.length === 0"
+      v-if="!loading && !error && hasLoadedLibrary && allBooks.length === 0"
       class="px-6 md:px-10 pt-16 pb-8"
     >
       <p class="font-heading text-3xl font-bold text-text-primary mb-3">
@@ -763,8 +778,18 @@ const isGuest = computed(() => !authStore.isAuthenticated);
 // ── State ─────────────────────────────────────────────────────────────────────
 
 const loading = ref(false);
-const { serverBooks, seriesMemberships, error, fetchBooks, fetchMemberships } =
-  useLibraryData();
+const {
+  serverBooks,
+  seriesMemberships,
+  error,
+  hasLoaded,
+  fetchBooks,
+  fetchMemberships,
+} = useLibraryData();
+
+// A guest's books live in the store and were never fetched, so there is nothing to have loaded —
+// their empty shelf is genuinely empty and shows the first-scan state immediately.
+const hasLoadedLibrary = computed(() => isGuest.value || hasLoaded.value);
 
 const search = ref("");
 // Persisted display settings bind straight to the store's writable refs (each
@@ -1197,17 +1222,20 @@ watch(search, (val) => {
 // Freshly fetched rows supersede any pinned status buckets from in-place edits.
 const clearStatusPins = () => statusOverrides.value.clear();
 
-onMounted(async () => {
-  if (authStore.isAuthenticated) {
-    loading.value = true;
-    await Promise.all([
-      fetchBooks(clearStatusPins),
-      fetchMemberships(),
-      fieldDefsStore.load(),
-    ]);
-    loading.value = false;
-  }
-});
+// Shared by the initial load and the error panel's retry, so a retry re-runs exactly what mount
+// ran — including the field definitions, which fail with the same worker.
+async function loadLibrary() {
+  if (!authStore.isAuthenticated) return;
+  loading.value = true;
+  await Promise.all([
+    fetchBooks(clearStatusPins),
+    fetchMemberships(),
+    fieldDefsStore.load(),
+  ]);
+  loading.value = false;
+}
+
+onMounted(loadLibrary);
 
 watch(
   () => localeStore.locale,

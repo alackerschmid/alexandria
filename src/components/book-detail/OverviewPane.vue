@@ -45,12 +45,14 @@
       </p>
     </div>
 
+    <!-- `whitespace-pre-line` because an epigraph is usually verse and arrives with its line
+         breaks encoded as `<br>` — see unescapeLineBreaks. -->
     <div v-if="book.epigraph" class="mb-8">
       <div class="micro-label mb-3">{{ $t("detail.epigraph") }}</div>
       <p
-        class="text-sm md:text-[15px] leading-[1.8] text-text-secondary italic border-l-2 border-charcoal-border pl-4"
+        class="text-sm md:text-[15px] leading-[1.8] text-text-secondary italic border-l-2 border-charcoal-border pl-4 whitespace-pre-line"
       >
-        {{ book.epigraph }}
+        {{ unescapeLineBreaks(book.epigraph) }}
       </p>
     </div>
 
@@ -74,6 +76,7 @@
 <script lang="ts" setup>
 import { nextTick, onUnmounted, ref, useTemplateRef, watch } from "vue";
 import OverrideDot from "@/components/OverrideDot.vue";
+import { unescapeLineBreaks } from "@/utils/book-display";
 import type { BookWithOverrides } from "@/types/book";
 
 // What the book is about, in the publisher's words and the author's first. The tab is offered for
