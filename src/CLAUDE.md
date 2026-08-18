@@ -172,7 +172,9 @@ outlines), `text-orange-neon`, `text-text-primary`, `text-text-secondary`.
 
 Accent, paper and typeface are user-overridable at runtime, and scrollbars are restyled
 globally — see the `appearance` rule before touching `tailwind.css`,
-`src/utils/appearance.ts` or the font config in `vite.config.mts`.
+`src/utils/appearance.ts` or the font config in `vite.config.mts`. The paper tokens above are
+mirrored by the `warm` preset in `appearance.ts`, and `test/appearance.spec.ts` fails `npm test`
+if the two drift — editing one side only is a failing turn, not a silent divergence.
 
 **Breakpoints** (identical in Tailwind and Vuetify): `sm` 600px / `md` 840px / `lg` 1145px /
 `xl` 1545px — `md` is the mobile/desktop threshold.
