@@ -45,6 +45,24 @@ export const usePreferencesStore = defineStore("preferences", () => {
   // Set by `seed` just before a login flips the token; consumed by the watcher below.
   let pendingSeed: Prefs | null = null;
 
+  // `locale` is a preference, and every bootstrap fetch in the app is locale-scoped — so a page
+  // that fetches before the stored preferences land fetches under the default locale and then
+  // again when the real one arrives and its locale watcher fires. `whenReady` is what a page
+  // awaits to make that one request instead of two. It settles when the current user's
+  // preferences have: immediately for a logged-out visitor and for a login (which arrives
+  // seeded), and after the GET for a token restored from localStorage on boot.
+  let markReady: () => void = () => {};
+  let readyPromise: Promise<void> = Promise.resolve();
+
+  function startHydration() {
+    markReady(); // never leave a waiter from the previous token hanging
+    readyPromise = new Promise<void>((resolve) => (markReady = resolve));
+  }
+
+  function whenReady(): Promise<void> {
+    return readyPromise;
+  }
+
   function get(key: string): string | null {
     return values.value[key] ?? null;
   }
@@ -155,13 +173,21 @@ export const usePreferencesStore = defineStore("preferences", () => {
       currentUser = authStore.userId;
       const seeded = pendingSeed;
       pendingSeed = null;
+      startHydration();
       if (!currentUser) {
         values.value = {};
+        markReady();
         return;
       }
       values.value = readCache(currentUser);
-      if (seeded) void applyServerPrefs(seeded, revision);
-      else void loadFromServer(revision);
+      if (seeded) {
+        // The blob rode in on the login response, so nothing is outstanding that could still
+        // change the locale.
+        void applyServerPrefs(seeded, revision);
+        markReady();
+      } else {
+        void loadFromServer(revision).finally(markReady);
+      }
     },
     { immediate: true },
   );
@@ -171,7 +197,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     window.addEventListener("pagehide", () => persist({ keepalive: true }));
   }
 
-  return { get, set, seed };
+  return { get, set, seed, whenReady };
 });
 
 // The read-validate-fallback/write-through wrapper every consuming store needs: one preference

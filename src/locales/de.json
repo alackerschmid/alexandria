@@ -247,7 +247,7 @@
     "group_location": "Handlungsort",
     "standalone": "Einzelbände",
     "series_completeness": "{owned} von {total}",
-    "total_count": "{n} Titel",
+    "total_count": "{n} Titel | {n} Titel",
     "filtered_count": "{n} angezeigt",
     "edition_count": "{n} Ausgaben im Besitz",
     "filter_status": "Status",

@@ -248,7 +248,7 @@
     "group_location": "Setting",
     "standalone": "Standalone",
     "series_completeness": "{owned} of {total}",
-    "total_count": "{n} titles",
+    "total_count": "{n} title | {n} titles",
     "filtered_count": "{n} shown",
     "edition_count": "{n} editions owned",
     "filter_status": "Status",

@@ -131,7 +131,10 @@
       </section>
 
       <!-- Recently added -->
-      <section v-if="recent.length" class="pt-5 border-t border-charcoal-border">
+      <section
+        v-if="recentInScope.length"
+        class="pt-5 border-t border-charcoal-border"
+      >
         <header class="flex justify-between items-baseline gap-3 mb-4">
           <h2
             class="font-mono text-[9px] tracking-[0.3em] uppercase text-orange-neon"
@@ -146,7 +149,7 @@
             &rarr;
           </router-link>
         </header>
-        <RecentlyAdded :books="recent" />
+        <RecentlyAdded :books="recentInScope" />
       </section>
 
       <!-- Gaps + oddities -->
@@ -260,6 +263,7 @@ import { useLocaleStore } from "@/stores/locale";
 import { useFieldDefsStore } from "@/stores/fieldDefs";
 import { useStatsDefaultsStore } from "@/stores/statsDefaults";
 import { useLibraryDefaultsStore } from "@/stores/libraryDefaults";
+import { usePreferencesStore } from "@/stores/preferences";
 import AppHeader from "@/components/AppHeader.vue";
 import AppToast from "@/components/AppToast.vue";
 import AppButton from "@/components/AppButton.vue";
@@ -271,7 +275,7 @@ import { useApi } from "@/composables/useApi";
 import { useToast } from "@/composables/useToast";
 import type { SeriesMemberships } from "@/composables/useShelfGroups";
 import { BCP47 } from "@/plugins/i18n";
-import type { Book } from "@/types/book";
+import type { Book, OwningStatus } from "@/types/book";
 import type {
   CollectionStats,
   SpotlightBook,
@@ -285,6 +289,10 @@ import { greetingKey, greetingName } from "@/utils/greeting";
 /** Covers in the recently-added strip. Deliberately small — this is a landing page, not the
  *  library, and the strip scrolls rather than paginating. */
 const RECENT_LIMIT = 12;
+/** Rows asked for, before the collection scope is applied. `GET /api/scans` takes no `?scope=`,
+ *  so the strip is filtered on the client and has to draw from a wider window than it shows or a
+ *  run of out-of-scope arrivals empties it. Still a fraction of the library's 500-row page. */
+const RECENT_FETCH = 48;
 /** Series named before the block defers to `/stats` for the rest. */
 const GAP_ROWS = 4;
 
@@ -296,6 +304,7 @@ const fieldDefsStore = useFieldDefsStore();
 // independently, or an import-only library shows a blank home while `/stats` offers the fix.
 const { scope } = storeToRefs(useStatsDefaultsStore());
 const libraryDefaults = useLibraryDefaultsStore();
+const preferencesStore = usePreferencesStore();
 const { apiFetch } = useApi();
 const { visible: errorToast, message: errorMessage, showToast } = useToast();
 
@@ -365,14 +374,35 @@ const unscopedCount = computed(() => countOutsideScope(statsData.value));
 
 // ── Blocks ────────────────────────────────────────────────────────────────────
 
+// The hero counts the collection scope, so everything under it must too. This strip used to be
+// unscoped — the documented divergence — which under the default Owned scope on an imported
+// library read "3 books" over a row of seventeen covers. `/api/scans` has no `?scope=`, so the
+// gate is applied here, using the same pair of statuses the server's own ownership gate does.
+const OWNED_STATUSES: ReadonlySet<OwningStatus> = new Set([
+  "owned",
+  "lent_out",
+]);
+
+const recentInScope = computed(() =>
+  (scope.value === "owned"
+    ? recent.value.filter((b) => OWNED_STATUSES.has(b.owning_status))
+    : recent.value
+  ).slice(0, RECENT_LIMIT),
+);
+
 // Honours the library's "Count novellas & side stories" setting, which is what that setting says
 // it does ("Include non-whole-numbered entries in series counts") — these gaps are series counts.
 // Reading the shared preference rather than deciding locally is what keeps this row, the stats
 // page's completeness block and the library shelf from each claiming a different "N missing".
+// Unnamed series are dropped rather than rendered through `stats.series_unnamed`: a dashboard
+// row reading "Untitled series — 3 missing" reads as corrupted data, and the reader can do
+// nothing with it. The name is `COALESCE(series_names.name, series.canonical_name)` server-side,
+// so it is missing exactly when Wikidata found a series but nothing has named it yet — the empty
+// string is checked as well as null, since COALESCE happily returns one.
 const incompleteSeries = computed(() =>
   summarizeSeries(memberships.value, {
     mainOnly: libraryDefaults.mainOnly,
-  }).rows.filter((r) => !r.complete),
+  }).rows.filter((r) => !r.complete && !!r.name?.trim()),
 );
 
 // Owned-only, matching `/stats`. `/api/series` takes no scope and answers against its own
@@ -404,17 +434,13 @@ const load = async () => {
   // scope's blocks under an already-switched preference.
   loading.value = true;
   try {
-    // Three requests rather than one, run in parallel. `/api/scans?limit=12` is far lighter than
-    // the library's 500-row page, and a landing page can afford the fan-out.
-    //
-    // Known divergence: `GET /api/scans` takes no `?scope=`, so the recently-added strip can
-    // include `want`/`unknown` books while the rest of the page is scoped. For an import-only
-    // library that is the friendlier miss — the strip still shows books. Same class of gap as
-    // the one `CatalogueGaps.vue` documents for its library deep-links.
+    // Three requests rather than one, run in parallel. Even at RECENT_FETCH rows `/api/scans` is
+    // far lighter than the library's 500-row page, and a landing page can afford the fan-out.
+    // The scope that request can't express is applied to the result in `recentInScope`.
     const [statsRes, scansRes, seriesRes] = await Promise.all([
       apiFetch(`/api/stats?locale=${locale}&scope=${requestedScope}`),
       apiFetch(
-        `/api/scans?limit=${RECENT_LIMIT}&sort=date_desc&locale=${locale}`,
+        `/api/scans?limit=${RECENT_FETCH}&sort=date_desc&locale=${locale}`,
       ),
       apiFetch(`/api/series?locale=${locale}`),
     ]);
@@ -459,7 +485,13 @@ const load = async () => {
   }
 };
 
-onMounted(() => Promise.all([load(), fieldDefsStore.load()]));
+// Preferences first: both the locale and the collection scope this page fetches under are
+// stored ones, and the watcher below re-loads when either changes — so loading before they
+// arrive meant every cold load fetching the whole set twice.
+onMounted(async () => {
+  await preferencesStore.whenReady();
+  await Promise.all([load(), fieldDefsStore.load()]);
+});
 
 watch([() => localeStore.locale, scope], () => load());
 </script>

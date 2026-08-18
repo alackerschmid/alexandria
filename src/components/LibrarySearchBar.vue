@@ -22,7 +22,7 @@
       <span
         class="font-mono text-[11px] text-text-secondary/60 tracking-[0.08em]"
       >
-        {{ $t("library.total_count", { n: totalCount }) }}
+        {{ $t("library.total_count", { n: totalCount }, totalCount) }}
       </span>
     </div>
 
@@ -126,7 +126,7 @@
               >{{ dropdownHeading }}</span
             >
             <span class="font-mono text-[10px] text-text-secondary/50">{{
-              $t("library.filtered_count", { n: filteredCount })
+              $t("library.filtered_count", { n: totalCount })
             }}</span>
           </div>
 
@@ -252,8 +252,10 @@ const props = defineProps<{
    *  the cards they point at do. */
   groupEditions: boolean;
   customFieldMetas: CustomFieldMeta[];
+  /** Cards the list is currently showing: collapsed by work, and filtered by the active query.
+   *  One number for both the heading and the dropdown — they were a raw edition count and a
+   *  collapsed one, so the heading claimed a total the list below it then contradicted. */
   totalCount: number;
-  filteredCount: number;
   /** From useLibrarySearch — removes a structured token from the query string. */
   removeToken: (token: string) => void;
 }>();
