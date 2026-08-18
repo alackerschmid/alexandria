@@ -38,7 +38,7 @@ function updateStatus(shelf: string, status: string) {
       <div>
         <p class="text-[14px] text-text-primary truncate">{{ shelf }}</p>
         <p class="text-[11px] text-text-secondary">
-          {{ t("import.mapping.count", { n: count }) }}
+          {{ t("import.mapping.count", { n: count }, count) }}
         </p>
       </div>
       <div>

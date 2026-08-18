@@ -1442,8 +1442,12 @@ function onIsbnInput(e: Event) {
 const submitManualIsbn = () => {
   const isbn = manualIsbn.value;
   if (isbn.length !== 10 && isbn.length !== 13) return;
+  if (scanState.value !== "scanning" && scanState.value !== "preview") return;
   manualIsbn.value = "";
-  onBarcodeDetected(isbn.toUpperCase());
+  // Straight to the detection flow, like the title-search path: routing typed entry through
+  // onBarcodeDetected meant its camera guards swallowed the second submit of an ISBN, so an
+  // already-owned one cleared the field and said nothing.
+  presentDetection(isbn.toUpperCase());
 };
 
 // Desktop: start the webcam on demand from the manual-entry screen.
@@ -1504,9 +1508,7 @@ const submitTitleSearch = async () => {
   }
 };
 
-// Title search: user picked a candidate. Inline the detection flow rather than going through
-// onBarcodeDetected, which has camera-specific guards (sessionScanned) that would silently
-// no-op if the user had previously looked at this book in the same session.
+// Title search: user picked a candidate.
 const selectCandidate = async (candidate: EditionCandidate) => {
   if (scanState.value !== "scanning" && scanState.value !== "preview") return;
   const isbn = candidate.isbn.toUpperCase();
@@ -1515,37 +1517,15 @@ const selectCandidate = async (candidate: EditionCandidate) => {
   searchResults.value = [];
   searchState.value = "idle";
 
-  const duplicate = libraryBooks.has(isbn);
-  scanState.value = "detecting";
-  flash.value = true;
-  navigator.vibrate?.(50);
-  setTimeout(() => (flash.value = false), 200);
-
-  const result = await lookupBook(isbn);
-  detectedBook.value = {
-    // The candidate's title/author are carried so the *save* keeps them (`guestStore.addScan`
-    // reads them straight off this object). The sheet itself does not show them: its title and
-    // author lines are both gated on `!notFound`, so a failed lookup renders the same
-    // message-and-ISBN it does on the barcode path. Worth revisiting — a title we already have
-    // is better than "couldn't look this up" — but the two paths agree today.
-    ...(result.kind === "found"
-      ? result.book
-      : {
-          isbn,
-          title: candidate.title ?? "",
-          author: candidate.author ?? t("book.unknown_author"),
-          notFound: true,
-          lookupUnavailable: result.kind === "unavailable",
-        }),
-    duplicate,
-    currentStatus: duplicate ? libraryBooks.get(isbn) : undefined,
-  };
-  selectedStatus.value = libraryDefaultsStore.defaultScanStatus;
-  selectedOwning.value = DEFAULT_OWNING_STATUS;
-  selectedRating.value = null;
-  scanState.value = "preview";
-
-  if (duplicate) sessionScanned.add(isbn);
+  // The candidate's title/author are carried so the *save* keeps them (`guestStore.addScan`
+  // reads them straight off this object). The sheet itself does not show them: its title and
+  // author lines are both gated on `!notFound`, so a failed lookup renders the same
+  // message-and-ISBN it does on the barcode path. Worth revisiting — a title we already have
+  // is better than "couldn't look this up" — but the two paths agree today.
+  await presentDetection(isbn, {
+    title: candidate.title ?? "",
+    author: candidate.author ?? t("book.unknown_author"),
+  });
 };
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -1607,13 +1587,23 @@ async function lookupBook(isbn: string): Promise<LookupResult> {
 
 // ── Detection handler ─────────────────────────────────────────────────────────
 
-const onBarcodeDetected = async (isbn: string) => {
-  if (scanState.value !== "scanning") return;
-
-  // Already handled this session — ignore silently so the camera can keep running
-  // (and so a just-saved book in view doesn't immediately re-trigger the sheet).
-  if (sessionScanned.has(isbn)) return;
-
+/**
+ * Looks an ISBN up and leaves the preview sheet open on it — the one path to a sheet, whether
+ * the ISBN came from the camera, the manual field or a title-search candidate.
+ *
+ * The camera's guards deliberately sit in `onBarcodeDetected` and not here. A live camera
+ * re-reads the same barcode many times a second, so it needs `sessionScanned` to stay quiet;
+ * typing an ISBN or picking a search result is a deliberate act each time, and must always
+ * answer with a sheet — including the duplicate one. Sharing the guard is what made manual
+ * entry of an already-owned ISBN a silent field-clear.
+ *
+ * `fallback` supplies the title/author to keep when the lookup finds nothing: a candidate the
+ * user picked already carries both, a bare ISBN carries neither.
+ */
+async function presentDetection(
+  isbn: string,
+  fallback?: { title: string; author: string },
+) {
   const duplicate = libraryBooks.has(isbn);
 
   scanState.value = "detecting";
@@ -1631,8 +1621,8 @@ const onBarcodeDetected = async (isbn: string) => {
       ? result.book
       : {
           isbn,
-          title: "",
-          author: "",
+          title: fallback?.title ?? "",
+          author: fallback?.author ?? "",
           notFound: true,
           lookupUnavailable: result.kind === "unavailable",
         }),
@@ -1646,6 +1636,16 @@ const onBarcodeDetected = async (isbn: string) => {
 
   // A duplicate gets shown once, then suppressed for the rest of the session.
   if (duplicate) sessionScanned.add(isbn);
+}
+
+const onBarcodeDetected = async (isbn: string) => {
+  if (scanState.value !== "scanning") return;
+
+  // Already handled this session — ignore silently so the camera can keep running
+  // (and so a just-saved book in view doesn't immediately re-trigger the sheet).
+  if (sessionScanned.has(isbn)) return;
+
+  await presentDetection(isbn);
 };
 
 // ── Offline queue ─────────────────────────────────────────────────────────────
