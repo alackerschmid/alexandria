@@ -290,8 +290,10 @@ import { greetingKey, greetingName } from "@/utils/greeting";
  *  library, and the strip scrolls rather than paginating. */
 const RECENT_LIMIT = 12;
 /** Rows asked for, before the collection scope is applied. `GET /api/scans` takes no `?scope=`,
- *  so the strip is filtered on the client and has to draw from a wider window than it shows or a
- *  run of out-of-scope arrivals empties it. Still a fraction of the library's 500-row page. */
+ *  so the strip is filtered on the client and draws from a wider window than it shows, which
+ *  covers the ordinary case of a few out-of-scope arrivals sitting at the top. It is not enough
+ *  for a bulk import — see the fallback in `recentInScope`. Still a fraction of the library's
+ *  500-row page. */
 const RECENT_FETCH = 48;
 /** Series named before the block defers to `/stats` for the rest. */
 const GAP_ROWS = 4;
@@ -383,12 +385,18 @@ const OWNED_STATUSES: ReadonlySet<OwningStatus> = new Set([
   "lent_out",
 ]);
 
-const recentInScope = computed(() =>
-  (scope.value === "owned"
-    ? recent.value.filter((b) => OWNED_STATUSES.has(b.owning_status))
-    : recent.value
-  ).slice(0, RECENT_LIMIT),
-);
+const recentInScope = computed(() => {
+  if (scope.value !== "owned") return recent.value.slice(0, RECENT_LIMIT);
+  const owned = recent.value.filter((b) => OWNED_STATUSES.has(b.owning_status));
+  // Falls back to the unscoped rows when the scope leaves nothing. A Goodreads import writes
+  // every row at `owning_status = 'unknown'` and they arrive as the newest scans, so any import
+  // past the fetch window above empties the strip — and with owned books elsewhere in the
+  // library the page-level scoped-empty state doesn't fire either, so the section would simply
+  // vanish at the moment the user has just added the most. Showing the arrivals unscoped is the
+  // lesser of the two misses: the heading claims recency, not ownership, and it is the same
+  // trade this block made before it was scoped at all.
+  return (owned.length ? owned : recent.value).slice(0, RECENT_LIMIT);
+});
 
 // Honours the library's "Count novellas & side stories" setting, which is what that setting says
 // it does ("Include non-whole-numbered entries in series counts") — these gaps are series counts.
