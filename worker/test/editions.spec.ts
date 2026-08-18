@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
+  fetchBookMetadata,
   mergeMetadata,
   splitAuthors,
   normalizeStr,
@@ -48,6 +49,89 @@ describe("mergeMetadata", () => {
   it("returns primary unchanged when fallback is entirely empty", () => {
     const primary = { ...empty, title: "Dune", author: "Frank Herbert" };
     expect(mergeMetadata(primary, empty)).toEqual(primary);
+  });
+});
+
+// `pickCoverUrl` is pinned as a pure function in cover-url.spec.ts; these pin that
+// `fetchBookMetadata` actually calls it, in the both-sources-answered branch, with the operands
+// that way round. Nothing else covers the wiring — reverting the branch to a plain `mergeMetadata`
+// (i.e. restoring the 128px bug) left the whole suite green. Only `fetch` is stubbed: this
+// function takes no `db`, touches no binding, and `usage: null` counts nothing, which is what the
+// worker's "pure logic only" test scope allows for.
+describe("fetchBookMetadata cover precedence", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const ISBN = "9780061054884";
+  const GOOGLE_THUMB =
+    // eslint-disable-next-line unicorn/prefer-https
+    "http://books.google.com/books/content?id=Krl&printsec=frontcover&img=1&zoom=1&edge=curl&source=gbs_api";
+  const GOOGLE_THUMB_STORED =
+    "https://books.google.com/books/content?id=Krl&printsec=frontcover&img=1&zoom=1&source=gbs_api";
+  const OL_LARGE = "https://covers.openlibrary.org/b/id/240727-L.jpg";
+
+  function stubSources(googleCover: string | null, openLibraryCover: string) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("googleapis.com"))
+          return Response.json({
+            items: [
+              {
+                volumeInfo: {
+                  title: "The Dispossessed",
+                  authors: ["Ursula K. Le Guin"],
+                  pageCount: 387,
+                  ...(googleCover && { imageLinks: { thumbnail: googleCover } }),
+                },
+              },
+            ],
+          });
+        if (url.includes("jscmd=data"))
+          return Response.json({
+            [`ISBN:${ISBN}`]: {
+              title: "The Dispossessed: An Ambiguous Utopia",
+              description: "Shevek builds the ansible.",
+              cover: { large: openLibraryCover },
+            },
+          });
+        if (url.includes("jscmd=details")) return Response.json({});
+        throw new Error(`unexpected fetch: ${url}`);
+      }),
+    );
+  }
+
+  const found = async () => {
+    const out = await fetchBookMetadata(ISBN, "test-key", null);
+    if (out.kind !== "found") throw new Error(`expected found, got ${out.kind}`);
+    return out.meta;
+  };
+
+  it("takes OpenLibrary's -L over Google's 128px thumbnail", async () => {
+    stubSources(GOOGLE_THUMB, OL_LARGE);
+    const meta = await found();
+    expect(meta.cover_url).toBe(OL_LARGE);
+    // ...and only the cover: Google still wins the merge on every other field.
+    expect(meta.title).toBe("The Dispossessed");
+    expect(meta.number_of_pages_median).toBe(387);
+  });
+
+  it("keeps a Google cover whose zoom has been raised", async () => {
+    const large = GOOGLE_THUMB.replace("zoom=1", "zoom=3");
+    stubSources(large, OL_LARGE);
+    expect((await found()).cover_url).toBe(
+      GOOGLE_THUMB_STORED.replace("zoom=1", "zoom=3"),
+    );
+  });
+
+  it("keeps Google's cover when OpenLibrary answers with its deleted-cover sentinel", async () => {
+    stubSources(GOOGLE_THUMB, "https://covers.openlibrary.org/b/id/-1-L.jpg");
+    // The -1 URL 503s, so trading a working 128px image for it would lose the cover outright.
+    expect((await found()).cover_url).toBe(GOOGLE_THUMB_STORED);
+  });
+
+  it("falls back to OpenLibrary when Google has no cover at all", async () => {
+    stubSources(null, OL_LARGE);
+    expect((await found()).cover_url).toBe(OL_LARGE);
   });
 });
 

@@ -3,6 +3,7 @@ paths:
   - "worker/src/enrichment.ts"
   - "worker/src/sweeper.ts"
   - "worker/src/editions.ts"
+  - "worker/src/covers.ts"
 ---
 
 # Wikidata enrichment pipeline
@@ -230,8 +231,38 @@ and the next tick picks the work up through Q2 to retry the backfill alone. Disc
 reported the same way — it is gated on the work having no candidate editions yet, so it retries
 on its own.
 
-Runs sequentially with a short delay to stay polite to Wikidata, then prunes `enrichment_runs`
-rows older than 30 days. `POST /api/books/refresh` is the manual force-retry path.
+Works run sequentially with a short delay to stay polite to Wikidata. **The prunes run first**, at
+the very top of the tick and ahead of every fallible phase — `enrichment_runs` rows older than 30
+days, plus expired `rate_limits` and `search_cache` rows and `api_usage` retention — so a throw
+further down can't skip them every tick. `POST /api/books/refresh` is the manual force-retry path.
+
+**The tick has a fourth phase that is not enrichment: `localizeCovers` (`covers.ts`).** It pulls up
+to `COVER_BATCH_SIZE` (5) book covers into R2 so the library stops hot-linking them from Google —
+see `worker/CLAUDE.md` for the route that serves them. It runs **last and takes only what
+enrichment left**, because a pending badge is something a user is watching and a cover arriving two
+minutes later is invisible. `coverBudget` is that arithmetic, exported and unit-tested for the same
+reason `fitsInBudget` is. It needs no worst-case *reservation* — a cover is exactly one fetch as
+`countFetch` sees it, so the allowance is the batch size directly — but it **halves** the remaining
+allowance, because what the platform's 50 counts is *hops*: `covers.openlibrary.org` 302s into an
+Internet Archive shard, and spending the allowance outright let this one phase consume the whole
+5-request cushion `SUBREQUEST_BUDGET` keeps back for exactly that hazard.
+
+It is isolated in its own `try` so a bucket or upstream failure doesn't reject the `scheduled`
+promise and record the entire cron invocation as failed. Note what that catch does *not* buy,
+since the phase's position makes both moot: the prunes have already run, and the usage flush is in
+the enclosing `finally`. There is nothing to retry either way — the books simply stay due.
+
+The permanent-vs-transient split is the part worth getting right, and it lives in two pure
+predicates rather than inside the fetch: `classifyCoverStatus` (404/410 permanent, every other
+failure transient) and `isStorableCover` (an empty, oversized or non-image body). Collapsing them
+either way is silent — one marks every book that hit a blip as coverless forever, the other
+re-fetches a dead URL every two minutes out of the budget enrichment shares.
+
+The due pick (`cover_object_key IS NULL AND cover_url IS NOT NULL`, `ORDER BY RANDOM()`) is served
+by `idx_books_cover_pending`, a **partial** index over exactly that predicate — so the scan is over
+the shrinking tail rather than the catalogue, and the index empties as the backlog drains. Anything
+that re-points a `cover_url` must NULL the key alongside it, or the row never re-enters that set;
+`scripts/upgrade-covers.mjs` is the one writer that has to remember this.
 
 **The tick meters its own subrequests; `BATCH_SIZE` does not bound them.** Free-plan Workers get **50
 external subrequests per invocation** (Cloudflare services like D1 have a separate 1,000, so the

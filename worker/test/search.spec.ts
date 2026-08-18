@@ -15,11 +15,17 @@ function mockFetch(...responses: Array<() => Response | Promise<never>>) {
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
   Response.json(body, { status, headers });
 
+// The thumbnail is the shape Google really hands out: http, and wearing the fake page-curl.
+// eslint-disable-next-line unicorn/prefer-https
+const RAW_THUMBNAIL = "http://books.google.com/books/content?id=x&zoom=1&edge=curl";
+const NORMALIZED_THUMBNAIL = "https://books.google.com/books/content?id=x&zoom=1";
+
 const volume = (isbn: string, title: string) => ({
   volumeInfo: {
     title,
     authors: ["Ursula K. Le Guin"],
     industryIdentifiers: [{ type: "ISBN_13", identifier: isbn }],
+    imageLinks: { thumbnail: RAW_THUMBNAIL },
   },
 });
 
@@ -49,6 +55,10 @@ describe("searchBooksByTitle", () => {
     const out = await withTimersFlushed(search());
     expect(out).toHaveLength(1);
     expect(out[0].isbn).toBe("9781473206069");
+    // Candidate covers are normalized on the way out, same as the ISBN-lookup path: a search
+    // result is what the scanner and the import wizard render, and an http URL will not load on
+    // the TLS-served page.
+    expect(out[0].cover_url).toBe(NORMALIZED_THUMBNAIL);
   });
 
   // The bug this guards: a 200 with no `items` is a real "nothing found", and must NOT throw.

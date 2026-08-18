@@ -1,5 +1,65 @@
-// Deterministic placeholder helpers for book covers without an image.
-// Ported from the library mockups: a stable tint + initials per title.
+// Cover helpers: where a cover's bytes come from, plus the deterministic placeholder for a book
+// without one (a stable tint + initials per title, ported from the library mockups).
+
+/** Same read as `useApi`'s: the worker's origin in production, same-origin via the proxy in dev. */
+const API_BASE = import.meta.env.VITE_API_URL || "";
+
+/**
+ * The URL to actually put in an `<img>`.
+ *
+ * Prefers the cover stored on our own origin, because the alternative — pointing the `<img>` at
+ * `books.google.com` — makes the **reader's** browser issue that request: their IP, their
+ * User-Agent, the referring origin and the volume ids (which are the books they own) go to Google
+ * as one correlated burst per page load, with their Google cookies attached, since
+ * `books.google.com` is a `google.com` subdomain. `utils/markdown.ts` drops images from reviews for
+ * exactly this reason and the fonts are self-hosted for it; covers were the one exception.
+ *
+ * Falls back to the upstream URL for a book the sweeper has not stored yet (and for one it never
+ * can), so the library never loses a cover to this — it just stops being private for that book.
+ * The server suppresses the key when the user has overridden the cover, so no check is needed here.
+ */
+export function coverSrc(
+  coverUrl: string | null | undefined,
+  objectKey?: string | null,
+  base: string = API_BASE,
+): string | null {
+  if (isCoverKey(objectKey)) return `${base}/api/covers/${objectKey}`;
+  return coverUrl ?? null;
+}
+
+/**
+ * `<isbn>/<8 hex>.<ext>` — the key shape the worker's `covers.ts` writes, mirrored here.
+ *
+ * The client needs its own copy because a key can reach it from a route that does *not* suppress
+ * the `'-'` unavailable sentinel: `buildScanSelect` filters it out, but `GET /api/books/lookup`,
+ * `/guest-lookup` and `POST /api/books/refresh` all return the raw `books` row. `'-'` is truthy,
+ * so a presence check would build `/api/covers/-` and 404 a book whose `cover_url` still works.
+ */
+const COVER_KEY = /^[\dA-Za-z-]{1,32}\/[\da-f]{8}\.(?:jpg|png|gif|webp)$/;
+
+export function isCoverKey(key: string | null | undefined): key is string {
+  return typeof key === "string" && COVER_KEY.test(key);
+}
+
+/**
+ * A cover URL and the stored-object key that belongs to **it**, chosen together.
+ *
+ * The two must be picked as a pair or the `<img>` draws a different book's artwork: a shelf entry
+ * falls back from the owned book's cover to an unowned series entry's, and a key carried across
+ * that fall-through still points at the owned book's object. Taking the key only when the owned
+ * book is also what supplied the URL is the whole rule — see `ShelfEntry` in `shelf-packing.ts`.
+ */
+export function pickCoverPair(
+  owned: { cover_url: string | null; cover_object_key?: string | null } | undefined,
+  fallbackUrl: string | null | undefined,
+): { cover_url: string | null; cover_object_key: string | null } {
+  if (owned?.cover_url)
+    return {
+      cover_url: owned.cover_url,
+      cover_object_key: owned.cover_object_key ?? null,
+    };
+  return { cover_url: fallbackUrl ?? null, cover_object_key: null };
+}
 
 const TINTS = [
   "#3a352f",

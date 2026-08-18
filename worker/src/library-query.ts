@@ -162,6 +162,17 @@ export function buildScanSelect(locale: string): string {
          b.author                                            AS author,
          ${AUTHORS_JSON_SUBQUERY}                            AS authors_json,
          COALESCE(o.cover_url, b.cover_url)                  AS cover_url,
+         -- Two things are suppressed here, both because the client prefers this key over
+         -- cover_url whenever it is set. An OVERRIDE: cover_url above is then the user's own URL
+         -- and the stored object is the catalogue image they replaced, so passing the key would
+         -- silently shadow their choice. And the '-' SENTINEL (COVER_UNAVAILABLE in covers.ts,
+         -- written when the upstream cover is permanently gone) — it is a marker, not a key, and
+         -- forwarding it would send the client to a 404 instead of the upstream URL that still
+         -- works. LIKE '%/%' is the key shape, isbn/hash.ext.
+         CASE
+           WHEN o.cover_url IS NULL AND b.cover_object_key LIKE '%/%'
+           THEN b.cover_object_key
+         END                                                 AS cover_object_key,
          COALESCE(o.language, b.language)                    AS language,
          COALESCE(o.publish_date, b.publish_date)            AS publish_date,
          COALESCE(o.number_of_pages_median, b.number_of_pages_median) AS number_of_pages_median,

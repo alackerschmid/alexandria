@@ -148,9 +148,10 @@
               class="w-9 h-[50px] md:h-14 flex-none bg-charcoal border border-charcoal-border relative shrink-0 overflow-hidden"
             >
               <img
-                v-if="book.coverUrl"
-                :src="book.coverUrl"
+                v-if="coverFor(book)"
+                :src="coverFor(book)"
                 :alt="book.title"
+                referrerpolicy="no-referrer"
                 class="absolute inset-0 w-full h-full object-cover"
               />
               <div
@@ -227,6 +228,7 @@ import { useThemeStore } from "@/stores/theme";
 import { useLocaleStore } from "@/stores/locale";
 import AppButton from "@/components/AppButton.vue";
 import ScannerPreview from "@/components/ScannerPreview.vue";
+import { coverSrc } from "@/utils/cover";
 
 const { t } = useI18n();
 const themeStore = useThemeStore();
@@ -240,7 +242,24 @@ type DemoBook = {
   author: string;
   status: ReadStatus;
   coverUrl?: string;
+  /** R2 key of the cover stored on our own origin — see `coverFor`. */
+  coverObjectKey?: string;
 };
+
+/**
+ * The `<img>` src for a preview cover, preferring the copy on our own origin.
+ *
+ * This page is the one an *anonymous* visitor lands on, so a cover pointed at `books.google.com`
+ * makes their browser announce three of the catalogue's books to Google, with their Google cookies
+ * attached, before they have agreed to anything at all. `referrerpolicy="no-referrer"` on the
+ * `<img>` is the fallback when there is no stored object yet; this is the actual fix.
+ *
+ * Deliberately not `CoverImage`: the fallback here is the bespoke orange spine strip below, not
+ * `PlaceholderCover`, and that is marketing chrome rather than a library tile.
+ */
+function coverFor(book: DemoBook): string | undefined {
+  return coverSrc(book.coverUrl ?? null, book.coverObjectKey) ?? undefined;
+}
 
 // Decorative statuses, rotated across the previewed books for visual variety —
 // the books table has no per-user status of its own.
@@ -270,6 +289,7 @@ onMounted(async () => {
         title: string;
         author: string | null;
         cover_url: string | null;
+        cover_object_key?: string | null;
       }[];
       total: number;
     } = await res.json();
@@ -279,6 +299,9 @@ onMounted(async () => {
         author: b.author || t("book.unknown_author"),
         status: PREVIEW_STATUSES[i % PREVIEW_STATUSES.length],
         coverUrl: b.cover_url || undefined,
+        // Optional on the wire: a worker older than migration 0045 doesn't send it, and `coverFor`
+        // falls back to the URL. Picked as a pair with `cover_url` — both come from one `books` row.
+        coverObjectKey: b.cover_object_key || undefined,
       }));
       totalCount.value = data.total;
     }

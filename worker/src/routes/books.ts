@@ -172,13 +172,20 @@ books.get("/sample", async (c) => {
   const [{ results }, total] = await Promise.all([
     db
       .prepare(
-        "SELECT title, author, cover_url FROM books WHERE is_featured = 1 AND title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?",
+        // `cover_object_key` rides along, sentinel-suppressed the same way `buildScanSelect` does
+        // it. This is a plain per-row SELECT, so the key and the URL come from the same `books`
+        // row and can be trusted as a pair — none of the `MAX()`-across-`GROUP BY` hazard that
+        // keeps `/api/series` and `/api/stats` hot-linking. It matters here more than anywhere
+        // else: the landing page is the one surface an *anonymous* visitor loads, so without it
+        // three requests go to Google carrying their cookies before they have agreed to anything.
+        "SELECT title, author, cover_url, CASE WHEN cover_object_key LIKE '%/%' THEN cover_object_key END AS cover_object_key FROM books WHERE is_featured = 1 AND title IS NOT NULL AND cover_url IS NOT NULL ORDER BY RANDOM() LIMIT ?",
       )
       .bind(limit)
       .all<{
         title: string;
         author: string | null;
         cover_url: string | null;
+        cover_object_key: string | null;
       }>(),
     db
       .prepare("SELECT COUNT(*) AS n FROM books WHERE is_featured = 1 AND title IS NOT NULL")

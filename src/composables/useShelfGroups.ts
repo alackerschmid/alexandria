@@ -1,5 +1,6 @@
 import { computed, type Ref } from "vue";
 import { authorDisplayName } from "@/utils/book-display";
+import { pickCoverPair } from "@/utils/cover";
 import { countableSeriesEntries } from "@/utils/series-completeness";
 import type { BookGroup } from "@/composables/useLibraryGrouping";
 import type { ParsedSearch } from "@/composables/useLibrarySearch";
@@ -73,6 +74,7 @@ export function useShelfGroups(options: {
     key: `b${b.id}`,
     title: b.title || b.isbn,
     cover_url: b.cover_url ?? null,
+    cover_object_key: b.cover_object_key ?? null,
     ordinal: b.series_ordinal ?? null,
     owned: true,
     status: b.status,
@@ -110,7 +112,10 @@ export function useShelfGroups(options: {
             return {
               key: `m${e.work_id}`,
               title: e.title,
-              cover_url: book?.cover_url ?? e.cover_url ?? null,
+              // Picked as a pair: the key belongs to the owned book's cover, so it must not
+              // survive a fall-through to the series entry's URL (an unowned placeholder, which
+              // has no stored object). A mismatch here would draw a different book's cover.
+              ...pickCoverPair(book, e.cover_url),
               ordinal: e.ordinal,
               owned: !!e.owned,
               status: book?.status,

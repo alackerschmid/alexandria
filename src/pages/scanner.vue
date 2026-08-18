@@ -324,6 +324,7 @@
                       v-if="candidate.cover_url"
                       :src="candidate.cover_url"
                       :alt="candidate.title || candidate.isbn"
+                      referrerpolicy="no-referrer"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                     <div
@@ -391,9 +392,10 @@
                     style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                   >
                     <img
-                      v-if="b.coverUrl"
-                      :src="b.coverUrl"
+                      v-if="coverFor(b)"
+                      :src="coverFor(b)"
                       :alt="b.title"
+                      referrerpolicy="no-referrer"
                       class="absolute inset-0 w-full h-full object-cover"
                     />
                     <div
@@ -574,9 +576,10 @@
                 class="w-6 h-8.5 shrink-0 relative overflow-hidden bg-search-border border border-charcoal-border"
               >
                 <img
-                  v-if="b.coverUrl"
-                  :src="b.coverUrl"
+                  v-if="coverFor(b)"
+                  :src="coverFor(b)"
                   :alt="b.title"
+                  referrerpolicy="no-referrer"
                   class="absolute inset-0 w-full h-full object-cover"
                 />
                 <div
@@ -638,9 +641,10 @@
             <!-- Book info -->
             <div class="flex gap-4 mb-6">
               <img
-                v-if="detectedBook.coverUrl"
-                :src="detectedBook.coverUrl"
+                v-if="coverFor(detectedBook)"
+                :src="coverFor(detectedBook)"
                 :alt="detectedBook.title || detectedBook.isbn"
+                referrerpolicy="no-referrer"
                 class="w-20 h-30 object-cover shrink-0"
               />
               <div
@@ -936,9 +940,10 @@
                       style="background: var(--color-charcoal-light); border: 1px solid var(--color-charcoal-border)"
                     >
                       <img
-                        v-if="b.coverUrl"
-                        :src="b.coverUrl"
+                        v-if="coverFor(b)"
+                        :src="coverFor(b)"
                         :alt="b.title"
+                        referrerpolicy="no-referrer"
                         class="absolute inset-0 w-full h-full object-cover"
                       />
                       <div
@@ -1069,6 +1074,7 @@
                     v-if="candidate.cover_url"
                     :src="candidate.cover_url"
                     :alt="candidate.title || candidate.isbn"
+                    referrerpolicy="no-referrer"
                     class="absolute inset-0 w-full h-full object-cover"
                   />
                   <div
@@ -1155,6 +1161,7 @@ import {
   type QueuedBook,
 } from "@/utils/offline-queue";
 import type { OwningStatus, ReadStatus } from "@/types/book";
+import { coverSrc } from "@/utils/cover";
 import AppToast from "@/components/AppToast.vue";
 import AppButton from "@/components/AppButton.vue";
 
@@ -1189,6 +1196,10 @@ interface BookPreview {
   language?: string;
   publisher?: string;
   coverUrl?: string;
+  /** R2 key of the cover stored on our own origin, when the `books` row has one. Present because
+   *  `/api/books/lookup` returns the whole row — unlike the search/candidate shapes below, which
+   *  have no `books` row behind them and can only ever hot-link. */
+  coverObjectKey?: string;
   notFound?: boolean;
   /** Set alongside `notFound` when the metadata sources couldn't be reached, rather than having
    *  answered that they don't know this ISBN — see `lookupBook`. Only changes what the sheet
@@ -1196,6 +1207,21 @@ interface BookPreview {
   lookupUnavailable?: boolean;
   duplicate?: boolean;
   currentStatus?: ReadStatus;
+}
+
+/**
+ * The `<img>` src for a scanner cover, preferring the copy stored on our own origin.
+ *
+ * Applies to the two shapes that came from `/api/books/lookup` — the detected book and the session
+ * shelf built from it. The search-result and candidate covers below deliberately do *not* use it:
+ * those have no `books` row behind them, so there is no key to prefer and `referrerpolicy` is the
+ * only mitigation available.
+ *
+ * Deliberately not `CoverImage`: every cover on this page falls back to the bespoke orange spine
+ * strip (or a book icon), not `PlaceholderCover` — the scanner keeps its own dark-hardcoded chrome.
+ */
+function coverFor(book: { coverUrl?: string; coverObjectKey?: string }): string | undefined {
+  return coverSrc(book.coverUrl ?? null, book.coverObjectKey) ?? undefined;
 }
 
 // Single source of truth for the scanner's owning-status default — referenced by every
@@ -1255,6 +1281,7 @@ interface SessionBook {
   author: string;
   status: ReadStatus;
   coverUrl?: string;
+  coverObjectKey?: string;
   addedAt: number;
   // Server scan id when saved online (authenticated) — needed to delete it.
   // Absent for guest scans and offline-queued saves.
@@ -1271,6 +1298,7 @@ function recordSession(book: BookPreview, status: ReadStatus, scanId?: number) {
     author: book.author || t("book.unknown_author"),
     status,
     coverUrl: book.coverUrl,
+    coverObjectKey: book.coverObjectKey,
     addedAt: Date.now(),
     scanId,
   });
@@ -1563,6 +1591,10 @@ async function lookupBook(isbn: string): Promise<LookupResult> {
           language: book.language ?? undefined,
           publisher: book.publisher ?? undefined,
           coverUrl: book.cover_url ?? undefined,
+          // The route returns the raw `books` row, so this is *not* sentinel-suppressed the way
+          // `buildScanSelect`'s is — `coverSrc` rejects anything that isn't key-shaped, which is
+          // what makes forwarding it safe here.
+          coverObjectKey: book.cover_object_key ?? undefined,
         },
       };
     }

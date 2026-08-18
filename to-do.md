@@ -5,10 +5,13 @@
 https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_two_questions/
 
 - add support for 2nd accent color, set central color scheme for stuff like read / dnf / unowned / lent etc. (also want color is hardcoded to orange)
-- add text review field (optional?)
 - add confirmation for switch
 - add focus styling from settings to all other relevant fields (isbn title search)
 - add support for numeric filters / groupby (page count, rating)
+
+## admin page
+
+- allow clicking on errors / failed runs for detail page
 
 ## bugfixes
 
@@ -28,9 +31,7 @@ https://www.reddit.com/r/ClaudeAI/comments/1ulti1r/i_end_every_ai_session_with_t
 
 - metadata in list items is lacking
 - look at books w/o cover
-- edit should allow editing all fields (new ones are missing) (also not the cover url tho)
-- overhaul edit process
-- move edit / refresh / delete buttons to be more central
+- overhaul editions view
 
 ## lower priority UI improvements
 

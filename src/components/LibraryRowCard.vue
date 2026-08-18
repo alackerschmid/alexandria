@@ -36,6 +36,7 @@
         >
           <CoverImage
             :cover-url="book.cover_url"
+            :object-key="book.cover_object_key"
             :title="displayTitle(book)"
             :alt="displayTitle(book)"
             text-class="text-sm"
@@ -121,6 +122,7 @@
         >
           <CoverImage
             :cover-url="ed.cover_url"
+            :object-key="ed.cover_object_key"
             :title="displayTitle(ed)"
             :alt="displayTitle(ed)"
             text-class="text-[9px]"

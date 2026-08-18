@@ -51,7 +51,7 @@ On demand:
 
 ## Architecture
 
-Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages and sets `VITE_API_URL` at build time; `worker/wrangler.toml` configures the Worker (D1 binding, cron, observability, `CORS_ORIGIN`).
+Two `wrangler.toml` files — root (`wrangler.toml`) configures Cloudflare Pages and sets `VITE_API_URL` at build time; `worker/wrangler.toml` configures the Worker (D1 binding, the `COVERS` R2 bucket binding, cron, observability, `CORS_ORIGIN`).
 
 Two separate deployments, **both owned by the GitHub Actions Deploy workflow** (`.github/workflows/deploy.yml`) on push to `main`. Its single `deploy` job runs the shared verify workflow first (frontend type-check + lint + tests, worker type-check + tests) and then, in order:
 

@@ -14,6 +14,7 @@
     >
       <CoverImage
         :cover-url="book.cover_url"
+        :object-key="book.cover_object_key"
         :title="book.title || book.isbn"
         :alt="book.title || book.isbn"
         text-class="text-2xl"

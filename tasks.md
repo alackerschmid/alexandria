@@ -22,6 +22,7 @@ Conventions used below:
 | E2, E4 | **Dropped** — removed from the backlog, not built |
 | F3 | **Done** — `/stats` shipped on `feat/stats-page`; manual QA pass still owed (see the task) |
 | F3b | **Done** — home reworked to match on `feat/home-rework`; manual QA pass still owed (see the task) |
+| F9 | **Done** — covers served from R2 on `feat/covers-in-r2`; see `tasks_completed.md` |
 | F (rest) | Open — below |
 | G1–G18 | Open — UX QA findings (2026-08-09 Playwright session), below |
 

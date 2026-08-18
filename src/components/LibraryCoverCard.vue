@@ -18,6 +18,7 @@
         <!-- Cover image -->
         <CoverImage
           :cover-url="coverUrl"
+          :object-key="coverObjectKey"
           :title="title"
           :alt="title || $t('series.untitled')"
           :ghost="!owned"
@@ -110,6 +111,8 @@ import CoverImage from "@/components/CoverImage.vue";
 const props = defineProps<{
   title: string | null;
   coverUrl: string | null;
+  /** Paired with `coverUrl` — see `ShelfEntry.cover_object_key`. */
+  coverObjectKey?: string | null;
   ordinal: number | null;
   owned: boolean;
   status?: ReadStatus;

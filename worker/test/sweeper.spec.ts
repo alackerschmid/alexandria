@@ -1,10 +1,19 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
+  coverBudget,
+  COVER_BATCH_SIZE,
   fitsInBudget,
   SUBREQUEST_BUDGET,
   WORST_CASE_PER_WORK,
 } from "../src/sweeper";
 import { UsageRecorder } from "../src/usage";
+
+/** A recorder that has already spent `n` external calls this invocation. */
+const spent = (n: number) => {
+  const usage = new UsageRecorder(null);
+  for (let i = 0; i < n; i++) usage.countFetch();
+  return usage;
+};
 
 /**
  * The tick's subrequest meter. Pure enough to test with a real `UsageRecorder` and no D1 handle:
@@ -13,13 +22,6 @@ import { UsageRecorder } from "../src/usage";
  */
 describe("fitsInBudget", () => {
   afterEach(() => vi.restoreAllMocks());
-
-  /** A recorder that has already spent `n` external calls this invocation. */
-  const spent = (n: number) => {
-    const usage = new UsageRecorder(null);
-    for (let i = 0; i < n; i++) usage.countFetch();
-    return usage;
-  };
 
   it("counts every fetch, with or without a database handle", () => {
     // The no-db case is the one that matters: `record` early-returns without a handle, so a meter
@@ -76,5 +78,40 @@ describe("fitsInBudget", () => {
     expect(admitted).toBeGreaterThanOrEqual(2);
     expect(admitted).toBeLessThan(7);
     expect(usage.externalCalls).toBeLessThanOrEqual(50);
+  });
+});
+
+/**
+ * The covers phase's claim on the same 50. It runs last and takes what enrichment left, so unlike
+ * `fitsInBudget` it needs no worst-case reservation — a cover is one fetch as `countFetch` sees it.
+ * What it does need is the redirect discount, which is the whole reason this is a function.
+ */
+describe("coverBudget", () => {
+  it("gives the full batch on an idle tick", () => {
+    expect(coverBudget(spent(0))).toBe(COVER_BATCH_SIZE);
+  });
+
+  it("leaves the platform cushion intact when enrichment ran long", () => {
+    // The regression this pins: spending the remaining allowance outright made this phase consume
+    // the entire 5-request cushion SUBREQUEST_BUDGET keeps below the platform's 50 — the cushion
+    // that exists precisely because redirects are invisible to the meter, and cover hosts redirect.
+    const usage = spent(SUBREQUEST_BUDGET - 5);
+    expect(coverBudget(usage)).toBe(2);
+    expect(usage.externalCalls + coverBudget(usage) * 2).toBeLessThanOrEqual(50);
+  });
+
+  it("never exceeds the platform limit, at any point enrichment could stop", () => {
+    for (let alreadySpent = 0; alreadySpent <= SUBREQUEST_BUDGET; alreadySpent++) {
+      const budget = coverBudget(spent(alreadySpent));
+      // Two hops per cover is the worst case the discount is sized for.
+      expect(alreadySpent + Math.max(budget, 0) * 2).toBeLessThanOrEqual(50);
+    }
+  });
+
+  it("returns zero or less once there is no room, rather than a negative LIMIT", () => {
+    // `localizeCovers` early-returns on `limit <= 0`. Without that guard a negative value reaches
+    // `LIMIT ?`, where SQLite reads -1 as *no* limit and the phase would fetch the whole backlog.
+    expect(coverBudget(spent(SUBREQUEST_BUDGET))).toBe(0);
+    expect(coverBudget(spent(SUBREQUEST_BUDGET + 10))).toBeLessThanOrEqual(0);
   });
 });

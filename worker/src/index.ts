@@ -9,6 +9,7 @@ import { works, series } from "./routes/catalog";
 import statsRoutes from "./routes/stats";
 import importRoutes from "./routes/import";
 import adminRoutes from "./routes/admin";
+import coversRoutes from "./routes/covers";
 import { usageMiddleware } from "./usage";
 import { scheduled } from "./sweeper";
 
@@ -40,5 +41,10 @@ app.route("/api/series", series);
 app.route("/api/stats", statsRoutes);
 app.route("/api/import", importRoutes);
 app.route("/api/admin", adminRoutes);
+// Public: an <img> can't send an Authorization header. Mounted like any other route rather than
+// ahead of usageMiddleware — the recorder it allocates counts nothing (a cover spends no external
+// API quota) and `flush()` returns early on an empty one, so exempting it would buy an allocation
+// at the cost of a load-bearing registration order.
+app.route("/api/covers", coversRoutes);
 
 export default { fetch: app.fetch, scheduled };

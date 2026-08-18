@@ -1,4 +1,5 @@
 import type { Bindings, BookRow } from "./types";
+import { localizeCovers } from "./covers";
 import { enrichWork, CURRENT_ENRICHMENT_SCHEMA_VERSION } from "./enrichment";
 import { linkWork } from "./editions";
 import { UsageRecorder } from "./usage";
@@ -20,6 +21,17 @@ const BATCH_SIZE = 7;
 // Books with no work link get their own budget so a large unlinked backlog can't crowd out
 // enrichment (and vice versa) — linking is cheap, enrichment is not.
 const LINK_BATCH_SIZE = 5;
+// Covers pulled into R2 per tick. Deliberately the *last* claim on the tick's subrequests:
+// enrichment is what a user is watching a badge for, while a cover that arrives two minutes later
+// is invisible — the page keeps hot-linking it until then. Five a tick drains the ~1,100
+// already-stored cover URLs in well under a day and then idles.
+export const COVER_BATCH_SIZE = 5;
+// What one cover can cost the *platform*, against the one call `countFetch` sees. Both cover hosts
+// redirect by design — `covers.openlibrary.org` 302s into an Internet Archive shard, which
+// `cover-url.ts` depends on existing — and a redirect chain counts twice against the 50. This is
+// the same hazard SUBREQUEST_BUDGET's 5-request cushion is sized for, so the covers phase has to
+// discount for it rather than spend the cushion outright.
+const PLATFORM_HOPS_PER_COVER = 2;
 
 /**
  * The tick's external-subrequest allowance, and the cost it assumes the next work might have.
@@ -72,6 +84,23 @@ export function fitsInBudget(usage: UsageRecorder, index: number): boolean {
     `The rest stay due for the next tick.`,
   );
   return false;
+}
+
+/**
+ * How many covers the tick can still afford, after enrichment has taken what it needs.
+ *
+ * Exported and pure for the same reason `fitsInBudget` is: it is the only thing keeping this phase
+ * inside the platform's subrequest ceiling, and `scheduled` itself needs D1 to run. No worst-case
+ * *reservation* is needed — a cover is one fetch as `countFetch` counts it, so the allowance is the
+ * batch size directly — but the allowance is divided by `PLATFORM_HOPS_PER_COVER`, because what the
+ * ceiling counts is hops and these URLs redirect. Zero or less means "not this tick"; `localizeCovers`
+ * treats that as a no-op rather than passing it to `LIMIT`, where SQLite reads -1 as *no* limit.
+ */
+export function coverBudget(usage: UsageRecorder): number {
+  return Math.min(
+    COVER_BATCH_SIZE,
+    Math.floor((SUBREQUEST_BUDGET - usage.externalCalls) / PLATFORM_HOPS_PER_COVER),
+  );
 }
 
 // Background sweeper: drains the backlog of un-enriched works — series-member placeholders that
@@ -209,6 +238,18 @@ export async function scheduled(
         usage,
       );
       if (i < results.length - 1) await sleep(DELAY_MS);
+    }
+
+    // Covers spend whatever enrichment left, discounted for redirects — see `coverBudget`.
+    // Isolated so a bucket or upstream failure doesn't reject the `scheduled` promise and record
+    // the whole cron invocation as failed; there is nothing to retry either way, since the books
+    // simply stay due. (The prune has already run and the usage flush is in the `finally` below,
+    // so neither of those depends on this catch.)
+    try {
+      const spent = await localizeCovers(env, usage, coverBudget(usage));
+      if (spent) console.log(`[sweeper] localized ${spent} cover(s)`);
+    } catch (e) {
+      console.error("[sweeper] cover localization failed:", e);
     }
   } finally {
     // finally, not after the loop: enrichWork catches its own errors, but anything that does

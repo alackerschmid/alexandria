@@ -1,4 +1,9 @@
 import type { BookRow, BookMetadata } from "./types";
+import {
+  normalizeCoverUrl,
+  openLibraryCoverUrlById,
+  pickCoverUrl,
+} from "./cover-url";
 import { alternateIsbnForm, isbnForms, normalizeIsbn } from "./isbn";
 import { dedupeTrimmed } from "./library-query";
 import { outcomeForStatus } from "./usage";
@@ -10,7 +15,7 @@ import type { UsageOperation, UsageOutcome, UsageRecorder } from "./usage";
  * than at the call sites is what makes the count exact: a new call site cannot forget, and calls
  * whose *telemetry* is skipped (the OpenLibrary work-description read) are still metered.
  */
-async function fetchWithTimeout<T>(
+export async function fetchWithTimeout<T>(
   url: string,
   usage: UsageRecorder | null | undefined,
   /**
@@ -206,8 +211,7 @@ async function fetchFromGoogleBooks(
     meta: {
       title: info.title ?? null,
       author: info.authors?.join(", ") ?? null,
-      cover_url:
-        info.imageLinks?.thumbnail?.replace("http://", "https://") ?? null,
+      cover_url: normalizeCoverUrl(info.imageLinks?.thumbnail),
       language: info.language ?? null,
       publish_date: info.publishedDate ?? null,
       number_of_pages_median: info.pageCount > 0 ? info.pageCount : null,
@@ -299,7 +303,7 @@ async function openLibraryMeta(
   return {
     title: book.title ?? null,
     author: book.authors?.[0]?.name ?? null,
-    cover_url: book.cover?.large ?? book.cover?.medium ?? null,
+    cover_url: normalizeCoverUrl(book.cover?.large ?? book.cover?.medium),
     language: null,
     publish_date: book.publish_date ?? null,
     number_of_pages_median:
@@ -384,8 +388,19 @@ export async function fetchBookMetadata(
     fetchFromOpenLibrary(isbn, usage).catch(() => unavailable),
   ]);
 
-  if (google.kind === "found" && openlib.kind === "found")
-    return { kind: "found", meta: mergeMetadata(google.meta, openlib.meta) };
+  if (google.kind === "found" && openlib.kind === "found") {
+    const merged = mergeMetadata(google.meta, openlib.meta);
+    // The one field where the merge's Google-wins rule is wrong: Google's cover is a 128px
+    // thumbnail and OpenLibrary's is ~330px, and this is the path both were fetched on — so the
+    // sharper image is already in hand and the merge was the only thing discarding it.
+    return {
+      kind: "found",
+      meta: {
+        ...merged,
+        cover_url: pickCoverUrl(google.meta.cover_url, openlib.meta.cover_url),
+      },
+    };
+  }
   if (google.kind === "found") return { kind: "found", meta: google.meta };
   if (openlib.kind === "found") return { kind: "found", meta: openlib.meta };
   if (google.kind === "unavailable" || openlib.kind === "unavailable")
@@ -572,8 +587,7 @@ export async function searchBooksByTitle(
         isbn,
         title: info.title ?? null,
         author: info.authors?.join(", ") ?? null,
-        cover_url:
-          info.imageLinks?.thumbnail?.replace("http://", "https://") ?? null,
+        cover_url: normalizeCoverUrl(info.imageLinks?.thumbnail),
         publish_date: info.publishedDate ?? null,
         publisher: info.publisher ?? null,
       });
@@ -872,9 +886,18 @@ async function fetchEditionsForWorkKey(
       isbn: entryIsbn,
       title: e.title ?? null,
       language: mapLanguageCode(e.languages?.[0]?.key),
-      cover_url: e.covers?.[0]
-        ? `https://covers.openlibrary.org/b/id/${e.covers[0]}-M.jpg`
-        : null,
+      // `-L` (~330 px), where this used to hardcode `-M`: the carousel paints these at ~170 CSS
+      // px, i.e. 340 device px on a 2x display, so `-M`'s 180 px is already upscaled. Candidates
+      // written before this keep `-M` — `saveEditionCandidates` is INSERT OR IGNORE and discovery
+      // only runs for a work with no candidates yet — so the grid mixes both sizes until a work is
+      // rediscovered. Accepted: it is a thumbnail grid, not the cover the detail view shows.
+      // The first *usable* id, not `covers[0]`: `-1` is OpenLibrary's deleted-cover sentinel and
+      // truthy, so a presence check let it through — and an edition whose `covers` is `[-1, 12345]`
+      // then lost a real cover it had, since only index 0 was ever read. The helper still tests the
+      // id it is given, so an all-sentinel array falls out as null either way.
+      cover_url: openLibraryCoverUrlById(
+        e.covers?.find((id: number) => Number(id) > 0),
+      ),
       publish_date: e.publish_date ?? null,
       publisher: e.publishers?.[0] ?? null,
     });
